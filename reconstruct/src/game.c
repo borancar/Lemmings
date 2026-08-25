@@ -1392,6 +1392,28 @@ void menu_hotspots(view_hotspot *spots)
     spots[6].id = MENU_PLAY;
 }
 
+/* The port's own. The original's own instruction on the briefing is "Press
+ * mouse button to continue", so a click dismisses these screens; Esc does too,
+ * which is the port's addition and harmless - the original has no other way
+ * off the briefing, but a window that only closes on a mouse click is a poor
+ * thing on a machine with a keyboard. */
+void menu_show_until_dismissed(const menu_screen *m, const char *title,
+                               uint8_t scale)
+{
+    view_hotspot any[2];
+    any[0].x = 0;
+    any[0].y = 0;
+    any[0].w = MENU_W;
+    any[0].h = MENU_H;
+    any[0].key = VIEW_KEY_NONE;
+    any[0].id = 1;
+    any[1] = any[0];
+    any[1].w = 0;
+    any[1].h = 0;
+    any[1].key = VIEW_KEY_ESC;
+    view_interact(m->pix, MENU_W, MENU_H, m->palette, title, scale, any, 2);
+}
+
 menu_action menu_run(const menu_screen *m, uint8_t scale)
 {
     view_hotspot spots[MENU_HOTSPOTS];

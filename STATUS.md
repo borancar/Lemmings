@@ -288,10 +288,23 @@ Each of these is stated as what was *checked*, not what was written.
   `0x089C4`–`0x098D4` from a **buffer in memory**. So it is data at the moment
   it is drawn. Whether that buffer is filled from file data by some transform —
   which a byte search would not catch — or generated, is **not settled**. The
-  buffer's address is the next thing to pin down: sampling the blitter's source
-  caught the *menu's logo* blits instead (source `0x5A861`, `cx=79`, `bp=4`,
-  `di` stepping one 80-byte row from `0x321` = row 10 byte 1 = screen (8,10),
-  which is the logo exactly), so the sample never reached the briefing.
+  buffer has since been narrowed. Logging every blit and **resetting the log on
+  each full-screen clear** — so what survives is the last screen drawn, rather
+  than the biggest blit, which was the trap that caught the logo — puts the
+  briefing's background at source pages **`0x58000`–`0x59FFF`**, 21,488 blits
+  through entry `0x0988A` with **`cx=40, bp=2`**: a 320-pixel-wide, two-plane
+  tile, the same shape as the menu's. The font glyphs on the same screen come
+  from `0x6E000`–`0x70FFF` with `bp=3`, which matches the font's three planes
+  exactly and is a good check that the reading is right.
+
+  Dumping `0x58000` did **not** reproduce it, twice: once after the screen had
+  settled, when the buffer had presumably been reused, and once from a
+  breakpoint that landed on a text blit instead of the background. So the tile
+  is there at the moment it is drawn and the dig is unfinished. Next: break on
+  the *first* `0x0988A` after a full-screen clear, not on any of them.
+- **The briefing and the two sub-screens dismiss on a click**, which is what
+  the briefing's own text asks for — "Press mouse button to continue". Esc does
+  too; that is the port's addition, and marked as such.
 - **The port leaves that background black**, deliberately. Drawing the menu's
   tile there would score 66% and look about right, which is the failure worth
   avoiding: it invites the screen to be called finished. Palette entries 8–15

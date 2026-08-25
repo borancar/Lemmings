@@ -420,8 +420,7 @@ int main(int argc, char **argv)
                 if (load_level(data, file, which, &lv, &err) == 0) {
                     menu_screen br;
                     if (menu_briefing_screen(data, &lv, 0, &br, &err) == 0) {
-                        view_show(br.pix, MENU_W, MENU_H, MENU_W, MENU_H,
-                                  br.palette, "PC Lemmings", 0, scale);
+                        menu_show_until_dismissed(&br, "PC Lemmings", scale);
                         menu_free(&br);
                     }
                 }
@@ -442,8 +441,7 @@ int main(int argc, char **argv)
                     fprintf(stderr, "  %s\n", err);
                     continue;
                 }
-                view_show(sub.pix, MENU_W, MENU_H, MENU_W, MENU_H,
-                          sub.palette, "PC Lemmings", 0, scale);
+                menu_show_until_dismissed(&sub, "PC Lemmings", scale);
                 menu_free(&sub);
                 continue;
             }

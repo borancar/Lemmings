@@ -319,6 +319,13 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * because nothing has been found that works it. */
 #define MENU_HOTSPOTS 7
 
+/* Show a screen that has no choices on it - the briefing, the level-code
+ * screen, the input chooser - and wait for the viewer to dismiss it. The
+ * briefing says "Press mouse button to continue" and means it, so a click
+ * dismisses as well as Esc. Returns when it is dismissed. */
+void menu_show_until_dismissed(const menu_screen *m, const char *title,
+                               uint8_t scale);
+
 /* Fill in the menu's hotspots. Exposed so the mapping can be tested without
  * opening a window - see tests/menu_input.c. */
 void menu_hotspots(view_hotspot *spots);
