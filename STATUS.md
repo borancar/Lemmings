@@ -280,7 +280,12 @@ the first sweep should write this table rather than have it retyped by hand.
    And the port's reading of a terrain entry is now **confirmed against the
    original's own instructions**, not against a published description — the
    6-bit id mask, all three flag bits, the 8-byte ground table and its field
-   order, and the four-plane bitmap. See
+   order, the four-plane bitmap, the **big-endian** word assembly (the original
+   loads it a byte at a time, high first, which an 8086 word load would not
+   do), the 4-byte entry stride, and the `+16` on x that makes the viewport
+   land at exactly the 624 the pixel comparison finds independently. One real
+   difference turned up and was fixed: the original's terminator test is on the
+   first word alone, not all four bytes. See
    [docs/terrain.md](docs/terrain.md#the-caller-how-a-level-entry-becomes-a-blit).
 
    The instruments have been checked: the DOSBox capture is a clean 2x (all

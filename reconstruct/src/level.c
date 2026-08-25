@@ -68,10 +68,22 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
      *   byte 2: y bits 8..1
      *   byte 3: bit 7 is y bit 0; bits 5..0 are the terrain id
      *
-     * y is a 9-bit two's-complement value and then 4 less than it reads. */
+     * y is a 9-bit two's-complement value and then 4 less than it reads.
+     *
+     * Both words are BIG-endian, confirmed at image 0x03752 where the
+     * original assembles them a byte at a time high-first:
+     *   mov ah,[si] / mov al,[si+1]  and  mov bh,[si+2] / mov bl,[si+3]
+     * which is not what an 8086 word load would do, so the byte order is a
+     * deliberate choice in the game and not an artefact of the machine. */
     for (uint16_t i = 0; i < LEVEL_MAX_TERRAIN; i++) {
         const uint8_t *e = buf + 0x120 + i * 4;
-        if (e[0] == 0xFF && e[1] == 0xFF && e[2] == 0xFF && e[3] == 0xFF)
+        /* The original stops on the FIRST WORD being 0xFFFF, not on all four
+         * bytes - image 0x03760, `cmp ax, 0xffff` where AX was assembled from
+         * e[0] and e[1] alone. Requiring all four would read past the end of
+         * the list for any level whose terminator has other bytes in its
+         * second word. No shipped level here does, but matching the original
+         * costs nothing and the difference is real. */
+        if (e[0] == 0xFF && e[1] == 0xFF)
             break;
         level_terrain *t = &lv->terrain[lv->num_terrain++];
         t->x = (int16_t)((int32_t)(((e[0] & 0x0F) << 8) | e[1]) - 16);

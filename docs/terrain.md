@@ -176,6 +176,51 @@ So, confirmed against the binary rather than against a document:
 | in the order width, height, image_loc, mask_loc | `[bx]`, `[bx+1]`, `[bx+2]`, `[bx+4]` |
 | a bitmap has **four** planes | `mov ch, 4` |
 
+## The loop: how the terrain list is walked
+
+Above the dispatcher, at image `0x0374F`, and it settles the byte order:
+
+```
+0374f  beeb10      mov si, 0x10eb    ; the terrain array in DGROUP
+03752  8a24        mov ah, [si]      ; and the word is assembled
+03754  8a4401      mov al, [si + 1]  ;   HIGH BYTE FIRST
+03757  8a7c02      mov bh, [si + 2]
+0375a  8a5c03      mov bl, [si + 3]
+0375d  83c604      add si, 4         ; four bytes per entry
+03760  3dffff      cmp ax, 0xffff    ; terminator: the FIRST WORD alone
+03763  7405        je  0x376a
+03765  e8ff44      call 0x7c67
+03768  ebe8        jmp 0x3752
+```
+
+Assembling a word a byte at a time, high first, is not what an 8086 word load
+does — so the **big-endian** layout is a deliberate choice in the game, an
+Amiga inheritance carried into the PC data, and not an artefact of anything.
+
+And just above it, the viewport's origin:
+
+```
+0372d  8a6518      mov ah, [di + 0x18]   ; start_x, big-endian again
+03730  8a4519      mov al, [di + 0x19]
+03733  051000      add ax, 0x10          ; +16
+03736  a30000      mov [0], ax
+03739  d1e8        shr ax, 1             ; and /8 for a byte offset
+```
+
+The `+16` is the same 16 that a terrain entry's x is stored with. In the
+game's coordinates a piece sits at its raw x and the viewport opens at
+`start_x + 16`; the port subtracts 16 from both, so its canvas offset for the
+viewport is `start_x` — which is exactly the **624** the pixel comparison
+independently finds as the best alignment. The two arithmetics agree.
+
+### One real difference, found and fixed
+
+The original stops on the **first word** being `0xFFFF`. The port required all
+four bytes to be `0xFF`, which would read past the end of the list for a level
+whose terminator carried anything else in its second word. No shipped level
+here does, so it changes nothing measurable — but it was wrong, and matching
+the original costs nothing.
+
 ## What this does and does not explain
 
 It **confirms** the port's rules from the original's own code rather than from
