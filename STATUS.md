@@ -41,8 +41,10 @@ numbers, re-measured on the current build:
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 13 of
-211 call targets.** The port renders these screens from the file formats and from
+**Transcription is a different claim from any of the above, and it is 27 of
+211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
+the comment immediately above every function and fails while any of them says
+neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
 geometry measured against the original — that is real evidence, and it is not
 the same as having transcribed the routines. See *Coverage* below.
 
@@ -640,6 +642,36 @@ Each of these is stated as what was *checked*, not what was written.
   wrong**, and no amount of further fitting was going to reach zero from 257.
   Reading the routine took less time than the fitting did.
 
+- **The provenance convention had decayed, and is now a test.** `CLAUDE.md`
+  says every function carries the address it came from, and calls it "the
+  convention that decays first". Audited: **13 functions carried an address, 12
+  said they were the port's own, and 45 said nothing at all** — most of the 45
+  written by sessions that had the rule in front of them.
+
+  Chasing them down found real addresses for fourteen more:
+
+  | function | image | what pinned it |
+  | --- | --- | --- |
+  | `draw_char` | `0x04D78` | `cmp al,0x20 / je` — the space-skip the port already documented, and `(ch-0x21)*96` from `0x5BC0` |
+  | `draw_at` | `0x04D4D` | walks a string calling `0x04D78`, stops on `0x0D` |
+  | `menu_code_screen` | `0x04967` | stores `0x2E` ten times into `ds:0x4DF2` — the input field's dots |
+  | `menu_input_screen` | `0x04A01` | second line conditional on `ds:0x1F73`, as the port's is |
+  | `level_locate` | `0x01983` | reads the order table at `ds:0x54EE`, shifts out container and section, calls `digits3` at `0x019A0` |
+  | `sign9` | `0x07C90` | the `sar bx,cl` that sign-extends the 9-bit y |
+  | `menu_anim_reset` | `0x04FF8` | counter *i* starts at `0x28 * (i+1)` |
+  | `scroll_char` | `0x07D33` | `0xFF` sets the pause, `0x0D` rewinds |
+  | `draw_banner` | `0x07CE6`, `0x07D54` | the strip blit and the four-bit shift |
+
+  Two are now marked **NOT TRANSCRIBED, address unknown** rather than left
+  silent — `draw_preview` and `draw_end_lemming`, both found by measuring the
+  original's screen and its blits rather than by reading its code. That is a
+  different kind of knowledge and it now says so on the function.
+
+  The checker takes a **file-level** declaration (`sdl_io.c` and `main.c` each
+  say "THIS FILE IS THE PORT'S OWN" once) and lets a run of one-line accessors
+  share one comment. Sixteen identical comments would be ritual, and ritual is
+  what a convention decays into just before it decays out.
+
 - **The five walk-on lemmings are transcribed, and no capture can check
   them.** Image `0x04F96` walks a ten-entry table at `ds:0x4960` (image
   `0x0E3F0`) — counter, reload, x, y, sprite base, eleven bytes each. Five
@@ -1010,11 +1042,11 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 13 |
+| routines transcribed | 27 (`make test` enforces the count) |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
-| routines never reached | 198 of the 211 call targets |
+| routines never reached | 184 of the 211 call targets |
 
 | routine | what it is | how it is checked |
 | --- | --- | --- |

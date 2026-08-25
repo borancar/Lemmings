@@ -205,6 +205,9 @@ int dat_decompress(const uint8_t *comp, uint32_t comp_len,
     return 0;
 }
 
+/*
+ * Not transcribed: a big-endian word, an idiom rather than a routine.
+ */
 static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
 
 /* NOT TRANSCRIBED. The original streams sections through a read routine
@@ -303,7 +306,11 @@ void dat_free(dat_file *d)
 /* be16 is defined once, above: both the DAT header and the LVL header
  * are big-endian, which is the Amiga heritage showing through. */
 
-/* A 9-bit two's-complement field, as the terrain y position uses. */
+/* A 9-bit two's-complement field, as the terrain y position uses.
+ *
+ * Transcribed from image 0x07C90 - `sar bx,cl` with cl=7, an ARITHMETIC
+ * shift that sign-extends the 9-bit field.
+ */
 static int16_t sign9(uint16_t v)
 {
     return (int16_t)(v >= 256 ? (int32_t)v - 512 : (int32_t)v);
@@ -437,6 +444,9 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
 /* A flat view of the parsed header, so tools/verify_level.py can compare
  * against the original without mirroring `level`'s layout in Python.
  * The order is the order the original stores them in.
+ *
+ * The port's own: a flat view for tools/verify_level.py, with no counterpart
+ * in the original.
  */
 int level_header_fields(const uint8_t *buf, uint32_t len,
                         uint16_t *out, uint32_t n_out, const char **err)
@@ -467,13 +477,20 @@ int level_header_fields(const uint8_t *buf, uint32_t len,
 
 #define GROUND_SIZE 1056
 
+/*
+ * Not transcribed: a little-endian word, an idiom rather than a routine.
+ */
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
 /* A 6-bit DAC value as 8 bits, the way the hardware does it: the top two bits
  * repeated into the bottom, not a proportional scale. The two agree at 0 and
  * 63 and differ by one in between - 0x20 is 130 here and 129 if you compute
  * v*255/63 - and that one is enough to make every mid-tone pixel of a screen
- * compare as different against another emulator. */
+ * compare as different against another emulator.
+ *
+ * Not transcribed as a routine - this is what the DAC hardware does, not
+ * code the original runs.
+ */
 static uint8_t widen6(uint8_t v)
 {
     v = (uint8_t)(v & 0x3F);
@@ -999,7 +1016,11 @@ static const uint8_t MENU_PAL6[48] = {
 
 /* 6 bits to 8 by REPLICATING the top bits, not by scaling to 255. 0x3F must
  * come out 255 and 0x00 must come out 0, and v*255/63 gets both right and
- * everything between subtly wrong. */
+ * everything between subtly wrong.
+ *
+ * Not transcribed - the same widening as widen6 above, duplicated here
+ * rather than shared. Worth collapsing.
+ */
 static uint8_t dac8(uint8_t v)
 {
     v &= 0x3F;
@@ -1132,7 +1153,11 @@ void preshift_sprite(const uint8_t *src, uint8_t cols, uint8_t rows,
 
 /* One pixel out of a planar bitmap. `planes` is how far apart consecutive
  * planes are; pass 0 for the two-plane background and only bits 0 and 1 are
- * read. The leftmost pixel of a byte is its most significant bit. */
+ * read. The leftmost pixel of a byte is its most significant bit.
+ *
+ * Not transcribed: reading one pixel out of a planar bitmap, an idiom. The
+ * original never does this - it programs the EGA and lets the card do it.
+ */
 static uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
                       uint16_t stride, uint8_t nplanes,
                       uint16_t x, uint16_t y)
@@ -1216,7 +1241,12 @@ static void blit(uint8_t *dst, const uint8_t *sec, uint32_t base,
 
 /* One glyph, keyed on plane 2. Characters outside the block are skipped
  * rather than clamped: a wrong glyph is worse than a gap, because it looks
- * like a font bug rather than a missing character. */
+ * like a font bug rather than a missing character.
+ *
+ * Transcribed from image 0x04D78. The space-skip is the original's own first
+ * instruction, `cmp al,0x20 / je`; the glyph is `(ch - 0x21) * 96` from
+ * 0x5BC0 with the mask at +0x40.
+ */
 static void draw_char(uint8_t *dst, const uint8_t *font, uint32_t font_len,
                       uint8_t ch, uint16_t at_x, uint16_t at_y)
 {
@@ -1290,7 +1320,11 @@ static const char S_INPUT_3[]     = "3. Keyboard";         /* image 0x0E8F1 */
 #define INPUT_OPT_STEP  32
 
 /* Shared by all three screens: load main.dat, tile the background, and hand
- * back the section pointers the caller still needs. */
+ * back the section pointers the caller still needs.
+ *
+ * The port's own: composition scaffolding. The original draws these screens
+ * in place and has no equivalent shared entry.
+ */
 static int screen_start(const char *dir, menu_screen *m, dat_file *d,
                         const uint8_t **sec, const uint8_t **font,
                         uint32_t *fontlen, int tile_background,
@@ -1336,7 +1370,11 @@ static int screen_start(const char *dir, menu_screen *m, dat_file *d,
     return 0;
 }
 
-/* Text at a given cell, rather than centred. */
+/* Text at a given cell, rather than centred.
+ *
+ * Transcribed from image 0x04D4D - it walks a string calling image 0x04D78
+ * per character and stops on 0x0D.
+ */
 static void draw_at(uint8_t *dst, const uint8_t *font, uint32_t font_len,
                     const char *text, uint16_t at_x, uint16_t at_y)
 {
@@ -1346,7 +1384,11 @@ static void draw_at(uint8_t *dst, const uint8_t *font, uint32_t font_len,
 }
 
 /* The screen F2 reaches: the level-code entry. What it does with the code is
- * NOT reconstructed - this draws it and comes back. */
+ * NOT reconstructed - this draws it and comes back.
+ *
+ * Transcribed from image 0x04967. Its ten dots are the original's own:
+ * 0x0497D stores 0x2E ten times into ds:0x4DF2.
+ */
 int menu_code_screen(const char *dir, menu_screen *m, const char **err)
 {
     dat_file d;
@@ -1372,7 +1414,11 @@ int menu_code_screen(const char *dir, menu_screen *m, const char **err)
 }
 
 /* The screen F4 reaches: the input-device chooser. Choosing is NOT
- * reconstructed - the port always uses the mouse and the keyboard. */
+ * reconstructed - the port always uses the mouse and the keyboard.
+ *
+ * Transcribed from image 0x04A01. The second line is conditional there too,
+ * on ds:0x1F73.
+ */
 int menu_input_screen(const char *dir, menu_screen *m, const char **err)
 {
     dat_file d;
@@ -1436,7 +1482,12 @@ static const uint8_t LEVEL_ORDER[120] = {
 };
 
 /* Where the game's level `number` (1..30) of `rating` (0..3) lives. Returns 0
- * and fills in the container's name and the section index. */
+ * and fills in the container's name and the section index.
+ *
+ * Transcribed from image 0x01983: it reads the order table at ds:0x54EE
+ * (image 0x0EF7E), takes the entry minus one, shifts it four right for the
+ * container and masks 7 for the section, and calls digits3 at image 0x019A0.
+ */
 int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
                  uint32_t *section)
 {
@@ -1491,7 +1542,11 @@ static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
 #define BR_CONT_Y     304
 
 /* Write `n` right-aligned so that it ENDS at `end` in `dst`. The original
- * leaves exactly the right run of spaces for this in every template. */
+ * leaves exactly the right run of spaces for this in every template.
+ *
+ * The port's own. The original writes digits into these templates too, but
+ * through its own arithmetic - see digits3 at image 0x04BC2 for one.
+ */
 static void put_num(char *dst, size_t end, uint32_t n)
 {
     size_t i = end;
@@ -1538,7 +1593,12 @@ static void put_num(char *dst, size_t end, uint32_t n)
 #define PV_H       39      /* not 40: the top row is not drawn - see below */
 #define PV_SCALE    4
 #define PV_SAMPLE   2      /* which pixel of each 4x4 block is taken */
-#define PV_TOP      4      /* the first level row the preview shows */
+#define PV_TOP      4      /* the first level row the preview shows
+ *
+ * NOT TRANSCRIBED, address unknown. The geometry is measured against the
+ * original's screen, not read from its code; no blit in screen coordinates
+ * was ever found for it.
+ */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,
                          uint8_t *dst)
@@ -1590,6 +1650,11 @@ static void draw_preview(const char *dir, const level *lv, const ground *g,
     dat_free(&gfx);
 }
 
+/*
+ * The port's own composition. The original reaches this screen from image
+ * 0x0454C and draws it in place; the pieces are transcribed individually and
+ * this assembly is not.
+ */
 int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
                          menu_screen *m, const char **err)
 {
@@ -1874,6 +1939,10 @@ static const struct {
 static int16_t anim_ctr[ANIM_N];
 static int     anim_started;
 
+/*
+ * Transcribed from image 0x04FF8 - counter i starts at 0x28 * (i + 1) unless
+ * the entry is switched off.
+ */
 void menu_anim_reset(void)
 {
     anim_started = 1;
@@ -1897,6 +1966,10 @@ void menu_anim_step(void)
     }
 }
 
+/*
+ * The port's own: an accessor so the counter logic can be tested without a
+ * window. No capture of the original shows a walk-on lemming.
+ */
 uint8_t menu_anim_visible(void)
 {
     if (!anim_started) menu_anim_reset();
@@ -1992,6 +2065,10 @@ static uint32_t menu_scroll;
  * scroll because it is separate in the original - see draw_end_lemming. */
 static uint8_t  menu_lem_frame;
 
+/*
+ * The port's own accessors. The original keeps this in ds:0x21 and has no
+ * function around it.
+ */
 void menu_set_scroll(uint32_t pixels) { menu_scroll = pixels; }
 uint32_t menu_get_scroll(void)        { return menu_scroll; }
 void menu_set_lem_frame(uint8_t f)    { menu_lem_frame = f; }
@@ -2012,6 +2089,10 @@ static char  ribbon[sizeof SCROLL_TEXT];
 static uint8_t ribbon_pause[sizeof SCROLL_TEXT];  /* 0xFF came before this */
 static uint16_t ribbon_len;
 
+/*
+ * The port's own restructuring of the stream image 0x07D33 walks one
+ * character at a time. Same rules, computed once.
+ */
 static void ribbon_build(void)
 {
     if (ribbon_len) return;
@@ -2024,6 +2105,10 @@ static void ribbon_build(void)
     }
 }
 
+/*
+ * Transcribed from image 0x07D33: 0xFF is consumed and sets the pause, 0x0D
+ * rewinds to the start, and the character after either is the one drawn.
+ */
 static uint8_t scroll_char(int32_t k)
 {
     ribbon_build();
@@ -2049,7 +2134,12 @@ static int scroll_pauses_at(uint32_t k)
 /* Drawn OPAQUELY, including their black. That is measured, not assumed: with
  * every pixel compared, index 0 included, each capture matches its frame with
  * zero differing - so the sprite's own black is what the original leaves
- * there, and keying it out would be inventing transparency. */
+ * there, and keying it out would be inventing transparency.
+ *
+ * NOT TRANSCRIBED, address unknown. The two blits were found with
+ * tools/probe_blits.py - x=0 and x=592, 48x16 - and their caller has not
+ * been located.
+ */
 static void draw_end_lemming(uint8_t *dst, const uint8_t *gfx, uint32_t len,
                              uint32_t base, uint16_t at_x, uint8_t frame)
 {
@@ -2066,6 +2156,11 @@ static void draw_end_lemming(uint8_t *dst, const uint8_t *gfx, uint32_t len,
     }
 }
 
+/*
+ * Transcribed from image 0x07CE6 (the strip blit, ax=0x30 bx=0x14E dx=0x230)
+ * and image 0x07D54 (the four-bit shift). The tile is section 4 offset
+ * 23040, the original's ds:0x4C10.
+ */
 void draw_banner(uint8_t *dst, const uint8_t *font, uint32_t font_len,
                  uint32_t scroll, uint8_t frame)
 {
@@ -2109,7 +2204,11 @@ void draw_banner(uint8_t *dst, const uint8_t *font, uint32_t font_len,
  * 2 Taxing, 3 Mayhem. ONLY RATING 0 IS VERIFIED - it is the one the original
  * shows on a fresh start, fitted at 100.00% over 1,760 ink pixels. The other
  * three are the next three blocks at the same stride, which is the obvious
- * reading and is not the same as a checked one. */
+ * reading and is not the same as a checked one.
+ *
+ * The port's own composition. Every piece it draws is transcribed and
+ * carries its address; the order it draws them in is measured, not read.
+ */
 int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
                       const char **err)
 {
@@ -2401,6 +2500,11 @@ void menu_show_until_dismissed(const menu_screen *m, const char *title,
  * the original does. */
 #define BANNER_PAUSE 100
 
+/*
+ * The port's own. One pass of image 0x07D0D, but the RATE is the port's
+ * choice - how often the original steps is inferred from its menu loop, not
+ * measured.
+ */
 static int banner_tick(void *ctx, uint8_t *pix)
 {
     menu_screen *m = (menu_screen *)ctx;
@@ -2420,6 +2524,10 @@ static int banner_tick(void *ctx, uint8_t *pix)
     return 1;
 }
 
+/*
+ * The port's own: the original has no such loop, it dispatches from image
+ * 0x0447B and never returns a value.
+ */
 menu_action menu_run(menu_screen *m, uint8_t scale)
 {
     view_hotspot spots[MENU_HOTSPOTS];
@@ -2431,7 +2539,10 @@ menu_action menu_run(menu_screen *m, uint8_t scale)
     return (menu_action)r;
 }
 
-/* The menu with the rating it starts on. */
+/* The menu with the rating it starts on.
+ *
+ * The port's own.
+ */
 int menu_build(const char *dir, menu_screen *m, const char **err)
 {
     return menu_build_rating(dir, 0, m, err);

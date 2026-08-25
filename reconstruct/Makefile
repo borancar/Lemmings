@@ -49,6 +49,10 @@ $(SCREEN_BIN): tests/screens.c $(TEST_OBJ)
 test: $(TEST_BIN) $(SCREEN_BIN)
 	SDL_VIDEODRIVER=dummy ./$(TEST_BIN)
 	SDL_VIDEODRIVER=dummy ./$(SCREEN_BIN) $(DATA)
+	@# Every function must say where it came from. CLAUDE.md has said so all
+	@# along and it decayed anyway - 45 functions said nothing - so it is a
+	@# test now rather than a preference.
+	uv run --project .. python tests/provenance.py
 
 # The same screens under AddressSanitizer and UBSan. The menu loop allocates
 # and frees a screen every time round, and nothing else here runs it more than
