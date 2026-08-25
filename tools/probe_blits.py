@@ -99,6 +99,11 @@ def main():
                          "pressing F1 once the start-up keys are used up. The "
                          "briefing wants a mouse click to leave, so the guest "
                          "sits on it and every blit it makes can be logged")
+    ap.add_argument("--seconds", type=int, default=70,
+                    help="how long the driven run lasts. Short enough and it "
+                         "stops while the briefing is still up; too long and "
+                         "the demo starts the level on its own and the log "
+                         "mixes the two screens together")
     ap.add_argument("--driven", action="store_true",
                     help="ride along with play.py instead of running in "
                          "process - the only way to reach the briefing")
@@ -115,7 +120,7 @@ def main():
         subprocess.run([sys.executable, os.path.join(HERE, "play.py"),
                         "--auto", "--start", "--start-delay", "5",
                         "--start-tries", "3", "--click-tries", "0",
-                        "--", "--run-seconds", "70"],
+                        "--", "--run-seconds", str(a.seconds)],
                        cwd=ROOT, env=env, stdout=subprocess.DEVNULL)
         if not os.path.exists(cap):
             print("\n  NOTHING WAS CAPTURED - the run never reached the "

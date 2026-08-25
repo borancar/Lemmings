@@ -476,6 +476,34 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
+- **Open: the briefing's rows 0–77.** One graphic, and here is everything
+  established about it, so the next attempt does not re-derive it:
+
+  - It is **127 × 39 at (248, 20)**, 3,052 non-black pixels, in colours 8–15 —
+    the level's preview palette.
+  - It is **deterministic**. Two captures taken seven seconds apart are
+    identical over those rows, pixel for pixel, same 3,052. So it is not
+    composition caught in progress, which was the leading guess.
+  - **No blit targets it in screen coordinates.** `probe_blits.py --driven`
+    logs every call to the shared blitter; the only ones covering that box are
+    the menu's background tile and the logo, and the content matches neither
+    (1,165 of 4,953 pixels agree with the menu's own logo there).
+  - It is **terrain-shaped** — an irregular blob, not text or a sprite — and
+    the blits that do carry the level's graphics (`srcseg 0x7272`) are in
+    LEVEL coordinates, x running to 952 on a 1,584-wide level, so they cannot
+    be read as screen positions.
+  - Searching the port's own composed level for its silhouette gives a best
+    match of **71.4%**, which is not a match.
+
+  So it is not explained. The port leaves those rows black rather than drawing
+  something plausible and wrong, which keeps the screen honest: 100.00% over
+  rows 78–349 and a named 3,052-pixel gap above them, instead of 98.64%
+  everywhere and no idea where the error is.
+
+  What would settle it is reading the page offsets the blitter adds — `ds:0x1F76`
+  and `ds:0x1F7A`, image `0x08876` — at briefing time against level-composition
+  time. That has not been done.
+
 - **The briefing's background is the menu's own tile, tiled from row 78.**
   It had been recorded as *"not the menu's tile, and in neither MAIN.DAT nor
   VGAGR0.DAT"* — searched for as a stored bitmap, at all eight bit alignments,
