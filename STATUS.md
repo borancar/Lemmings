@@ -644,6 +644,36 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Into a level
 
+- **THE LEVEL IS MODE 0x0D — 320x200 — not the menu's 640x350.** That is the
+  single most important thing about this screen and nothing here had recorded
+  it. The mode sequence through a whole run is `03 → 05 → 0D → 10 → 0D`: the
+  menu is `0x10`, and the game drops back to `0x0D` to play.
+
+  It explains why a blit probe over "rows 160..349" found nothing but menu
+  leftovers: in a 200-row screen those rows mostly do not exist.
+
+  Captured from the original (`play.py --dump-when 0x0d` with a long delay):
+
+  | rows | what is there |
+  | --- | --- |
+  | 0..159 | the play area - terrain, in colours 16..19 |
+  | 160..175 | blank |
+  | **176..199** | **the control panel**, 24 rows |
+
+  The panel is **not drawn through image 0x8822**, the blitter every menu
+  screen uses - a driven probe with `--play` logs no call into those rows. So
+  mode `0x0D` has a drawing path of its own that has not been found, and that
+  is the next thing to look for.
+
+  Searching the data files for the panel as one 320x24 four-plane bitmap gets
+  **85.8%** at `main.dat` section 2 offset 960 - close enough to say section 2
+  is involved and far enough to say it is not stored whole. Looking at it, that
+  is unsurprising: twelve skill buttons with counts above them and a status bar
+  is a composition, not a picture.
+
+  The port draws none of it. Its level view is the play area alone.
+
+
 - **The level's objects are animated at display time, and both halves are
   transcribed** — image `0x07BB8` draws them, image `0x07C0A` steps them, over
   a 28-byte state per object at `ds:0x17CB`.

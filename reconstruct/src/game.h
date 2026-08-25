@@ -375,6 +375,13 @@ int level_show(const char *dir, const char *file, uint32_t which,
 int view_run(const canvas *c, const lem_rgb *palette, const char *title,
              uint16_t start_x, uint8_t scale);
 
+/* The same, with a per-frame tick so the level's objects can animate over the
+ * terrain. `tick` is handed the canvas to redraw into and returns non-zero
+ * when it changed something. */
+int view_run_anim(canvas *c, const lem_rgb *palette, const char *title,
+                  uint16_t start_x, uint8_t scale,
+                  view_tick tick, void *ctx);
+
 #endif /* LEM_GAME_H */
 
 /* ====================================================================

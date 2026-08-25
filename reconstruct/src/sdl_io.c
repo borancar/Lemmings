@@ -83,9 +83,18 @@ static int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
     if (!g_tex) return -1;
     SDL_SetTextureScaleMode(g_tex, SDL_SCALEMODE_NEAREST);
     g_w = w; g_h = h; g_scale = scale;
+    /* Ask for the keyboard. A window that has just been created - and this
+     * one is recreated whenever the logical size changes, menu to level - is
+     * not guaranteed focus by the window manager, and without it the level
+     * view drew correctly and ignored every arrow key. */
+    SDL_RaiseWindow(g_win);
     return 0;
 }
 
+
+static view_tick g_show_tick;
+static void     *g_show_ctx;
+static uint8_t  *g_show_pix;
 
 int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
               uint16_t view_w, uint16_t view_h,
@@ -138,6 +147,9 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
         if (scroll_x > max_x) scroll_x = max_x;
         if (scroll_y < 0) scroll_y = 0;
         if (scroll_y > max_y) scroll_y = max_y;
+
+        if (g_show_tick && g_show_pix)
+            g_show_tick(g_show_ctx, g_show_pix);
 
         void *pixels = NULL;
         int pitch = 0;
@@ -304,8 +316,20 @@ int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
 int view_run(const canvas *c, const lem_rgb *palette, const char *title,
              uint16_t start_x, uint8_t scale)
 {
+    g_show_tick = NULL; g_show_ctx = NULL; g_show_pix = NULL;
     return view_show(c->pix, c->w, c->h, 320, 160, palette, title,
                      start_x, scale);
+}
+
+int view_run_anim(canvas *c, const lem_rgb *palette, const char *title,
+                  uint16_t start_x, uint8_t scale,
+                  view_tick tick, void *ctx)
+{
+    g_show_tick = tick; g_show_ctx = ctx; g_show_pix = c->pix;
+    int rc = view_show(c->pix, c->w, c->h, 320, 160, palette, title,
+                       start_x, scale);
+    g_show_tick = NULL; g_show_ctx = NULL; g_show_pix = NULL;
+    return rc;
 }
 
 /* ======================================================================
@@ -736,6 +760,29 @@ int level_show_briefing(const char *dir, const char *file, uint32_t which,
     return 0;
 }
 
+/* One frame of a level: the terrain as composed, then every object over it at
+ * whatever frame the stepper has reached. The objects are drawn into the
+ * CANVAS rather than the screen, because view_show does the scrolling - so the
+ * `scroll` the original applies at image 0x07BCF is zero here and the viewport
+ * supplies it instead. */
+struct level_frame {
+    level        lv;
+    level_anim   st[LEVEL_ANIM_MAX];
+    const uint8_t *sec;
+    uint32_t     len;
+    const canvas *from;      /* the pristine terrain each frame starts from */
+};
+
+static int level_frame_tick(void *ctx, uint8_t *pix)
+{
+    struct level_frame *a = (struct level_frame *)ctx;
+    memcpy(pix, a->from->pix, (size_t)a->from->w * a->from->h);
+    level_anim_step(a->st, &a->lv);
+    level_anim_draw(a->st, &a->lv, a->sec, a->len,
+                    pix, a->from->w, a->from->h, 0);
+    return 1;
+}
+
 int level_show(const char *dir, const char *file, uint32_t which,
                level *lv, uint8_t scale, const char **err)
 {
@@ -761,17 +808,28 @@ int level_show(const char *dir, const char *file, uint32_t which,
     if (gfx.count < 1) { dat_free(&gfx); if (err) *err = "no terrain section";
                          return -1; }
 
-    canvas c;
-    if (canvas_init(&c) != 0) { dat_free(&gfx); if (err) *err = "out of memory";
-                                return -1; }
-    /* Terrain only. The original never bakes the objects in - it animates them
-     * at display time, images 0x07BB8 and 0x07C0A - which is why tools
-     * /prove.sh composes terrain alone and matches to the pixel. */
-    rc = render_terrain(&c, lv, &g, gfx.sections[0].data,
+    canvas c, terrain;
+    if (canvas_init(&c) != 0 || canvas_init(&terrain) != 0) {
+        dat_free(&gfx); if (err) *err = "out of memory"; return -1;
+    }
+    /* Terrain into a pristine copy. The original never bakes the objects in -
+     * it animates them at display time, images 0x07BB8 and 0x07C0A - which is
+     * why tools/prove.sh composes terrain alone and matches to the pixel. So
+     * the terrain is composed once and each frame starts from it. */
+    rc = render_terrain(&terrain, lv, &g, gfx.sections[0].data,
                         gfx.sections[0].size, err);
-    if (rc == 0)
-        view_run(&c, g.palette, "PC Lemmings", lv->start_x, scale);
+    if (rc == 0 && gfx.count >= 2) {
+        static struct level_frame A;
+        A.lv = *lv; A.sec = gfx.sections[1].data; A.len = gfx.sections[1].size;
+        A.from = &terrain;
+        level_anim_init(A.st, &A.lv, &g);
+        view_run_anim(&c, g.palette, "PC Lemmings", lv->start_x, scale,
+                      level_frame_tick, &A);
+    } else if (rc == 0) {
+        view_run(&terrain, g.palette, "PC Lemmings", lv->start_x, scale);
+    }
     canvas_free(&c);
+    canvas_free(&terrain);
     dat_free(&gfx);
     return rc;
 }
