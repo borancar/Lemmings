@@ -15,4 +15,10 @@
 int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
                  uint8_t w, uint8_t h, uint8_t *out);
 
+/* Decode a single monochrome plane - an object's transparency mask, which is
+ * stored separately because objects use all sixteen colours and so cannot
+ * borrow the fourth bitplane as terrain does. 1 means "draw this pixel". */
+int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
+                      uint8_t w, uint8_t h, uint8_t *out);
+
 #endif /* VGAGR_H */

@@ -119,6 +119,15 @@ int main(int argc, char **argv)
         dat_free(&gfx);
         return 1;
     }
+    if (gfx.count >= 2) {
+        if (render_objects(&c, &lv, &g, gfx.sections[1].data,
+                           gfx.sections[1].size, 0, &err) != 0) {
+            fprintf(stderr, "render objects: %s\n", err);
+            canvas_free(&c);
+            dat_free(&gfx);
+            return 1;
+        }
+    }
     dat_free(&gfx);
 
     if (bmp_write(out, c.pix, c.w, c.h, g.palette, &err) != 0) {

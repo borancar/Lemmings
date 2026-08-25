@@ -39,3 +39,20 @@ int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
     }
     return 0;
 }
+
+int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
+                      uint8_t w, uint8_t h, uint8_t *out)
+{
+    uint32_t stride = ((uint32_t)w + 7u) / 8u;
+
+    if (loc + stride * (uint32_t)h > len)
+        return -1;
+
+    for (uint8_t y = 0; y < h; y++) {
+        const uint8_t *row = sec + loc + (uint32_t)y * stride;
+        for (uint8_t x = 0; x < w; x++)
+            out[(uint32_t)y * w + x] =
+                (uint8_t)((row[x >> 3] >> (7 - (x & 7))) & 1u);
+    }
+    return 0;
+}

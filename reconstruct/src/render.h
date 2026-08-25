@@ -23,4 +23,12 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                    const uint8_t *terrain_sec, uint32_t terrain_len,
                    const char **err);
 
+/* Draw the level's interactive objects - the entrance, the exit, traps.
+ * Terrain must already be composed: an object's "no overwrite" flag is about
+ * the terrain underneath it. `frame` selects an animation frame; 0 is the
+ * resting pose the level opens on. */
+int render_objects(canvas *c, const level *lv, const ground *g,
+                   const uint8_t *object_sec, uint32_t object_len,
+                   uint8_t frame, const char **err);
+
 #endif /* RENDER_H */

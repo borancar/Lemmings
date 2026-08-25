@@ -31,9 +31,10 @@ Loads a level and draws its terrain:
 - **VGAGRx.DAT** — 4-bit planar bitmaps
 - **Terrain composition** — drawing order with the no-overwrite, erase and
   upside-down flags
+- **Interactive objects** — the entrance and the exit, with their own
+  transparency masks and animation frames
 
-It does **not** yet draw interactive objects (the entrance and the exit), and
-there is no game: no lemmings, no skills, no animation, no sound.
+There is no game yet: no lemmings, no skills, no animation, no sound.
 
 ## How it is known to be right
 
