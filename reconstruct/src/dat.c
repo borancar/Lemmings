@@ -159,14 +159,22 @@ int dat_load(const char *path, dat_file *out, const char **err)
         if (out->count == cap) {
             cap *= 2;
             dat_section *bigger = realloc(out->sections, cap * sizeof(*bigger));
-            if (!bigger) { free(blob); dat_free(out);
-                           if (err) *err = "out of memory"; return -1; }
+            if (!bigger) {
+                free(blob);
+                dat_free(out);
+                if (err) *err = "out of memory";
+                return -1;
+            }
             out->sections = bigger;
         }
 
         uint8_t *dec = malloc(dec_size ? dec_size : 1);
-        if (!dec) { free(blob); dat_free(out);
-                    if (err) *err = "out of memory"; return -1; }
+        if (!dec) {
+            free(blob);
+            dat_free(out);
+            if (err) *err = "out of memory";
+            return -1;
+        }
         if (decompress(blob + pos + 10, (uint32_t)comp_size - 10u,
                        bits_in_first, checksum, dec, dec_size, err) != 0) {
             free(dec); free(blob); dat_free(out);

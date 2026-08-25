@@ -8,13 +8,21 @@ data files.
 
 ```sh
 make
-./lemmings --data /path/to/lemmings          # level 1 -> level.bmp
+./lemmings --data /path/to/lemmings --show   # a window on level 1
+./lemmings --data /path/to/lemmings          # or just write level.bmp
 ./lemmings --data /path/to/lemmings --level 3
 ```
 
+Arrow keys scroll (hold Shift to go faster), Home and End jump to the ends,
+Esc quits.
+
+![The level in a window](docs/window.png)
+
 ## What it needs
 
-A C11 compiler and nothing else — no libraries, no image codecs. It reads
+A C11 compiler and nothing else. **X11 is optional**: with it, `--show` opens
+a window; without it the port still renders to a file. No image codecs, no
+game engine, no other libraries. It reads
 **your own copy of the original data files**: `level000.dat`, `ground0o.dat`
 and `vgagr0.dat` for the first level. Nothing of the game is included here.
 
@@ -71,7 +79,9 @@ disassembly notes.
   other three are not implemented.
 - **No copy protection.** The original decrypts itself under the trap flag and
   checks for an original floppy. None of that is reproduced.
-- **Output is a file, not a screen.** There is no display loop yet.
+- **The window is a viewer, not the game's display loop.** The original draws
+  a 320x160 viewport with a control panel below it and paces on the vertical
+  retrace; this just shows the composed level and scrolls it.
 
 ## Licence
 

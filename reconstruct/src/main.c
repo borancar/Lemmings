@@ -18,6 +18,7 @@
 #include "ground.h"
 #include "level.h"
 #include "render.h"
+#include "view.h"
 
 static const char *SKILL_NAMES[8] = {
     "climber", "floater", "bomber", "blocker",
@@ -30,7 +31,9 @@ static void usage(void)
           "  --data DIR    directory holding the original files (default .)\n"
           "  --file NAME   level container (default level000.dat)\n"
           "  --level N     which level inside it, 1-based (default 1)\n"
-          "  --out FILE    where to write the picture (default level.bmp)\n",
+          "  --out FILE    where to write the picture (default level.bmp)\n"
+          "  --show        open a window on the level (arrows scroll, Esc quits)\n"
+          "  --scale N     window magnification for --show (default 3)\n",
           stderr);
 }
 
@@ -40,12 +43,16 @@ int main(int argc, char **argv)
     const char *file = "level000.dat";
     const char *out  = "level.bmp";
     uint32_t which = 1;
+    uint8_t scale = 3;
+    int show = 0;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
         else if (!strcmp(argv[i], "--file") && i + 1 < argc)  file = argv[++i];
         else if (!strcmp(argv[i], "--out") && i + 1 < argc)   out  = argv[++i];
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) which = (uint32_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--show")) show = 1;
         else { usage(); return 2; }
     }
 
@@ -135,7 +142,14 @@ int main(int argc, char **argv)
         canvas_free(&c);
         return 1;
     }
-    canvas_free(&c);
     printf("wrote %s (%dx%d)\n", out, LEVEL_W, LEVEL_H);
+
+    if (show) {
+        char title[128];
+        snprintf(title, sizeof(title), "PC Lemmings - %s", lv.name);
+        if (view_run(&c, g.palette, title, lv.start_x, scale) != 0)
+            fprintf(stderr, "no display available; the picture is in %s\n", out);
+    }
+    canvas_free(&c);
     return 0;
 }
