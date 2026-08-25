@@ -93,6 +93,9 @@ typedef struct {
     lem_rgb        preview[8];
 } ground;
 
+/* All three live in sdl_io.c - see "READING THE FILES" there. */
+uint16_t be16(const uint8_t *p);
+uint16_t le16(const uint8_t *p);
 int ground_load(const char *path, ground *out, const char **err);
 
 /* ====================================================================
@@ -416,6 +419,11 @@ void menu_hotspots(view_hotspot *spots);
  * The port composes one frame, so the position has to be set before
  * menu_build rather than invented inside it - see draw_banner in game.c. */
 #define MENU_SCROLL_STEP 4
+/* ds:0x21 and the lemmings' frame. The VARIABLES are the game's - the scroll
+ * is the original's own ds:0x21 - and the accessors around them are not, so
+ * they live in sdl_io.c. */
+extern uint32_t menu_scroll;
+extern uint8_t  menu_lem_frame;
 void     menu_set_scroll(uint32_t pixels);
 uint32_t menu_get_scroll(void);
 
@@ -436,8 +444,15 @@ uint8_t menu_anim_visible(void);
 void     menu_set_lem_frame(uint8_t frame);
 uint8_t  menu_get_lem_frame(void);
 
+/* One pass of the original's menu loop, image 0x07D0D - the game's half of
+ * what runs while the menu is up. `ctx` is the menu_screen; returns non-zero
+ * when the picture changed, which is what view_tick wants. */
+int menu_frame_step(void *ctx, uint8_t *pix);
+
 /* Show it and wait for the player to choose. Not const: the banner scrolls,
- * so the picture is redrawn in place while this runs. */
+ * so the picture is redrawn in place while this runs. THE PORT'S OWN, and it
+ * lives in sdl_io.c: the original has no such loop. It dispatches from image
+ * 0x0447B and never returns a value. */
 menu_action menu_run(menu_screen *m, uint8_t scale);
 
 void menu_free(menu_screen *m);

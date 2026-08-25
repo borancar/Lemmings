@@ -349,6 +349,8 @@ int view_run(const canvas *c, const lem_rgb *palette, const char *title,
  * whole method exists to avoid.
  * ====================================================================== */
 
+#define GROUND_SIZE 1056
+
 /* A 6-bit DAC value as 8 bits, the way the hardware does it: the top two bits
  * repeated into the bottom, not a proportional scale. The two agree at 0 and
  * 63 and differ by one in between - 0x20 is 130 here and 129 if you compute
@@ -530,5 +532,186 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
             out[(uint32_t)y * w + x] = (uint8_t)(
                 (row[x >> 3] >> (g_msb_first ? (7 - (x & 7)) : (x & 7))) & 1u);
     }
+    return 0;
+}
+
+/* The menu's loop. THE PORT'S OWN, and here rather than in game.c because the
+ * original has no such thing: image 0x0447B reads a key, jumps to whichever
+ * screen it names, and never returns a value to anyone. A function that shows
+ * a picture, waits, and hands back what was chosen is a shape this port needs
+ * and the original does not have.
+ *
+ * What runs each pass IS the game's, and stays there: menu_frame_step is
+ * image 0x07D0D. */
+menu_action menu_run(menu_screen *m, uint8_t scale)
+{
+    view_hotspot spots[MENU_HOTSPOTS];
+    menu_hotspots(spots);
+    int32_t r = view_interact_anim(m->pix, MENU_W, MENU_H, m->palette,
+                                   "PC Lemmings", scale, spots,
+                                   MENU_HOTSPOTS, menu_frame_step, m);
+    if (r == VIEW_CLOSED) return MENU_EXIT;
+    return (menu_action)r;
+}
+
+/* ======================================================================
+ * SCAFFOLDING THE ORIGINAL HAS NO COUNTERPART FOR.
+ *
+ * game.c holds the game. Anything in it marked "the port's own" was a
+ * contradiction, so these came here: a convenience wrapper, accessors over
+ * state the original keeps in ds:0x21 with no function around it, a query for
+ * where plate i is that only exists because this port needs clickable boxes,
+ * and a count exposed purely so a test can see the walk-on lemmings without a
+ * window.
+ * ====================================================================== */
+
+
+
+/*
+ * The port's own accessors. The original keeps this in ds:0x21 and has no
+ * function around it.
+ */
+void menu_set_scroll(uint32_t pixels) { menu_scroll = pixels; }
+
+uint32_t menu_get_scroll(void)        { return menu_scroll; }
+
+void menu_set_lem_frame(uint8_t f)    { menu_lem_frame = f; }
+
+uint8_t menu_get_lem_frame(void)      { return menu_lem_frame; }
+
+/* The menu with the rating it starts on.
+ *
+ * The port's own.
+ */
+int menu_build(const char *dir, menu_screen *m, const char **err)
+{
+    return menu_build_rating(dir, 0, m, err);
+}
+
+/* ======================================================================
+ * READING THE FILES.
+ *
+ * be16 and le16 are the file formats' byte order, not the game's: the
+ * original reads these words inline where it needs them and has no routine
+ * to transcribe. ground_load is the port's struct over GROUNDxO.DAT, and the
+ * original does not parse that file at all - image 0x01A0B names it, 0x01A18
+ * loads all 4,096 bytes raw to ds:0x1B4B, and image 0x037D1 indexes the
+ * bytes where they lie with `mul 0x1C` and `lea si,[0x1b4b]`.
+ * ====================================================================== */
+/*
+ * Not transcribed: a big-endian word, an idiom rather than a routine.
+ *
+ * The port's own: the original reads these words inline, with no routine to
+ * point at.
+ */
+uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
+
+/*
+ * Not transcribed: a little-endian word, an idiom rather than a routine.
+ *
+ * The port's own: as be16 above - an idiom, not a routine.
+ */
+uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+
+/* NOT TRANSCRIBED - GROUNDxO.DAT, from the published description, checked
+ * against the files. Where the original parses it is not established.
+ *
+ * The port's own, and there is nothing to transcribe: THE ORIGINAL NEVER
+ * PARSES THIS FILE. It loads all 4,096 bytes raw to ds:0x1B4B (image 0x01A0B
+ * names it, 0x01A18 calls the loader at image 0x01916) and then indexes the
+ * bytes in place - image 0x037D1 does `mul 0x1C` on the object id and
+ * `lea si,[0x1b4b]`, reading the trigger box straight out of [si+0x0E] and
+ * [si+0x10]. This struct is a convenience the port chose; the file layout it
+ * fills in is the transcription, and that is in the field comments.
+ */
+int ground_load(const char *path, ground *g, const char **err)
+{
+    uint8_t buf[GROUND_SIZE];
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { if (err) *err = "cannot open ground file"; return -1; }
+    size_t got = fread(buf, 1, sizeof(buf), f);
+    fclose(f);
+    if (got != sizeof(buf)) {
+        if (err) *err = "ground file is not 1056 bytes";
+        return -1;
+    }
+    memset(g, 0, sizeof(*g));
+
+    /* 16 object entries of 28 bytes, from 0x000. */
+    for (uint8_t i = 0; i < GROUND_OBJECTS; i++) {
+        const uint8_t *e = buf + i * 28;
+        ground_object *o = &g->objects[i];
+        o->animation_flags = le16(e + 0x00);
+        o->start_frame     = e[0x02];
+        o->end_frame       = e[0x03];
+        o->width           = e[0x04];
+        o->height          = e[0x05];
+        o->frame_data_size = le16(e + 0x06);
+        o->mask_offset     = le16(e + 0x08);
+        o->trigger_effect  = e[0x14];
+        o->frames_base_loc = le16(e + 0x15);
+        o->preview_frame   = e[0x17];
+    }
+
+    /* 64 terrain entries of 8 bytes, from 0x1C0. */
+    for (uint8_t i = 0; i < GROUND_TERRAIN; i++) {
+        const uint8_t *e = buf + 0x1C0 + i * 8;
+        ground_terrain *t = &g->terrain[i];
+        t->width     = e[0x00];
+        t->height    = e[0x01];
+        t->image_loc = le16(e + 0x02);
+        t->mask_loc  = le16(e + 0x04);
+    }
+
+    /* Palettes from 0x3C0: three EGA sets of 8 bytes, then three VGA sets of
+     * 8 entries x 3 bytes. Terrain only ever uses the upper eight colours,
+     * which is why its fourth bitplane doubles as the mask.
+     *
+     * The upper eight come from this set's `custom` array. The LOWER eight do
+     * NOT come from the file's `standard` array, whatever the published
+     * description implies - the game carries them itself. Measured against the
+     * original running under an emulator, fourteen of sixteen entries agreed
+     * and the two that did not were both here:
+     *
+     *   entry 4  the file holds 3C 3C 00; the game uses 2C 2C 00 - a darker
+     *            yellow. Six of the other seven file entries match the game
+     *            exactly, which is what makes this easy to miss.
+     *   entry 7  is not fixed at all. It is a copy of custom[0], so it equals
+     *            entry 8. The published note does say "entry 7 is variable";
+     *            it does not say the rest are unreliable.
+     *
+     * So the fixed eight are transcribed here as 6-bit DAC values, taken from
+     * what the original actually programs. */
+    static const uint8_t FIXED[7][3] = {
+        { 0x00, 0x00, 0x00 },   /* 0 transparent / background */
+        { 0x10, 0x10, 0x38 },   /* 1 blue    - lemming bodies */
+        { 0x00, 0x2C, 0x00 },   /* 2 green   - lemming hair   */
+        { 0x3C, 0x34, 0x34 },   /* 3 white   - skin           */
+        { 0x2C, 0x2C, 0x00 },   /* 4 dark yellow              */
+        { 0x3C, 0x08, 0x08 },   /* 5 red                      */
+        { 0x20, 0x20, 0x20 },   /* 6 grey                     */
+    };
+    const uint8_t *vga_custom  = buf + 0x3D8;
+    /* 0x3D8 custom, 0x3F0 standard, 0x408 preview - eight triples each. */
+    const uint8_t *vga_preview = buf + 0x408;
+    for (uint8_t i = 0; i < 8; i++) {
+        g->preview[i].r = widen6(vga_preview[i * 3 + 0]);
+        g->preview[i].g = widen6(vga_preview[i * 3 + 1]);
+        g->preview[i].b = widen6(vga_preview[i * 3 + 2]);
+    }
+
+    for (uint8_t i = 0; i < 7; i++) {
+        g->palette[i].r = widen6(FIXED[i][0]);
+        g->palette[i].g = widen6(FIXED[i][1]);
+        g->palette[i].b = widen6(FIXED[i][2]);
+    }
+    for (uint8_t i = 0; i < 8; i++) {
+        lem_rgb c = { widen6(vga_custom[i * 3 + 0]),
+                      widen6(vga_custom[i * 3 + 1]),
+                      widen6(vga_custom[i * 3 + 2]) };
+        g->palette[8 + i] = c;
+    }
+    g->palette[7] = g->palette[8];      /* entry 7 tracks custom[0] */
     return 0;
 }

@@ -205,13 +205,6 @@ int dat_decompress(const uint8_t *comp, uint32_t comp_len,
     return 0;
 }
 
-/*
- * Not transcribed: a big-endian word, an idiom rather than a routine.
- *
- * The port's own: the original reads these words inline, with no routine to
- * point at.
- */
-static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
 
 /* NOT TRANSCRIBED. The original streams sections through a read routine
  * (image 0x01D2E) into one buffer as it goes; this reads the whole file and
@@ -438,117 +431,8 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
  * Where this lives in the original is not established.
  * ====================================================================== */
 
-#define GROUND_SIZE 1056
 
-/*
- * Not transcribed: a little-endian word, an idiom rather than a routine.
- *
- * The port's own: as be16 above - an idiom, not a routine.
- */
-static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
-/* NOT TRANSCRIBED - GROUNDxO.DAT, from the published description, checked
- * against the files. Where the original parses it is not established.
- *
- * The port's own, and there is nothing to transcribe: THE ORIGINAL NEVER
- * PARSES THIS FILE. It loads all 4,096 bytes raw to ds:0x1B4B (image 0x01A0B
- * names it, 0x01A18 calls the loader at image 0x01916) and then indexes the
- * bytes in place - image 0x037D1 does `mul 0x1C` on the object id and
- * `lea si,[0x1b4b]`, reading the trigger box straight out of [si+0x0E] and
- * [si+0x10]. This struct is a convenience the port chose; the file layout it
- * fills in is the transcription, and that is in the field comments.
- */
-int ground_load(const char *path, ground *g, const char **err)
-{
-    uint8_t buf[GROUND_SIZE];
-
-    FILE *f = fopen(path, "rb");
-    if (!f) { if (err) *err = "cannot open ground file"; return -1; }
-    size_t got = fread(buf, 1, sizeof(buf), f);
-    fclose(f);
-    if (got != sizeof(buf)) {
-        if (err) *err = "ground file is not 1056 bytes";
-        return -1;
-    }
-    memset(g, 0, sizeof(*g));
-
-    /* 16 object entries of 28 bytes, from 0x000. */
-    for (uint8_t i = 0; i < GROUND_OBJECTS; i++) {
-        const uint8_t *e = buf + i * 28;
-        ground_object *o = &g->objects[i];
-        o->animation_flags = le16(e + 0x00);
-        o->start_frame     = e[0x02];
-        o->end_frame       = e[0x03];
-        o->width           = e[0x04];
-        o->height          = e[0x05];
-        o->frame_data_size = le16(e + 0x06);
-        o->mask_offset     = le16(e + 0x08);
-        o->trigger_effect  = e[0x14];
-        o->frames_base_loc = le16(e + 0x15);
-        o->preview_frame   = e[0x17];
-    }
-
-    /* 64 terrain entries of 8 bytes, from 0x1C0. */
-    for (uint8_t i = 0; i < GROUND_TERRAIN; i++) {
-        const uint8_t *e = buf + 0x1C0 + i * 8;
-        ground_terrain *t = &g->terrain[i];
-        t->width     = e[0x00];
-        t->height    = e[0x01];
-        t->image_loc = le16(e + 0x02);
-        t->mask_loc  = le16(e + 0x04);
-    }
-
-    /* Palettes from 0x3C0: three EGA sets of 8 bytes, then three VGA sets of
-     * 8 entries x 3 bytes. Terrain only ever uses the upper eight colours,
-     * which is why its fourth bitplane doubles as the mask.
-     *
-     * The upper eight come from this set's `custom` array. The LOWER eight do
-     * NOT come from the file's `standard` array, whatever the published
-     * description implies - the game carries them itself. Measured against the
-     * original running under an emulator, fourteen of sixteen entries agreed
-     * and the two that did not were both here:
-     *
-     *   entry 4  the file holds 3C 3C 00; the game uses 2C 2C 00 - a darker
-     *            yellow. Six of the other seven file entries match the game
-     *            exactly, which is what makes this easy to miss.
-     *   entry 7  is not fixed at all. It is a copy of custom[0], so it equals
-     *            entry 8. The published note does say "entry 7 is variable";
-     *            it does not say the rest are unreliable.
-     *
-     * So the fixed eight are transcribed here as 6-bit DAC values, taken from
-     * what the original actually programs. */
-    static const uint8_t FIXED[7][3] = {
-        { 0x00, 0x00, 0x00 },   /* 0 transparent / background */
-        { 0x10, 0x10, 0x38 },   /* 1 blue    - lemming bodies */
-        { 0x00, 0x2C, 0x00 },   /* 2 green   - lemming hair   */
-        { 0x3C, 0x34, 0x34 },   /* 3 white   - skin           */
-        { 0x2C, 0x2C, 0x00 },   /* 4 dark yellow              */
-        { 0x3C, 0x08, 0x08 },   /* 5 red                      */
-        { 0x20, 0x20, 0x20 },   /* 6 grey                     */
-    };
-    const uint8_t *vga_custom  = buf + 0x3D8;
-    /* 0x3D8 custom, 0x3F0 standard, 0x408 preview - eight triples each. */
-    const uint8_t *vga_preview = buf + 0x408;
-    for (uint8_t i = 0; i < 8; i++) {
-        g->preview[i].r = widen6(vga_preview[i * 3 + 0]);
-        g->preview[i].g = widen6(vga_preview[i * 3 + 1]);
-        g->preview[i].b = widen6(vga_preview[i * 3 + 2]);
-    }
-
-    for (uint8_t i = 0; i < 7; i++) {
-        g->palette[i].r = widen6(FIXED[i][0]);
-        g->palette[i].g = widen6(FIXED[i][1]);
-        g->palette[i].b = widen6(FIXED[i][2]);
-    }
-    for (uint8_t i = 0; i < 8; i++) {
-        lem_rgb c = { widen6(vga_custom[i * 3 + 0]),
-                      widen6(vga_custom[i * 3 + 1]),
-                      widen6(vga_custom[i * 3 + 2]) };
-        g->palette[8 + i] = c;
-    }
-    g->palette[7] = g->palette[8];      /* entry 7 tracks custom[0] */
-    return 0;
-}
 
 /* ======================================================================
  * NOT TRANSCRIBED - VGAGRx.DAT, from the published description.
@@ -918,21 +802,7 @@ static const struct { uint8_t first, count; uint16_t x, y; } SIGN_ROW[2] = {
 };
 #define SIGN_STRIDE_X 0x80          /* image 0x04F68: add ax, 0x80 */
 
-/* The port's own. The original has no such query - the loop knows where it
- * is. This exists for menu_hotspots, which needs the boxes after the fact. */
-static uint16_t sign_x(uint8_t i)
-{
-    const uint8_t r = (i < SIGN_ROW[0].count) ? 0 : 1;
-    return (uint16_t)(SIGN_ROW[r].x
-                      + (i - SIGN_ROW[r].first) * SIGN_STRIDE_X);
-}
 
-/* The port's own, as sign_x above: the original never asks where plate i is,
- * it just draws them in order. */
-static uint16_t sign_y(uint8_t i)
-{
-    return (i < SIGN_ROW[0].count) ? SIGN_ROW[0].y : SIGN_ROW[1].y;
-}
 
 /* The menu palette, transcribed from image 0x0E3C0 - sixteen 6-bit RGB
  * triples, in attribute-register order. It is a table in the executable, not
@@ -1182,9 +1052,7 @@ static void draw_char(uint8_t *dst, const uint8_t *font, uint32_t font_len,
     }
 }
 
-/* The port's own.
- *
- * Transcribed from image 0x04D4D. The x and y come from the string's own
+/* Transcribed from image 0x04D4D. The x and y come from the string's own
  * three-byte header there - cl = x in 16-pixel cells with one added, ch = y in
  * cells - which is why this takes cells rather than pixels and no longer
  * centres anything.
@@ -1228,10 +1096,10 @@ static const char S_INPUT_3[]     = "3. Keyboard";         /* image 0x0E8F1 */
 #define INPUT_OPT_Y    128
 #define INPUT_OPT_STEP  32
 
-/* Shared by all three screens: load main.dat, tile the background, and hand
- * back the section pointers the caller still needs.
- *
- * The port's own: composition scaffolding. The original draws these screens
+/*
+ * NOT TRANSCRIBED. The original does set these screens up - image 0x04967
+ * and 0x04A01 both open with 0x04DEF, 0x04BF5, 0x0531E and 0x05017 - and
+ * none of those four has been read.
  * in place and has no equivalent shared entry.
  */
 static int screen_start(const char *dir, menu_screen *m, dat_file *d,
@@ -1450,10 +1318,10 @@ static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
 #define BR_CONT_X      80
 #define BR_CONT_Y     304
 
-/* Write `n` right-aligned so that it ENDS at `end` in `dst`. The original
- * leaves exactly the right run of spaces for this in every template.
- *
- * The port's own. The original writes digits into these templates too, but
+/*
+ * NOT TRANSCRIBED. The original writes digits into these templates too;
+ * digits3 at image 0x04BC2 is one instance, and the routine filling the
+ * briefing's own runs has not been read.
  * through its own arithmetic - see digits3 at image 0x04BC2 for one.
  */
 static void put_num(char *dst, size_t end, uint32_t n)
@@ -1560,7 +1428,9 @@ static void draw_preview(const char *dir, const level *lv, const ground *g,
 }
 
 /*
- * The port's own composition. The original reaches this screen from image
+ * NOT TRANSCRIBED. The original reaches this screen from image 0x0454C and
+ * draws it in place. Its pieces are transcribed and carry their addresses;
+ * 0x0454C has not been read.
  * 0x0454C and draws it in place; the pieces are transcribed individually and
  * this assembly is not.
  */
@@ -1879,18 +1749,6 @@ void menu_anim_step(void)
     }
 }
 
-/*
- * The port's own: an accessor so the counter logic can be tested without a
- * window. No capture of the original shows a walk-on lemming.
- */
-uint8_t menu_anim_visible(void)
-{
-    if (!anim_started) menu_anim_reset();
-    uint8_t n = 0;
-    for (uint8_t i = 0; i < ANIM_N; i++)
-        if (anim_ctr[i] != ANIM_IDLE && anim_ctr[i] < 0) n++;
-    return n;
-}
 
 /* Draw whichever of them are on screen this pass. Keyed on 0, like the rest
  * of this screen: the sprites set plane 3 wherever they have ink, so their
@@ -1993,19 +1851,11 @@ static const char SCROLL_TEXT[] =
  * drawing invents: two captures of the original taken seconds apart disagree
  * about it, and a fixed value is right only by luck. menu_set_scroll moves
  * it; the animation lives in whoever calls that. */
-static uint32_t menu_scroll;
+uint32_t menu_scroll;
 /* Which frame the two lemmings holding the banner are on. Separate from the
  * scroll because it is separate in the original - see draw_end_lemming. */
-static uint8_t  menu_lem_frame;
+uint8_t  menu_lem_frame;
 
-/*
- * The port's own accessors. The original keeps this in ds:0x21 and has no
- * function around it.
- */
-void menu_set_scroll(uint32_t pixels) { menu_scroll = pixels; }
-uint32_t menu_get_scroll(void)        { return menu_scroll; }
-void menu_set_lem_frame(uint8_t f)    { menu_lem_frame = f; }
-uint8_t menu_get_lem_frame(void)      { return menu_lem_frame; }
 
 /* How many 16-pixel columns the strip holds. Image 0x07CBC stamps 0x23 of
  * them at start-up and image 0x07D54 shifts 0x46 bytes a row, which is the
@@ -2023,7 +1873,9 @@ static uint8_t ribbon_pause[sizeof SCROLL_TEXT];  /* 0xFF came before this */
 static uint16_t ribbon_len;
 
 /*
- * The port's own restructuring of the stream image 0x07D33 walks one
+ * NOT TRANSCRIBED. Image 0x07D33 walks this stream one character at a time
+ * and never builds it. Same rules, computed once instead - a restructuring,
+ * so it is owed rather than claimed.
  * character at a time. Same rules, computed once.
  */
 static void ribbon_build(void)
@@ -2226,13 +2078,10 @@ static void draw_rating(uint8_t *dst, const uint8_t *font, uint8_t rating)
 }
 
 
-/* `rating` picks which of the four names goes on the plate: 0 Fun, 1 Tricky,
- * 2 Taxing, 3 Mayhem. ONLY RATING 0 IS VERIFIED - it is the one the original
- * shows on a fresh start, fitted at 100.00% over 1,760 ink pixels. The other
- * three are the next three blocks at the same stride, which is the obvious
- * reading and is not the same as a checked one.
- *
- * The port's own composition. Every piece it draws is transcribed and
+/*
+ * NOT TRANSCRIBED. Every piece it draws is transcribed and carries its
+ * address - 0x04EEF, 0x04F31, 0x04EC2 - but the routine that calls them in
+ * order has not been found, so the sequence here is measured.
  * carries its address; the order it draws them in is measured, not read.
  */
 int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
@@ -2382,7 +2231,42 @@ static const view_hotspot SIGN_SPOT[6] = {
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F4,   MENU_HELP      },
 };
 
-/* The port's own. The KEYS are the original's, read off the plates it draws
+/*
+ * Where plate i is, from the loop parameters at image 0x04F31 - four from
+ * (68,120) and two from (196,197), each stepping 0x80. The original never
+ * asks: its loop knows where it is. menu_hotspots needs it after the fact.
+ */
+static uint16_t sign_x(uint8_t i)
+{
+    const uint8_t r = (i < SIGN_ROW[0].count) ? 0 : 1;
+    return (uint16_t)(SIGN_ROW[r].x
+                      + (i - SIGN_ROW[r].first) * SIGN_STRIDE_X);
+}
+
+/*
+ * As sign_x, from the same loop at image 0x04F31.
+ */
+static uint16_t sign_y(uint8_t i)
+{
+    return (i < SIGN_ROW[0].count) ? SIGN_ROW[0].y : SIGN_ROW[1].y;
+}
+
+/*
+ * How many walk-on lemmings are on screen, read off the counters the table at
+ * image 0x0E3F0 drives. Exposed because no capture of the original shows one,
+ * so the logic at image 0x04F96 cannot be checked against pixels.
+ */
+uint8_t menu_anim_visible(void)
+{
+    if (!anim_started) menu_anim_reset();
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < ANIM_N; i++)
+        if (anim_ctr[i] != ANIM_IDLE && anim_ctr[i] < 0) n++;
+    return n;
+}
+
+/* Transcribed from image 0x0447B for the KEYS; the boxes are the port's,
+ * because the original ignores where a click lands. The keys are the plates' it draws
  * on its own screen - F1, F2, F3, ESC, F4 - so the mapping is evidence. What
  * each does beyond F1 and ESC is not reconstructed.
  *
@@ -2450,12 +2334,13 @@ void menu_hotspots(view_hotspot *spots)
  * the original does. */
 #define BANNER_PAUSE 100
 
-/*
- * The port's own. One pass of image 0x07D0D, but the RATE is the port's
- * choice - how often the original steps is inferred from its menu loop, not
- * measured.
- */
-static int banner_tick(void *ctx, uint8_t *pix)
+/* ONE PASS of the original's menu loop, image 0x07D0D: step the scroll four
+ * pixels, hold for a hundred passes on a 0xFF marker, advance the walk-on
+ * lemmings, and redraw the banner. The RATE is not transcribed - how often the
+ * original takes a pass is inferred from its loop waiting on the display once
+ * per pass - and neither is the loop itself, which is the port's and lives in
+ * sdl_io.c. This is the game's half of it. */
+int menu_frame_step(void *ctx, uint8_t *pix)
 {
     menu_screen *m = (menu_screen *)ctx;
     static uint16_t pause;
@@ -2475,26 +2360,3 @@ static int banner_tick(void *ctx, uint8_t *pix)
     return 1;
 }
 
-/*
- * The port's own: the original has no such loop, it dispatches from image
- * 0x0447B and never returns a value.
- */
-menu_action menu_run(menu_screen *m, uint8_t scale)
-{
-    view_hotspot spots[MENU_HOTSPOTS];
-    menu_hotspots(spots);
-    int32_t r = view_interact_anim(m->pix, MENU_W, MENU_H, m->palette,
-                                   "PC Lemmings", scale, spots,
-                                   MENU_HOTSPOTS, banner_tick, m);
-    if (r == VIEW_CLOSED) return MENU_EXIT;
-    return (menu_action)r;
-}
-
-/* The menu with the rating it starts on.
- *
- * The port's own.
- */
-int menu_build(const char *dir, menu_screen *m, const char **err)
-{
-    return menu_build_rating(dir, 0, m, err);
-}

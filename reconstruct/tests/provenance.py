@@ -101,7 +101,15 @@ def main():
                                        "return", "sizeof"):
                 continue
             ctx = block_above(lines, i)
-            if OWED.search(ctx):
+            # An explicit declaration BEATS an address in the prose. A note
+            # that says "the port's own: the original dispatches from image
+            # 0x0447B and never returns" is not a transcription of 0x0447B,
+            # and checking the address first counted several such as one.
+            if OWN.search(ctx):
+                own += 1
+                if show:
+                    print(f"  port's own   {f.name}:{i+1:5d}  {m.group(1)}")
+            elif OWED.search(ctx):
                 owed.append((f.name, i + 1, m.group(1)))
             elif ADDR.search(ctx):
                 trans += 1
@@ -109,10 +117,6 @@ def main():
                     a = ADDR.search(ctx).group(0)
                     print(f"  transcribed  {f.name}:{i+1:5d}  "
                           f"{m.group(1):26s} {a}")
-            elif OWN.search(ctx):
-                own += 1
-                if show:
-                    print(f"  port's own   {f.name}:{i+1:5d}  {m.group(1)}")
             else:
                 bare += 1
                 missing.append((f.name, i + 1, m.group(1)))

@@ -41,7 +41,7 @@ numbers, re-measured on the current build:
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 31 of
+**Transcription is a different claim from any of the above, and it is 30 of
 211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
@@ -642,6 +642,36 @@ Each of these is stated as what was *checked*, not what was written.
   wrong**, and no amount of further fitting was going to reach zero from 257.
   Reading the routine took less time than the fitting did.
 
+- **No function in `game.c` claims to be the port's own any more.** That
+  phrase inside the game's file was a contradiction, and it was hiding two
+  different things behind one label.
+
+  Moved to `sdl_io.c` — genuinely not the game: `menu_run` (the original has
+  no loop; image `0x0447B` reads a key, jumps, and never returns a value),
+  `menu_build`, the four scroll/frame accessors, `be16`, `le16`, `ground_load`
+  and `GROUND_SIZE`. What runs *inside* the loop stayed: `menu_frame_step` is
+  image `0x07D0D` and is the game's half of it.
+
+  Kept in `game.c` but reclassified as **owed**, because the original does have
+  a routine and nobody has read it: `screen_start` (the sub-screens both open
+  with `0x04DEF`, `0x04BF5`, `0x0531E`, `0x05017`), `put_num`,
+  `menu_briefing_screen` (reached from `0x0454C`), `ribbon_build`
+  (`0x07D33` walks the stream and never builds it), and `menu_build_rating`
+  (every piece it draws is transcribed; the routine that calls them in order is
+  not).
+
+  Two that looked like candidates to move stayed put: `sign_x`/`sign_y` and
+  `menu_anim_visible` read the game's own transcribed tables, and moving them
+  would have dragged `SIGN_ROW` and `anim_ctr` into the IO file — worse than
+  the label they had. They now cite the data they read instead.
+
+  **The count fell as a result, and that is the honest direction.** Three
+  separate faults in `provenance.py` had been inflating it: it could not see a
+  marker on a line that *opens* a comment block, it let an address mentioned in
+  prose outrank an explicit declaration, and two comments said both
+  "the port's own" and "Transcribed from…". Fixed, and the figures are
+  **30 transcribed, 35 the port's own, 9 owed, 0 unannotated**.
+
 - **The menu is composed by the original's own routines now, not by fitted
   geometry** — images `0x04EEF`, `0x04F31` and `0x04EC2`, all three found
   through the call graph rather than by looking at pixels.
@@ -1151,7 +1181,7 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 31 (`make test` enforces the count) |
+| routines transcribed | 30 (`make test` enforces the count) |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
