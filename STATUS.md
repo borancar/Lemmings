@@ -259,6 +259,33 @@ Each of these is stated as what was *checked*, not what was written.
   systematic error wearing the costume of noise. About 1,400 pixels spread
   thinly down one edge look like animation until they are counted by band.
 
+- **The menu's remaining difference is under the logo, and the logo itself is
+  exact.** Sweeping the logo's position at pixel granularity gives
+  **100.00% over its ink** at (8,10) — 7,006 sampled pixels, none differing —
+  so its data, its size and its placement are all confirmed and none of them is
+  the problem. Every remaining pixel in that band is a *transparent* one: the
+  original shows **black** and the port shows the background tile. 4,053 such
+  pixels in y 0..139, peaking around y 88..98.
+
+  Four compositing models were tested and none explains it:
+
+  | model | agreement over the logo's box |
+  | --- | --- |
+  | keyed on index 0 (what the port does) | 93.64% |
+  | opaque across each row's byte-columns | 93.93% |
+  | opaque across each row's ink span | 90.27% |
+  | fully opaque | 82.14% |
+
+  A black drop-shadow was tested too — the best offset explains 61% of the
+  suppressed pixels and sits at the edge of the search, so it is not that
+  either. The port keeps the keyed model, which is exact in the logo's upper
+  rows.
+
+  Worth noting what this rules out: it is not the logo's data, not its
+  position, not the background's tiling (confirmed `y % 104` at 100% on clean
+  rows), and not the palette. Something draws black there that has not been
+  found.
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~

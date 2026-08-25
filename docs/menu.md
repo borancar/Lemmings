@@ -49,9 +49,17 @@ full 640 costs about 1,400 pixels spread thinly down the right edge of every
 band, which reads as noise rather than as a bug. Clipping to 632 took the input
 chooser from 99.37% to **100.00%**.
 
-**The logo** is 632×94 at screen (8,10), stride 79, planes 7,426 apart. Index 0
-is transparent: drawn opaquely its own bounding box scores 35%, keyed it scores
-95%+, and the background texture is plainly visible between the letters.
+**The logo** is 632×94 at screen (8,10), stride 79, planes 7,426 apart. Its
+**ink is exact** — a pixel-granularity sweep of its position gives 100.00% over
+7,006 sampled ink pixels — so the size, the offsets and the placement are all
+confirmed.
+
+Its ink uses only values 8–15, never 1–7, so bit 3 is in effect its own mask.
+Index 0 is treated as transparent, which is exact in the logo's upper rows and
+**wrong somewhere below y≈55**: there the original shows black where the tile
+would show through. Four models were tried — keyed 93.64%, opaque per
+byte-column 93.93%, opaque per ink span 90.27%, fully opaque 82.14% — and none
+of them is it. See STATUS.md; this is open.
 
 **The plates** are 120×61, stride 15, planes 915 apart, at
 
