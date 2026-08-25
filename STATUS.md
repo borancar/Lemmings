@@ -243,6 +243,22 @@ Each of these is stated as what was *checked*, not what was written.
   byte alignment. A sweep whose step size matches the data's natural alignment
   will confidently find the wrong answer.
 
+- **The background is 632 pixels wide, not 640 — and finding that made a whole
+  screen exact.** The original leaves the last byte of each row black: no
+  non-black pixel anywhere beyond x=635, while the left edge draws normally.
+  The port was tiling the full 640.
+
+  | screen | before | after |
+  | --- | --- | --- |
+  | the **input chooser** | 99.37% | **100.00%** |
+  | the level-code screen | 98.82% | **99.45%** |
+  | the menu | 95.21% | **95.83%** |
+
+  It was found by *mapping* the residual rather than assuming it: every 16-row
+  band of the menu's differences had a few pixels at x 632–639, which is a
+  systematic error wearing the costume of noise. About 1,400 pixels spread
+  thinly down one edge look like animation until they are counted by band.
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~
@@ -372,7 +388,7 @@ Each of these is stated as what was *checked*, not what was written.
   x 100–600, the misses being the scrolling text passing through.
 
   With that, and with the FX plate's label (below), **the whole menu is
-  composed: 95.21% over all 224,000 pixels with nothing excluded**, up from
+  composed: 95.83% over all 224,000 pixels with nothing excluded**, up from
   91.28% and from a 95.26% that had the banner scored out. A better number over
   a bigger area.
 

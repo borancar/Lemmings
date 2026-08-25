@@ -38,9 +38,16 @@ All in `MAIN.DAT` section 3, which is 61,968 bytes and fully accounted for:
 **The background** is 320×104 and uses only four colours, so it has two planes
 and not four. That is measured, not assumed: assembling it from four
 consecutive 4,160-byte blocks scores 39% against the original's screen, and
-forcing planes 2 and 3 to zero scores 95.6%. It tiles from (0,0) — 640 is
-exactly two across, and the vertical repeat of 104 does not divide 350, so the
+forcing planes 2 and 3 to zero scores 95.6%. It tiles from (0,0), and the vertical repeat of 104 does not divide 350, so the
 bottom tile is cut off, which is what the original shows.
+
+**It is 632 pixels wide, not 640.** The original leaves the last byte of each
+row black — it has no non-black pixel anywhere beyond x=635, while the left
+edge is drawn normally — so the row is two tile blits of 40 and 39 bytes
+covering x 0..631, and the rest stays as the screen clear left it. Drawing the
+full 640 costs about 1,400 pixels spread thinly down the right edge of every
+band, which reads as noise rather than as a bug. Clipping to 632 took the input
+chooser from 99.37% to **100.00%**.
 
 **The logo** is 632×94 at screen (8,10), stride 79, planes 7,426 apart. Index 0
 is transparent: drawn opaquely its own bounding box scores 35%, keyed it scores

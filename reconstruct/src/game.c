@@ -878,6 +878,8 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define BG_H      104
 #define BG_STRIDE 40
 #define BG_PLANE0 0
+/* How much of each row the original actually fills: 79 bytes, not 80. */
+#define BG_DRAWN_W 632
 #define BG_PLANE1 4160
 
 /* The logo, at screen (8,10). 632 wide, so it ends exactly at x=639. */
@@ -1095,7 +1097,7 @@ static int screen_start(const char *dir, menu_screen *m, dat_file *d,
     }
     if (tile_background)
         for (uint16_t y = 0; y < MENU_H; y++)
-            for (uint16_t x = 0; x < MENU_W; x++)
+            for (uint16_t x = 0; x < BG_DRAWN_W; x++)
                 m->pix[(size_t)y * MENU_W + x] =
                     planar(*sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE,
                            2, x % BG_W, y % BG_H);
@@ -1426,11 +1428,16 @@ int menu_build(const char *dir, menu_screen *m, const char **err)
         m->palette[i].b = dac8(MENU_PAL6[i * 3 + 2]);
     }
 
-    /* The background, tiled from (0,0). 640 is exactly two tiles across; the
-     * vertical repeat at 104 does not divide 350, so the bottom tile is cut
-     * off mid-way, which is what the original shows too. */
+    /* The background, tiled from (0,0) - but only 632 pixels wide, NOT 640.
+     * The original leaves the last byte of each row black: it has no non-black
+     * pixel at all beyond x=635, while the left edge is drawn normally. Two
+     * tile blits of 40 and 39 bytes cover 0..631 and the rest stays as the
+     * screen clear left it.
+     *
+     * The vertical repeat of 104 does not divide 350, so the bottom tile is
+     * cut off mid-way, which is what the original shows too. */
     for (uint16_t y = 0; y < MENU_H; y++)
-        for (uint16_t x = 0; x < MENU_W; x++)
+        for (uint16_t x = 0; x < BG_DRAWN_W; x++)
             m->pix[(size_t)y * MENU_W + x] =
                 planar(sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE, 2,
                        x % BG_W, y % BG_H);
