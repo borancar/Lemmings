@@ -647,11 +647,11 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 7 |
+| routines transcribed | 8 |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
-| routines never reached | 204 of the 211 call targets |
+| routines never reached | 203 of the 211 call targets |
 
 | routine | what it is | how it is checked |
 | --- | --- | --- |
@@ -662,11 +662,26 @@ port:
 | `0x036B6` | LVL header parse | `tools/verify_level.py` — 15 fields, all agree |
 | `0x09347` | the sprite **pre-shift**: copy a row, append a zero byte, shift right N bits | `tools/verify_shift.py` — 200 calls, byte-identical, over shifts of 2, 6 and 7 |
 | `0x05B11` | the level's **sprite pre-builder**: all eight alignments at once, each with a per-column OR | `tools/verify_preshift.py` — 106 calls, byte-identical |
+| `0x04BC2` | **three-digit decimal**, used to build the `levelNNN.dat` filename | `tools/verify_digits.py` — the original's own code driven over **all 256 byte values**, all agree |
 
-Both verifiers work the same way, and it is the method's way rather than a
+These verifiers work the same way, and it is the method's way rather than a
 screenshot: stop the original, capture the inputs, let **its own body** run,
-compare its output against the port's C on that same call. Neither needs
+compare its output against the port's C on that same call. None of them needs
 determinism to mean anything.
+
+`0x04BC2` adds a variant worth reusing. The game calls it **once per level
+load**, so riding along with `play.py` yields exactly one sample — value 9,
+agreed, and thin. But the routine is **pure**: it reads `AL` and writes three
+bytes at `DS:SI`, touching nothing else. So the original's own code can be
+*driven* with inputs of our choosing — point `CS:IP` at `0x04BC2`, set `AL`,
+run to the `ret` at `0x04BE6`, read the three bytes back — which turns one
+sample into all 256. That is still the original's arithmetic answering, not a
+model of it.
+
+The check that this is not vacuous is in the tool's own history: swapping the
+tens and units digits in the port makes it report `DIFFER (1, b'001', b'011')`
+— the original's bytes on the left. A harness that had quietly failed to run
+the guest would have compared zeros against zeros and passed.
 
 One caveat on `0x05B11`, stated because the number looks stronger than it is:
 all 106 calls pass the **same shape**, 10 columns by 2 rows. That is not a
@@ -707,7 +722,7 @@ has nothing to seed with here.
    tables"; there are none, which the map establishes rather than assumes.
    What remains is reading the six register-indirect sites, the only dispatch
    static descent cannot follow.
-3. **Keep transcribing.** 211 call targets are enumerated, 5 are transcribed
+3. **Keep transcribing.** 211 call targets are enumerated, 8 are transcribed
    and verified. `tools/hotspots.py` ranks the rest by weight, which is how the
    decompressor was found: inside the windows following an INT 21h AH=3Fh read
    it is 83% of all instructions executed. `LEM_HOOK` lets a verifier ride

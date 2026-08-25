@@ -1022,6 +1022,30 @@ uint8_t shift_row(const uint8_t *src, uint8_t len, uint8_t bits, uint8_t *out)
     return (uint8_t)(len + 1);          /* 0x09380: inc cl */
 }
 
+/* image 0x04BC2 - write a byte as three decimal digits at DS:SI.
+ *
+ * This is what turns a level number into the digits of "level000.dat". The
+ * original has no divide here: it subtracts 100 until it borrows, counts the
+ * subtractions, and adds 0x2F rather than 0x30 because the counter starts one
+ * too high.
+ *
+ *   0x04bc4  inc ah
+ *   0x04bc6  sub al, 0x64
+ *   0x04bc8  jae 0x4bc4          ; again while that did not borrow
+ *   0x04bca  add al, 0x64        ; undo the one that did
+ *   0x04bcc  add ah, 0x2f        ; '0' - 1 + the count
+ *
+ * Written as division, which is what it means; the repeated subtraction is the
+ * 8086 not having a byte divide worth using, not a decision about behaviour.
+ * Three digits, no terminator - it overwrites digits already in a template.
+ */
+void digits3(uint8_t v, char *out)
+{
+    out[0] = (char)('0' + v / 100);
+    out[1] = (char)('0' + (v / 10) % 10);
+    out[2] = (char)('0' + v % 10);
+}
+
 /* image 0x05B11 - build the eight pre-shifted copies of a sprite.
  *
  * The game cannot blit at an arbitrary x, so for the level's sprites it builds
@@ -1338,7 +1362,11 @@ int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
     if (rating > 3 || number < 1 || number > 30) return -1;
     uint8_t n = LEVEL_ORDER[rating * 30 + (number - 1)];
     if (n == 0) return -1;
-    snprintf(file, file_len, "level%03u.dat", (unsigned)((n - 1) >> 4));
+    /* The original writes the digits into a template rather than formatting a
+     * name; digits3 is that routine, and using it here keeps the transcription
+     * on the path rather than beside it. */
+    snprintf(file, file_len, "level000.dat");
+    digits3((uint8_t)((n - 1) >> 4), file + 5);
     *section = (uint32_t)(((n - 1) >> 1) & 7);
     return 0;
 }
