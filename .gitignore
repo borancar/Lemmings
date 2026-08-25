@@ -5,4 +5,5 @@ out/
 captures/
 build/
 *.png
+!docs/reference/*.png
 !reconstruct/docs/*.png

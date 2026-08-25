@@ -24,6 +24,7 @@ seq_index = [0]
 gc_writes = defaultdict(Counter)
 seq_writes = defaultdict(Counter)
 other_out = Counter()
+out_pcs = Counter()
 a000_writes = Counter()
 a000_lo = [0xFFFFF]
 a000_hi = [0]
@@ -46,6 +47,9 @@ class Probe(lemmings.LemmingsVga):
             seq_writes[seq_index[0]][value & 0xFF] += 1
         else:
             other_out[port] += 1
+            pc = (uc.reg_read(UC_X86_REG_CS) * 16
+                  + uc.reg_read(UC_X86_REG_IP))
+            out_pcs[pc - (self.load_seg * 16)] += 1
         return super()._on_out(uc, port, size, value, user)
 
 
@@ -100,7 +104,10 @@ print("\nSequencer (0x3C4/0x3C5):")
 for idx in sorted(seq_writes):
     vals = ", ".join(f"{v:#04x}x{c}" for v, c in seq_writes[idx].most_common(6))
     print(f"  idx {idx:#04x} {SEQ.get(idx,'?'):<22} <- {vals}")
-print("\nother OUT ports:", {hex(p): c for p, c in other_out.most_common(12)})
+print("\nother OUT ports:", {hex(p): c for p, c in other_out.most_common(8)})
+print("where those OUTs come from (image offset -> count):")
+for off, c in out_pcs.most_common(6):
+    print(f"  img {off:#07x}  {c}")
 print(f"\nA000 writes: {dict(a000_writes)}  range "
       f"{a000_lo[0]:#07x}..{a000_hi[0]:#07x}")
 print("top writers (image offset -> count):")
