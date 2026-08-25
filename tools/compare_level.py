@@ -10,7 +10,7 @@ reading of a document against another. This compares two programs' pixels.
       --dump-screen out/screen.bin -- --run-seconds 210 --shots 1
 
   # render the same level with the port, as raw palette indices
-  reconstruct/lemmings --data lemming1.pc --raw out/level.raw
+  reconstruct/lemdev --data lemming1.pc --raw out/level.raw
 
   uv run python tools/compare_level.py out/screen.bin out/level.raw \
       --report out/compare.png

@@ -2,3 +2,4 @@ tests/screens
 tests/screens_asan
 tests/menu_input
 tests/menu_input_asan
+lemdev

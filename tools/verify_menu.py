@@ -178,7 +178,7 @@ def main():
     port_raw = os.path.join(ROOT, "out", "menu_port.raw")
     subprocess.run(["make", "-C", os.path.join(ROOT, "reconstruct")],
                    check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([os.path.join(ROOT, "reconstruct", "lemmings"),
+    subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
                     "--data", os.path.join(ROOT, a.data),
                     "--screen", a.screen, "--rating",
                     ("fun", "tricky", "taxing", "mayhem")[shown],

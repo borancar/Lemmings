@@ -61,8 +61,8 @@ echo "== rendering the same level with the port =="
 make -C reconstruct >/dev/null
 # --no-objects because the original composes terrain only: it draws the
 # entrance and exit as animated sprites at display time, never baking them in.
-reconstruct/lemmings --data lemming1.pc --no-objects \
-    --out /dev/null --raw "$OUT/port.raw" | sed 's/^/   /'
+reconstruct/lemdev --data lemming1.pc --no-objects \
+    --raw "$OUT/port.raw" | sed 's/^/   /'
 
 echo "== comparing =="
 uv run python tools/compare_composed.py "$OUT/composed.bin" "$OUT/port.raw"

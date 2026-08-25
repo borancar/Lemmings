@@ -52,7 +52,7 @@ def main():
         os.unlink(raw)                      # never read yesterday's
     subprocess.run(["make", "-C", os.path.join(ROOT, "reconstruct")],
                    check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([os.path.join(ROOT, "reconstruct", "lemmings"),
+    subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
                     "--data", os.path.join(ROOT, a.data),
                     "--screen", a.screen, "--raw", raw],
                    check=True, stdout=subprocess.DEVNULL)

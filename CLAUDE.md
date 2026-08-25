@@ -38,7 +38,8 @@ The reconstruction runs on its own, and opens on the main menu:
 
 ```sh
 make -C reconstruct
-./reconstruct/lemmings --data lemming1.pc            # --scale 2 to enlarge
+./reconstruct/lemmings                    # the game; a data dir may follow
+./reconstruct/lemdev --screen menu --raw out/menu.raw   # the harness
 ```
 
 Its keys are the original's, read off the plates it draws: F1 play (briefing,
@@ -303,6 +304,18 @@ the reference moved, not the port.
   `reconstruct/tests/provenance.py` counts what is transcribed, what is ours,
   and what is **owed** - game logic the original has a routine for that nobody
   has read - and `make test` fails while any function says none of the three.
+- **`main.c` is the game's entry point and nothing else; `devmain.c` is the
+  harness.** The original has no command line - it starts, shows its menu, and
+  plays - so `main.c` mirrors that, and every developer flag lives in
+  `devmain.c` and links into a second binary, `lemdev`. `tools/` calls
+  `lemdev`. This drifts back on its own, because a new flag is easiest to add
+  where the parsing already is; it had produced a four-hundred-line `main.c`
+  whose actual start-up was a dozen lines lost among the options.
+- **No file writer in the game path.** There was a `--out` that wrote a BMP and
+  nothing wanted one: a BMP throws away the palette *index* a pixel had, which
+  is what a comparison against the original's video memory needs. `--raw`
+  carries indices; pictures are `tools/diff_png.py`'s job. `prove.sh` had been
+  passing `--out /dev/null` for a very long time.
 - **The port's `.c` files mirror the original's translation units**, not our
   own idea of modules. Compilers of the period emitted one object per source
   file and the linker laid each module into the segment whole and in link

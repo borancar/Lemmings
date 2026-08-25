@@ -362,6 +362,14 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
               const lem_rgb *palette, const char *title,
               uint16_t start_x, uint8_t scale);
 
+/* Load one level out of `file` and show it, and show its briefing first.
+ * THE PORT'S OWN, both of them - they exist so main.c can be the game's flow
+ * and nothing else. In sdl_io.c. */
+int level_show_briefing(const char *dir, const char *file, uint32_t which,
+                        uint8_t rating, uint16_t number, const char **err);
+int level_show(const char *dir, const char *file, uint32_t which,
+               level *lv, const char **err);
+
 /* The level, in the original's own 320x160 viewport. */
 int view_run(const canvas *c, const lem_rgb *palette, const char *title,
              uint16_t start_x, uint8_t scale);

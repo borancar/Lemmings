@@ -715,3 +715,79 @@ int ground_load(const char *path, ground *g, const char **err)
     g->palette[7] = g->palette[8];      /* entry 7 tracks custom[0] */
     return 0;
 }
+
+/* ======================================================================
+ * SHOWING A LEVEL.
+ *
+ * The port's own: loading a container, composing the terrain and putting it
+ * in a window is a sequence the original has no single routine for - it
+ * streams the level in as it goes. These exist so main.c can be the game's
+ * flow and nothing else, and so devmain.c does not have to be the only place
+ * that knows how to open a level.
+ * ====================================================================== */
+
+int level_show_briefing(const char *dir, const char *file, uint32_t which,
+                        uint8_t rating, uint16_t number, const char **err)
+{
+    char path[1024];
+    dat_file levels;
+    level lv;
+    snprintf(path, sizeof(path), "%s/%s", dir, file);
+    if (dat_load(path, &levels, err) != 0) return -1;
+    if (which < 1 || which > levels.count) {
+        dat_free(&levels);
+        if (err) *err = "no such level in that container";
+        return -1;
+    }
+    int rc = level_parse(levels.sections[which - 1].data,
+                         levels.sections[which - 1].size, &lv, err);
+    dat_free(&levels);
+    if (rc != 0) return -1;
+    lv.level_number = number;
+
+    menu_screen br;
+    if (menu_briefing_screen(dir, &lv, rating, &br, err) != 0) return -1;
+    menu_show_until_dismissed(&br, "PC Lemmings", 1);
+    menu_free(&br);
+    return 0;
+}
+
+int level_show(const char *dir, const char *file, uint32_t which,
+               level *lv, const char **err)
+{
+    char path[1024];
+    dat_file levels, gfx;
+    ground g;
+    snprintf(path, sizeof(path), "%s/%s", dir, file);
+    if (dat_load(path, &levels, err) != 0) return -1;
+    if (which < 1 || which > levels.count) {
+        dat_free(&levels);
+        if (err) *err = "no such level in that container";
+        return -1;
+    }
+    int rc = level_parse(levels.sections[which - 1].data,
+                         levels.sections[which - 1].size, lv, err);
+    dat_free(&levels);
+    if (rc != 0) return -1;
+
+    snprintf(path, sizeof(path), "%s/ground%uo.dat", dir, lv->graphics_set);
+    if (ground_load(path, &g, err) != 0) return -1;
+    snprintf(path, sizeof(path), "%s/vgagr%u.dat", dir, lv->graphics_set);
+    if (dat_load(path, &gfx, err) != 0) return -1;
+    if (gfx.count < 1) { dat_free(&gfx); if (err) *err = "no terrain section";
+                         return -1; }
+
+    canvas c;
+    if (canvas_init(&c) != 0) { dat_free(&gfx); if (err) *err = "out of memory";
+                                return -1; }
+    /* Terrain only. The original never bakes the objects in - it animates them
+     * at display time, images 0x07BB8 and 0x07C0A - which is why tools
+     * /prove.sh composes terrain alone and matches to the pixel. */
+    rc = render_terrain(&c, lv, &g, gfx.sections[0].data,
+                        gfx.sections[0].size, err);
+    if (rc == 0)
+        view_run(&c, g.palette, "PC Lemmings", lv->start_x, 1);
+    canvas_free(&c);
+    dat_free(&gfx);
+    return rc;
+}

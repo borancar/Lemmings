@@ -17,14 +17,21 @@ endif
 CFLAGS  += $(SDL_CFLAGS)
 LDFLAGS += $(SDL_LIBS)
 
-SRC := src/game.c src/sdl_io.c src/main.c
-OBJ := $(SRC:.c=.o)
-BIN := lemmings
+# Two binaries, and the split is the point. `lemmings` is the game: main.c
+# mirrors the original, which has no command line. `lemdev` is the developer
+# harness - one screen to a file, a forced rating or scroll - and none of it
+# corresponds to anything in vgalemmi.exe.
+CORE := src/game.c src/sdl_io.c
+BIN     := lemmings
+DEV_BIN := lemdev
 
-all: $(BIN)
+all: $(BIN) $(DEV_BIN)
 
-$(BIN): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
+$(BIN): $(CORE:.c=.o) src/main.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(DEV_BIN): $(CORE:.c=.o) src/devmain.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -69,6 +76,7 @@ sanitize:
 	    ./tests/screens_asan $(DATA)
 
 clean:
-	rm -f $(OBJ) $(BIN) $(TEST_BIN) $(SCREEN_BIN) tests/screens_asan
+	rm -f src/*.o $(BIN) $(DEV_BIN) $(TEST_BIN) $(SCREEN_BIN) \
+	      tests/screens_asan tests/menu_input_asan
 
 .PHONY: all clean test sanitize
