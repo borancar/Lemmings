@@ -691,7 +691,7 @@ Each of these is stated as what was *checked*, not what was written.
   | | |
   | --- | --- |
   | play area, rows 0..159 | **99.95%** — 28 of 51,200 differ |
-  | the 28 | one 14×14 box at screen (135..148, 85..98) — a lemming, which the port does not draw |
+  | the 28 | **all of them the mouse cursor** — see below |
   | panel, rows 176..199 | 4,361 pixels of ink in the original; the port draws **none** of it |
 
   Two things fell out of getting there.
@@ -704,10 +704,26 @@ Each of these is stated as what was *checked*, not what was written.
   **The level opens scrolled to `start_x`.** The fit lands on 624 and the
   level's own header says `start x 624`.
 
+  **Correction: the 28 are the mouse cursor, and the play area is otherwise
+  exact.** They were written up here as "a lemming, which the port does not
+  draw" - a guess from a bounding box. Drawn as a shape they are a perfect
+  14x14 dithered cross-hair:
+
+      ......##......        an arm every other row,
+      ......##......        two solid rows across the middle,
+      #.#.#.##.#.#.#        the horizontal arm dithered
+      #.#.#.##.#.#.#        every other pixel
+      ......##......
+
+  which is the game's own pointer. It lands wherever the mouse is - the
+  emulator is driven by clicks - so it says nothing about the reconstruction.
+  `compare_frame.py` matches the shape and reports it as the cursor rather
+  than as a difference.
+
   Drawing the objects makes it **worse** — 585 to 843 against 28 — so at this
-  moment the original is not showing them where the port bakes them in. That
-  is consistent with them being animated at display time and is not yet
-  understood; it is recorded rather than papered over.
+  moment the original is not showing them where the port bakes them in. That is
+  consistent with the level having only just started: no lemmings have been
+  released, and the entrance has not been drawn either.
 
 - **The DAC reads all black in every mode 0x0D capture taken so far.** Two
   captures sixteen seconds apart are both entirely black, 0 of 256 entries, so

@@ -49,6 +49,31 @@ def read_raw(path):
     return w, h, b[10 + 48:]
 
 
+# The game draws a 14x14 dithered cross-hair for the mouse, and it lands
+# wherever the pointer happens to be - so it pollutes every frame comparison
+# with a cursor-shaped blob that has nothing to do with the reconstruction.
+# Its rows are: an arm every other row, and two solid rows across the middle
+# with the horizontal arm dithered every other pixel.
+CURSOR = [
+    "......##......", "..............", "......##......", "..............",
+    "......##......", "..............", "#.#.#.##.#.#.#", "#.#.#.##.#.#.#",
+    "..............", "......##......", "..............", "......##......",
+    "..............", "......##......",
+]
+
+
+def cursor_at(bad):
+    """If `bad` is exactly the cursor, where its top-left is; else None."""
+    if not bad:
+        return None
+    x0 = min(p[0] for p in bad)
+    y0 = min(p[1] for p in bad)
+    want = {(x0 + c, y0 + r)
+            for r, row in enumerate(CURSOR)
+            for c, ch in enumerate(row) if ch == "#"}
+    return (x0, y0) if want == set(bad) else None
+
+
 def play_diff(cap, cw, lev, lw, lh, scroll):
     bad = []
     for y in range(min(PLAY_H, lh)):
@@ -108,7 +133,14 @@ def main():
     tot = cw * PLAY_H
     print(f"  play area, rows 0..{PLAY_H-1} : "
           f"{100*(1-len(bad)/tot):.2f}%  ({len(bad)} of {tot} differ)")
-    if bad:
+    cur = cursor_at(bad)
+    if cur:
+        print(f"    ALL of them are the MOUSE CURSOR - the game's own 14x14"
+              f" dithered\n    cross-hair, here with its top-left at {cur}."
+              f" It lands wherever the\n    pointer is, so it says nothing"
+              f" about the reconstruction. Everything\n    else in the play"
+              f" area matches exactly.")
+    elif bad:
         xs = [p[0] for p in bad]
         ys = [p[1] for p in bad]
         print(f"    differing box x {min(xs)}..{max(xs)}  y {min(ys)}..{max(ys)}")
