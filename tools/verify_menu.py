@@ -65,21 +65,86 @@ def read_raw(path):
     return w, h, blob[10:10 + 48], blob[10 + 48:]
 
 
-def capture(path, seconds, delay):
-    if os.path.exists(path):
-        os.unlink(path)
-    cmd = [sys.executable, os.path.join(HERE, "play.py"), "--auto",
-           "--dump-vga", "--dump-when", "0x10",
-           "--dump-delay", str(delay),
-           "--cmd", f"screen {os.path.abspath(path)}",
-           "--", "--run-seconds", str(seconds)]
-    print("driving the original to its main menu ...")
-    subprocess.run(cmd, cwd=ROOT, stdout=subprocess.DEVNULL)
-    if not os.path.exists(path):
-        raise SystemExit(
-            "the run produced no capture - it never reached mode 10h.\n"
-            "That is a failure, not a pass.")
-    return path
+RATING_VAR = 0x0B9FE      # image address of ds:0x1F6E, the current rating
+
+
+def capture(path, seconds, delay, rating=0, tries=3):
+    """Drive the original to its menu at `rating`, retrying dropped presses.
+
+    Returns the rating it ACTUALLY reached, which is not always the one asked
+    for.
+
+    Up is the original's own key for the rating - scancode 0x48, translated to
+    0x8a through the table at ds:0x202E and dispatched at image 0x0447B - and
+    it caps at 3, so pressing it too often is harmless. But a press can be
+    dropped: the game reads a key-state array its own INT 9 fills, and a press
+    that lands between two of its samples is simply not seen.
+
+    That is not hypothetical. An earlier version pressed Up n times and
+    believed it. Its rating-2 and rating-3 captures BOTH showed Tricky - one
+    press each - and the port was then scored against the wrong screen, which
+    read as the port drawing Taxing and Mayhem badly (99.10%, 98.71%) when it
+    was drawing them correctly against a screen that was not showing them.
+
+    So the run reads ds:0x1F6E back and the caller renders THAT rating. A
+    dropped press then costs coverage, which is visible, instead of producing
+    a confident wrong number.
+    """
+    last = rating
+    for attempt in range(tries):
+        if os.path.exists(path):
+            os.unlink(path)
+        cmd = [sys.executable, os.path.join(HERE, "play.py"), "--auto",
+               "--dump-vga", "--dump-when", "0x10",
+               "--dump-delay", str(delay)]
+        # A LONG hold, not extra presses. Overshooting works only for Mayhem,
+        # where the cap absorbs it; for Tricky or Taxing a spare press lands one
+        # rating too high and the run is wasted. Holding the key across many
+        # frames instead makes it far harder for the game's sampling to miss.
+        for _ in range(rating):
+            cmd += ["--cmd", "key up 24", "--cmd", "sleep 1.5"]
+        if rating:
+            cmd += ["--cmd", "sleep 1.5"]      # let the plate redraw
+        cmd += ["--cmd", f"read i+{RATING_VAR:#x} 1",
+                "--cmd", f"screen {os.path.abspath(path)}",
+                "--", "--run-seconds", str(seconds)]
+        print(f"driving the original to its main menu"
+              f"{f', asking for rating {rating}' if rating else ''} ...")
+        out = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True).stdout
+        if not os.path.exists(path):
+            raise SystemExit(
+                "the run produced no capture - it never reached mode 10h.\n"
+                "That is a failure, not a pass.")
+
+        got = None
+        for line in out.splitlines():
+            if f"read i+{RATING_VAR:#x}" in line:
+                got = "pending"
+                continue
+            if got == "pending" and line.strip():
+                for tok in line.replace(":", " ").split():
+                    if len(tok) == 2:
+                        try:
+                            got = int(tok, 16)
+                        except ValueError:
+                            continue
+                        break
+                break
+        if not isinstance(got, int):
+            raise SystemExit(
+                "could not read ds:0x1F6E back out of the run, so which rating\n"
+                "this capture shows is unknown. That is a failure, not a pass.")
+        if got > 3:
+            raise SystemExit(f"ds:0x1F6E reads {got}, which is not a rating")
+        if got == rating:
+            return path, got
+        print(f"  asked for rating {rating}, the guest reached {got} - "
+              f"presses were dropped or doubled"
+              f"{'; retrying' if attempt < tries - 1 else ''}.")
+        last = got
+    print(f"  gave up after {tries} tries; scoring against rating {last}, "
+          f"which is what is actually on the screen.")
+    return path, last
 
 
 def main():
@@ -93,14 +158,21 @@ def main():
                     help="seconds after mode 10h to sample; the demo starts "
                          "a level on its own if left long enough")
     ap.add_argument("--data", default="lemming1.pc")
+    ap.add_argument("--rating", type=int, default=0, choices=(0, 1, 2, 3),
+                    help="press Up this many times before capturing, so the "
+                         "other three rating plates can be checked too")
     ap.add_argument("--screen", default="menu",
                     choices=("menu", "code", "input", "briefing"),
                     help="which screen: the menu itself, the F2 level-code "
                          "screen, the F4 input chooser, or the level briefing")
     a = ap.parse_args()
 
-    cap = a.capture or capture(os.path.join(ROOT, "out", "menu.scrn"),
-                               a.seconds, a.delay)
+    if a.capture:
+        cap, shown = a.capture, a.rating
+    else:
+        cap, shown = capture(
+            os.path.join(ROOT, "out", f"menu{a.rating or ''}.scrn"),
+            a.seconds, a.delay, a.rating)
     w, h, pal, theirs = read_scrn(cap)
 
     port_raw = os.path.join(ROOT, "out", "menu_port.raw")
@@ -108,7 +180,9 @@ def main():
                    check=True, stdout=subprocess.DEVNULL)
     subprocess.run([os.path.join(ROOT, "reconstruct", "lemmings"),
                     "--data", os.path.join(ROOT, a.data),
-                    "--screen", a.screen, "--raw", port_raw],
+                    "--screen", a.screen, "--rating",
+                    ("fun", "tricky", "taxing", "mayhem")[shown],
+                    "--raw", port_raw],
                    check=True, stdout=subprocess.DEVNULL)
     pw, ph, ppal, ours = read_raw(port_raw)
     if (pw, ph) != (w, h):

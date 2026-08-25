@@ -485,8 +485,40 @@ sprites plainly are not — the FX label sits at x=351, which is 7 mod 8.
 It also explains the rating name's one-pixel offset: the plate's bitmap carries
 a `FUN` at one position and the original overdraws the current rating from a
 pre-shifted copy at another. The scratch buffer is what the blit reads, so
-following the blit's source address finds the buffer and not the artwork —
-which is why the rating's own sprite has still not been located.
+following the blit's source address finds the buffer and not the artwork.
+
+### The four rating sprites, and which way round they go
+
+They were found by searching for them instead. With the rating now settable —
+see *The rating plate* above — the original can be driven to each of the four
+in turn, its plate cropped out of the capture at (486,145), and section 4
+searched for the 72×27 four-plane block that decodes to it. Every match is
+exact:
+
+| rating | offset in section 4 | pixels differing |
+| --- | --- | --- |
+| Mayhem | `23168` (`0x5A80`) | **0** |
+| Taxing | `24140` (`0x5E4C`) | **0** |
+| Tricky | `25112` (`0x6218`) | **0** |
+| Fun | `26084` (`0x65E4`) | **0** |
+
+A uniform 972 apart — `RATING_PLANE * 4` — and **descending**: the four are
+stored in reverse, Mayhem first. Cross-checked against every capture, the
+matrix is a clean diagonal, each capture 0 against its own sprite and 616–736
+against the other three.
+
+Whole-screen: **99.41% at Fun, Tricky and Taxing**, the remainder being the
+animated banner. **Mayhem is 99.13%** — 70 further pixels inside the plate's
+box, single pixels along x=464..465, mostly colour 2 where the port has 3.
+Whether those are the plate's own animation or a real difference is **not
+settled**.
+
+The direction is the part worth stating plainly, because it hid for a long
+time behind a coincidence: **at rating 0 the sign of the step does not
+matter**, and rating 0 was the only rating that could be reached. The port had
+`RATING_BASE + rating * RATING_STEP` with `RATING_BASE` set to Fun, which is
+correct for exactly one of the four values it takes. Nothing was available to
+contradict it until the plate could be moved.
 
 ## MAIN.DAT section 4
 

@@ -158,6 +158,34 @@ bash tools/prove.sh
 A figure that has drifted is worse than no figure, because it is quoted with
 the same confidence as a measured one.
 
+## A check at one value of a parameter says nothing about the parameter
+
+The rating plate cost a day twice over, and both halves are general.
+
+**Verifying at one value proves the value, not the formula.** The port drew the
+rating name from `RATING_BASE + rating * RATING_STEP`. The four sprites are
+actually stored *backwards*, so that expression is right for exactly one of the
+four values it takes — and rating 0 was the only rating reachable, because the
+plate appeared inert. At `rating == 0` the sign of the step does not matter.
+The check passed, repeatedly, and was silent about the only thing it could have
+caught. **If a routine takes a parameter, reach more than one value of it
+before calling it verified**, and if you cannot reach the others, say so where
+the score is reported rather than beside the code.
+
+**"Not delivered" is not "delivered, no effect".** A sweep concluded the rating
+plate answered to nothing, having tried 25 keys. Four of them came back from
+the control socket as `error: unknown key name` — the socket resolves names
+through `pygame.key.key_code`, which names punctuation by the character, so
+`"minus"` is not a key and `-` is. The sweep printed the error in the same
+column as a real result. Two of the keys that *do* work were not in the list
+at all, though the prose named them as ruled out.
+
+So: **a probe must fail loudly on a key it could not send**, and a negative
+result is only evidence if the positive control fired in the same run. The
+sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
+nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
+instead settles it in one byte.
+
 ## Compare against what the original composes, not what it displays
 
 The strongest check here is not a screenshot. A screen carries sprites, a
@@ -255,7 +283,7 @@ sweeps are the only thing that would catch a regression there. So:
 | `docs/menu.md` | what the menu screen *is*: the mode, the palette, where every piece lives in MAIN.DAT, the font, what each plate does, and what animates |
 | `tools/lemmings.py` | the adapter: game dir, executable, load segment, start-up keys, `LemmingsVga` |
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
-| **`tools/verify_menu.py`** | the port's main menu against the one the original composes, in EGA mode 10h - and it scores the parts the port does not build separately rather than hiding them |
+| **`tools/verify_menu.py`** | the port's main menu against the one the original composes, in EGA mode 10h - and it scores the parts the port does not build separately rather than hiding them. `--rating 0..3` drives the original's own rating plate first, and reads `ds:0x1F6E` back so a dropped key press costs coverage instead of producing a confident wrong number |
 | `tools/hotspots.py` | ranks routines by how much work they do, not by whether they are code. `--after-read` counts only inside the windows following an INT 21h AH=3Fh, which is how the decompressor was found |
 | **`tools/menu_diff.py`** | where the port's menu differs from the original's, regenerating the port's output first so a stale file cannot mislead. `--map` for a picture, `--rows`/`--cols` to zoom |
 | **`tools/probe_briefing_bg.py`** | is a screen's background stored or generated? Two lit captures from separate runs, then a search of every file **with a control** - a search that finds nothing proves nothing unless the same search finds something it should |
@@ -273,6 +301,7 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/snapshot.py` | capture memory at a chosen point in a run |
 | `tools/probe_protected.py` | record the protected instruction stream as it runs |
 | `tools/probe_desync.py` | find a single-step desynchronisation, if the decryptor ever loses step |
+| **`tools/probe_rating.py`** | the rating plate, watching `ds:0x1F6E` rather than the plate's pixels - and refusing a key the control socket would not deliver |
 | `tools/probe_int13.py`, `tools/probe_exit.py`, `tools/probe_derail.py` | what the disk check asks for, where the program quits, how it derails |
 | `tools/reference_dosbox.sh` | capture DOSBox's screens as a reference (mounts a copy) |
 | **`tools/prove.sh`** | **the proof, in one command**: drive the original to the end of its terrain composition, dump the level it built, render the same level with the port, compare |

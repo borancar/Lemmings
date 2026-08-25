@@ -868,7 +868,20 @@ int render_objects(canvas *c, const level *lv, const ground *g,
  * 72x27, four planes of 243 bytes, at screen (486,145). Fitted at pixel
  * granularity: 100.00% over 1,760 ink pixels, none differing. */
 #define RATING_SECTION 4
-#define RATING_BASE    26084
+/* The four rating names, as 72x27 four-plane sprites in section 4. They are
+ * stored in REVERSE - Mayhem first, Fun last - which is why only Fun was ever
+ * right while the step was read as positive: at rating 0 the sign of the step
+ * does not matter, and no other rating could be reached to contradict it.
+ *
+ * The offsets are measured, not guessed. Each was found by cropping the
+ * original's own plate at (486,145) out of a capture taken at that rating and
+ * searching section 4 for the block that decodes to it; each match is exact,
+ * zero pixels differing:
+ *
+ *     Mayhem 23168   Taxing 24140   Tricky 25112   Fun 26084
+ *
+ * That is a uniform 972 = RATING_PLANE * 4 apart, descending. */
+#define RATING_BASE    23168        /* Mayhem, the FIRST of the four */
 #define RATING_W       72
 #define RATING_H       27
 #define RATING_STRIDE  9
@@ -876,6 +889,10 @@ int render_objects(canvas *c, const level *lv, const ground *g,
 #define RATING_STEP    (RATING_PLANE * 4)
 #define RATING_X       486
 #define RATING_Y       145
+
+/* Where rating r's sprite starts: they run backwards, so Fun is last. */
+#define RATING_OFF(r)  (RATING_BASE + \
+                        (uint32_t)(MENU_RATING_MAX - ((r) & 3)) * RATING_STEP)
 
 /* Both lines come from the executable, not from a data file, so they are
  * transcribed here with the address they were read from - the same treatment a
@@ -1670,7 +1687,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
             uint16_t x = (uint16_t)(RATING_X + sx);
             if (x >= BG_DRAWN_W) break;
             m->pix[(size_t)y * MENU_W + x] =
-                planar(font, RATING_BASE + (uint32_t)(rating % 4) * RATING_STEP,
+                planar(font, RATING_OFF(rating),
                        RATING_PLANE, RATING_STRIDE, 4, sx, sy);
         }
     }

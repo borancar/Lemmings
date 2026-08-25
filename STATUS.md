@@ -34,7 +34,7 @@ numbers, re-measured on the current build:
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing's** text | 99.97% — 4 of 15,188 |
-| the **main menu** | 99.41% — 1,321 of 224,000, of which 995 are its animated banner |
+| the **main menu** | 99.41% — 1,321 of 224,000, of which 995 are its animated banner. Checked at **all four ratings**, not just Fun; Mayhem is 99.13% with 70 unexplained |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -476,6 +476,48 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
+- **All four rating plates are verified against the original, and the sprites
+  ran the wrong way.** Only Fun could be checked before, because only Fun could
+  be reached. With the plate working, the original can be driven to each rating
+  in turn, its plate cropped out of the capture at (486,145), and section 4
+  searched for the 72×27 four-plane block that decodes to it:
+
+  | rating | offset in section 4 | pixels differing |
+  | --- | --- | --- |
+  | Mayhem | `23168` | **0** |
+  | Taxing | `24140` | **0** |
+  | Tricky | `25112` | **0** |
+  | Fun | `26084` | **0** |
+
+  A uniform 972 apart and **descending** — the four are stored in reverse. The
+  cross-check is a clean diagonal: each capture scores 0 against its own sprite
+  and 616–736 against the other three.
+
+  Whole-screen scores: **99.41% at Fun, Tricky and Taxing**, the remainder
+  being the animated banner. **Mayhem is 99.13%**, and the extra 70 pixels are
+  inside the plate's box — single pixels along x=464..465, mostly colour 2
+  where the port has 3. Whether that is the plate's own animation or a real
+  difference is **not settled**, and it is recorded here rather than rounded
+  into the other three.
+
+  The port had `RATING_BASE + rating * RATING_STEP` with the base set to Fun,
+  which is right for exactly one of the four values it takes. **At rating 0 the
+  sign of the step does not matter**, and rating 0 was the only rating
+  reachable, so nothing could contradict it. This is the general hazard in a
+  reconstruction verified against one sample of a parameter: the check passes
+  and says nothing about the parameter.
+
+- **The menu capture now reports which rating it is showing.** `verify_menu.py`
+  takes `--rating` and reads `ds:0x1F6E` back out of the guest before scoring.
+  This was not caution — it caught a real fault the same hour it was written.
+  An earlier version pressed Up n times and believed it; its rating-2 and
+  rating-3 captures **both showed Tricky**, one press each, and the port was
+  scored against the wrong screen. That read as the port drawing Taxing and
+  Mayhem badly, 99.10% and 98.71%, when it was drawing them correctly against a
+  screen that was not showing them. It now holds the key across 24 frames
+  rather than 4, retries up to three times, and scores against whatever the
+  guest actually reached rather than what was asked for.
+
 - **Correction: the rating plate works, on Up and Down.** This entry used to
   read *"answers to nothing found, and 25 keys have now been tried"*. That was
   wrong, and it stayed wrong because every instrument used to test it was
