@@ -71,6 +71,12 @@ def main():
                     help="once at the title, press F1 to start a game")
     ap.add_argument("--start-tries", type=int, default=4,
                     help="how many times to press F1 (default 4)")
+    ap.add_argument("--dump-screen", default="",
+                    help="with --dump-vga, write the decoded screen + palette")
+    ap.add_argument("--dump-planes", default="",
+                    help="with --dump-vga, also write all four planes here")
+    ap.add_argument("--dump-delay", type=float, default=45.0,
+                    help="seconds to wait in the level before --dump-vga")
     ap.add_argument("--dump-vga", action="store_true",
                     help="once in the level, print the video state")
     ap.add_argument("--click-tries", type=int, default=3,
@@ -141,10 +147,17 @@ def main():
                 # Gameplay is mode 0Dh again, after the 10h title.
                 wait_for(sock, lambda st: "mode=0x0d" in st,
                          "the level", timeout=180)
-                time.sleep(a.start_delay)
+                # Well after the mode set: sampling straight away catches the
+                # screen before it has been drawn, which reads as "the planes
+                # are empty" and is just early.
+                time.sleep(a.dump_delay)
                 print("[play] --- video state in the level ---")
                 print(ask(sock, "vga"))
                 print(ask(sock, "status"))
+                if a.dump_planes:
+                    print(ask(sock, f"planes {a.dump_planes}"))
+                if a.dump_screen:
+                    print(ask(sock, f"screen {a.dump_screen}"))
         proc.wait()
     except KeyboardInterrupt:
         pass

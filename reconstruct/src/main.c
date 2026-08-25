@@ -36,9 +36,9 @@ static void usage(void)
           "  --out FILE    where to write the picture (default level.bmp)\n"
           "  --show        open a window on the level (arrows scroll, Esc quits)\n"
           "  --scale N     window magnification for --show (default 3)\n"
-          "  --raw FILE    also write the raw palette indices, for checking\n"
-          "                against the original: 'LEMRAW' then width and\n"
-          "                height as little-endian u16, then w*h bytes\n",
+          "  --raw FILE    also write the raw indices and palette, for\n"
+          "                checking against the original: 'LEMRW2', width\n"
+          "                and height as u16, 16 RGB triples, then w*h bytes\n",
           stderr);
 }
 
@@ -168,8 +168,16 @@ int main(int argc, char **argv)
             fprintf(stderr, "%s: cannot open for writing\n", raw);
         } else {
             uint16_t wh[2] = { c.w, c.h };
-            fwrite("LEMRAW", 1, 6, rf);
+            fwrite("LEMRW2", 1, 6, rf);
             fwrite(wh, sizeof(uint16_t), 2, rf);
+            /* The palette too: a checker must compare what the port would
+             * actually display, not re-derive a palette from the data files
+             * and check its own arithmetic against itself. */
+            for (uint8_t i = 0; i < 16; i++) {
+                fputc(g.palette[i].r, rf);
+                fputc(g.palette[i].g, rf);
+                fputc(g.palette[i].b, rf);
+            }
             fwrite(c.pix, 1, (size_t)c.w * c.h, rf);
             fclose(rf);
             printf("wrote %s (raw indices)\n", raw);

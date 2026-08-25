@@ -76,6 +76,25 @@ Each of these is stated as what was *checked*, not what was written.
   has to re-run the PKLITE stub or the protection to read the code.
 - **A C port draws the game's Level 1**, and its reading of that level agrees
   with the original's own briefing screen on all six stated values.
+- **THE PIXEL COMPARISON RUNS.** `tools/compare_level.py` slides the port's
+  1584x160 canvas across the original's 320x160 viewport, captured out of the
+  guest's own video memory. Results, on level 1:
+  - **Best alignment is x = 624** — and 624 is exactly the `start_x` the level
+    file declares. Two independent things agreeing that were never fitted to
+    each other.
+  - **79.99% of pixels identical** (40 956 of 51 200).
+  - The **terrain outline is right**: of ~18 500 background pixels only ~480
+    disagree, so where the port says rock and where the original says rock
+    agree almost everywhere.
+  - The disagreement is **confined to the four brown shades of the rock
+    texture** — a confusion matrix of port index against original index is
+    diagonal-dominant with the off-diagonal mass entirely inside indices
+    8–11. Colours 14, 15 and the background are near-perfect.
+  - **The palette is confirmed**: 14 of 16 entries matched the original's DAC
+    exactly on the first try. The two that did not turned out to be a real
+    finding — the lower eight colours are *not* read from the ground file's
+    `standard` array, the game carries them itself, and entry 7 is a copy of
+    `custom[0]`. Corrected in the port from what the original programs.
 - **The original reaches gameplay under our emulator** —
   `docs/reference/original-in-level.png`: lemmings falling out of the trapdoor,
   the clock counting down, the skill panel and the minimap drawn. Its **terrain
@@ -105,7 +124,12 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Open
 
-- **NOTHING IS VERIFIED PIXEL FOR PIXEL YET, and it is blocked.** The
+- **The pixel comparison now runs, and the port is 79.99% right.** Not done,
+  but no longer blocked, and the number is real. See *Done* for what it
+  established and what it did not.
+- ~~**NOTHING IS VERIFIED PIXEL FOR PIXEL YET, and it is blocked.**~~
+  **Retracted 2026-08-25** - the block was the emulator's own terrain, which
+  now renders. Original text follows for the record: The
   comparison harness exists — `tools/capture_level.py` captures the original's
   screen, `tools/compare_level.py` slides the port's canvas across it and
   reports the best alignment and the differing pixel count, and the port emits
@@ -160,10 +184,15 @@ the first sweep should write this table rather than have it retyped by hand.
 
 ## Next
 
-1. **Reach the level itself in the original** — the briefing wants a mouse
-   click, and the control socket has no verb for one. Then capture its video
-   memory and compare the port's render against it, pixel for pixel. This is
-   the check everything else is waiting on.
+1. **Close the remaining 20%.** The disagreement is entirely among terrain
+   colour indices 8–11, with the shape correct, so it is how overlapping
+   terrain pieces resolve rather than where they are. Leads, in order: the
+   original blits terrain with the Graphics Controller's function set to **OR**
+   (`gc[3] = 0x10` was observed), where the port replaces; the `no_overwrite`
+   and `erase` flags may not mean what was assumed; and pieces after a
+   `FF FF FF FF` entry are currently treated as the end of the list. Each is
+   testable against the existing harness by changing one thing and re-running
+   the comparison.
 2. Capture the unpacked image to a file at the moment the stub hands control to
    the program, and **prove** it — round-trip against the stub's own output.
 3. Identify the toolchain: count `push bp / mov bp,sp` prologues across the code

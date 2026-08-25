@@ -66,18 +66,46 @@ int ground_load(const char *path, ground *g, const char **err)
     }
 
     /* Palettes from 0x3C0: three EGA sets of 8 bytes, then three VGA sets of
-     * 8 entries x 3 bytes. The 16-colour physical palette is the standard
-     * eight followed by this set's custom eight; terrain only ever uses the
-     * upper eight, which is why its fourth bitplane doubles as the mask. */
-    const uint8_t *vga_custom   = buf + 0x3D8;
-    const uint8_t *vga_standard = buf + 0x3F0;
-    for (uint8_t i = 0; i < 8; i++) {
-        g->palette[i].r = widen6(vga_standard[i * 3 + 0]);
-        g->palette[i].g = widen6(vga_standard[i * 3 + 1]);
-        g->palette[i].b = widen6(vga_standard[i * 3 + 2]);
-        g->palette[8 + i].r = widen6(vga_custom[i * 3 + 0]);
-        g->palette[8 + i].g = widen6(vga_custom[i * 3 + 1]);
-        g->palette[8 + i].b = widen6(vga_custom[i * 3 + 2]);
+     * 8 entries x 3 bytes. Terrain only ever uses the upper eight colours,
+     * which is why its fourth bitplane doubles as the mask.
+     *
+     * The upper eight come from this set's `custom` array. The LOWER eight do
+     * NOT come from the file's `standard` array, whatever the published
+     * description implies - the game carries them itself. Measured against the
+     * original running under an emulator, fourteen of sixteen entries agreed
+     * and the two that did not were both here:
+     *
+     *   entry 4  the file holds 3C 3C 00; the game uses 2C 2C 00 - a darker
+     *            yellow. Six of the other seven file entries match the game
+     *            exactly, which is what makes this easy to miss.
+     *   entry 7  is not fixed at all. It is a copy of custom[0], so it equals
+     *            entry 8. The published note does say "entry 7 is variable";
+     *            it does not say the rest are unreliable.
+     *
+     * So the fixed eight are transcribed here as 6-bit DAC values, taken from
+     * what the original actually programs. */
+    static const uint8_t FIXED[7][3] = {
+        { 0x00, 0x00, 0x00 },   /* 0 transparent / background */
+        { 0x10, 0x10, 0x38 },   /* 1 blue    - lemming bodies */
+        { 0x00, 0x2C, 0x00 },   /* 2 green   - lemming hair   */
+        { 0x3C, 0x34, 0x34 },   /* 3 white   - skin           */
+        { 0x2C, 0x2C, 0x00 },   /* 4 dark yellow              */
+        { 0x3C, 0x08, 0x08 },   /* 5 red                      */
+        { 0x20, 0x20, 0x20 },   /* 6 grey                     */
+    };
+    const uint8_t *vga_custom = buf + 0x3D8;
+
+    for (uint8_t i = 0; i < 7; i++) {
+        g->palette[i].r = widen6(FIXED[i][0]);
+        g->palette[i].g = widen6(FIXED[i][1]);
+        g->palette[i].b = widen6(FIXED[i][2]);
     }
+    for (uint8_t i = 0; i < 8; i++) {
+        lem_rgb c = { widen6(vga_custom[i * 3 + 0]),
+                      widen6(vga_custom[i * 3 + 1]),
+                      widen6(vga_custom[i * 3 + 2]) };
+        g->palette[8 + i] = c;
+    }
+    g->palette[7] = g->palette[8];      /* entry 7 tracks custom[0] */
     return 0;
 }
