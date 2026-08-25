@@ -58,4 +58,9 @@ typedef struct {
 /* Parse one 2048-byte level section. Returns 0 on success. */
 int level_parse(const uint8_t *buf, uint32_t len, level *out, const char **err);
 
+/* The 15 header fields, flat and in the order the original stores them, for
+ * tools/verify_level.py. Transcribed from image 0x036B6. */
+int level_header_fields(const uint8_t *buf, uint32_t len,
+                        uint16_t *out, uint32_t n_out, const char **err);
+
 #endif /* LEM_LEVEL_H_ */

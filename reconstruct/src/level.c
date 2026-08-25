@@ -1,8 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  *
- * PROVENANCE: written from the published .LVL description at
- * camanis.net, checked field by field against level000.dat rather than
- * trusted. Not transcribed from the original's disassembly - see STATUS.md.
+ * PROVENANCE: mixed, and the difference is marked per field.
+ *
+ * The header parse is TRANSCRIBED from image 0x036B6 and checked against the
+ * original by tools/verify_level.py, which stops it after the parse and
+ * compares the globals it filled in with what this code produces from the same
+ * 2048 bytes. The terrain entry decode is transcribed from image 0x07C90.
+ * Everything else - the object table, the steel table, the level name - is
+ * still written from the published .LVL description at camanis.net, checked
+ * field by field against level000.dat rather than trusted, and NOT yet checked
+ * against the original. See STATUS.md.
  *
  * Every multi-byte field is BIG-endian: the game came from the Amiga and the
  * data files were not rewritten for the PC. Reading level 1 little-endian
@@ -36,12 +43,39 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
     }
     memset(lv, 0, sizeof(*lv));
 
-    lv->release_rate  = be16(buf + 0x00);
-    lv->num_lemmings  = be16(buf + 0x02);
-    lv->num_to_rescue = be16(buf + 0x04);
-    lv->time_limit    = be16(buf + 0x06);
+    /* image 0x036B6 - the header parse, transcribed.
+     *
+     * The original assembles each field high byte first and then keeps only
+     * AL, so every one of these is effectively a BYTE despite occupying a
+     * word in the file:
+     *
+     *   036bc  mov ah,[di]   / mov al,[di+1]
+     *   036c1  mov [0x64],al                    release rate
+     *   036c4  mov [0x67],al                    ... stored twice
+     *   036cd  mov [0x47],al                    number of lemmings
+     *   036d6  mov [0x44],al                    number to rescue
+     *   036df  add ax,0x30 / mov [0x20a7],al    time limit, as an ASCII DIGIT
+     *   036eb  mov [0x6a],al   climbers         ... and on at stride 3 for
+     *   036f4  mov [0x6d],al   floaters             the eight skills, to
+     *   ...                                         [0x7f] for diggers
+     *   03733  add ax,0x10 / mov [0],ax         start x, plus 16
+     *   03739  shr ax,1 x3   / mov [2],ax       and that over 8
+     *
+     * `add ax, 0x30` is the giveaway on the time limit: the original converts
+     * it straight to a character, so its display only ever holds ONE digit.
+     *
+     * Keeping the low byte is transcribed rather than tidied, because the two
+     * readings differ for any count above 255 and only the original's is
+     * evidence. No level in this set has one, so it changes nothing here - it
+     * is right rather than useful. */
+    lv->release_rate  = (uint8_t)be16(buf + 0x00);
+    lv->num_lemmings  = (uint8_t)be16(buf + 0x02);
+    lv->num_to_rescue = (uint8_t)be16(buf + 0x04);
+    lv->time_limit    = (uint8_t)be16(buf + 0x06);
     for (uint8_t i = 0; i < 8; i++)
-        lv->skills[i] = be16(buf + 0x08 + i * 2);
+        lv->skills[i] = (uint8_t)be16(buf + 0x08 + i * 2);
+    /* Not truncated: the original keeps start x as a word (0x03736 stores AX,
+     * not AL), and the graphics set numbers are read elsewhere. */
     lv->start_x               = be16(buf + 0x18);
     lv->graphics_set          = be16(buf + 0x1A);
     lv->extended_graphics_set = be16(buf + 0x1C);
@@ -120,5 +154,31 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
 
     memcpy(lv->name, buf + 0x7E0, 32);
     lv->name[32] = '\0';
+    return 0;
+}
+
+/* A flat view of the parsed header, so tools/verify_level.py can compare
+ * against the original without mirroring `level`'s layout in Python.
+ * The order is the order the original stores them in.
+ */
+int level_header_fields(const uint8_t *buf, uint32_t len,
+                        uint16_t *out, uint32_t n_out, const char **err)
+{
+    static level lv;
+    if (n_out < 15) {
+        if (err) *err = "need room for 15 fields";
+        return -1;
+    }
+    if (level_parse(buf, len, &lv, err) != 0)
+        return -1;
+    out[0] = lv.release_rate;
+    out[1] = lv.num_lemmings;
+    out[2] = lv.num_to_rescue;
+    out[3] = lv.time_limit;
+    for (uint32_t i = 0; i < 8; i++)
+        out[4 + i] = lv.skills[i];
+    out[12] = lv.start_x;
+    out[13] = lv.graphics_set;
+    out[14] = lv.extended_graphics_set;
     return 0;
 }

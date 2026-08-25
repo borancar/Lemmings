@@ -82,6 +82,22 @@ Three things about this are easy to get wrong, and each cost time here:
   driver at `0x18F00..0x1949F`, for one. The report keeps the two apart;
   conflating them makes the protection look several times larger than it is.
 
+## An in-process run never reaches a level
+
+It answers the two start-up menus and stops. Anything that only happens inside
+a level - the header parse, the composition passes, the play loop - has to be
+checked under `tools/play.py`, which is the only driver that gets through the
+title, the briefing and into the game.
+
+Set `LEM_HOOK=<file>` and the machine calls that file's `install(m)` once
+before anything runs, so a verifier can add its breakpoints and ride along. The
+guest side should only *capture*; do the comparison in the parent, where the C
+can be built and called without a compiler in the hot path.
+`tools/verify_level.py` is the worked example.
+
+Delete the capture file before the run. A stale one reads as a successful run,
+and a run that never reached the breakpoint should report **that**, not a pass.
+
 ## Compare against what the original composes, not what it displays
 
 The strongest check here is not a screenshot. A screen carries sprites, a
@@ -144,6 +160,7 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/lemmings.py` | the adapter: game dir, executable, load segment, start-up keys, `LemmingsVga` |
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
 | `tools/hotspots.py` | ranks routines by how much work they do, not by whether they are code. `--after-read` counts only inside the windows following an INT 21h AH=3Fh, which is how the decompressor was found |
+| **`tools/verify_level.py`** | the same for the LVL header parse, and the example of a verifier that rides along with `play.py` via `LEM_HOOK` - needed for anything that only happens inside a level |
 | **`tools/verify_dat.py`** | the differential test, and the pattern to copy for the next routine: stop the original, capture the inputs, let **its own body** run to its `ret`, compare its output with the port's C on the same call |
 | `tools/codemap.py` | the code map: recursive descent seeded with the entry point *and* every recorded execution, so it separates proven-code from believed-code. `--routine` for one routine, `--tables` for dispatch tables (there are none) |
 | `tools/decrypt_image.py` | builds `image/vgalemmi.decrypted.img` - records each instruction's plaintext as it executes and writes it back. Merges per-run records, so coverage only grows |

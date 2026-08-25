@@ -154,6 +154,19 @@ def make_machine(args):
     m = cls(args.program, blaster=args.blaster, max_insns=1 << 62,
             cmdline=args.cmdline,
             psp_seg=args.psp_seg if args.psp_seg is not None else PSP_SEG)
+    hook = os.environ.get("LEM_HOOK")
+    if hook:
+        # A verifier needs to ride along with tools/play.py, because that is
+        # the only driver that reaches a level - an in-process run answers the
+        # start-up menus and stops. LEM_HOOK names a file with an install(m)
+        # function; it is called once, with the machine, before anything runs.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("lem_hook", hook)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.install(m)
+        print(f"  [hook] installed {hook}")
+
     if out:
         import atexit
 
