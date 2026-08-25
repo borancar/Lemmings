@@ -303,3 +303,36 @@ It is drawn at **(351, 146)**, which is *not* byte-aligned, and that alone is
 the difference between 92.74% and **100.00%**: sweeping candidate positions in
 steps of 8 finds a convincing-looking best fit, and sweeping single pixels
 finds the real one — 1,654 ink pixels, none differing.
+
+## How sprites are actually blitted
+
+Recorded from the guest's own writes to the sequencer (`0x3C4`) and the
+graphics controller (`0x3CE`) while the menu draws — 32,806 of them in one
+pass. There are two blitters.
+
+**Opaque**, at image `0x0985F`:
+
+```
+SEQ  map mask         = 0x0F      all four planes writable
+GC   set/reset        = 0x00
+GC   enable set/reset = 0x0E      planes 1-3 take set/reset, i.e. ZERO
+GC   mode             = 0x00      write mode 0
+GC   data rotate      = 0x00
+GC   bit mask         = 0xFF
+     ... mov al, es:[di] / movsb ...   (the read loads the latches)
+GC   enable set/reset = 0x00      restored afterwards
+```
+
+Plane 0 takes the CPU byte and planes 1–3 are forced to zero, so every byte it
+touches is replaced outright. Later passes with the map mask set to `0x02`,
+`0x04` and `0x08` fill in the other planes.
+
+**Masked**, at `0x089BE`, `0x09121`, `0x09442` and `0x097ED`: the same idea but
+driving the graphics controller's **bit mask** per byte. Across one menu draw
+it takes **184 distinct values**, and **7,193 of 29,179 writes are partial** —
+neither `0x00` nor `0xFF`.
+
+So sprites are clipped by a genuine per-pixel mask, and that mask is **not**
+the sprite's own ink: where the mask is set and the sprite's pixel is 0, the
+result is black. That is the black halo around the logo and the plates. Where
+the mask data lives is **not yet found**.

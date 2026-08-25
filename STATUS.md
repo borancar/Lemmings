@@ -305,9 +305,28 @@ Each of these is stated as what was *checked*, not what was written.
   So the background is *exact* wherever nothing is drawn over it, and every
   sprite suppresses part of what shows through it. **78.8% of the menu's whole
   residual falls inside a sprite's bounding box**, and most of the rest sits in
-  the rows immediately below one. Whatever the rule is, it is the blitter's and
-  it applies to everything — which is what makes it worth finding once, and
-  what makes it too big to guess at.
+  the rows immediately below one.
+
+  **The mechanism is now known.** Recording every write to the EGA's sequencer
+  and graphics controller while the menu draws — rather than fitting models to
+  the pixels — shows two blitters:
+
+  - an **opaque** one at image `0x0985F`: map mask `0x0F`, set/reset `0x00`,
+    **enable set/reset `0x0E`**, so plane 0 takes the sprite's data and planes
+    1–3 are forced to zero. Every byte it touches is replaced outright.
+  - a **masked** one, at `0x089BE`, `0x09121`, `0x09442` and `0x097ED`, which
+    drives the **graphics controller's bit mask** per byte. It takes **184
+    distinct values** across a menu draw, and **7,193 of 29,179 writes use a
+    partial mask** — neither `0x00` nor `0xFF`.
+
+  So sprites are clipped by a real per-pixel mask, and that mask is *not* the
+  sprite's own ink: where the mask is set and the sprite's pixel is 0, the
+  result is black. That is exactly the halo. What is left to find is **where
+  the mask data lives** — `MAIN.DAT` section 2 was tried as a 632×94 one-bit
+  mask at both plausible alignments and both polarities and is not it.
+
+  The port keeps the keyed model until that is found; it is exact in the
+  logo's upper rows and 93.64% over its box.
 
   Worth noting what this rules out: it is not the logo's data, not its
   position, not the background's tiling (confirmed `y % 104` at 100% on clean
