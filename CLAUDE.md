@@ -238,6 +238,7 @@ sweeps are the only thing that would catch a regression there. So:
 
 | | |
 | --- | --- |
+| `docs/menu.md` | what the menu screen *is*: the mode, the palette, where every piece lives in MAIN.DAT, the font, what each plate does, and what animates |
 | `tools/lemmings.py` | the adapter: game dir, executable, load segment, start-up keys, `LemmingsVga` |
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
 | **`tools/verify_menu.py`** | the port's main menu against the one the original composes, in EGA mode 10h - and it scores the parts the port does not build separately rather than hiding them |
