@@ -1138,10 +1138,41 @@ static uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
     return v;
 }
 
-/* Blit a 4-plane sprite, treating value 0 as transparent. That the logo and
- * the signs are keyed on 0 rather than drawn opaquely is measured: drawn
- * opaquely the logo's own bounding box scores 35%, keyed it scores 95%+, and
- * the background texture is plainly visible between the letters. */
+/* Blit a 4-plane sprite, keyed on value != 0.
+ *
+ * That it is keyed at all rather than drawn opaquely was measured early: drawn
+ * opaquely the logo's own bounding box scores 35%, keyed 95%+, and the
+ * background texture is plainly visible between the letters.
+ *
+ * WHICH test decides transparency is a separate question, and the obvious
+ * answer is wrong. Every one of these blits hands the blitter a mask pointer
+ * exactly 3 * plane_size after the ink - the plates at si+2745 with planes of
+ * 915, the logo at si+22278 with planes of 7426 - so the sprite's fourth plane
+ * is a mask. And the data seems to agree: tabulating sprite value against
+ * screen colour over all six plates gives
+ *
+ *     value 8..15  ->  itself           the plate's real ink
+ *     value 3      ->  screen 2, 210 times
+ *     value 2      ->  screen 2, 173 times
+ *     value 1      ->  screen 0,  22 times
+ *     value 4..7   ->  never occurs
+ *
+ * which reads as "1..3 are not ink, they are the two-plane background tile
+ * showing through". Keyed on plane 3 the port should then be exact.
+ *
+ * It is not. Measured, all four ratings, whole screen:
+ *
+ *     ink != 0,  shadow != 0        326 differ   (where this started)
+ *     ink plane 3, shadow != 0      460
+ *     ink plane 3, shadow plane 3   377
+ *     ink != 0,  shadow plane 3     257   <- this
+ *
+ * So the mask is the SHADOW's silhouette, and the ink is keyed on 0. Why the
+ * ink is not also keyed on the mask is not established, and the 210 remaining
+ * "sprite 3 where the original shows 2" say something is still wrong; what is
+ * established is which of the four combinations the original agrees with. The
+ * inference from the mask pointer was worth testing and is recorded here
+ * because it looked conclusive and was not. */
 static void blit(uint8_t *dst, const uint8_t *sec, uint32_t base,
                  uint16_t w, uint16_t h, uint16_t stride, uint32_t plane,
                  uint16_t at_x, uint16_t at_y)
@@ -1977,7 +2008,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
         for (uint16_t sx = 0; sx < LOGO_W; sx++) {
             int32_t x = (int32_t)LOGO_X + LOGO_SHADOW_DX + sx;
             if (x < 0 || x >= BG_DRAWN_W) continue;
-            if (planar(sec, LOGO_BASE, LOGO_PLANE, LOGO_STRIDE, 4, sx, sy))
+            if (planar(sec, LOGO_BASE, LOGO_PLANE, LOGO_STRIDE, 4, sx, sy) & 8)
                 m->pix[(size_t)y * MENU_W + (uint16_t)x] = 0;
         }
     }
@@ -1995,7 +2026,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
                 int32_t x = (int32_t)SIGN_POS[i].x + SIGN_SHADOW_DX + sx;
                 if (x < 0 || x >= BG_DRAWN_W) continue;
                 if (planar(sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
-                           SIGN_PLANE, SIGN_STRIDE, 4, sx, sy))
+                           SIGN_PLANE, SIGN_STRIDE, 4, sx, sy) & 8)
                     m->pix[(size_t)y * MENU_W + (uint16_t)x] = 0;
             }
         }

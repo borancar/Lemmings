@@ -34,7 +34,7 @@ numbers, re-measured on the current build:
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing's** text | 99.97% — 4 of 15,188 |
-| the **main menu** | **99.85%** — 326 of 224,000, all of it a long-standing residue around the plates. The banner is **exact**: bar, scrolling text and both end lemmings, zero differing in its rows at all four ratings |
+| the **main menu** | **99.885%** — 257 of 224,000, all inside the six plates. The banner is **exact**: bar, scrolling text and both end lemmings, zero differing in its rows at all four ratings |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -476,6 +476,46 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
+- **The drop shadows are cast through the sprite's MASK plane, not its ink.**
+  The menu's residue had sat at 326 pixels, unexplained, for many rounds. It
+  is now **257**, and the part that moved is the shadows.
+
+  Every one of these blits hands the blitter a mask pointer exactly
+  `3 * plane_size` after the ink — the plates at `si+2745` with planes of 915,
+  the logo at `si+22278` with planes of 7426 — so the fourth plane is a mask.
+  The data appears to agree. Tabulating sprite value against screen colour
+  over all six plates:
+
+  | sprite value | screen |
+  | --- | --- |
+  | 8..15 | itself — the plate's real ink |
+  | 3 | 2, 210 times |
+  | 2 | 2, 173 times |
+  | 1 | 0, 22 times |
+  | 4..7 | never occurs |
+
+  which reads as *"1..3 are not ink, they are the two-plane background tile
+  showing through"* — its colours are exactly 0..3. So keying the ink on plane
+  3 should make the port exact.
+
+  **It does not.** All four combinations, measured, whole screen, all four
+  ratings:
+
+  | ink key | shadow key | differing |
+  | --- | --- | --- |
+  | `!= 0` | `!= 0` | 326 |
+  | plane 3 | `!= 0` | 460 |
+  | plane 3 | plane 3 | 377 |
+  | `!= 0` | **plane 3** | **257** |
+
+  So the mask is the shadow's silhouette and the ink stays keyed on 0. Why the
+  ink is not also keyed on the mask is **not established**, and the 210
+  remaining "sprite 3 where the original shows 2" say something is still
+  wrong. What *is* established is which of the four the original agrees with.
+  The inference from the mask pointer is recorded because it looked conclusive
+  and was not — three of these four models are more defensible on paper than
+  the one that wins.
+
 - **The five walk-on lemmings are transcribed, and no capture can check
   them.** Image `0x04F96` walks a ten-entry table at `ds:0x4960` (image
   `0x0E3F0`) — counter, reload, x, y, sprite base, eleven bytes each. Five
