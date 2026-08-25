@@ -30,9 +30,27 @@ EXE_TANDY = os.path.join(GAME_DIR, "tgalemmi.exe")
 # with a couple of drivers loaded would give, and the subtraction is ordinary.
 PSP_SEG = 0x1000
 
-# Image offset where the game's own code segment begins. Unknown until the
-# unpacked image has been mapped; see docs/.
+# Image offset where the game's own code segment begins. The code segment and
+# the image base coincide, so a cs: offset is an image offset.
 CODE_BASE = 0
+
+# Image offset of DGROUP. A `ds:XXXX` reference in the disassembly is image
+# offset DGROUP + XXXX; getting this wrong turns strings into garbage.
+DGROUP = 0x09A90
+
+# The start-up answers this port is of. VGALEMMI.EXE asks two questions before
+# it touches the display: the adapter, then the machine type.
+#
+# '1' = VGA. '2' = "High Performance PCs", which is the machine type this port
+# targets - and it is the one that sets *no* compatibility flags at all (see
+# docs/machine-types.md). PC compatible, PS/2 and Amstrad each switch on a
+# work-around; High Performance is the plain path, so it is both the best
+# target and the smallest surface to prove.
+#
+# Both are digits, and the menu code confirms on a digit rather than waiting
+# for RETURN (image 0x1159: `mov bl,1` then `jmp` straight to the dispatch),
+# so no confirm key is needed.
+STARTUP_KEYS = ("1", "2")
 
 
 class LemmingsVga(VgaDos):

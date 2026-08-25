@@ -61,9 +61,12 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--auto", action="store_true",
                     help="answer the adapter and machine-type menus")
-    ap.add_argument("--machine", default="1", choices=list("1234"),
+    ap.add_argument("--machine", default=lemmings.STARTUP_KEYS[1],
+                    choices=list("1234"),
                     help="1 PC compatible, 2 high performance, 3 PS/2, "
-                         "4 Amstrad PC1640/1512 (default 1)")
+                         "4 Amstrad PC1640/1512 (default 2 - the machine type "
+                         "this port targets, and the only one that sets no "
+                         "compatibility flags)")
     ap.add_argument("--socket", default="",
                     help="control socket path (default: a temporary one)")
     ap.add_argument("rest", nargs=argparse.REMAINDER,
@@ -92,10 +95,11 @@ def main():
         print("[play] adapter menu -> 1 (VGA)")
         ask(sock, "key 1")
         time.sleep(1.5)
-        print(f"[play] machine menu -> {a.machine}, then RETURN")
+        # A digit confirms outright - the menu code jumps straight to the
+        # dispatch on '1'-'4', and only the arrow keys merely move the
+        # highlight. So no RETURN.
+        print(f"[play] machine menu -> {a.machine}")
         ask(sock, f"key {a.machine}")
-        time.sleep(0.8)
-        ask(sock, "key return")
         st = wait_for(sock, lambda st: "mode=0x03" not in st,
                       "the game to leave text mode", timeout=180)
         print(f"[play] in graphics: {st.strip()}")

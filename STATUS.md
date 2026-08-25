@@ -8,6 +8,12 @@ assembly (leaving behavioural equivalence as the standard) is unanswered — the
 image has only just been unpacked and has not been examined for prologues or a
 compiler banner. Everything below is scaffolding, not port progress.
 
+**Which configuration.** VGA, and machine type **"High Performance PCs"** —
+the one start-up option that sets no compatibility flags, so it is the plain
+path rather than a work-around for some machine's quirks. PC compatible, PS/2
+and Amstrad are deliberate non-goals; see
+[docs/machine-types.md](docs/machine-types.md).
+
 **Which binary.** `vgalemmi.exe` — the VGA build. `cgalemmi.exe` and
 `tgalemmi.exe` are **deliberate non-goals**: the game logic is the same in all
 three and only presentation differs, so a second variant would re-derive the
@@ -114,6 +120,9 @@ the first sweep should write this table rather than have it retyped by hand.
 ## Deferred
 
 - **CGA and Tandy builds** — non-goals, as above.
+- **The PC compatible, PS/2 and Amstrad machine types** — non-goals. What their
+  flags gate is still worth *identifying* (it is in Open), so the port can carry
+  honest no-ops rather than silent gaps, but the behaviour is not being ported.
 - **The EGA path** through `vgalemmi.exe`.
 - **`flr.exe`** (the crack's trainer), `install.exe`, and the `lem*.com`
   loaders — not part of the game.

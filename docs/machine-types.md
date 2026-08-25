@@ -79,5 +79,25 @@ a reading of the pattern, **not** a finding — nothing has been traced yet.
 3. Establish whether the choice is persisted (`RUSSELL.DAT` is the obvious
    candidate, and `LEMMI.BAT` resets it) or re-asked every run.
 
-Only option 1 (PC compatible) has been exercised in a run so far. The other
-three have been read, not executed.
+## What this port targets
+
+**High Performance PCs (`BL=1`).** It is the only option that sets no flags at
+all, so it is the plain path: the other three each switch on a work-around for
+a specific machine's quirks. Targeting it means the compatibility flags stay
+zero and the code they gate is never entered, which is both the behaviour worth
+having and the smallest surface to prove.
+
+The other three machine types are therefore **deliberate non-goals**. When the
+paths behind `ds:0x200A`/`0x200B`/`0x200C`/`0x200E` are eventually identified,
+they belong in the port as no-ops with a comment saying why, and out of the
+verifier's dispatch — comparing a no-op against the original reports a decision
+as a difference.
+
+`tools/lemmings.py` holds this as `STARTUP_KEYS = ("1", "2")`: `'1'` for VGA,
+`'2'` for High Performance. No RETURN is needed — the menu confirms on a digit
+(image `0x1159`: `mov bl,1` then a jump straight to the dispatch); only the
+arrow keys merely move the highlight.
+
+Only option 1 (PC compatible) has actually been *executed* so far, from before
+this decision. Option 2 is now what every tool drives, but a run under it has
+not yet been recorded here.

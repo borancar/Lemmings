@@ -37,8 +37,9 @@ def main():
     ap.add_argument("-o", required=True)
     ap.add_argument("--len", type=lambda v: int(v, 0), default=0x20000,
                     help="bytes from the image base (default 128K)")
-    ap.add_argument("--keys", default="1,1",
-                    help="keys to feed as the menus block (default 1,1)")
+    ap.add_argument("--keys", default=",".join(lemmings.STARTUP_KEYS),
+                    help="keys to feed as the menus block (default: VGA, then "
+                         "the machine type this port targets)")
     a = ap.parse_args()
 
     set_game_dir(lemmings.GAME_DIR)
