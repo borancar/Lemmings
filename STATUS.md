@@ -208,6 +208,15 @@ Each of these is stated as what was *checked*, not what was written.
   `0x0E633`) and the numbers written into the runs of spaces the original
   leaves for exactly that. **97.99% of text pixels.**
 
+- **The screens are clean under AddressSanitizer and UBSan, leak detection
+  on.** `make sanitize` builds every screen three times over — menu, briefing,
+  level-code, input chooser, level canvas — and frees each one, because the
+  menu loop does exactly that for as long as someone plays and *nothing else
+  here ran it more than once*. Each verifier builds one screen and exits, which
+  is the shape of run that never sees a leak or a double free. It also frees
+  twice deliberately, to pin that `menu_free` and `dat_free` are idempotent.
+  All clean. `make test` runs it alongside the input test.
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~

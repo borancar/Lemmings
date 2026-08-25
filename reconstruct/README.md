@@ -139,6 +139,15 @@ not yet established.
 modern backend has to replace, and a command line the original never had. Their
 headers say so.
 
+## Tests
+
+```sh
+make test                       # the menu's input, and every screen built
+make sanitize                   # the same screens under ASan and UBSan
+```
+
+`make test` needs no display: it sets SDL's dummy video driver itself.
+
 ## How it is known to be right
 
 **Its data loading is proven byte for byte.** The development repository has a
