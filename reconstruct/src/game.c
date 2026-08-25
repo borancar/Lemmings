@@ -364,7 +364,7 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
         if (!x && !y && !e[4] && !e[5] && !e[6] && !e[7])
             continue;
         level_object *o = &lv->objects[lv->num_objects++];
-        o->x = (int16_t)x;
+        o->x = (int16_t)(x - 16);
         o->y = (int16_t)y;
         o->id = e[5];
         o->no_overwrite    = (uint8_t)((e[6] & 0x80) != 0);
@@ -1555,6 +1555,23 @@ static void draw_preview(const char *dir, const level *lv, const ground *g,
     if (canvas_init(&c) != 0) { dat_free(&gfx); return; }
     if (render_terrain(&c, lv, g, gfx.sections[0].data,
                        gfx.sections[0].size, &err) == 0) {
+        /* THE OBJECTS ARE IN THE PREVIEW - the entrance and the exit.
+         *
+         * This file said "terrain only" for one commit, on the strength of an
+         * aggregate score: drawing them made the preview worse, 187 differing
+         * against 167. That was true and the conclusion drawn from it was
+         * wrong. Looking at WHERE the differences were - which the score
+         * cannot say - put them in two clusters, at level (708..747, 36..47)
+         * and (860..887, 108..131), and the level's three objects are at
+         * (720,36), (864,116) and (864,108). They were there all along; the
+         * port was drawing them sixteen pixels to the right. See level_parse.
+         *
+         * With that fixed the preview goes to 114 differing, better than
+         * leaving them out. An aggregate score is a poor way to decide whether
+         * a feature belongs on a screen. */
+        if (gfx.count >= 2)
+            render_objects(&c, lv, g, gfx.sections[1].data,
+                           gfx.sections[1].size, 0, &err);
         for (uint16_t sy = 0; sy < PV_H; sy++) {
             uint16_t y = (uint16_t)(PV_Y + sy);
             uint32_t ly = (uint32_t)sy * PV_SCALE + PV_SAMPLE;

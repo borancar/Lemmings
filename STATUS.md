@@ -33,7 +33,7 @@ numbers, re-measured on the current build:
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
-| the **briefing** | **99.93%** whole screen; **100.00%** over rows 78–349 (background, text, palette). The remaining 167 are in the level preview |
+| the **briefing** | **99.95%** whole screen; **100.00%** over rows 78–349 (background, text, palette). The remaining 114 are in the level preview |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, and the whole scrolling banner |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
@@ -476,9 +476,47 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
-- **Rows 0–77 are the level's own terrain at QUARTER SCALE — the level
-  preview.** Boran said so, and the clue had been in hand for two commits: the
-  palette taken from `GROUNDxO.DAT` offset `0x408` is the file's **`preview`**
+- **Every object in every level was drawn 16 pixels too far right**, and the
+  briefing's preview is what caught it.
+
+  Boran pointed out that the preview shows the entrance and the exit, not just
+  terrain. The commit before this one had claimed "terrain only" on the
+  strength of an **aggregate score** — drawing the objects made the preview
+  worse, 187 differing against 167 — without ever asking *where* the
+  differences were. They fell in two clusters, at level (708..747, 36..47) and
+  (860..887, 108..131); the level's three objects are at (720,36), (864,116)
+  and (864,108). They were in the preview all along.
+
+  Looking at the pixels rather than the total: the port's entrance was
+  **exactly right and exactly four preview cells — sixteen level pixels — to
+  the right.** Terrain x in the LVL is stored `+16`, and `level_parse` subtracts
+  it. Object x is stored the same way and it did not.
+
+  | object x | preview differing |
+  | --- | --- |
+  | as-is | 187 |
+  | −12 | 163 |
+  | **−16** | **114** |
+  | −20 | 163 |
+
+  A clear minimum, not a fit. It had survived because **nothing ever compared
+  objects against anything**: `tools/prove.sh` passes `--no-objects`
+  deliberately, since the original never bakes them into its composition. The
+  preview is the first thing that put them beside the original.
+
+  Two lessons, and the first is the one that cost the round: **an aggregate
+  score is a poor way to decide whether a feature belongs on a screen** — it
+  said "objects make it worse", which was true, and "so there are no objects",
+  which was false. And **a routine no comparison covers will hold a plain bug
+  indefinitely**; `render_objects` places every object in the game and had
+  never once been checked.
+
+  The briefing is now **99.95%** whole-screen, 114 of 224,000, all of it in the
+  preview.
+
+- **Rows 0–77 are the level's own terrain and objects at QUARTER SCALE — the
+  level preview.** The palette said so and it took saying out loud to hear it:
+  the array taken from `GROUNDxO.DAT` offset `0x408` is the file's **`preview`**
   palette. What it is the preview *of* was never asked.
 
   | | |
@@ -487,10 +525,9 @@ Each of these is stated as what was *checked*, not what was written.
   | the composed terrain's | 510 × 160 |
   | ratio | **4.016** and **4.103** |
 
-  Sampling pixel (2,2) of each 4×4 block, drawn at **(120, 19)**, 396×40:
-  **98.95%**, 167 of 15,840. **Terrain only** — adding the objects makes it
-  *worse*, 187 against 167, which agrees with what `prove.sh` established about
-  the composition: the original never bakes the entrance and exit in.
+  Sampling pixel (2,2) of each 4×4 block, drawn at **(120, 19)**, 396×40. That
+  sample point is not a guess: over the sixteen positions in the block it
+  scores 167 differing against 1,739–2,097 for every other one.
 
   This had been hunted as a stored bitmap, and then as a 1:1 region of the
   level — which scored **71.4%** and read as "not a match". It was the level
@@ -498,16 +535,12 @@ Each of these is stated as what was *checked*, not what was written.
   only as good as the transforms the search covered**, and "same pixels,
   different size" was not in mine.
 
-  What is left is 167 pixels, almost all at piece edges, and in only 4 of them
-  does the original's colour appear anywhere in the 4×4 block being sampled.
-  So downsampling the finished level is probably not how the original builds
-  it — more likely it scales each terrain piece as it draws, rounding each
-  piece's position independently, which would agree everywhere except where
-  those roundings disagree. That is written as a hypothesis; what is measured
-  is the 4:1 reduction, the origin, and the sample point.
-
-  The briefing is now **99.93%** over the whole screen, and **100.00%** over
-  rows 78–349.
+  What is left is 114 pixels, almost all at piece edges, and in only 4 of them
+  does the original's colour appear anywhere in the 4×4 block being sampled. So
+  downsampling the finished canvas is probably not how the original builds it —
+  more likely it scales each piece as it draws, rounding each piece's position
+  independently. That is written as a hypothesis; what is measured is the 4:1
+  reduction, the origin, and the sample point.
 
 - **The briefing's background is the menu's own tile, tiled from row 78.**
   It had been recorded as *"not the menu's tile, and in neither MAIN.DAT nor

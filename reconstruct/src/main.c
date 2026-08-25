@@ -92,6 +92,7 @@ static void usage(void)
           "  --rating R    fun | tricky | taxing | mayhem (default fun)\n"
           "  --scroll N    banner ribbon position in pixels (default 0)\n"
           "  --lem-frame N banner end lemmings, frame 0..15 (default 0)\n"
+          "  --obj-frame N the level objects' animation frame (default 0)\n"
           "  --number N    the GAME's level number, 1-30 (default 1)\n"
           "                resolved through the original's own order table,\n"
           "                so --rating fun --number 1 is \"Just dig!\"\n"
@@ -148,6 +149,8 @@ static int load_level(const char *data, const char *file, uint32_t which,
     lv->level_number = 0;
     return rc;
 }
+
+static uint8_t g_obj_frame;
 
 static int render_level(const char *data, const char *file, uint32_t which,
                         int objects, const char *out, const char *raw,
@@ -224,7 +227,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
     }
     if (objects && gfx.count >= 2) {
         if (render_objects(&c, &lv, &g, gfx.sections[1].data,
-                           gfx.sections[1].size, 0, &err) != 0) {
+                           gfx.sections[1].size, g_obj_frame, &err) != 0) {
             fprintf(stderr, "render objects: %s\n", err);
             canvas_free(&c);
             dat_free(&gfx);
@@ -326,6 +329,9 @@ int main(int argc, char **argv)
              * original is always somewhere in this; a capture cannot be
              * compared without saying where. */
             menu_set_scroll((uint32_t)atoi(argv[++i]));
+        }
+        else if (!strcmp(argv[i], "--obj-frame") && i + 1 < argc) {
+            g_obj_frame = (uint8_t)atoi(argv[++i]);
         }
         else if (!strcmp(argv[i], "--lem-frame") && i + 1 < argc) {
             /* Which frame the banner's two lemmings are on, 0..15. Separate
