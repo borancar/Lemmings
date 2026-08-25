@@ -1209,7 +1209,14 @@ static const view_hotspot SIGN_SPOT[6] = {
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F1,   MENU_PLAY      },
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F2,   MENU_NEW_LEVEL },
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F3,   MENU_FX        },
-    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_UP,   MENU_RATING    },
+    /* The rating plate answers to NOTHING that has been found. It carries two
+     * arrow tabs rather than a function key, and neither Up nor Down moves it:
+     * Down produces a screen diff identical to the no-key baseline, digit for
+     * digit. Mapping the arrow keys to it anyway would be inventing input the
+     * original does not take, so it has no key at all. The four ratings ARE in
+     * the executable - "Fun   TrickyTaxingMayhem" at image 0x0E691, four
+     * six-character slots - so something works it; not this. */
+    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_NONE, MENU_RATING    },
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_ESC,  MENU_EXIT      },
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F4,   MENU_HELP      },
 };
@@ -1219,20 +1226,37 @@ static const view_hotspot SIGN_SPOT[6] = {
  * each does beyond F1 and ESC is not reconstructed. */
 void menu_hotspots(view_hotspot *spots)
 {
+    /* The plates are KEYBOARD ONLY, with no click box of their own. That is
+     * measured, not a simplification, and it cost three experiments:
+     *
+     *   - the menu calls INT 33h AX=0002h once - HIDE CURSOR - and draws no
+     *     pointer: moving the position to (600,40) changes nothing anywhere
+     *     near it, only the scroller keeps moving.
+     *   - it polls AX=0003h 1342 times, so it is reading the BUTTON, and the
+     *     position reaches it and is ignored.
+     *   - clicking "EXIT TO DOS" does not exit. It starts the level, exactly
+     *     as clicking "1 PLAYER" or clicking bare background does.
+     *
+     * So a click anywhere acts as F1, and that is the last hotspot below.
+     * Giving each plate its own box would be inventing behaviour the original
+     * does not have, which is a worse kind of wrong than leaving it out. */
     for (uint8_t i = 0; i < 6; i++) {
         spots[i].x = SIGN_POS[i].x;
         spots[i].y = SIGN_POS[i].y;
-        spots[i].w = SIGN_W;
-        spots[i].h = SIGN_H;
+        spots[i].w = 0;
+        spots[i].h = 0;
         spots[i].key = SIGN_SPOT[i].key;
         spots[i].id = SIGN_SPOT[i].id;
     }
     /* Down does what Up does: the rating plate has two arrows and neither is
      * implemented, so pretending they differ would be inventing behaviour. */
-    spots[6] = spots[3];
-    spots[6].w = 0;
-    spots[6].h = 0;
-    spots[6].key = VIEW_KEY_DOWN;
+    /* A click anywhere on the screen, which the original treats as F1. */
+    spots[6].x = 0;
+    spots[6].y = 0;
+    spots[6].w = MENU_W;
+    spots[6].h = MENU_H;
+    spots[6].key = VIEW_KEY_NONE;
+    spots[6].id = MENU_PLAY;
 }
 
 menu_action menu_run(const menu_screen *m, uint8_t scale)

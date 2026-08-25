@@ -305,8 +305,10 @@ int  menu_build(const char *dir, menu_screen *m, const char **err);
 int menu_code_screen(const char *dir, menu_screen *m, const char **err);
 int menu_input_screen(const char *dir, menu_screen *m, const char **err);
 
-/* How many hotspots the menu has: the six plates, plus Down as a second key
- * for the rating plate. */
+/* How many hotspots the menu has: the six plates, and one full-screen box for
+ * "a click anywhere", which is what the original does with the mouse - see
+ * menu_hotspots in game.c. The rating plate is in the list but has no key,
+ * because nothing has been found that works it. */
 #define MENU_HOTSPOTS 7
 
 /* Fill in the menu's hotspots. Exposed so the mapping can be tested without

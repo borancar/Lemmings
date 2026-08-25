@@ -99,11 +99,14 @@ what the original does:
 | **F3** "FX" | nothing — which is what the original does here too |
 | **F4** "?" | the "Choose Input Type" screen |
 | **Esc** | quits |
-| the rating plate | not reconstructed |
+| the rating plate | nothing works it, in the port or the original |
 
-What each plate does was not guessed from its label: a probe drives the
-original to its menu, presses one key, and diffs the screen against a
-no-key baseline.
+Clicking anywhere acts as F1, including on "EXIT TO DOS" — that is what the
+original does. It hides the mouse cursor on this screen and reads only the
+button, so the plates are keyboard-only.
+
+None of that was guessed from the labels: a probe drives the original to its
+menu, presses one key, and diffs the screen against a no-key baseline.
 
 There is no game yet: no lemmings, no skills, no animation, no sound. Nothing
 on the menu animates either - the lemmings' eyes do not blink and the scrolling

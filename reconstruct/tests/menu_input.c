@@ -57,36 +57,34 @@ int main(void)
           view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_F4), MENU_HELP);
     check("Esc exits to DOS",
           view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_ESC), MENU_EXIT);
-    check("Up works the rating plate",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_UP), MENU_RATING);
-    check("Down works it too",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_DOWN), MENU_RATING);
+    /* Nothing found works the rating plate. Up and Down are checked to
+     * assert that the port does NOT invent them: the original's screen diff
+     * for Down is identical to its no-key baseline. */
+    check("Up does not work the rating plate",
+          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_UP), VIEW_CLOSED);
+    check("nor does Down",
+          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_DOWN), VIEW_CLOSED);
 
-    printf("\nmenu clicks - the middle of each plate:\n");
-    check("1 PLAYER",
+    /* Clicks. The original HIDES the cursor on this screen and treats a
+     * click anywhere as F1 - clicking "EXIT TO DOS" starts the level rather
+     * than exiting, measured with tools/probe_menu_keys.py. So every one of
+     * these is MENU_PLAY, including the ones over other plates, and that is
+     * the behaviour being pinned down here. */
+    printf("\nmenu clicks - the original ignores WHERE, and acts as F1:\n");
+    check("over 1 PLAYER",
           view_match_point(spots, MENU_HOTSPOTS, 68 + 60, 120 + 30), MENU_PLAY);
-    check("NEW LEVEL",
-          view_match_point(spots, MENU_HOTSPOTS, 196 + 60, 120 + 30), MENU_NEW_LEVEL);
-    check("FX",
-          view_match_point(spots, MENU_HOTSPOTS, 324 + 60, 120 + 30), MENU_FX);
-    check("the rating plate",
-          view_match_point(spots, MENU_HOTSPOTS, 452 + 60, 120 + 30), MENU_RATING);
-    check("EXIT TO DOS",
-          view_match_point(spots, MENU_HOTSPOTS, 196 + 60, 197 + 30), MENU_EXIT);
-    check("the ? plate",
-          view_match_point(spots, MENU_HOTSPOTS, 324 + 60, 197 + 30), MENU_HELP);
-
-    printf("\nand the background is not a button:\n");
-    check("top left corner",
-          view_match_point(spots, MENU_HOTSPOTS, 4, 4), VIEW_CLOSED);
-    check("between the two rows of plates",
-          view_match_point(spots, MENU_HOTSPOTS, 320, 188), VIEW_CLOSED);
-    check("just left of 1 PLAYER",
-          view_match_point(spots, MENU_HOTSPOTS, 67, 150), VIEW_CLOSED);
-    check("just right of the ? plate",
-          view_match_point(spots, MENU_HOTSPOTS, 324 + 120, 197 + 30), VIEW_CLOSED);
-    check("one row below the bottom plates",
-          view_match_point(spots, MENU_HOTSPOTS, 324 + 60, 197 + 61), VIEW_CLOSED);
+    check("over EXIT TO DOS (does NOT exit)",
+          view_match_point(spots, MENU_HOTSPOTS, 196 + 60, 197 + 30), MENU_PLAY);
+    check("over the rating plate",
+          view_match_point(spots, MENU_HOTSPOTS, 452 + 60, 120 + 30), MENU_PLAY);
+    check("on bare background, top left",
+          view_match_point(spots, MENU_HOTSPOTS, 4, 4), MENU_PLAY);
+    check("on bare background, between the rows",
+          view_match_point(spots, MENU_HOTSPOTS, 320, 188), MENU_PLAY);
+    check("bottom right corner",
+          view_match_point(spots, MENU_HOTSPOTS, 639, 349), MENU_PLAY);
+    check("outside the screen entirely",
+          view_match_point(spots, MENU_HOTSPOTS, 700, 400), VIEW_CLOSED);
 
     printf(failures ? "\n  %d FAILED\n" : "\n  all passed\n", failures);
     return failures ? 1 : 0;

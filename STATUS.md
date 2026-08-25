@@ -235,7 +235,7 @@ Each of these is stated as what was *checked*, not what was written.
   | F3 "FX" | **nothing** — measured, only the scroller moves | a faithful no-op |
   | F4 "?" | a **"Choose Input Type"** screen | drawn, **99.37%** |
   | Esc "EXIT TO DOS" | quits | quits |
-  | the rating plate | no response to Up — measured | not reconstructed |
+  | the rating plate | no response to Up **or Down** — Down's screen diff is identical to the no-key baseline | no key mapped, deliberately |
 
   What the two screens *do* with the answer is not reconstructed: the port
   draws them and comes back. Neither excludes anything from its score.
@@ -249,9 +249,18 @@ Each of these is stated as what was *checked*, not what was written.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
 - **The rating list is in the executable** — `Fun   TrickyTaxingMayhem` at
-  image `0x0E691`, four six-character slots — so the plate is meant to cycle.
-  It did not respond to Up in this demo build; whether it responds to something
-  else is untested.
+  image `0x0E691`, four six-character slots — so something works that plate.
+  Not Up, and not Down: Down's screen diff is *identical* to the no-key
+  baseline, digit for digit. The port maps no key to it rather than inventing
+  one.
+- **The menu's plates are keyboard-only, and a click anywhere acts as F1.**
+  Measured three ways: the menu calls INT 33h AX=0002h once — hide cursor — and
+  draws no pointer, so moving the position to (600,40) changes nothing near it;
+  it polls AX=0003h 1342 times, so the position reaches it and is ignored; and
+  clicking "EXIT TO DOS" starts the level rather than exiting, exactly as
+  clicking bare background does. The port had per-plate click boxes, which was
+  behaviour the original does not have — a worse kind of wrong than leaving it
+  out — and they are gone.
 - **The scrolling banner at the foot is not drawn**, and nothing in the port
   animates. The banner's *strings* are found (image `0x0E45E` onward, in
   38-byte slots) but where it is drawn and how it scrolls is not. Correction

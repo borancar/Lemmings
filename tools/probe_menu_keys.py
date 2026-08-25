@@ -111,6 +111,31 @@ def one_key(key, settle, after, samples, hold):
         # is how the first run of this probe reported that F1 does nothing -
         # F1 is the one key we already know works. tools/play.py holds it for
         # the same reason.
+        # A "key" of the form @x,y is a CLICK at that point instead. The
+        # rating plate carries two small arrow tabs rather than a function
+        # key, so whether it responds at all can only be asked with the mouse.
+        if key.startswith("@"):
+            cx, _, cy = key[1:].partition(",")
+            for _ in range(3):
+                # Held, for the same reason keys are: a guest polling the
+                # button STATE never sees a press that goes down and up
+                # between two of its own polls.
+                ask(sock, f"click down 0 {cx} {cy}")
+                time.sleep(0.4)
+                ask(sock, "click up 0")
+                time.sleep(1.1)
+            rows = []
+            for i in range(samples):
+                time.sleep(after)
+                shot = os.path.join(ROOT, "out", f"mk_click_{i}.scrn")
+                ask(sock, f"screen {shot}")
+                st = ask(sock, "status").strip()
+                _, _, p1 = read_scrn(shot)
+                n, bx = diff(p0, p1, w)
+                rows.append((i, n, bx, lit(shot),
+                             st.split("mode=")[1].split()[0]))
+            return key, None, rows, w
+
         # Pressed more than once and spaced out, as tools/play.py does: there
         # is no cue over the socket for "the menu is ready for input", and one
         # press at the wrong moment is indistinguishable from a key that does

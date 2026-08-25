@@ -409,7 +409,8 @@ int main(int argc, char **argv)
                    a == MENU_FX ? "F3, \"FX\": the original's screen does not "
                                   "change here either, and there is no sound "
                                   "yet"
-                                : "the rating plate is not reconstructed yet");
+                                : "the rating plate: nothing has been found "
+                                  "that works it, here or in the original");
         }
         menu_free(&mm);
         return rc;
