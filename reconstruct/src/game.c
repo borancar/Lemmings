@@ -650,7 +650,10 @@ void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     }
 }
 
-/* The status line, one character per cell of PANEL_COLS. */
+/* NOT TRANSCRIBED. panel_char below it is - image 0x07756 - but the loop that
+ * walks the template and decides which cells get numbers has not been read;
+ * where the original keeps the finished line, and what writes the counts into
+ * it, are both open. This draws the template as it stands. */
 void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                   const uint8_t *sec, uint32_t sec_len,
                   const char *text, uint16_t x, uint16_t y)
