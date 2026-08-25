@@ -84,6 +84,13 @@ typedef struct {
     ground_terrain terrain[GROUND_TERRAIN];
     ground_object  objects[GROUND_OBJECTS];
     lem_rgb        palette[16];
+    /* The file carries THREE upper-eight palettes at 0x3D8, 0x3F0 and 0x408 -
+     * custom, standard and preview. `palette[8..15]` is the custom one, which
+     * is what the level itself is drawn in. The PREVIEW one is what the
+     * briefing screen uses, and the two differ: for graphics set 0 only in
+     * entry 8's red, 0x38 against 0x34. One byte, and it is the difference
+     * between the briefing's palette matching the original and not. */
+    lem_rgb        preview[8];
 } ground;
 
 int ground_load(const char *path, ground *out, const char **err);

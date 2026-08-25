@@ -550,7 +550,14 @@ int ground_load(const char *path, ground *g, const char **err)
         { 0x3C, 0x08, 0x08 },   /* 5 red                      */
         { 0x20, 0x20, 0x20 },   /* 6 grey                     */
     };
-    const uint8_t *vga_custom = buf + 0x3D8;
+    const uint8_t *vga_custom  = buf + 0x3D8;
+    /* 0x3D8 custom, 0x3F0 standard, 0x408 preview - eight triples each. */
+    const uint8_t *vga_preview = buf + 0x408;
+    for (uint8_t i = 0; i < 8; i++) {
+        g->preview[i].r = widen6(vga_preview[i * 3 + 0]);
+        g->preview[i].g = widen6(vga_preview[i * 3 + 1]);
+        g->preview[i].b = widen6(vga_preview[i * 3 + 2]);
+    }
 
     for (uint8_t i = 0; i < 7; i++) {
         g->palette[i].r = widen6(FIXED[i][0]);
@@ -1522,6 +1529,37 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
      * masks - and that is what tools/verify_menu.py scores. */
     if (screen_start(dir, m, &d, &sec, &font, &fontlen, 0, err) != 0)
         return -1;
+
+    /* PALETTE ENTRIES 8..15 ARE THE LEVEL'S, NOT THE MENU'S.
+     *
+     * This screen borrows the terrain colours of the level it is announcing.
+     * Measured, not assumed: the original's own DAC on a captured briefing
+     * reads 227,130,32 / 195,81,16 / 146,32,16 / 97,0,16 / 65,65,81 /
+     * 97,97,113 / 113,146,0 / 32,97,32 at attribute entries 8..15, and those
+     * are GROUND0O.DAT's **preview** palette exactly - all eight, byte for byte,
+     * after the 6-bit-to-8-bit bit replication.
+     *
+     * The PREVIEW one, not the custom one the level itself is drawn in. The
+     * file carries three upper-eight palettes and for graphics set 0 the two
+     * differ in a single byte - entry 8's red, 0x38 against 0x34, 227 against
+     * 211. Using `palette[8..15]` got seven of the eight and left exactly one
+     * entry wrong, which is the sort of near-miss that reads as a rounding
+     * error rather than as the wrong array.
+     *
+     * Entries 0..7 stay the menu's, which is what the text is drawn in. If
+     * the ground file will not load the menu palette is left in place: a
+     * briefing with the wrong eight colours is still a briefing, and refusing
+     * to draw the screen over it would be worse. */
+    {
+        char gpath[256];
+        ground g;
+        const char *gerr = NULL;
+        snprintf(gpath, sizeof(gpath), "%s/ground%uo.dat", dir,
+                 (unsigned)(lv->graphics_set & 0x0F));
+        if (ground_load(gpath, &g, &gerr) == 0)
+            for (uint8_t i = 8; i < 16; i++)
+                m->palette[i] = g.preview[i - 8];
+    }
 
     char line[64];
 

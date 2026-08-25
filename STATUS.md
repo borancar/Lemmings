@@ -33,7 +33,7 @@ numbers, re-measured on the current build:
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
-| the **briefing's** text | **100.00%** — 0 of 15,184 |
+| the **briefing's** text | **100.00%** — 0 of 15,184, and its **palette is exact too**, all 16 entries |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, and the whole scrolling banner |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
@@ -476,6 +476,30 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
+- **The briefing's palette is the level's PREVIEW palette, and it is now
+  exact — all 16 entries.** This had been open as "entries 8-15 are the
+  level's terrain colours, not the menu's, and come from somewhere that has
+  not been found".
+
+  They come from `GROUNDxO.DAT`. The file carries **three** upper-eight
+  palettes at `0x3D8`, `0x3F0` and `0x408` — custom, standard and preview —
+  and the briefing uses the **preview** one, which is exactly what its name
+  says for a screen that previews a level.
+
+  Using `palette[8..15]`, which is the *custom* set the level itself is drawn
+  in, got **seven of the eight** and left one entry wrong: entry 8's red,
+  `0x38` against `0x34`, 227 against 211. One byte. That is the kind of
+  near-miss that reads as a rounding error in the 6-bit widening rather than
+  as the wrong array, and it is worth recording as such — the fix was not to
+  adjust anything, it was to notice that a different array existed.
+
+  Verified against a fresh capture of the original's own briefing: **palette
+  entries differing: 0**, text 100.00%.
+
+  What is still open on this screen is only the **background**, which is in
+  neither `MAIN.DAT` nor `VGAGR0.DAT`, and which the port leaves black rather
+  than drawing something plausible and wrong.
+
 - **The main menu is EXACT. 100.00%, zero pixels differing, at all four
   ratings.**
 
