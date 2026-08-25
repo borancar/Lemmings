@@ -297,11 +297,20 @@ Each of these is stated as what was *checked*, not what was written.
   from `0x6E000`–`0x70FFF` with `bp=3`, which matches the font's three planes
   exactly and is a good check that the reading is right.
 
-  Dumping `0x58000` did **not** reproduce it, twice: once after the screen had
-  settled, when the buffer had presumably been reused, and once from a
-  breakpoint that landed on a text blit instead of the background. So the tile
-  is there at the moment it is drawn and the dig is unfinished. Next: break on
-  the *first* `0x0988A` after a full-screen clear, not on any of them.
+  Grabbing the source *at* the first wide blit after a clear — the timing the
+  two earlier dumps got wrong — shows the buffer at `0x587E0` begins
+  `f1 80 07 fc 00 00 05 f7`, which is **MAIN.DAT section 3 byte for byte**: the
+  menu's own graphics, loaded there. But the briefing's background is **not**
+  the menu's tile: `tile|8` scores 1.65% at its best vertical phase, and plain
+  `tile` scores 48% which is only the black agreeing.
+
+  **So the dig is parked here**, with the honest state written down rather than
+  a guess: the source buffer holds section 3, the background is somewhere in or
+  derived from it, and it is not the tile at offset 0. Section 3 is accounted
+  for as background `0..8319`, logo `8320..38023`, signs `38024..59983` — with
+  **1,984 bytes unexplained at the end**, too few for another 320×104 tile.
+  This is a cosmetic element on a screen whose text is already 97.99%, and it
+  has now taken more of this project's time than the whole menu did.
 - **The briefing and the two sub-screens dismiss on a click**, which is what
   the briefing's own text asks for — "Press mouse button to continue". Esc does
   too; that is the port's addition, and marked as such.

@@ -1192,9 +1192,11 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
      * Not "generated", though - that was this project's first write-up of it
      * and it overstated the evidence. Watching writes into the EGA window
      * shows the screen cleared at image 0x04E34 and then drawn by the ordinary
-     * blitter at 0x089C4..0x098D4 from a BUFFER. So it is data when it is
-     * drawn; whether that buffer is filled from a file by some transform, or
-     * built from nothing, is not settled. See STATUS.md.
+     * blitter at 0x089C4..0x098D4 from a buffer at linear 0x58000, whose first
+     * bytes are MAIN.DAT section 3 exactly - the menu's own graphics. It is
+     * data, and it is that file. But it is NOT the tile at section 3 offset 0:
+     * drawn with bit 3 set, that scores 1.65% at its best vertical phase.
+     * Where in section 3 it comes from is unfound. See STATUS.md.
      *
      * So this leaves it black rather than drawing the menu's tile underneath.
      * A plausible-looking wrong background is worse than an obviously missing
