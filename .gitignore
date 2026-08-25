@@ -7,3 +7,6 @@ build/
 *.png
 !docs/reference/*.png
 !reconstruct/docs/*.png
+reconstruct/lemmings
+reconstruct/src/*.o
+*.bmp
