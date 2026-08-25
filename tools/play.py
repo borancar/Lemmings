@@ -67,6 +67,12 @@ def main():
                          "4 Amstrad PC1640/1512 (default 2 - the machine type "
                          "this port targets, and the only one that sets no "
                          "compatibility flags)")
+    ap.add_argument("--start", action="store_true",
+                    help="once at the title, press F1 to start a game")
+    ap.add_argument("--start-tries", type=int, default=4,
+                    help="how many times to press F1 (default 4)")
+    ap.add_argument("--start-delay", type=float, default=6.0,
+                    help="seconds between F1 presses (default 6)")
     ap.add_argument("--socket", default="",
                     help="control socket path (default: a temporary one)")
     ap.add_argument("rest", nargs=argparse.REMAINDER,
@@ -103,6 +109,19 @@ def main():
         st = wait_for(sock, lambda st: "mode=0x03" not in st,
                       "the game to leave text mode", timeout=180)
         print(f"[play] in graphics: {st.strip()}")
+        if a.start:
+            # The title screen is mode 10h; the menus before it are 0Dh. Wait
+            # for the mode the title actually uses rather than a wall clock.
+            st = wait_for(sock, lambda st: "mode=0x10" in st,
+                          "the title screen", timeout=180)
+            # The title fades its palette in before it takes input, and a key
+            # pressed during the fade is dropped. There is no cue for "the
+            # fade has finished" over the socket, so press more than once and
+            # spaced out rather than betting on one moment.
+            for attempt in range(a.start_tries):
+                time.sleep(a.start_delay)
+                print(f"[play] title -> F1 (attempt {attempt + 1})")
+                ask(sock, "key f1 4")
         proc.wait()
     except KeyboardInterrupt:
         pass

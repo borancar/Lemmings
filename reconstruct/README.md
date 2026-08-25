@@ -4,14 +4,22 @@ A reimplementation in C of **PC Lemmings (VGA)** — DMA Design / Psygnosis,
 1991 — reconstructed by reverse engineering the original executable and its
 data files.
 
-![Level 1, "This should be a doddle!"](docs/level1.png)
+![Level 1, "Just dig!"](docs/level1.png)
 
 ```sh
 make
 ./lemmings --data /path/to/lemmings --show   # a window on level 1
 ./lemmings --data /path/to/lemmings          # or just write level.bmp
-./lemmings --data /path/to/lemmings --level 3
+./lemmings --data /path/to/lemmings --file level000.dat --level 3
 ```
+
+**The game's level order is not its file order.** What the original calls
+"Level 1" is section 1 of `level009.dat`, not the first level of the first
+file - established by running the original under an emulator and reading its
+own briefing screen ("Just dig!", 10 lemmings, 10% to be saved, release rate
+50, 5 minutes, diggers only), then confirming this parser gives exactly those
+numbers. That pair is the default. What maps a level number onto a file and a
+section has not been traced yet.
 
 Arrow keys scroll (hold Shift to go faster), Home and End jump to the ends,
 Esc quits.
@@ -60,15 +68,18 @@ wrong or ambiguous in three places, all recorded in the source comments:
   level 1 both plausible ways and keeping the reading where every piece lands
   in range and names a bitmap the set defines (168/168 against 82/168)
 
-The level that comes out reads `This should be a doddle!`, with 80 lemmings,
-save 40, release rate 50 and ten of each skill, which is the level as
-published.
+**One real check has happened.** The original was run under an emulator as far
+as its level briefing screen, which states the level's name and parameters in
+the game's own words. This parser, given the same section, reports the same
+six values - name, lemming count, percentage to save, release rate, time limit
+and the single skill. That is independent confirmation of the level globals,
+not a reading of the same document twice.
 
-What has **not** happened yet is the check that matters most: comparing this
-against the original binary running under an emulator, routine by routine.
-Until then this is a plausible reimplementation, not a proven one. The
-development repository holds the emulator, the verification harness and the
-disassembly notes.
+What has **not** happened is the check that matters most: comparing this
+renderer's output against the original's video memory, pixel for pixel, and
+its routines against the original's, one at a time. Until then this is a
+plausible reimplementation, not a proven one. The development repository holds
+the emulator, the verification harness and the disassembly notes.
 
 ## Where it deviates from the original, deliberately
 

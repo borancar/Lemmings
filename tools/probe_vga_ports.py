@@ -70,7 +70,7 @@ m.uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
 
 KEYS = [pygame.K_1, pygame.K_1]
 addr, sent, rounds = m.start, 0, 0
-while rounds < 260:
+while rounds < 200:
     rounds += 1
     m.blocked_on_input = False
     try:

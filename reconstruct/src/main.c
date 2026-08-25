@@ -29,8 +29,10 @@ static void usage(void)
 {
     fputs("usage: lemmings [--data DIR] [--file NAME] [--level N] [--out FILE]\n"
           "  --data DIR    directory holding the original files (default .)\n"
-          "  --file NAME   level container (default level000.dat)\n"
-          "  --level N     which level inside it, 1-based (default 1)\n"
+          "  --file NAME   level container (default level009.dat)\n"
+          "  --level N     which level inside it, 1-based (default 2)\n"
+          "                the default pair is the level the game itself\n"
+          "                calls Level 1 - the file order is not the game's\n"
           "  --out FILE    where to write the picture (default level.bmp)\n"
           "  --show        open a window on the level (arrows scroll, Esc quits)\n"
           "  --scale N     window magnification for --show (default 3)\n",
@@ -39,10 +41,17 @@ static void usage(void)
 
 int main(int argc, char **argv)
 {
+    /* The level the GAME calls "Level 1" is not the first level in the first
+     * file. In this demo build it is section 1 (0-based) of level009.dat -
+     * established by running the original under an emulator and reading its
+     * own briefing screen: "Just dig!", 10 lemmings, 10% to be saved, release
+     * rate 50, 5 minutes, diggers only. Parsing that section gives exactly
+     * those numbers. The demo's level order is not its file order, and what
+     * maps one to the other has not been traced yet. */
     const char *data = ".";
-    const char *file = "level000.dat";
+    const char *file = "level009.dat";
     const char *out  = "level.bmp";
-    uint32_t which = 1;
+    uint32_t which = 2;
     uint8_t scale = 3;
     int show = 0;
 
