@@ -508,13 +508,22 @@ Each of these is stated as what was *checked*, not what was written.
   | plane 3 | plane 3 | 377 |
   | `!= 0` | **plane 3** | **257** |
 
-  So the mask is the shadow's silhouette and the ink stays keyed on 0. Why the
-  ink is not also keyed on the mask is **not established**, and the 210
-  remaining "sprite 3 where the original shows 2" say something is still
-  wrong. What *is* established is which of the four the original agrees with.
-  The inference from the mask pointer is recorded because it looked conclusive
-  and was not — three of these four models are more defensible on paper than
-  the one that wins.
+  The shadow half is then **transcribed, not fitted.** The blitter branches on
+  bit 6 of `bp` at image `0x08905`, and the menu passes `bp=0x03` for a sprite
+  and `bp=0xF43` for its shadow — `0x40` is the only bit that differs. The
+  shadow path at image `0x0909C` sets Set/Reset (GC 0) to 0 and Enable
+  Set/Reset (GC 1) to `(bp >> 8) & 0xF` = `0xF`, driving all four planes to
+  zero, so the shadow is solid **black**; and it takes its silhouette from
+  `bx`, which the `xchg di,bx` at image `0x0887E` has left holding the **mask
+  pointer**. Exactly the model that won.
+
+  The ink half is **not** settled. The sprite path at image `0x0890E` stages
+  both the ink and the mask, which argues the ink should key on plane 3 too —
+  and measured, that is worse. The 210 remaining differences are all "sprite
+  value 3 where the original shows 2". What would settle it is reading the
+  rest of `0x0890E`, which writes the planes through the EGA's set/reset
+  machinery rather than as bytes; that has not been done. It is the next
+  thing here, not a mystery.
 
 - **The five walk-on lemmings are transcribed, and no capture can check
   them.** Image `0x04F96` walks a ten-entry table at `ds:0x4960` (image

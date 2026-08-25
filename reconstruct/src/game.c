@@ -1138,41 +1138,39 @@ static uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
     return v;
 }
 
-/* Blit a 4-plane sprite, keyed on value != 0.
+/* Blit a 4-plane sprite, keyed on value != 0 - and the drop shadows are cast
+ * through the sprite's MASK plane instead. Both of those are now read off the
+ * blitter rather than fitted, and the two are not the same rule.
  *
- * That it is keyed at all rather than drawn opaquely was measured early: drawn
- * opaquely the logo's own bounding box scores 35%, keyed 95%+, and the
- * background texture is plainly visible between the letters.
+ * The blitter branches on bit 6 of bp at image 0x08905. The menu passes
+ * bp=0x03 for a sprite and bp=0xF43 for its shadow, and 0x40 is the only bit
+ * that differs:
  *
- * WHICH test decides transparency is a separate question, and the obvious
- * answer is wrong. Every one of these blits hands the blitter a mask pointer
- * exactly 3 * plane_size after the ink - the plates at si+2745 with planes of
- * 915, the logo at si+22278 with planes of 7426 - so the sprite's fourth plane
- * is a mask. And the data seems to agree: tabulating sprite value against
- * screen colour over all six plates gives
+ *   SHADOW, image 0x0909C.  Set/Reset (GC 0) = 0 and Enable Set/Reset (GC 1)
+ *   = (bp >> 8) & 0xF = 0xF, so all four planes are driven to zero - the
+ *   shadow is solid BLACK. Its silhouette comes from `bx`, which the
+ *   `xchg di,bx` at image 0x0887E has left holding the MASK pointer. The menu
+ *   passes that as ink + 3 * plane_size - the plates at si+2745 with planes of
+ *   915, the logo at si+22278 with planes of 7426 - so the mask is the
+ *   sprite's own fourth plane.
  *
- *     value 8..15  ->  itself           the plate's real ink
- *     value 3      ->  screen 2, 210 times
- *     value 2      ->  screen 2, 173 times
- *     value 1      ->  screen 0,  22 times
- *     value 4..7   ->  never occurs
+ *   SPRITE, image 0x0890E.  Enable Set/Reset = 0x0E and it stages BOTH the
+ *   ink (to 0x6706) and the mask (to 0x6748), so the ink is masked too. That
+ *   argues the ink should also key on plane 3.
  *
- * which reads as "1..3 are not ink, they are the two-plane background tile
- * showing through". Keyed on plane 3 the port should then be exact.
+ * It should, and measured it is worse. All four combinations, whole screen,
+ * all four ratings:
  *
- * It is not. Measured, all four ratings, whole screen:
+ *     ink != 0,   shadow != 0        326 differ
+ *     ink plane 3, shadow != 0       460
+ *     ink plane 3, shadow plane 3    377
+ *     ink != 0,   shadow plane 3     257   <- this
  *
- *     ink != 0,  shadow != 0        326 differ   (where this started)
- *     ink plane 3, shadow != 0      460
- *     ink plane 3, shadow plane 3   377
- *     ink != 0,  shadow plane 3     257   <- this
- *
- * So the mask is the SHADOW's silhouette, and the ink is keyed on 0. Why the
- * ink is not also keyed on the mask is not established, and the 210 remaining
- * "sprite 3 where the original shows 2" say something is still wrong; what is
- * established is which of the four combinations the original agrees with. The
- * inference from the mask pointer was worth testing and is recorded here
- * because it looked conclusive and was not. */
+ * So the shadow half is settled and transcribed; the ink half is not. The 210
+ * remaining differences are all "sprite value 3 where the original shows 2",
+ * and the rest of image 0x0890E - which writes the planes through the EGA's
+ * set/reset machinery rather than as bytes - has not been read. That is what
+ * would settle it, and it is the next thing to do here, not a mystery. */
 static void blit(uint8_t *dst, const uint8_t *sec, uint32_t base,
                  uint16_t w, uint16_t h, uint16_t stride, uint32_t plane,
                  uint16_t at_x, uint16_t at_y)
