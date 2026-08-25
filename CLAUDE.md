@@ -26,9 +26,25 @@ transcribes as array writes and a frame check is a plain byte compare.
 
 ```sh
 uv sync
-uv run python tools/play.py --window --scale 3   # a window to play in
-uv run python tools/play.py --auto              # answer the start-up menus
+uv run python tools/play.py --window -- --scale 3  # a window to play in
+uv run python tools/play.py --auto                 # answer the start-up menus
 ```
+
+`--scale` is the **emulator's** flag, not `play.py`'s, so it goes after `--`.
+Without the `--` this is a usage error, which is what the line here used to
+say to do.
+
+The reconstruction runs on its own, and opens on the main menu:
+
+```sh
+make -C reconstruct
+./reconstruct/lemmings --data lemming1.pc            # --scale 2 to enlarge
+```
+
+Its keys are the original's, read off the plates it draws: F1 play (briefing,
+level, back), F2 Enter Code, F3 FX, F4 input, Esc quit, Up / `` ` `` and
+Down / `-` for the rating. A click anywhere acts as F1, which is what the
+original does.
 
 `tools/lemmings.py` is the **one place this project names the game** — its
 directory, its executable, its load segment. Every tool imports the emulator
