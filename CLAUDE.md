@@ -67,6 +67,23 @@ The count rises as the game gets further: it currently exits during start-up
 (see STATUS.md), so most of the game has never executed and is only as
 readable as the raw dump makes it.
 
+## Compare against what the original composes, not what it displays
+
+The strongest check here is not a screenshot. A screen carries sprites, a
+cursor, a palette fade, a scroll offset and a viewport, and every one of them
+is a difference that is not the difference you are looking for - a comparison
+against one sat at 81% for several rounds with nine rejected hypotheses about
+why.
+
+The game builds its level in video memory before showing it. Break at the
+instruction *after* the loop that builds it - image `0x376A`, the exact moment
+it is complete - dump the buffer, and compare that. Same port, same data:
+**100.00%, 49 741 terrain pixels, zero differing.**
+
+Timing that capture matters and fails silently: a dump taken a second early
+catches composition mid-flight and looks exactly like a port drawing terrain
+the original does not.
+
 ## Conventions
 
 - **`stdint` types only** in the reconstruction — `uint8_t`, `uint16_t`,
@@ -119,6 +136,10 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/probe_desync.py` | find a single-step desynchronisation, if the decryptor ever loses step |
 | `tools/probe_int13.py`, `tools/probe_exit.py`, `tools/probe_derail.py` | what the disk check asks for, where the program quits, how it derails |
 | `tools/reference_dosbox.sh` | capture DOSBox's screens as a reference (mounts a copy) |
+| **`tools/prove.sh`** | **the proof, in one command**: drive the original to the end of its terrain composition, dump the level it built, render the same level with the port, compare |
+| `tools/compare_composed.py` | port versus the original's own composed level, as indices |
+| `tools/verify_data.py` | the port's file loading versus the original's memory |
+| `tools/compare_level.py` | port versus the original's *screen* (weaker: sprites, cursor, fade) |
 | `tools/play.py` | run the game; `--auto` answers the start-up menus from the guest's own cue |
 | `tools/trace_stub.py` | instruction trace with registers, for reading a packer stub |
 | `tools/find_write.py` | first guest write into a linear range, and the instruction that did it |

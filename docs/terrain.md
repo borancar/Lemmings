@@ -221,6 +221,31 @@ whose terminator carried anything else in its second word. No shipped level
 here does, so it changes nothing measurable — but it was wrong, and matching
 the original costs nothing.
 
+## Objects are never composed into the level
+
+Breaking at image `0x03789` - the final `ret` of the routine that loads a
+level, after **all five** of its composition passes - and dumping video memory
+gives a canvas identical to the one at the end of the terrain loop. The
+original does not bake the entrance, the exit or the traps into the level
+bitmap at all; it draws them as animated sprites at display time, which it
+must, because they move.
+
+The port draws them into its canvas because its job is to produce a picture a
+person can look at. `--no-objects` turns that off and gives the level exactly
+as the original composes it - 807 pixels' difference, which is precisely the
+three objects on level 1.
+
+## Reproducing the proof
+
+`tools/prove.sh` does the whole thing in one command: drives the original into
+its first level, stops at the instruction after its terrain loop, dumps the
+level it built, renders the same level with the port, and compares them as
+4-bit indices over the whole 1584x160 canvas.
+
+```
+  offset 16   100.00%   differing 0   port-only 0   game-only 0
+```
+
 ## What this does and does not explain
 
 It **confirms** the port's rules from the original's own code rather than from
@@ -228,10 +253,15 @@ a published description: drawing order, that "do not overwrite" means "only
 where nothing is yet", that it applies per piece rather than universally, and
 that for this data OR and replace cannot be told apart.
 
-It does **not** explain the ~19% of terrain pixels that still differ (see
-`STATUS.md`). What it does do is remove the last plausible guesses: there is
-no clever combining rule to discover, because the hardware's combining rule is
-a no-op on terrain data.
+There is no clever combining rule to discover: the hardware's combining rule is
+a no-op on terrain data, and replace is what it amounts to.
+
+**The ~19% of terrain pixels that this document once said were unexplained
+were not the port's.** They were our emulator's, which did not implement VGA
+read modes - and the blitter above reads video memory in read mode 1 and turns
+the answer into its bit mask, so that read *is* its "do not overwrite" test.
+With read modes implemented the port's composed level is byte-for-byte
+identical to the original's. See `STATUS.md` for the retraction.
 
 The caller has now been read too, and it confirms the entry decode rather than
 contradicting it. Every part of the port's terrain handling that can be
