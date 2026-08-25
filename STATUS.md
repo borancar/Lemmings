@@ -104,76 +104,33 @@ Each of these is stated as what was *checked*, not what was written.
   does occur inside the video aperture where the game blitted it, and taking
   the first hit reported two of `main.dat`'s sections as 40% wrong when they
   had merely been found in the wrong place.
-- **THE PIXEL COMPARISON RUNS.** `tools/compare_level.py` slides the port's
-  1584x160 canvas across the original's 320x160 viewport, captured out of the
-  guest's own video memory. Results, on level 1:
-  - **Best alignment is x = 624** — and 624 is exactly the `start_x` the level
-    file declares. Two independent things agreeing that were never fitted to
-    each other.
-  - **81.06% of pixels identical** (41 505 of 51 200) against our emulator,
-    and **79.15% against DOSBox** — an entirely independent implementation,
-    driven into the same level and captured at 2x with no aspect correction so
-    it halves back to the guest's own pixels. The two references agreeing with
-    each other is what makes the residual difference believable as a real
-    difference in the port rather than an artefact of our machine.
-  - **Know the noise floor: ~58%.** Two unrelated renderings of this level
-    agree on that much simply because a few colours dominate. Before the
-    colour-expansion fix the DOSBox comparison scored 59.59% — right on the
-    floor, which is how a broken instrument disguises itself as a broken
-    result.
-  - The **terrain outline is right**: of ~18 800 background pixels only ~380
-    disagree, so where the port says rock and where the original says rock
-    agree almost everywhere.
-  - **The capture is chosen by palette, not by brightness.** The driver polls
-    the level, scores each sample's palette against the one the graphics set's
-    own file specifies, and keeps the closest — reaching a mean error of 0.76
-    per channel. Brightness was tried first and is a bad proxy: a fade passes
-    through tables that are bright and badly wrong, and "keep the brightest"
-    kept a level drawn in red, green and magenta, with the BIOS default EGA
-    colours still in DAC 0x10–0x17 because the game had not loaded the level's
-    palette yet.
-  - **The capture is taken on a cue, and the checker refuses a bad one.** A
-    screen caught mid palette-fade has perfectly varied indices and an
-    all-black palette; it renders black, the port's empty left margin matches
-    it exactly, and an earlier run of this check printed **EXACT MATCH** for
-    two black rectangles. The driver now polls until the picture is bright and
-    keeps the *brightest* sample, and the checker rejects any capture that
-    renders as one colour. Both are in the skill's trap list.
-  - The disagreement is **confined to the four brown shades of the rock
-    texture** — a confusion matrix of port index against original index is
-    diagonal-dominant with the off-diagonal mass entirely inside indices
-    8–11. Colours 14, 15 and the background are near-perfect.
-  - **The palette is confirmed**: 14 of 16 entries matched the original's DAC
-    exactly on the first try. The two that did not turned out to be a real
-    finding — the lower eight colours are *not* read from the ground file's
-    `standard` array, the game carries them itself, and entry 7 is a copy of
-    `custom[0]`. Corrected in the port from what the original programs.
-- **The original reaches gameplay under our emulator** —
-  `docs/reference/original-in-level.png`: lemmings falling out of the trapdoor,
-  the clock counting down, the skill panel and the minimap drawn. Its **terrain
-  is not drawn**, and the cause is still open — see Retracted.
+- **THE PORT'S TERRAIN IS PROVEN BYTE-FOR-BYTE.**
+  `tools/compare_composed.py` compares the port's canvas against the level the
+  **original itself composes**, captured by breaking at the instruction after
+  its terrain loop — the exact moment composition is complete. No sprites, no
+  cursor, no palette, no viewport, no fade: two programs' terrain, as 4-bit
+  indices, over the whole 1584x160 level.
 
-## Retracted
+  **100.00%. 49 741 terrain pixels, zero differing.**
 
-- **"The terrain is missing because planar reads return flat memory" (claimed
-  and withdrawn 2026-08-25).** The theory was that the play area is copied
-  video-to-video, so a read of video memory returns the wrong plane. It is
-  not: the blit's source segment lives at `ds:0x1fe4` and holds **0x8000** —
-  main RAM at 512 KB — so the copy is memory-to-video and uses the same write
-  path that draws the panel, the minimap and every sprite correctly. A fix was
-  built for this and fixed nothing; it also made the emulator too slow to
-  reach the title screen, and was reverted. What is actually known now: mode
-  0Dh, CRTC offset 22 (**44-byte rows, not 40**), and the start address
-  alternating between `0x27e2` and `0x2c2` — the game page-flips.
+  That covers the DAT decompressor, the level parse, the ground table, the
+  planar bitmap decode, piece placement, the flags, drawing order and overlap
+  resolution — every one of them exact, against the original's own output.
 
-- **"The protected code does not re-encrypt behind itself" (claimed
-  2026-08-25, withdrawn the same day).** It does. The INT 01h handler
-  re-encrypts the previous instruction (`xchg word ptr [si], ax` at image
-  `0x0E14`) before decrypting the next, so exactly one instruction is plaintext
-  at a time. The measurement behind the original claim compared two regions at
-  instruction counts where neither was under single-step protection, so it
-  showed only that idle memory is idle. See
-  [docs/protection.md](docs/protection.md).
+- ~~**THE PIXEL COMPARISON RUNS**, and the port is 81% right, with the rest
+  unexplained after eleven rejected hypotheses.~~ **Retracted 2026-08-25.**
+  The port was right all along. The difference was in **our emulator**, which
+  did not implement VGA read modes: Lemmings' blitter reads video memory in
+  read mode 1 and turns the answer into the Graphics Controller's bit mask —
+  that read *is* its "do not overwrite" test. Handed flat memory instead, the
+  game composed a level with exactly the right shape and the wrong colours in
+  14 883 pixels, and every one of those was attributed to the port. Fixing the
+  emulator changed exactly those 14 883 pixels and nothing else.
+
+  This gap had been *written down and argued away*, on the grounds that the
+  blitter discarded the value it read. It did not. That mistake cost several
+  rounds of testing hypotheses about the port while the reference was the
+  thing that was wrong.
 
 ## Open
 
@@ -237,68 +194,10 @@ the first sweep should write this table rather than have it retyped by hand.
 
 ## Next
 
-1. **Close the remaining 20%**, with these already ruled out by measurement
-   (the port carries `--terrain` and `--planebits` so each was one run, and
-   every alternative scored *worse* than the default):
+1. **Draw the interactive objects in the right animation frame.** The
+   terrain is exact; the objects are the remaining visual difference, and the
+   original composes them in a second pass after the terrain loop.
 
-   | hypothesis | result |
-   | --- | --- |
-   | terrain pixels are OR'd, not replaced | 73.79% vs 79.99% — **no** |
-   | first piece wins (`keep`) | 65.41% — **no** |
-   | `no_overwrite` should be ignored | 66.71% — **no** |
-   | `no_overwrite` means "only over terrain" | 60.18% — **no** |
-   | the five other plane→bit permutations | 40–58% — **no**, `0123` is right |
-   | the viewport is offset vertically | y = 0 is best — **no** |
-   | entries after a `FF FF FF FF` are missed | there are none in this level — **no** |
-   | the terrain bitmaps or the level are decompressed wrongly | **no** — both are byte-identical to the original's own memory, 30 008 and 2 048 bytes (see *Done*). Every input to the renderer is confirmed, so the difference is in what the port *does* with them. |
-   | the leftmost pixel is a byte's low bit | 58.02% vs 81.07% — **no**, it is the high bit |
-   | terrain is drawn back to front | 66.67% — **no** |
-   | every piece ORs, `no_overwrite` included | 74.57% — **no** |
-   | the port is offset by a pixel, or pixel pairs are swapped | every shift and swap scores 54–60% — **no** |
-   | our emulator's own rendering is at fault | **no** — DOSBox, independently, scores the port at 79.15%, within two points of our emulator's 81.07% |
-   | the guest's memory was being corrupted | **partly yes** — `INT 21h AH=48h` returned one segment for every request, so the game's three buffers overlapped. Fixed upstream with a real free list; the skill panel went from mottled noise to proper icons and the score rose 79.99% → 81.07%. It did **not** account for the terrain shades. |
-
-   Eleven hypotheses, all rejected with a number. The port's terrain
-   configuration is now *confirmed* on every axis that can be tested from
-   outside — inputs, placement, order, bit order, plane order, compositing —
-   which is worth more than the percentage.
-
-   | the original combines pixels in some cleverer way | **no, and now settled from its own code** — see [docs/terrain.md](docs/terrain.md). Its blitter uses the Graphics Controller's OR function and never tests the source for transparency, which looks like a difference and is not: a terrain pixel is either 0 in all four planes or 8–15 with plane 3 set, so OR-ing a transparent source is a no-op. Implementing the hardware rule literally scores 66.09% against DOSBox where the port's rule scores 79.15%. |
-
-   What is left, and what it looks like — measured, not eyeballed:
-
-   - **Not byte-aligned.** Disagreement by `level x mod 8` is flat: 20.47%,
-     20.62%, 20.70%, 20.70%, 20.81%, 21.03%, 21.05%, 21.42%. That rules out
-     the sub-byte shift and byte-granular clipping.
-   - **Fine-grained, not blocky.** Horizontal runs of disagreement have a
-     median of **2** pixels and a mean of 3.1. An earlier note here said
-     "whole 8-pixel blocks" — that came from one unrepresentative sample and
-     is **retracted**.
-   - **Confined to the rock's low bits**, indices 8–11, with the background and
-     colours 14–15 near-perfect.
-
-   And the port's reading of a terrain entry is now **confirmed against the
-   original's own instructions**, not against a published description — the
-   6-bit id mask, all three flag bits, the 8-byte ground table and its field
-   order, the four-plane bitmap, the **big-endian** word assembly (the original
-   loads it a byte at a time, high first, which an 8086 word load would not
-   do), the 4-byte entry stride, and the `+16` on x that makes the viewport
-   land at exactly the 624 the pixel comparison finds independently. One real
-   difference turned up and was fixed: the original's terminator test is on the
-   first word alone, not all four bytes. See
-   [docs/terrain.md](docs/terrain.md#the-caller-how-a-level-entry-becomes-a-blit).
-
-   The instruments have been checked: the DOSBox capture is a clean 2x (all
-   64 000 blocks uniform), so downsampling is exact, and the two references
-   agree with each other to within two points.
-2. Capture the unpacked image to a file at the moment the stub hands control to
-   the program, and **prove** it — round-trip against the stub's own output.
-3. Identify the toolchain: count `push bp / mov bp,sp` prologues across the code
-   segment, and look for a compiler banner. Record the finding and the evidence
-   in `docs/`, and say which world this is in at the top of this file.
-4. Find the handler tables and map the code by recursive descent from the entry
-   point, seeded with them.
-5. Only then start transcribing.
 
 - **The machine-type menu is mapped but not explained.** Which flags each of
   the four options sets is established and written down in

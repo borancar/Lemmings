@@ -41,6 +41,7 @@ static void usage(void)
           "  --planebits O which bit each stored plane feeds, e.g. 0123\n"
           "  --bitorder B  leftmost pixel is the byte's msb or lsb\n"
           "  --reverse     draw the terrain list back to front\n"
+          "  --no-objects  terrain only, as the original composes it first\n"
           "  --raw FILE    also write the raw indices and palette, for\n"
           "                checking against the original: 'LEMRW2', width\n"
           "                and height as u16, 16 RGB triples, then w*h bytes\n",
@@ -63,6 +64,11 @@ int main(int argc, char **argv)
     uint32_t which = 2;
     uint8_t scale = 3;
     int show = 0;
+    /* The original composes terrain first and draws objects afterwards, so a
+     * capture taken at the end of its terrain loop has no objects in it. This
+     * lets the port match that, for a comparison that is terrain against
+     * terrain and nothing else. */
+    int objects = 1;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
@@ -71,6 +77,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) which = (uint32_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
+        else if (!strcmp(argv[i], "--no-objects")) objects = 0;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   raw  = argv[++i];
         else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;
         else if (!strcmp(argv[i], "--bitorder") && i + 1 < argc) {
@@ -169,7 +176,7 @@ int main(int argc, char **argv)
         dat_free(&gfx);
         return 1;
     }
-    if (gfx.count >= 2) {
+    if (objects && gfx.count >= 2) {
         if (render_objects(&c, &lv, &g, gfx.sections[1].data,
                            gfx.sections[1].size, 0, &err) != 0) {
             fprintf(stderr, "render objects: %s\n", err);

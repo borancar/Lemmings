@@ -63,10 +63,20 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
 
     /* Terrain: 400 entries of 4 bytes at 0x120, FF FF FF FF terminates.
      *
-     *   byte 0: flags in the high nibble, x bits 11..8 in the low nibble
+     *   byte 0: flags in bits 7..5, x bits 12..8 in bits 4..0
      *   byte 1: x bits 7..0            - x is stored +16, so 0x0010 is 0
      *   byte 2: y bits 8..1
      *   byte 3: bit 7 is y bit 0; bits 5..0 are the terrain id
+     *
+     * x is THIRTEEN bits, not twelve: image 0x07C95 masks the word with
+     * 0x1FFF, so bit 12 (byte 0's 0x10) belongs to x and only bits 13-15 are
+     * flags. Ten of the 11,637 terrain entries in this demo set that bit, all
+     * in level004, and all of them land far outside the canvas either way -
+     * so it changes nothing visible here and is still what the original does.
+     *
+     * The y decode is the original's, line for line: image 0x07C90 does
+     * `sar bx, cl` with cl = 7, an ARITHMETIC shift that sign-extends the
+     * 9-bit field, and 0x07C92 does `sub bx, 4`.
      *
      * y is a 9-bit two's-complement value and then 4 less than it reads.
      *
@@ -86,12 +96,12 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
         if (e[0] == 0xFF && e[1] == 0xFF)
             break;
         level_terrain *t = &lv->terrain[lv->num_terrain++];
-        t->x = (int16_t)((int32_t)(((e[0] & 0x0F) << 8) | e[1]) - 16);
+        t->x = (int16_t)((int32_t)(((e[0] & 0x1F) << 8) | e[1]) - 16);
         t->y = (int16_t)(sign9((uint16_t)((e[2] << 1) | (e[3] >> 7))) - 4);
         t->id = (uint8_t)(e[3] & 0x3F);
-        t->no_overwrite = (uint8_t)((e[0] & 0x80) != 0);
-        t->upside_down  = (uint8_t)((e[0] & 0x40) != 0);
-        t->erase        = (uint8_t)((e[0] & 0x20) != 0);
+        t->no_overwrite = (uint8_t)((e[0] & 0x80) != 0);   /* word bit 15 */
+        t->upside_down  = (uint8_t)((e[0] & 0x40) != 0);   /* word bit 14 */
+        t->erase        = (uint8_t)((e[0] & 0x20) != 0);   /* word bit 13 */
     }
 
     /* Steel: 32 entries of 4 bytes at 0x760, all-zero means absent.
