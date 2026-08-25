@@ -110,7 +110,7 @@ Each of these is stated as what was *checked*, not what was written.
   - **Best alignment is x = 624** — and 624 is exactly the `start_x` the level
     file declares. Two independent things agreeing that were never fitted to
     each other.
-  - **81.07% of pixels identical** (41 506 of 51 200) against our emulator,
+  - **81.06% of pixels identical** (41 505 of 51 200) against our emulator,
     and **79.15% against DOSBox** — an entirely independent implementation,
     driven into the same level and captured at 2x with no aspect correction so
     it halves back to the guest's own pixels. The two references agreeing with
@@ -124,6 +124,14 @@ Each of these is stated as what was *checked*, not what was written.
   - The **terrain outline is right**: of ~18 800 background pixels only ~380
     disagree, so where the port says rock and where the original says rock
     agree almost everywhere.
+  - **The capture is chosen by palette, not by brightness.** The driver polls
+    the level, scores each sample's palette against the one the graphics set's
+    own file specifies, and keeps the closest — reaching a mean error of 0.76
+    per channel. Brightness was tried first and is a bad proxy: a fade passes
+    through tables that are bright and badly wrong, and "keep the brightest"
+    kept a level drawn in red, green and magenta, with the BIOS default EGA
+    colours still in DAC 0x10–0x17 because the game had not loaded the level's
+    palette yet.
   - **The capture is taken on a cue, and the checker refuses a bad one.** A
     screen caught mid palette-fade has perfectly varied indices and an
     all-black palette; it renders black, the port's empty left margin matches
@@ -257,17 +265,21 @@ the first sweep should write this table rather than have it retyped by hand.
 
    | the original combines pixels in some cleverer way | **no, and now settled from its own code** — see [docs/terrain.md](docs/terrain.md). Its blitter uses the Graphics Controller's OR function and never tests the source for transparency, which looks like a difference and is not: a terrain pixel is either 0 in all four planes or 8–15 with plane 3 set, so OR-ing a transparent source is a no-op. Implementing the hardware rule literally scores 66.09% against DOSBox where the port's rule scores 79.15%. |
 
-   What is left, and what it looks like: the disagreements are **whole
-   8-pixel blocks** — one byte — where the port has index 11 and the original
-   has 9, a single bit in plane 1. At one such block (level x 632, y 8) only
-   two pieces overlap, both `no_overwrite`, and **neither of them produces a 9
-   at that pixel** in an independent Python decode. So the original's value is
-   not coming from a straightforward composite of the two, and the next step
-   is to find the game's own composed level buffer at runtime and compare
-   against *that*, which isolates compositing from the blit to the screen.
-   `ds:0x1fe4` holds 0x8000 in the static image, but 0x80000 does not contain
-   the level in a plain four-plane layout at runtime — dumping and rendering
-   it gives noise — so that address needs establishing from a live run.
+   What is left, and what it looks like — measured, not eyeballed:
+
+   - **Not byte-aligned.** Disagreement by `level x mod 8` is flat: 20.47%,
+     20.62%, 20.70%, 20.70%, 20.81%, 21.03%, 21.05%, 21.42%. That rules out
+     the sub-byte shift and byte-granular clipping.
+   - **Fine-grained, not blocky.** Horizontal runs of disagreement have a
+     median of **2** pixels and a mean of 3.1. An earlier note here said
+     "whole 8-pixel blocks" — that came from one unrepresentative sample and
+     is **retracted**.
+   - **Confined to the rock's low bits**, indices 8–11, with the background and
+     colours 14–15 near-perfect.
+
+   The instruments have been checked: the DOSBox capture is a clean 2x (all
+   64 000 blocks uniform), so downsampling is exact, and the two references
+   agree with each other to within two points.
 2. Capture the unpacked image to a file at the moment the stub hands control to
    the program, and **prove** it — round-trip against the stub's own output.
 3. Identify the toolchain: count `push bp / mov bp,sp` prologues across the code

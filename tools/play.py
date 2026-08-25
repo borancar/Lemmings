@@ -25,6 +25,43 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lemmings
 
 
+def _palette_error(path, ground):
+    """How far a capture's palette is from the level's real one.
+
+    Brightness alone is the wrong cue. A fade does not simply dim the palette
+    - it passes through intermediate tables whose peak component is high while
+    the hues are badly wrong, and "keep the brightest" happily picked one of
+    those: a level drawn in red, green and magenta instead of orange and brown.
+
+    So score against what the palette SHOULD be. The 16 colours come from the
+    graphics set's own file, and the mode 0Dh attribute map sends pixel 8-15 to
+    DAC 0x10-0x17. Returns a mean absolute error per channel, or None.
+    """
+    try:
+        import numpy as np
+        with open(path, "rb") as f:
+            if f.read(4) != b"SCRN":
+                return None
+            w, h = struct.unpack("<HH", f.read(4))
+            pal = np.frombuffer(f.read(768), dtype=np.uint8).reshape(256, 3)
+        buf = open(ground, "rb").read()
+        custom, standard = buf[0x3D8:0x3F0], buf[0x3F0:0x408]
+        want = np.zeros((16, 3), dtype=np.int16)
+        for i in range(8):
+            for c in range(3):
+                v = standard[i * 3 + c] & 0x3F
+                want[i][c] = (v << 2) | (v >> 4)
+                v = custom[i * 3 + c] & 0x3F
+                want[8 + i][c] = (v << 2) | (v >> 4)
+        attr = list(range(8)) + [0x10 + i for i in range(8)]
+        got = pal[attr].astype(np.int16)
+        # Entries 4 and 7 are the game's own, not the file's; skip them.
+        keep = [i for i in range(16) if i not in (4, 7)]
+        return float(np.abs(got[keep] - want[keep]).mean())
+    except Exception:
+        return None
+
+
 def _bright(path, value=False, threshold=220):
     """Is the captured screen actually lit, or still fading in?
 
@@ -105,6 +142,9 @@ def main():
                     help="with --dump-vga, write the decoded screen + palette")
     ap.add_argument("--dump-planes", default="",
                     help="with --dump-vga, also write all four planes here")
+    ap.add_argument("--ground",
+                    default=os.path.join(lemmings.GAME_DIR, "ground0o.dat"),
+                    help="the graphics set, for judging when the palette is up")
     ap.add_argument("--dump-when", default="0x0d",
                     help="video mode to wait for before dumping: 0x0d is the "
                          "level, 0x10 the title and briefing (default 0x0d)")
@@ -183,6 +223,14 @@ def main():
                 # frees buffers as it finishes with them, so data that is
                 # resident during loading is gone by the time the level runs.
                 want_mode = a.dump_when
+                if want_mode == "0x0d" and not a.start:
+                    # 0Dh is BOTH the loading screen before the title and the
+                    # level after it, so waiting for it alone matches
+                    # immediately and samples the wrong screen. Require the
+                    # title's 10h first - unless --start already went through
+                    # it, in which case waiting for 10h again just times out.
+                    wait_for(sock, lambda st: "mode=0x10" in st,
+                             "the title", timeout=180)
                 wait_for(sock, lambda st: f"mode={want_mode}" in st,
                          f"mode {want_mode}", timeout=180)
                 # Wait for the guest's own cue rather than a wall clock. The
@@ -198,22 +246,23 @@ def main():
                     # end - which was black, and scored as a perfect match
                     # against the level's empty left edge.
                     tmp = a.dump_screen + ".sample"
-                    best = -1
+                    best = None
                     deadline = time.time() + a.dump_delay
                     while time.time() < deadline:
                         ask(sock, f"screen {tmp}")
-                        peak = _bright(tmp, value=True)
-                        if peak > best:
-                            best = peak
+                        err = _palette_error(tmp, a.ground)
+                        if err is not None and (best is None or err < best):
+                            best = err
                             shutil.copyfile(tmp, a.dump_screen)
-                        if peak >= 220:
+                        if err is not None and err < 1.0:
                             break
                         time.sleep(1.5)
                     try:
                         os.unlink(tmp)
                     except OSError:
                         pass
-                    print(f"[play] kept the brightest screen (peak {best})")
+                    print(f"[play] kept the screen whose palette is closest to "
+                          f"the level's (mean error {best})")
                 else:
                     time.sleep(a.dump_delay)
                 print("[play] --- video state in the level ---")
@@ -221,8 +270,11 @@ def main():
                 print(ask(sock, "status"))
                 if a.dump_planes:
                     print(ask(sock, f"planes {a.dump_planes}"))
-                if a.dump_screen:
-                    print(ask(sock, f"screen {a.dump_screen}"))
+                # NOT another `screen` here: the loop above already chose
+                # the best sample, and dumping again overwrote it with
+                # whatever happened to be on screen a moment later. That is
+                # how a carefully chosen capture became a mid-fade one with
+                # the BIOS default EGA palette still in DAC 0x10-0x17.
                 for spec in a.dump_mem:
                     print(ask(sock, f"dump {spec}"))
                 for c in a.cmd:
