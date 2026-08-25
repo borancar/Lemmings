@@ -319,11 +319,24 @@ Each of these is stated as what was *checked*, not what was written.
   avoiding: it invites the screen to be called finished. Palette entries 8–15
   are the same gap — on that screen they are the level's terrain colours.
 - **The scrolling banner at the foot is not drawn**, and nothing in the port
-  animates. The banner's *strings* are found (image `0x0E45E` onward, in
-  38-byte slots) but where it is drawn and how it scrolls is not. Correction
-  worth recording: the menu's animation is **not** only the scroller, as this
-  file said a moment ago — a no-key baseline moves 1,381–1,807 pixels in a box
-  from y=49 down, so the logo and the plates animate too.
+  animates. What the banner is made of is now mapped, by logging blits whose
+  destination lands in its rows (`di / 80` gives the row, so the filter is
+  exact). Three shapes draw there, and each is a different thing:
+
+  | shape | count | source | rows | what it is |
+  | --- | --- | --- | --- | --- |
+  | `cx=40, bp=2` | 20 | `0x58AB0`, step 40 | 330–333 | the **menu tile**, above the bar — and it checks out: `0x58AB0` is section 3 offset 720 = tile row 18, and 330 mod 104 = 18 |
+  | `cx=70, bp=4` | 1,584 | `0x292BC`, step 70 | 344–349… | the **bar** — 560 pixels wide, four planes, from image `0x191BC`, which is inside the BSS the program fills at load time |
+  | `cx=6, bp=4` | 3,136 | `0x6A000`–`0x6D000` | — | the **scrolling text**, from a different font than the menu's 16×16 one |
+
+  The bar living in BSS is the obstacle: the port cannot read it, because it is
+  not in a file in that form — the same shape of problem as the briefing's
+  background, one level along. Which file section is copied there is the thing
+  to find, and it is not started.
+
+  Correction worth recording: the menu's animation is **not** only the
+  scroller, as this file once said — a no-key baseline moves 1,381–1,807 pixels
+  in a box from y=49 down, so the logo and the plates animate too.
 - **The menu font is found and used.** 16×16 glyphs, three 32-byte planes,
   ASCII-indexed, at `MAIN.DAT` section 4 offset 23888 — which ends at
   `23888 + 127*96 = 36080`, exactly the section's length. Plane 2 doubles as
