@@ -258,7 +258,8 @@ Each of these is stated as what was *checked*, not what was written.
   himself!!!`). Counted with `tools/dat.py`. It surfaced only because a
   *different* claim leaned on it — "the rating plate does nothing because there
   is only one rating here" — and that reasoning had to be checked before it
-  could be written down.
+  could be written down. The plate turned out to work anyway; see the rating
+  entry below.
 
 - **The FX plate's label is drawn, and section 3 is now fully accounted for.**
   Its lettering is not in the plate's bitmap — the plate is blank because the
@@ -462,7 +463,7 @@ Each of these is stated as what was *checked*, not what was written.
   | F3 "FX" | **nothing** — measured, only the scroller moves | a faithful no-op |
   | F4 "?" | a **"Choose Input Type"** screen | drawn, **99.37%** |
   | Esc "EXIT TO DOS" | quits | quits |
-  | the rating plate | no response to Up **or Down** — Down's screen diff is identical to the no-key baseline | no key mapped, deliberately |
+  | the rating plate | Up / `` ` `` raise the rating, Down / `-` / keypad `-` lower it; caps at Mayhem, floors at Fun, and sets the level to rating×30 | all four keys, capped and floored the same way |
 
   What the two screens *do* with the answer is not reconstructed: the port
   draws them and comes back. Neither excludes anything from its score.
@@ -475,19 +476,46 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
-- **The rating plate answers to nothing found, and 25 keys have now been
-  tried** — F1–F6, Esc, Up, Down, Left, Right, PgUp, PgDn, keypad ±, ±, Space,
-  Return, Tab, 1–4, `n`, `r` — plus a click, whose position the menu ignores
-  anyway. Every one leaves the plate's box at (452,120)–(571,180) untouched at
-  **zero pixels**, while the scroller keeps moving in the same samples, which
-  is what shows the guest was alive and taking input. `tools/probe_rating.py`
-  does the sweep in one guest and stops if the whole screen changes.
+- **Correction: the rating plate works, on Up and Down.** This entry used to
+  read *"answers to nothing found, and 25 keys have now been tried"*. That was
+  wrong, and it stayed wrong because every instrument used to test it was
+  blind in the same direction.
 
-  Why it is inert is **not established**, and the obvious explanation is ruled
-  out: this is not a one-rating set. The data ships **ten level files of eight
-  levels each — eighty levels** — with names spanning "This should be a
-  doddle!" and "MENACING !!". So "nothing to select" does not hold. The port
-  maps no key to the plate rather than inventing one.
+  The keys came from the binary instead. The menu translates a scancode
+  through a table at `ds:0x202E` (image `0x0BABE`) and dispatches on the result
+  at image `0x0447B`: **Up (`0x48`) and `` ` `` (`0x29`)** reach the rating-up
+  handler at image `0x044EC`, **Down (`0x50`), `-` (`0x0C`) and keypad `-`
+  (`0x4A`)** reach rating-down at image `0x0451C`. Up caps at 3, Down floors at
+  0 — it does not wrap — and both then write **`ds:0x1F6B = rating * 30`**,
+  computed with four shift-and-adds. `ds:0x1F6E` is the rating itself: image
+  `0x045D5` multiplies it by 6 and copies six characters out of
+  `"Fun   TrickyTaxingMayhem"` into the plate's text.
+
+  `tools/probe_rating.py` now drives all five keys against the original and
+  watches the variable rather than the plate's pixels:
+
+      up    0->1->2->3->3->3->3   Mayhem  ok
+      down  3->2->1->0->0->0->0   Fun     ok
+
+  with `ds:0x1F6B == rating * 30` at every sample. That is also the binary's
+  own confirmation that the level order table is **four blocks of thirty**.
+
+  Three faults produced the old claim, and they are the general ones:
+
+  1. **The sweep's key list contained neither `up` nor `down`** — the two keys
+     the prose named as ruled out.
+  2. **Four listed keys were never delivered.** The control socket resolves
+     names through `pygame.key.key_code`, which names punctuation by the
+     character (`` ` ``, `-`, `[-]`, `[+]`), so `"minus"`, `"plus"`,
+     `"kp_minus"` and `"kp_plus"` returned `error: unknown key name` — printed
+     as though the key had done nothing. **"Not delivered" and "delivered, no
+     effect" are different findings.**
+  3. **It watched pixels from the floor.** The rating starts at Fun = 0, where
+     down is *supposed* to do nothing, so a correct key looked inert.
+
+  The port maps all four keys now (`MENU_RATING_UP` / `MENU_RATING_DOWN`), caps
+  and floors as the original does, and resets to level 1 of the new rating.
+  `reconstruct/tests/menu_input.c` checks the mapping headless.
 - **The menu's plates are keyboard-only, and a click anywhere acts as F1.**
   Measured three ways: the menu calls INT 33h AX=0002h once — hide cursor — and
   draws no pointer, so moving the position to (600,40) changes nothing near it;

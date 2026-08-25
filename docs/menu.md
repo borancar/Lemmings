@@ -151,7 +151,7 @@ screen against a no-key baseline (`tools/probe_menu_keys.py`):
 | 1 PLAYER | F1 | fades out into the level, via the briefing |
 | NEW LEVEL | F2 | an **"Enter Code"** screen |
 | FX | F3 | **nothing** — only the scroller moves |
-| FUN (rating) | — | nothing found works it |
+| FUN (rating) | Up / ` and Down / - | raises and lowers the rating, capped at Mayhem and floored at Fun |
 | EXIT TO DOS | Esc | quits |
 | ? | F4 | a **"Choose Input Type"** screen |
 
@@ -162,30 +162,96 @@ position reaches it and is ignored. Clicking "EXIT TO DOS" does not exit; it
 starts the level, exactly as clicking bare background does. **A click anywhere
 acts as F1.**
 
-### The rating plate answers to nothing found
+### The rating plate: Up and Down, from the dispatcher
 
-It carries two arrow tabs rather than a function key. **Twenty-five keys have
-been tried** — F1–F6, Esc, Up, Down, Left, Right, PgUp, PgDn, keypad + and −,
-plus and minus, Space, Return, Tab, the digits 1–4, `n`, `r` — and a click,
-which the menu ignores the position of anyway. Every one leaves the plate's box
-at (452,120)–(571,180) **untouched, zero pixels**, while the scroller keeps
-moving in the same samples, which is what shows the guest was alive and taking
-input.
+It carries two arrow tabs rather than a function key, and it took a wrong turn
+to read them. The keys came in the end from the binary, not from sweeping.
 
-The four ratings *are* in the executable, at image `0x0E691` —
-`"Fun   TrickyTaxingMayhem"`, four six-character slots — so the game knows
-about them.
+The menu reads a key at image `0x04D1A`. It scans an 0x53-byte key-state array
+at `ds:0x0F78` indexed by **scancode**, finds one with bit 7 set, and
+translates it through a table at **`ds:0x202E`** (image `0x0BABE`) with
+`xlatb`. The dispatcher at image `0x0447B` then compares the translated code:
 
-Why the plate is inert here is **not established**, and one tempting
-explanation is already ruled out: this is not a one-rating set. The data ships
-**ten `levelNNN.dat` files of eight levels each, eighty levels**, with names
-spanning `"Tightrope City"`, `"Mary Poppins` land"` and
-`"Every Lemming for himself!!!"` — names from across the full game's ratings.
-So "there is only one rating here, hence nothing to select" does not hold.
+| scancode | key | code | goes to |
+| --- | --- | --- | --- |
+| `0x3B` | F1 | `0x80` | image `0x0454C` |
+| `0x3C` | F2 | `0x81` | image `0x04967` |
+| `0x3D` | F3 | `0x82` | the FX toggle at image `0x044B3` |
+| `0x3E` | F4 | `0x83` | image `0x04A01` |
+| `0x01` | Esc | `0x1B` | image `0x004D0` |
+| `0x48` | **Up** | `0x8A` | **image `0x044EC` — rating up** |
+| `0x29` | **`** | `0x60` | **image `0x044EC` — rating up** |
+| `0x50` | **Down** | `0x8B` | **image `0x0451C` — rating down** |
+| `0x0C` | **-** | `0x2D` | **image `0x0451C` — rating down** |
+| `0x4A` | **keypad -** | `0x2D` | **image `0x0451C` — rating down** |
 
-`tools/probe_rating.py` runs the sweep. It watches only the plate's own box, so
-one guest can take every key in turn, and it stops if the whole screen changes
-rather than reporting nonsense from the next screen along.
+Both handlers are gated on `cmp byte [0x1f6f],4 / jne`, and `ds:0x1F6F` reads
+0 on the menu, so the gate is open. Up bails when the rating is already 3
+(image `0x044F9`), Down when it is already 0 (image `0x04529`) — it **caps and
+floors, it does not wrap**.
+
+**`ds:0x1F6E` is the rating** — image `0x045D5` reads it, multiplies by 6 and
+copies six characters out of `"Fun   TrickyTaxingMayhem"` at `ds:0x4C01`
+(image `0x0E691`) into the plate's text buffer at `ds:0x4B98`.
+
+**`ds:0x1F6B` is the absolute level number**, and both handlers recompute it
+from the new rating with four shift-and-adds:
+
+```
+0x04505  d0e0    shl al, 1      ; 2r
+0x04507  8ae0    mov ah, al     ; ah = 2r
+0x04509  d0e0    shl al, 1      ; 4r
+0x0450b  02e0    add ah, al     ; ah = 6r
+0x0450d  d0e0    shl al, 1      ; 8r
+0x0450f  02e0    add ah, al     ; ah = 14r
+0x04511  d0e0    shl al, 1      ; 16r
+0x04513  02e0    add ah, al     ; ah = 30r
+0x04515  88266b1f  mov [0x1f6b], ah
+```
+
+`ds:0x1F6B = rating * 30`. That is the first level of the new rating, and it
+is the binary's own confirmation that the level order table is four blocks of
+thirty rather than any other division of 120.
+
+`tools/probe_rating.py` drives all five keys against the original and watches
+`ds:0x1F6E` and `ds:0x1F6B`:
+
+```
+  gate ds:0x1F6F = 0x00 (open)
+  start        rating 0 Fun     level   0
+  up         0->1->2->3->3->3->3   Mayhem  ok
+  down       3->2->1->0->0->0->0   Fun     ok
+  `          0->0->1->2->3->3->3   Mayhem  ok
+  [-]        3->2->1->0->0->0->0   Fun     ok
+  `          0->1->2->3->3->3->3   Mayhem  ok
+  -          3->2->1->0->0->0->0   Fun     ok
+```
+
+#### How this was wrong before, which is the useful part
+
+This section previously read *"the rating plate answers to nothing found —
+twenty-five keys have been tried"*. Three separate faults produced that, and
+each is a general one:
+
+1. **The sweep's key list did not contain Up or Down.** The prose named them as
+   ruled out; the list read `left, right, pageup, pagedown, kp_minus, kp_plus,
+   space, return, tab, 1, 2, 3, 4, f5, f6, plus, minus, n, r`. A key that is
+   not in the list is not a key that was tried.
+2. **Four of the keys that *were* listed were never delivered.** The control
+   socket resolves a name with `pygame.key.key_code`, which names punctuation
+   by the character — `` ` ``, `-`, `[-]`, `[+]` — so `"minus"`, `"plus"`,
+   `"kp_minus"` and `"kp_plus"` came back as `error: unknown key name`. The
+   sweep printed the reply as though the key had done nothing. **"Not
+   delivered" and "delivered, no effect" are different findings**, and a probe
+   that cannot tell them apart is not measuring.
+3. **It watched pixels, from the floor.** The baseline rating is Fun = 0, where
+   *down is supposed to do nothing*. Even a correct down key looks inert from
+   there. Watching `ds:0x1F6E` instead of the plate's box removes the question
+   entirely: a byte says what a redraw cannot.
+
+The emulator's `KEYMAP` was also missing `` ` ``, keypad `-`, keypad `+`, `'`,
+`\`, Insert and Delete — real keys with plain XT scancodes. They were added
+upstream, additively.
 
 ## The sub-screens
 

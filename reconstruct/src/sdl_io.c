@@ -132,6 +132,11 @@ static view_key from_sdl(SDL_Keycode k)
     case SDLK_ESCAPE: return VIEW_KEY_ESC;
     case SDLK_UP:     return VIEW_KEY_UP;
     case SDLK_DOWN:   return VIEW_KEY_DOWN;
+    /* The original takes the rating on ` and on - as well as on the arrows,
+     * and its scancode table gives keypad minus the same code as -, so both
+     * arrive here as the same key. */
+    case SDLK_GRAVE:  return VIEW_KEY_BACKQUOTE;
+    case SDLK_MINUS: case SDLK_KP_MINUS: return VIEW_KEY_MINUS;
     default:          return VIEW_KEY_NONE;
     }
 }

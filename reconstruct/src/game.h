@@ -260,7 +260,11 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
 typedef enum {
     VIEW_KEY_NONE = 0,
     VIEW_KEY_F1, VIEW_KEY_F2, VIEW_KEY_F3, VIEW_KEY_F4,
-    VIEW_KEY_ESC, VIEW_KEY_UP, VIEW_KEY_DOWN
+    VIEW_KEY_ESC, VIEW_KEY_UP, VIEW_KEY_DOWN,
+    /* The rating plate's alternates. The original's scancode table at
+     * ds:0x202E maps ` and - (and keypad -) to the same two handlers the
+     * arrows reach, so these are its keys, not the port's convenience. */
+    VIEW_KEY_BACKQUOTE, VIEW_KEY_MINUS
 } view_key;
 
 /* A thing on the screen that can be clicked, or reached with a key. */
@@ -319,7 +323,10 @@ typedef enum {
     MENU_PLAY,          /* F1    "1 PLAYER"  */
     MENU_NEW_LEVEL,     /* F2    "NEW LEVEL" */
     MENU_FX,            /* F3    "FX"        */
-    MENU_RATING,        /* the +/- signs on the "FUN" plate */
+    /* The two arrow tabs on the rating plate. Up / ` raise the rating and
+     * Down / - / keypad-minus lower it; see MENU_RATING_MAX below. */
+    MENU_RATING_UP,
+    MENU_RATING_DOWN,
     MENU_HELP           /* F4    the "?" plate */
 } menu_action;
 
@@ -343,11 +350,19 @@ int menu_input_screen(const char *dir, menu_screen *m, const char **err);
 int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
                          menu_screen *m, const char **err);
 
-/* How many hotspots the menu has: the six plates, and one full-screen box for
- * "a click anywhere", which is what the original does with the mouse - see
- * menu_hotspots in game.c. The rating plate is in the list but has no key,
- * because nothing has been found that works it. */
-#define MENU_HOTSPOTS 7
+/* The highest rating, and how many levels each one has. Both are the
+ * original's own arithmetic: image 0x044F9 caps the rating at 3, and the
+ * handlers at 0x04500 and 0x04530 then compute ds:0x1F6B = rating * 30 by
+ * four shift-and-adds - the absolute level number, which is why the level
+ * order table falls into four blocks of thirty. */
+#define MENU_RATING_MAX  3
+#define MENU_RATING_STEP 30
+
+/* How many hotspots the menu has: the six plates, three more for the rating
+ * plate's alternate keys (one hotspot carries one key), and one full-screen
+ * box for "a click anywhere", which is what the original does with the mouse.
+ * See menu_hotspots in game.c. */
+#define MENU_HOTSPOTS 10
 
 /* Show a screen that has no choices on it - the briefing, the level-code
  * screen, the input chooser - and wait for the viewer to dismiss it. The

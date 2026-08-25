@@ -1728,14 +1728,25 @@ static const view_hotspot SIGN_SPOT[6] = {
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F1,   MENU_PLAY      },
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F2,   MENU_NEW_LEVEL },
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F3,   MENU_FX        },
-    /* The rating plate answers to NOTHING that has been found. It carries two
-     * arrow tabs rather than a function key, and neither Up nor Down moves it:
-     * Down produces a screen diff identical to the no-key baseline, digit for
-     * digit. Mapping the arrow keys to it anyway would be inventing input the
-     * original does not take, so it has no key at all. The four ratings ARE in
-     * the executable - "Fun   TrickyTaxingMayhem" at image 0x0E691, four
-     * six-character slots - so something works it; not this. */
-    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_NONE, MENU_RATING    },
+    /* The rating plate takes Up and Down, and this is read off the original's
+     * own dispatcher rather than found by sweeping keys. The menu translates a
+     * scancode through a table at ds:0x202E (image 0x0BABE) and compares the
+     * result at image 0x0447B:
+     *
+     *     Up  (0x48) -> 0x8a  and  `  (0x29) -> 0x60   go to image 0x044EC
+     *     Down(0x50) -> 0x8b  and  - (0x0c) -> 0x2d   go to image 0x0451C
+     *     keypad - (0x4a) -> 0x2d as well
+     *
+     * Up caps at 3 (image 0x044F9), Down floors at 0 (image 0x04529), and
+     * both then write ds:0x1F6B = rating * 30. tools/probe_rating.py drives
+     * all five keys against the original and watches ds:0x1F6E.
+     *
+     * An earlier note here said "the rating plate answers to NOTHING that has
+     * been found... neither Up nor Down moves it". That was wrong, and the
+     * way it was wrong is worth keeping: the sweep that produced it watched
+     * the plate's PIXELS from a rating already at Fun, where Down is supposed
+     * to do nothing, and its key list did not contain Up at all. */
+    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_UP,   MENU_RATING_UP },
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_ESC,  MENU_EXIT      },
     { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F4,   MENU_HELP      },
 };
@@ -1767,15 +1778,29 @@ void menu_hotspots(view_hotspot *spots)
         spots[i].key = SIGN_SPOT[i].key;
         spots[i].id = SIGN_SPOT[i].id;
     }
-    /* Down does what Up does: the rating plate has two arrows and neither is
-     * implemented, so pretending they differ would be inventing behaviour. */
+    /* The rating plate's other three keys. A hotspot carries one key, so the
+     * alternates need entries of their own; they are click-less, because the
+     * plate's own box above is what a click would hit. */
+    static const struct { view_key key; int32_t id; } RATING_ALT[3] = {
+        { VIEW_KEY_BACKQUOTE, MENU_RATING_UP   },
+        { VIEW_KEY_DOWN,      MENU_RATING_DOWN },
+        { VIEW_KEY_MINUS,     MENU_RATING_DOWN },
+    };
+    for (uint8_t i = 0; i < 3; i++) {
+        spots[6 + i].x = SIGN_POS[3].x;
+        spots[6 + i].y = SIGN_POS[3].y;
+        spots[6 + i].w = 0;
+        spots[6 + i].h = 0;
+        spots[6 + i].key = RATING_ALT[i].key;
+        spots[6 + i].id = RATING_ALT[i].id;
+    }
     /* A click anywhere on the screen, which the original treats as F1. */
-    spots[6].x = 0;
-    spots[6].y = 0;
-    spots[6].w = MENU_W;
-    spots[6].h = MENU_H;
-    spots[6].key = VIEW_KEY_NONE;
-    spots[6].id = MENU_PLAY;
+    spots[9].x = 0;
+    spots[9].y = 0;
+    spots[9].w = MENU_W;
+    spots[9].h = MENU_H;
+    spots[9].key = VIEW_KEY_NONE;
+    spots[9].id = MENU_PLAY;
 }
 
 /* The port's own. The original's own instruction on the briefing is "Press

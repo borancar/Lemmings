@@ -57,13 +57,20 @@ int main(void)
           view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_F4), MENU_HELP);
     check("Esc exits to DOS",
           view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_ESC), MENU_EXIT);
-    /* Nothing found works the rating plate. Up and Down are checked to
-     * assert that the port does NOT invent them: the original's screen diff
-     * for Down is identical to its no-key baseline. */
-    check("Up does not work the rating plate",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_UP), VIEW_CLOSED);
-    check("nor does Down",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_DOWN), VIEW_CLOSED);
+    /* The rating plate. All four keys are the original's own, read off its
+     * scancode table at ds:0x202E and its dispatcher at image 0x0447B, and
+     * driven against it by tools/probe_rating.py. */
+    check("Up raises the rating",
+          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_UP), MENU_RATING_UP);
+    check("and so does `",
+          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_BACKQUOTE),
+          MENU_RATING_UP);
+    check("Down lowers it",
+          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_DOWN),
+          MENU_RATING_DOWN);
+    check("and so does - (keypad minus arrives as the same key)",
+          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_MINUS),
+          MENU_RATING_DOWN);
 
     /* Clicks. The original HIDES the cursor on this screen and treats a
      * click anywhere as F1 - clicking "EXIT TO DOS" starts the level rather

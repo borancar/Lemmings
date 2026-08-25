@@ -115,6 +115,12 @@ static void usage(void)
 /* Load and parse one level. Split out so the briefing screen can read the same
  * level the renderer is about to draw, without loading it twice in two places
  * that could drift apart. */
+/* Image 0x0E691, four six-character slots: "Fun   TrickyTaxingMayhem". These
+ * are for the port's own printf; the plate itself is drawn from the game's
+ * copy of the same string. */
+static const char *const RATING_NAME[4] = { "Fun", "Tricky", "Taxing",
+                                            "Mayhem" };
+
 static int load_level(const char *data, const char *file, uint32_t which,
                       level *lv, const char **err)
 {
@@ -367,6 +373,7 @@ int main(int argc, char **argv)
      * original's own table. --file forces a container, in which case --level
      * is a raw section index instead, which is what tools/prove.sh uses. */
     char picked[64];
+    const int forced_file = (file != NULL);   /* --file pins the container */
     if (!file) {
         if (level_locate(rating, (uint8_t)number, picked, sizeof(picked),
                          &which) != 0) {
@@ -481,17 +488,55 @@ int main(int argc, char **argv)
                 menu_free(&sub);
                 continue;
             }
+            /* The rating plate. Up / ` raise it and Down / - lower it, and
+             * the original caps and floors rather than wrapping - image
+             * 0x044F9 bails when the rating is already 3, image 0x04529 when
+             * it is already 0. Then it recomputes the absolute level number
+             * as rating * 30, which lands on the FIRST level of the new
+             * rating, so the number restarts here too. */
+            if (a == MENU_RATING_UP || a == MENU_RATING_DOWN) {
+                if (forced_file) {
+                    printf("  --file pins the container, so the rating plate "
+                           "has nothing to choose\n");
+                    continue;
+                }
+                uint8_t was = rating;
+                if (a == MENU_RATING_UP) {
+                    if (rating < MENU_RATING_MAX) rating++;
+                } else {
+                    if (rating > 0) rating--;
+                }
+                if (rating == was)
+                    continue;              /* at the cap or the floor */
+                number = 1;                /* rating * 30 + 1, 1-based */
+                game_number = number;
+                if (level_locate(rating, (uint8_t)number, picked,
+                                 sizeof(picked), &which) != 0) {
+                    fprintf(stderr, "no such level: rating %u number %u\n",
+                            rating, number);
+                    rating = was;
+                    continue;
+                }
+                file = picked;
+                which += 1;                /* load_level takes 1-based */
+                menu_screen next;
+                if (menu_build_rating(data, rating, &next, &err) != 0) {
+                    fprintf(stderr, "  %s\n", err);
+                    rating = was;
+                    continue;
+                }
+                menu_free(&mm);
+                mm = next;
+                printf("  rating %s, back to level 1 (%s section %u)\n",
+                       RATING_NAME[rating], file, which);
+                continue;
+            }
             /* F3 "FX" changes NOTHING on the original's screen in this build -
              * measured with tools/probe_menu_keys.py, which finds only the
              * scroller moving. There is no sound here to toggle either, so
-             * this is a faithful no-op rather than a missing feature. The
-             * rating plate is a real gap and says so. */
-            printf("  %s\n",
-                   a == MENU_FX ? "F3, \"FX\": the original's screen does not "
-                                  "change here either, and there is no sound "
-                                  "yet"
-                                : "the rating plate: nothing has been found "
-                                  "that works it, here or in the original");
+             * this is a faithful no-op rather than a missing feature. */
+            printf("  F3, \"FX\": the original's screen does not change here "
+                   "either, and there is no sound yet\n");
         }
         menu_free(&mm);
         return rc;
