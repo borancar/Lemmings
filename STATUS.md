@@ -318,10 +318,21 @@ Each of these is stated as what was *checked*, not what was written.
   tile there would score 66% and look about right, which is the failure worth
   avoiding: it invites the screen to be called finished. Palette entries 8–15
   are the same gap — on that screen they are the level's terrain colours.
-- **The scrolling banner at the foot is not drawn**, and nothing in the port
-  animates. What the banner is made of is now mapped, by logging blits whose
-  destination lands in its rows (`di / 80` gives the row, so the filter is
-  exact). Three shapes draw there, and each is a different thing:
+- **The banner's BAR is drawn; its scrolling text and end lemmings are not.**
+  The search for a bar sprite was the wrong search: logging the blits that land
+  in those rows finds the source at image `0x191BC`, in BSS, and dumping it
+  shows rows of `0xFF`, `0xF0` and `0x00` — **solid fills**. The bar is a strip
+  the game fills and then renders scrolling text into, so there was never a
+  bitmap in a file to find. It is drawn instead, from geometry measured off the
+  original: x 36–604, y 334–349, colour 13, with dashed rules at y 336 and 347
+  where the colour appears only where `(x & 7) >= 4` — 499/500 and 495/500 over
+  x 100–600, the misses being the scrolling text passing through.
+
+  With that, **the whole menu is composed: 95.04% over all 224,000 pixels with
+  nothing excluded**, up from 91.28% and from a 95.26% that had the banner
+  scored out. A better number over a bigger area.
+
+  What the three shapes in those rows are, which is how the fill was found:
 
   | shape | count | source | rows | what it is |
   | --- | --- | --- | --- | --- |
@@ -329,10 +340,11 @@ Each of these is stated as what was *checked*, not what was written.
   | `cx=70, bp=4` | 1,584 | `0x292BC`, step 70 | 344–349… | the **bar** — 560 pixels wide, four planes, from image `0x191BC`, which is inside the BSS the program fills at load time |
   | `cx=6, bp=4` | 3,136 | `0x6A000`–`0x6D000` | — | the **scrolling text**, from a different font than the menu's 16×16 one |
 
-  The bar living in BSS is the obstacle: the port cannot read it, because it is
-  not in a file in that form — the same shape of problem as the briefing's
-  background, one level along. Which file section is copied there is the thing
-  to find, and it is not started.
+  The bar's row in BSS turned out to be solid fill, not a picture — which is
+  why it is now drawn rather than hunted. The scrolling **text** still is not:
+  it uses a different font from the menu's 16×16 one, and it scrolls, so a
+  composed frame cannot match it anyway. The two lemmings holding the ends
+  (x 12–35 and 605–628) are sprites that have not been located.
 
   Correction worth recording: the menu's animation is **not** only the
   scroller, as this file once said — a no-key baseline moves 1,381–1,807 pixels

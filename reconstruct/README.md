@@ -113,8 +113,11 @@ None of that was guessed from the labels: a probe drives the original to its
 menu, presses one key, and diffs the screen against a no-key baseline.
 
 There is no game yet: no lemmings, no skills, no animation, no sound. Nothing
-on the menu animates either - the lemmings' eyes do not blink and the scrolling
-banner at the foot is not drawn.
+on the menu animates either, and the banner at the foot is drawn as an empty
+bar - its scrolling text and the two lemmings holding its ends are missing.
+
+Composed against the original's own screen, the menu is **95.04% identical
+across all 224,000 pixels**, with nothing excluded from the count.
 
 ## How it is laid out
 

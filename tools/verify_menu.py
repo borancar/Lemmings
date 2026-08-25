@@ -40,9 +40,11 @@ ATTR = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
         0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F]
 
 # Regions the port does not compose yet, as (name, y0, y1).
-NOT_IMPLEMENTED = [
-    ("the scrolling banner", 330, 350),
-]
+# The banner's BAR is drawn now; its scrolling TEXT and the two lemmings
+# holding the ends are not. Those live inside the bar's own rows, so the strip
+# is scored rather than excluded - it is mostly bar - and the leftover is named
+# below rather than hidden.
+NOT_IMPLEMENTED = []
 
 
 def read_scrn(path):

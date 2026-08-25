@@ -1256,6 +1256,43 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
     return 0;
 }
 
+/* The scrolling banner's BAR.
+ *
+ * Not a sprite, and worth saying why the search for one was wrong. Logging the
+ * blits that land in these rows finds the source at image 0x191BC - in BSS -
+ * and dumping it shows rows of 0xFF, 0xF0 and 0x00. Solid fills. The bar is a
+ * strip the game FILLS and then renders scrolling text into, so there is no
+ * bitmap in any file to go and find; it is drawn.
+ *
+ * The geometry is measured off the original's screen: x 36..604, y 334..349,
+ * colour 13 (DAC 61, a dull yellow), with two dashed rules at y 336 and 347
+ * where the colour appears only where (x & 7) >= 4. Checked over x 100..600 on
+ * a captured menu: 499/500 for the solid rows and 495/500 for the dashed ones,
+ * the handful of misses being the scrolling text that was passing through.
+ *
+ * The TEXT is not drawn, and neither are the two lemmings holding the ends
+ * (x 12..35 and 605..628). The text scrolls, so a composed frame cannot match
+ * it; the lemmings are sprites that have not been located. */
+#define BAR_X0    36
+#define BAR_X1   604
+#define BAR_Y0   334
+#define BAR_Y1   349
+#define BAR_COL   13
+#define BAR_RULE_A 336
+#define BAR_RULE_B 347
+
+static void draw_banner(uint8_t *dst)
+{
+    for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++) {
+        int dashed = (y == BAR_RULE_A || y == BAR_RULE_B);
+        for (uint16_t x = BAR_X0; x <= BAR_X1; x++) {
+            if (dashed && (x & 7) < 4)
+                continue;
+            dst[(size_t)y * MENU_W + x] = BAR_COL;
+        }
+    }
+}
+
 int menu_build(const char *dir, menu_screen *m, const char **err)
 {
     memset(m, 0, sizeof(*m));
@@ -1315,6 +1352,7 @@ int menu_build(const char *dir, menu_screen *m, const char **err)
 
     draw_text(m->pix, font, fontlen, CREDIT_1, CREDIT_1_Y);
     draw_text(m->pix, font, fontlen, CREDIT_2, CREDIT_2_Y);
+    draw_banner(m->pix);
 
     dat_free(&d);
     return 0;
