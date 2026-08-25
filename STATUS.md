@@ -34,7 +34,7 @@ numbers, re-measured on the current build:
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing's** text | 99.97% — 4 of 15,188 |
-| the **main menu** | 99.41% — 1,321 of 224,000, of which 995 are its animated banner. Checked at **all four ratings**, not just Fun; the spread between them is banner frames |
+| the **main menu** | **99.70%** — 676 of 224,000, of which 350 are the banner's unlocated end lemmings and 326 the long-standing residue. Checked at **all four ratings**, not just Fun |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -476,6 +476,32 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
+- **The banner's bar had three faults, and one weak check hid all three.**
+  It was recorded as x 36–604, dashed where `(x & 7) >= 4`, with the
+  background tile showing either side. It is x 36–**602**, dashed where
+  **`(x & 7) < 4`**, and the **whole 640-column band is black underneath**.
+
+  The check that passed it was *"sample x 100–600 and count how many are
+  colour 13: 499/500 solid, 495/500 dashed."* A count taken from the middle
+  cannot see an edge, cannot see a phase — half the pixels are the colour
+  either way — and never looks outside the bar at all. It read as 99% while
+  being wrong about every parameter it was measuring.
+
+  Measured instead as *runs*: on row 336 the colour starts at 40, 48, 56 …
+  584, sixty-nine runs, every start 0 mod 8 and every run four wide. At x=603
+  and 604 the solid rows carry colour 12, not 13.
+
+  | | before | after |
+  | --- | --- | --- |
+  | menu, whole screen (no text in the bar) | 99.04% | **99.70%** |
+  | the bar's own rows | 1,835 differing | **350** |
+
+  The remaining 350 is the two end lemmings, still unlocated — they are what
+  puts colour 12 in the margins, a stripe of colour 6 at x=592, and the
+  dash-rule anomaly at 592–600. Across all four ratings the difference
+  *outside* the bar is **exactly 326 every time**, which is the long-standing
+  unexplained residue and is rating-independent.
+
 - **All four rating plates are verified against the original, and the sprites
   ran the wrong way.** Only Fun could be checked before, because only Fun could
   be reached. With the plate working, the original can be driven to each rating

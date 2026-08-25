@@ -122,12 +122,32 @@ the source at image `0x191BC`, in BSS, and dumping *that* shows rows of `0xFF`,
 renders scrolling text into, so there is no bitmap in any file to find. Its
 geometry, measured off the original:
 
-- x 36–604, y 334–349, colour 13 (DAC 61)
+- x 36–**602**, y 334–349, colour 13 (DAC 61)
 - dashed rules at y 336 and y 347, where the colour appears only where
-  `(x & 7) >= 4`
+  **`(x & 7) < 4`**
+- **the whole band, all 640 columns, is black underneath.** The original does
+  not let the background tile show either side of the bar.
 
-Checked over x 100–600: 499/500 for the solid rows, 495/500 for the dashed
-ones, the misses being the scrolling text passing through.
+All three of those were recorded wrongly here for a long time — the edge as
+604, the dash phase inverted, and the black band not noticed at all — and the
+reason is the check that passed them: *"checked over x 100–600: 499/500 for
+the solid rows, 495/500 for the dashed ones."* A sample taken from the middle
+and scored as a **count** cannot see an edge, cannot see a phase (half the
+pixels are the colour either way), and never looks outside the bar. It read as
+99% and was wrong about every parameter it was measuring.
+
+Measured properly: on row 336 the runs of colour 13 start at 40, 48, 56 … 584,
+sixty-nine of them, every start 0 mod 8 and every run four pixels wide. At
+x=603 and 604 the solid rows carry colour 12, not 13.
+
+Fixing the three took the menu from 99.04% to **99.70%** on a capture with no
+scrolling text in the bar, and the bar's own rows from 1,835 differing to 350.
+
+The tail of the dashed rows does not follow the rule: the clean runs stop at
+584–587, and 592–595 and 597–600 are overdrawn by something that is not the
+bar — the same thing that puts a stripe of colour 6 at x=592 on every row and
+colour 12 in the margins. That is the unlocated end lemmings. The port draws
+the rule straight through, which costs about five pixels on each dashed row.
 
 Three shapes draw in those rows, and separating them needs the blit *starts* —
 `cx` counts down inside the loop, so counting hook fires measures bytes and

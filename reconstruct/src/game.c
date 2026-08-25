@@ -1541,17 +1541,32 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * strip the game FILLS and then renders scrolling text into, so there is no
  * bitmap in any file to go and find; it is drawn.
  *
- * The geometry is measured off the original's screen: x 36..604, y 334..349,
- * colour 13 (DAC 61, a dull yellow), with two dashed rules at y 336 and 347
- * where the colour appears only where (x & 7) >= 4. Checked over x 100..600 on
- * a captured menu: 499/500 for the solid rows and 495/500 for the dashed ones,
- * the handful of misses being the scrolling text that was passing through.
+ * The geometry is measured off the original's screen, and three things about
+ * it were wrong here for a long time because the check that passed them was
+ * "sample x 100..600 and count how many are colour 13" - which cannot see an
+ * edge, cannot see a phase, and never looks outside the bar at all:
+ *
+ *   - the bar ends at x=602, not 604. At 603 and 604 the original has colour
+ *     12, which belongs to whatever draws the ends.
+ *   - the dashed rules carry the colour where (x & 7) < 4, NOT >= 4. Run
+ *     starts on row 336 are 40, 48, 56 ... 584, every one of them 0 mod 8,
+ *     four pixels wide. The old rule was exactly out of phase, so it scored
+ *     well on a count and put every dash in the wrong place.
+ *   - the WHOLE band, rows 334..349 across all 640 columns, is black
+ *     underneath. The original does not let the background tile show either
+ *     side of the bar; the port did, which was ~1,100 pixels on its own.
  *
  * The TEXT is not drawn, and neither are the two lemmings holding the ends
  * (x 12..35 and 605..628). The text scrolls, so a composed frame cannot match
- * it; the lemmings are sprites that have not been located. */
+ * it; the lemmings are sprites that have not been located, and they are what
+ * puts colour 12 in the margins and a stripe of colour 6 at x=592.
+ *
+ * That last one is why the dash near the right end does not follow the rule:
+ * the clean runs stop at 584..587, and 592..595 and 597..600 are overdrawn by
+ * something that is not the bar. The port draws the rule through, which costs
+ * about five pixels on each dashed row and is honest about why. */
 #define BAR_X0    36
-#define BAR_X1   604
+#define BAR_X1   602
 #define BAR_Y0   334
 #define BAR_Y1   349
 #define BAR_COL   13
@@ -1562,8 +1577,11 @@ static void draw_banner(uint8_t *dst)
 {
     for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++) {
         int dashed = (y == BAR_RULE_A || y == BAR_RULE_B);
+        /* Black underneath, the full width - not just where the bar goes. */
+        for (uint16_t x = 0; x < MENU_W; x++)
+            dst[(size_t)y * MENU_W + x] = 0;
         for (uint16_t x = BAR_X0; x <= BAR_X1; x++) {
-            if (dashed && (x & 7) < 4)
+            if (dashed && (x & 7) >= 4)
                 continue;
             dst[(size_t)y * MENU_W + x] = BAR_COL;
         }
