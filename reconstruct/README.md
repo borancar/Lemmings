@@ -54,6 +54,21 @@ There is no game yet: no lemmings, no skills, no animation, no sound.
 
 ## How it is known to be right
 
+**Its data loading is proven byte for byte.** The development repository has a
+check that takes the bytes the *original* has in RAM after loading a file and
+compares them against what this code produces from the same file on disk:
+**179 618 bytes across seven sections, byte-identical, none differing** — the
+level, both `VGAGR0.DAT` sections including the terrain bitmaps, three sections
+of `MAIN.DAT`, and the ground file. Two programs, one input, an exact answer.
+
+**Its rendering is checked against two independent references.** Against the
+original running under an emulator and against DOSBox, the level it draws
+matches **81%** and **79%** of pixels respectively, aligning at exactly the
+`start_x` the level file declares. The two references agreeing to within two
+points is what makes the remaining difference a real difference rather than an
+artefact. The noise floor for this comparison is about 58%.
+
+
 Not yet as thoroughly as it should be, and this section will say so honestly
 until that changes.
 
