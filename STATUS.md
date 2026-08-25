@@ -466,6 +466,17 @@ Each of these is stated as what was *checked*, not what was written.
   rows), and not the palette. Something draws black there that has not been
   found.
 
+- **The plates are keyed, and that is now measured rather than assumed.**
+  Drawn as they are they differ by **317 pixels across all six**; drawn opaquely
+  they would differ by 7,532. That is essentially the whole of the menu's
+  non-banner residual, spread 16–113 pixels per plate, and it is static — those
+  rows do not move between captures.
+- **A stale `--raw` file has now cost three measurements**, most recently a
+  plate comparison that read 5,528 differing pixels where the truth was 40.
+  Each time the file looked valid and was simply from an earlier build.
+  `tools/menu_diff.py` regenerates before it reads and offers no way to skip
+  that; ad-hoc analysis scripts should not be written for this any more.
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~

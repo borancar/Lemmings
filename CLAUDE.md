@@ -119,6 +119,14 @@ can be built and called without a compiler in the hot path.
 Delete the capture file before the run. A stale one reads as a successful run,
 and a run that never reached the breakpoint should report **that**, not a pass.
 
+**Regenerate the port's output before analysing it — always.** A stale `--raw`
+file has produced three misleading measurements here: plates that appeared to
+match 18-25% when they matched 93%, a "regression" that was really a capture
+taken before the fix, and a plate comparison off by a factor of twenty. Each
+time the file on disk was from an earlier build and looked perfectly valid.
+`tools/menu_diff.py` regenerates before it reads and has no flag to skip it;
+use it rather than an ad-hoc script.
+
 **Never compare a capture without checking its palette is up.** A screen
 sampled mid-fade has an all-black DAC and every index still in place, so it
 compares as an enormous difference for a reason that has nothing to do with
@@ -249,6 +257,7 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
 | **`tools/verify_menu.py`** | the port's main menu against the one the original composes, in EGA mode 10h - and it scores the parts the port does not build separately rather than hiding them |
 | `tools/hotspots.py` | ranks routines by how much work they do, not by whether they are code. `--after-read` counts only inside the windows following an INT 21h AH=3Fh, which is how the decompressor was found |
+| **`tools/menu_diff.py`** | where the port's menu differs from the original's, regenerating the port's output first so a stale file cannot mislead. `--map` for a picture, `--rows`/`--cols` to zoom |
 | **`tools/probe_briefing_bg.py`** | is a screen's background stored or generated? Two lit captures from separate runs, then a search of every file **with a control** - a search that finds nothing proves nothing unless the same search finds something it should |
 | **`tools/probe_menu_keys.py`** | what a menu key actually does, asked of the original: fresh guest per key, held and repeated press, screen diffed against a no-key baseline, and it refuses to compare a capture taken mid-fade |
 | `tools/profile_menu.py` | which routines run while the menu is up, through `LEM_HOOK` |
