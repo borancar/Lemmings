@@ -207,6 +207,9 @@ int dat_decompress(const uint8_t *comp, uint32_t comp_len,
 
 /*
  * Not transcribed: a big-endian word, an idiom rather than a routine.
+ *
+ * The port's own: the original reads these words inline, with no routine to
+ * point at.
  */
 static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
 
@@ -283,17 +286,6 @@ int dat_load(const char *path, dat_file *out, const char **err)
         return -1;
     }
     return 0;
-}
-
-/* The port's own: the original frees through its DOS allocator. */
-void dat_free(dat_file *d)
-{
-    if (!d) return;
-    for (uint32_t i = 0; i < d->count; i++)
-        free(d->sections[i].data);
-    free(d->sections);
-    d->sections = NULL;
-    d->count = 0;
 }
 
 /* ======================================================================
@@ -441,35 +433,6 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
     return 0;
 }
 
-/* A flat view of the parsed header, so tools/verify_level.py can compare
- * against the original without mirroring `level`'s layout in Python.
- * The order is the order the original stores them in.
- *
- * The port's own: a flat view for tools/verify_level.py, with no counterpart
- * in the original.
- */
-int level_header_fields(const uint8_t *buf, uint32_t len,
-                        uint16_t *out, uint32_t n_out, const char **err)
-{
-    static level lv;
-    if (n_out < 15) {
-        if (err) *err = "need room for 15 fields";
-        return -1;
-    }
-    if (level_parse(buf, len, &lv, err) != 0)
-        return -1;
-    out[0] = lv.release_rate;
-    out[1] = lv.num_lemmings;
-    out[2] = lv.num_to_rescue;
-    out[3] = lv.time_limit;
-    for (uint32_t i = 0; i < 8; i++)
-        out[4 + i] = lv.skills[i];
-    out[12] = lv.start_x;
-    out[13] = lv.graphics_set;
-    out[14] = lv.extended_graphics_set;
-    return 0;
-}
-
 /* ======================================================================
  * NOT TRANSCRIBED - GROUNDxO.DAT, from the published description.
  * Where this lives in the original is not established.
@@ -479,26 +442,18 @@ int level_header_fields(const uint8_t *buf, uint32_t len,
 
 /*
  * Not transcribed: a little-endian word, an idiom rather than a routine.
+ *
+ * The port's own: as be16 above - an idiom, not a routine.
  */
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
-/* A 6-bit DAC value as 8 bits, the way the hardware does it: the top two bits
- * repeated into the bottom, not a proportional scale. The two agree at 0 and
- * 63 and differ by one in between - 0x20 is 130 here and 129 if you compute
- * v*255/63 - and that one is enough to make every mid-tone pixel of a screen
- * compare as different against another emulator.
- *
- * Not transcribed as a routine - this is what the DAC hardware does, not
- * code the original runs.
- */
-static uint8_t widen6(uint8_t v)
-{
-    v = (uint8_t)(v & 0x3F);
-    return (uint8_t)((v << 2) | (v >> 4));
-}
-
 /* NOT TRANSCRIBED - GROUNDxO.DAT, from the published description, checked
- * against the files. Where the original parses it is not established. */
+ * against the files. Where the original parses it is not established.
+ *
+ * NOT TRANSCRIBED. The original parses GROUNDxO.DAT too and has a routine
+ * for it; this was written from the published description instead, and that
+ * routine has not been read. Owed.
+ */
 int ground_load(const char *path, ground *g, const char **err)
 {
     uint8_t buf[GROUND_SIZE];
@@ -600,7 +555,11 @@ uint8_t g_plane_bits[4] = { 0, 1, 2, 3 };
 uint8_t g_msb_first = 1;
 
 /* NOT TRANSCRIBED - a 4-bit planar bitmap out of VGAGRx.DAT. Where the
- * original decodes these is not established. */
+ * original decodes these is not established.
+ *
+ * NOT TRANSCRIBED. The original decodes these bitmaps itself; the routine
+ * has not been read. Owed.
+ */
 int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
                  uint8_t w, uint8_t h, uint8_t *out)
 {
@@ -628,7 +587,10 @@ int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
     return 0;
 }
 
-/* NOT TRANSCRIBED - the 1-bit transparency mask beside a bitmap. */
+/* NOT TRANSCRIBED - the 1-bit transparency mask beside a bitmap.
+ *
+ * NOT TRANSCRIBED. As vgagr_decode above. Owed.
+ */
 int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
                       uint8_t w, uint8_t h, uint8_t *out)
 {
@@ -656,22 +618,6 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
 
 terrain_mode g_terrain_mode = TERRAIN_REPLACE;
 uint8_t g_terrain_reverse = 0;
-
-/* The port's own: the original composes straight into video memory. */
-int canvas_init(canvas *c)
-{
-    c->w = LEVEL_W;
-    c->h = LEVEL_H;
-    c->pix = calloc((size_t)c->w * c->h, 1);
-    return c->pix ? 0 : -1;
-}
-
-/* The port's own. */
-void canvas_free(canvas *c)
-{
-    free(c->pix);
-    c->pix = NULL;
-}
 
 /* NOT TRANSCRIBED, but PROVEN equivalent. The original's loop is at image
  * 0x03752..0x03768, calling a blitter at image 0x07C67; this composes the
@@ -1014,19 +960,6 @@ static const uint8_t MENU_PAL6[48] = {
     0x34,0x34,0x34,  0x2c,0x2c,0x00,  0x10,0x14,0x2c,  0x38,0x20,0x24,
 };
 
-/* 6 bits to 8 by REPLICATING the top bits, not by scaling to 255. 0x3F must
- * come out 255 and 0x00 must come out 0, and v*255/63 gets both right and
- * everything between subtly wrong.
- *
- * Not transcribed - the same widening as widen6 above, duplicated here
- * rather than shared. Worth collapsing.
- */
-static uint8_t dac8(uint8_t v)
-{
-    v &= 0x3F;
-    return (uint8_t)((v << 2) | (v >> 4));
-}
-
 /* image 0x09347 - copy a sprite row into the scratch buffer, append a zero
  * byte, and shift the lot right by `bits`.
  *
@@ -1151,25 +1084,6 @@ void preshift_sprite(const uint8_t *src, uint8_t cols, uint8_t rows,
     }
 }
 
-/* One pixel out of a planar bitmap. `planes` is how far apart consecutive
- * planes are; pass 0 for the two-plane background and only bits 0 and 1 are
- * read. The leftmost pixel of a byte is its most significant bit.
- *
- * Not transcribed: reading one pixel out of a planar bitmap, an idiom. The
- * original never does this - it programs the EGA and lets the card do it.
- */
-static uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
-                      uint16_t stride, uint8_t nplanes,
-                      uint16_t x, uint16_t y)
-{
-    uint8_t v = 0;
-    for (uint8_t p = 0; p < nplanes; p++) {
-        uint32_t o = base + p * plane_step + (uint32_t)y * stride + (x >> 3);
-        v = (uint8_t)(v | (((sec[o] >> (7 - (x & 7))) & 1u) << p));
-    }
-    return v;
-}
-
 /* Blit a 4-plane sprite the way image 0x0890E does, which is not "keyed".
  *
  * The blitter branches on bit 6 of bp at image 0x08905; the menu passes
@@ -1279,7 +1193,13 @@ static void draw_char(uint8_t *dst, const uint8_t *font, uint32_t font_len,
     }
 }
 
-/* The port's own. */
+/* The port's own.
+ *
+ * NOT TRANSCRIBED. Image 0x04D4D walks a string and image 0x04D78 draws the
+ * glyph - both transcribed - but the CENTRING here is the port's arithmetic,
+ * fitted to where the original puts the credits. Where the original computes
+ * it has not been read. Owed.
+ */
 static void draw_text(uint8_t *dst, const uint8_t *font, uint32_t font_len,
                       const char *text, uint16_t at_y)
 {
@@ -1351,9 +1271,9 @@ static int screen_start(const char *dir, menu_screen *m, dat_file *d,
         return -1;
     }
     for (uint8_t i = 0; i < 16; i++) {
-        m->palette[i].r = dac8(MENU_PAL6[i * 3 + 0]);
-        m->palette[i].g = dac8(MENU_PAL6[i * 3 + 1]);
-        m->palette[i].b = dac8(MENU_PAL6[i * 3 + 2]);
+        m->palette[i].r = widen6(MENU_PAL6[i * 3 + 0]);
+        m->palette[i].g = widen6(MENU_PAL6[i * 3 + 1]);
+        m->palette[i].b = widen6(MENU_PAL6[i * 3 + 2]);
     }
     /* `tile_background` is a vertical ORIGIN plus one, so 1 means "tile from
      * row 0" and 0 means "do not tile". The briefing tiles the very same
@@ -1981,7 +1901,12 @@ uint8_t menu_anim_visible(void)
 
 /* Draw whichever of them are on screen this pass. Keyed on 0, like the rest
  * of this screen: the sprites set plane 3 wherever they have ink, so their
- * own colours are 8..15 and 0 is genuinely nothing. */
+ * own colours are 8..15 and 0 is genuinely nothing.
+ *
+ * Transcribed from image 0x04FD3: ax and bx come from the table entry, si is
+ * the frame, di is si + 0x90 for the mask, and the blit is cx=0x40C (12
+ * rows, 4 planes) by dx=0x20 (32 pixels).
+ */
 static void draw_anim(uint8_t *dst, const uint8_t *gfx, uint32_t len)
 {
     if (!anim_started) menu_anim_reset();
@@ -2246,9 +2171,9 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
         return -1;
     }
     for (uint8_t i = 0; i < 16; i++) {
-        m->palette[i].r = dac8(MENU_PAL6[i * 3 + 0]);
-        m->palette[i].g = dac8(MENU_PAL6[i * 3 + 1]);
-        m->palette[i].b = dac8(MENU_PAL6[i * 3 + 2]);
+        m->palette[i].r = widen6(MENU_PAL6[i * 3 + 0]);
+        m->palette[i].g = widen6(MENU_PAL6[i * 3 + 1]);
+        m->palette[i].b = widen6(MENU_PAL6[i * 3 + 2]);
     }
 
     /* The background, tiled from (0,0) - but only 632 pixels wide, NOT 640.
@@ -2365,17 +2290,6 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
     return 0;
 }
 
-/* The port's own. */
-void menu_free(menu_screen *m)
-{
-    if (!m) return;
-    free(m->pix);
-    m->pix = NULL;
-    free(m->gfx);
-    m->gfx = NULL;
-    m->gfx_len = 0;
-}
-
 /* The signs, as things the player can choose.
  *
  * The keys are the ones the original prints on the plates themselves - F1, F2,
@@ -2417,7 +2331,12 @@ static const view_hotspot SIGN_SPOT[6] = {
 
 /* The port's own. The KEYS are the original's, read off the plates it draws
  * on its own screen - F1, F2, F3, ESC, F4 - so the mapping is evidence. What
- * each does beyond F1 and ESC is not reconstructed. */
+ * each does beyond F1 and ESC is not reconstructed.
+ *
+ * Transcribed from image 0x0447B - the compare chain that turns a translated
+ * key into a screen. The boxes are the port's, because the original ignores
+ * where a click lands; the KEYS are its own.
+ */
 void menu_hotspots(view_hotspot *spots)
 {
     /* The plates are KEYBOARD ONLY, with no click box of their own. That is
@@ -2465,28 +2384,6 @@ void menu_hotspots(view_hotspot *spots)
     spots[9].h = MENU_H;
     spots[9].key = VIEW_KEY_NONE;
     spots[9].id = MENU_PLAY;
-}
-
-/* The port's own. The original's own instruction on the briefing is "Press
- * mouse button to continue", so a click dismisses these screens; Esc does too,
- * which is the port's addition and harmless - the original has no other way
- * off the briefing, but a window that only closes on a mouse click is a poor
- * thing on a machine with a keyboard. */
-void menu_show_until_dismissed(const menu_screen *m, const char *title,
-                               uint8_t scale)
-{
-    view_hotspot any[2];
-    any[0].x = 0;
-    any[0].y = 0;
-    any[0].w = MENU_W;
-    any[0].h = MENU_H;
-    any[0].key = VIEW_KEY_NONE;
-    any[0].id = 1;
-    any[1] = any[0];
-    any[1].w = 0;
-    any[1].h = 0;
-    any[1].key = VIEW_KEY_ESC;
-    view_interact(m->pix, MENU_W, MENU_H, m->palette, title, scale, any, 2);
 }
 
 /* One frame of the banner. The original advances 4 pixels per pass of its

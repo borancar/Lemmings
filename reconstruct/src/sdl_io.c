@@ -324,3 +324,150 @@ int view_run(const canvas *c, const lem_rgb *palette, const char *title,
     return view_show(c->pix, c->w, c->h, 320, 160, palette, title,
                      start_x, scale);
 }
+
+/* ======================================================================
+ * WHAT THE HARDWARE USED TO DO.
+ *
+ * Everything below replaces something the original did NOT have code for,
+ * because a card or DOS did it:
+ *
+ *   widen6   the DAC turns a 6-bit component into 8; the original just
+ *            writes six bits and the hardware widens them
+ *   planar   the EGA assembles a pixel out of four bit-planes; the original
+ *            programs the card and never touches a plane as data
+ *   *_free   DOS owned the memory. The original allocates through INT 21h
+ *            and never frees anything by hand
+ *
+ * and two that are not the game at all: the window loop a screen with no
+ * choices sits in, and a flat view of the parsed level header that exists
+ * only so tools/verify_level.py can compare against the original.
+ *
+ * These lived in game.c and were labelled "the port's own", which is a
+ * contradiction: game.c holds the game. If a routine is marked as ours and
+ * sits in the game's file, either it is IO and belongs here, or it is game
+ * logic that has not been transcribed yet - and the second is the thing this
+ * whole method exists to avoid.
+ * ====================================================================== */
+
+/* A 6-bit DAC value as 8 bits, the way the hardware does it: the top two bits
+ * repeated into the bottom, not a proportional scale. The two agree at 0 and
+ * 63 and differ by one in between - 0x20 is 130 here and 129 if you compute
+ * v*255/63 - and that one is enough to make every mid-tone pixel of a screen
+ * compare as different against another emulator.
+ *
+ * Not transcribed as a routine - this is what the DAC hardware does, not
+ * code the original runs.
+ */
+uint8_t widen6(uint8_t v)
+{
+    v = (uint8_t)(v & 0x3F);
+    return (uint8_t)((v << 2) | (v >> 4));
+}
+
+/* One pixel out of a planar bitmap. `planes` is how far apart consecutive
+ * planes are; pass 0 for the two-plane background and only bits 0 and 1 are
+ * read. The leftmost pixel of a byte is its most significant bit.
+ *
+ * Not transcribed: reading one pixel out of a planar bitmap, an idiom. The
+ * original never does this - it programs the EGA and lets the card do it.
+ */
+uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
+                      uint16_t stride, uint8_t nplanes,
+                      uint16_t x, uint16_t y)
+{
+    uint8_t v = 0;
+    for (uint8_t p = 0; p < nplanes; p++) {
+        uint32_t o = base + p * plane_step + (uint32_t)y * stride + (x >> 3);
+        v = (uint8_t)(v | (((sec[o] >> (7 - (x & 7))) & 1u) << p));
+    }
+    return v;
+}
+
+/* The port's own: the original composes straight into video memory. */
+int canvas_init(canvas *c)
+{
+    c->w = LEVEL_W;
+    c->h = LEVEL_H;
+    c->pix = calloc((size_t)c->w * c->h, 1);
+    return c->pix ? 0 : -1;
+}
+
+/* The port's own. */
+void canvas_free(canvas *c)
+{
+    free(c->pix);
+    c->pix = NULL;
+}
+
+/* The port's own: the original frees through its DOS allocator. */
+void dat_free(dat_file *d)
+{
+    if (!d) return;
+    for (uint32_t i = 0; i < d->count; i++)
+        free(d->sections[i].data);
+    free(d->sections);
+    d->sections = NULL;
+    d->count = 0;
+}
+
+/* The port's own. */
+void menu_free(menu_screen *m)
+{
+    if (!m) return;
+    free(m->pix);
+    m->pix = NULL;
+    free(m->gfx);
+    m->gfx = NULL;
+    m->gfx_len = 0;
+}
+
+/* The port's own. The original's own instruction on the briefing is "Press
+ * mouse button to continue", so a click dismisses these screens; Esc does too,
+ * which is the port's addition and harmless - the original has no other way
+ * off the briefing, but a window that only closes on a mouse click is a poor
+ * thing on a machine with a keyboard. */
+void menu_show_until_dismissed(const menu_screen *m, const char *title,
+                               uint8_t scale)
+{
+    view_hotspot any[2];
+    any[0].x = 0;
+    any[0].y = 0;
+    any[0].w = MENU_W;
+    any[0].h = MENU_H;
+    any[0].key = VIEW_KEY_NONE;
+    any[0].id = 1;
+    any[1] = any[0];
+    any[1].w = 0;
+    any[1].h = 0;
+    any[1].key = VIEW_KEY_ESC;
+    view_interact(m->pix, MENU_W, MENU_H, m->palette, title, scale, any, 2);
+}
+
+/* A flat view of the parsed header, so tools/verify_level.py can compare
+ * against the original without mirroring `level`'s layout in Python.
+ * The order is the order the original stores them in.
+ *
+ * The port's own: a flat view for tools/verify_level.py, with no counterpart
+ * in the original.
+ */
+int level_header_fields(const uint8_t *buf, uint32_t len,
+                        uint16_t *out, uint32_t n_out, const char **err)
+{
+    static level lv;
+    if (n_out < 15) {
+        if (err) *err = "need room for 15 fields";
+        return -1;
+    }
+    if (level_parse(buf, len, &lv, err) != 0)
+        return -1;
+    out[0] = lv.release_rate;
+    out[1] = lv.num_lemmings;
+    out[2] = lv.num_to_rescue;
+    out[3] = lv.time_limit;
+    for (uint32_t i = 0; i < 8; i++)
+        out[4 + i] = lv.skills[i];
+    out[12] = lv.start_x;
+    out[13] = lv.graphics_set;
+    out[14] = lv.extended_graphics_set;
+    return 0;
+}

@@ -19,8 +19,20 @@ import sys
 SRC = pathlib.Path(__file__).resolve().parent.parent / "src"
 DEF = re.compile(r'^(?:static\s+)?[A-Za-z_][A-Za-z0-9_]*\s+\**([a-z_][a-z0-9_]*)\s*\(')
 ADDR = re.compile(r'\bimage\s+0x[0-9A-Fa-f]{4,5}|\b0x[0-9A-Fa-f]{4,5}\b')
-OWN = re.compile(r"port's own|NOT TRANSCRIBED|not transcribed|OURS|"
-                 r"the port chose|address unknown", re.I)
+# Three outcomes, and the third is the one that matters. "The port's own" and
+# "not transcribed yet" were one bucket until it was noticed they are opposite
+# claims: the first says the original has no such routine, the second says it
+# has one and nobody has read it. Collapsing them hides every debt.
+# Anchored to the start of a line, because a comment that MENTIONS the words
+# in passing is not a classification. Matching them anywhere flagged dat_load,
+# level_parse, render_terrain and render_objects - all of which carry an
+# address and merely discuss what was and was not transcribed nearby. Same
+# mistake as searching a window instead of the block: a loose pattern makes
+# the file report something it does not say.
+LINE = r"^[ \t]*\*?[ \t]*"
+OWN = re.compile(LINE + r"(?:The p|P)ort's own\b|" + LINE + r"THE PORT'S OWN",
+                 re.M)
+OWED = re.compile(LINE + r"NOT TRANSCRIBED\b", re.M)
 
 
 def block_above(lines, i):
@@ -56,6 +68,7 @@ FILE_OWN = re.compile(r"THIS FILE IS THE PORT'S OWN")
 def main():
     show = "--list" in sys.argv
     trans = own = bare = 0
+    owed = []
     missing = []
     for f in sorted(SRC.glob("*.c")):
         text = f.read_text()
@@ -66,7 +79,7 @@ def main():
         # addresses to carry; sixteen identical comments saying so would be
         # ritual, and ritual is what a convention decays into just before it
         # decays out.
-        if FILE_OWN.search(text[:2000]):
+        if FILE_OWN.search(text[:2500]):
             n = sum(1 for i, l in enumerate(lines)
                     if not l.startswith(" ") and not l.rstrip().endswith(";")
                     and DEF.match(l)
@@ -85,7 +98,9 @@ def main():
                                        "return", "sizeof"):
                 continue
             ctx = block_above(lines, i)
-            if ADDR.search(ctx):
+            if OWED.search(ctx):
+                owed.append((f.name, i + 1, m.group(1)))
+            elif ADDR.search(ctx):
                 trans += 1
                 if show:
                     a = ADDR.search(ctx).group(0)
@@ -101,7 +116,12 @@ def main():
 
     print(f"\n  transcribed, with an address : {trans}")
     print(f"  the port's own, said so      : {own}")
+    print(f"  not transcribed YET          : {len(owed)}")
     print(f"  NEITHER                      : {bare}")
+    if owed:
+        print("\n  game logic the original has a routine for, not yet read:")
+        for fn, ln, nm in owed:
+            print(f"    {fn}:{ln:5d}  {nm}")
     if missing:
         print("\n  these say nothing about where they came from:")
         for fn, ln, nm in missing:

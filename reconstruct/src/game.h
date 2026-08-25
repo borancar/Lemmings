@@ -214,6 +214,11 @@ extern terrain_mode g_terrain_mode;
  * than assumed, since it interacts with the no-overwrite flag. */
 extern uint8_t g_terrain_reverse;
 
+/* Implemented in sdl_io.c - see "WHAT THE HARDWARE USED TO DO" there. */
+uint8_t widen6(uint8_t v);
+uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
+               uint16_t stride, uint8_t nplanes, uint16_t x, uint16_t y);
+
 int  canvas_init(canvas *c);
 void canvas_free(canvas *c);
 

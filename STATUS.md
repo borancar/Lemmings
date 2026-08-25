@@ -41,7 +41,7 @@ numbers, re-measured on the current build:
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 27 of
+**Transcription is a different claim from any of the above, and it is 29 of
 211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
@@ -1042,7 +1042,7 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 27 (`make test` enforces the count) |
+| routines transcribed | 29 (`make test` enforces the count) |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |

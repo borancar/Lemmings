@@ -288,6 +288,21 @@ the reference moved, not the port.
 - **The port shows a screen by default.** `./lemmings` with no arguments opens
   the game; `--out` or `--raw` is what asks for a file instead. A
   reconstruction whose default output is a bitmap is a converter.
+- **`game.c` holds the game and nothing else.** A function marked "the port's
+  own" inside it is a smell: either it is **IO** - it replaces something a
+  card, the BIOS or DOS did, and belongs in `sdl_io.c` - or it is **game logic
+  written instead of transcribed**, which is the thing this method exists to
+  avoid. `sdl_io.c` therefore holds more than SDL: the DAC's 6-to-8-bit
+  widening, the assembly of a pixel out of four bit-planes, the frees DOS used
+  to do, the window loop, and the flat header view `verify_level.py` needs.
+  See "WHAT THE HARDWARE USED TO DO" there.
+- **Prefer transcribing to writing.** If a routine does something the original
+  does, go and read the original's. A behavioural match is only as good as the
+  states you happened to compare, and this port has shipped several that
+  agreed with every capture and were still wrong.
+  `reconstruct/tests/provenance.py` counts what is transcribed, what is ours,
+  and what is **owed** - game logic the original has a routine for that nobody
+  has read - and `make test` fails while any function says none of the three.
 - **The port's `.c` files mirror the original's translation units**, not our
   own idea of modules. Compilers of the period emitted one object per source
   file and the linker laid each module into the segment whole and in link
