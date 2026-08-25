@@ -272,13 +272,20 @@ Each of these is stated as what was *checked*, not what was written.
   clicking bare background does. The port had per-plate click boxes, which was
   behaviour the original does not have — a worse kind of wrong than leaving it
   out — and they are gone.
-- **The briefing's BACKGROUND is not reconstructed, and is left black.** It is
-  not the menu's tile: the original draws it in DAC 56–59, which on that screen
-  are the *level's* terrain colours `(227,130,32)` and not the menu's greens,
-  and the tile matches at no bit offset. It is in neither `MAIN.DAT` nor
-  `VGAGR0.DAT` — searched at all eight alignments. Palette entries 8–15 are the
-  same gap. Black rather than the menu's tile is deliberate: a plausible wrong
-  background invites the screen to be called finished.
+- **The briefing's background is GENERATED, not stored — so there is nothing
+  to find in the data files.** Established with a control, which is what makes
+  it a claim rather than a failed search: two lit captures from separate runs
+  are identical pixel for pixel, so it is deterministic; and a search of every
+  data file *and* the executable at all eight bit alignments finds **0**
+  matches for it while the same search finds **298** for the menu's background,
+  which is stored. Deterministic + absent from every file = generated from a
+  fixed seed. `tools/probe_briefing_bg.py` runs the whole argument including
+  the control. Finding the generator is the open work; searching the files
+  again is not.
+- **The port leaves that background black**, deliberately. Drawing the menu's
+  tile there would score 66% and look about right, which is the failure worth
+  avoiding: it invites the screen to be called finished. Palette entries 8–15
+  are the same gap — on that screen they are the level's terrain colours.
 - **The scrolling banner at the foot is not drawn**, and nothing in the port
   animates. The banner's *strings* are found (image `0x0E45E` onward, in
   38-byte slots) but where it is drawn and how it scrolls is not. Correction

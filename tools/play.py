@@ -84,6 +84,41 @@ def _bright(path, value=False, threshold=220):
     return peak if value else peak >= threshold
 
 
+def screen_lit(path):
+    """Was this capture taken with the palette actually up?
+
+    A screen sampled during a fade has an all-black DAC and every index still
+    in place. It compares as a huge difference for a reason that has nothing to
+    do with what is being tested, and it does not look obviously wrong in a
+    report - it looks like a finding. It has produced two of them here: F3
+    appeared to redraw 77,433 pixels of the menu, and two captures of the same
+    briefing appeared to disagree on a fifth of their background.
+    """
+    try:
+        with open(path, "rb") as f:
+            blob = f.read()
+    except OSError:
+        return False
+    return blob[:4] == b"SCRN" and any(blob[8:8 + 768])
+
+
+def capture_lit(sock_path, path, tries=20, wait=1.0):
+    """Take a screen capture, refusing one taken mid-fade.
+
+    Returns True if a lit capture was written. Callers that get False must
+    report THAT rather than comparing whatever landed on disk - a run that
+    never came up out of its fade has measured nothing.
+    """
+    if os.path.exists(path):
+        os.unlink(path)          # a stale file reads as a successful capture
+    for _ in range(tries):
+        ask(sock_path, f"screen {path}")
+        if screen_lit(path):
+            return True
+        time.sleep(wait)
+    return False
+
+
 def ask(sock_path, line, timeout=5.0):
     """One command down the control socket, one answer back."""
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

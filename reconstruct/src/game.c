@@ -1176,17 +1176,27 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
     dat_file d;
     const uint8_t *sec, *font;
     uint32_t fontlen;
-    /* NO BACKGROUND. The briefing's is NOT the menu's tile - the original
-     * draws it in DAC 56..59, which on this screen are the LEVEL's terrain
-     * colours (227,130,32) and not the menu's greens, and the tile does not
-     * match it at any bit offset. It is not in MAIN.DAT and not in VGAGR0.DAT
-     * either; where it comes from is unfound.
+    /* NO BACKGROUND, and it is not a stored bitmap to go and find.
+     *
+     * The briefing's background is NOT the menu's tile: the original draws it
+     * in DAC 56..59, which on this screen are the LEVEL's terrain colours
+     * (227,130,32) rather than the menu's greens, and the tile matches at no
+     * bit offset - 1.68% with bit 3 set.
+     *
+     * tools/probe_briefing_bg.py then settled what it IS. Two lit captures
+     * from separate runs are identical pixel for pixel, so it is
+     * deterministic; but a search of every data file and the executable, at
+     * all eight bit alignments, finds ZERO matches for it while the same
+     * search finds 298 for the menu's background, which is stored. Identical
+     * between runs plus absent from every file means GENERATED, from a fixed
+     * seed. The generator has not been found.
      *
      * So this leaves it black rather than drawing the menu's tile underneath.
      * A plausible-looking wrong background is worse than an obviously missing
-     * one: it invites the screen to be called finished. The TEXT is right -
-     * read back off the original's own briefing by matching each cell against
-     * the font's glyph masks - and that is what tools/verify_menu.py scores. */
+     * one: it invites the screen to be called finished, and it would score 66%
+     * while looking about right. The TEXT is right - read back off the
+     * original's own briefing by matching each cell against the font's glyph
+     * masks - and that is what tools/verify_menu.py scores. */
     if (screen_start(dir, m, &d, &sec, &font, &fontlen, 0, err) != 0)
         return -1;
 

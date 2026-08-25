@@ -113,6 +113,15 @@ can be built and called without a compiler in the hot path.
 Delete the capture file before the run. A stale one reads as a successful run,
 and a run that never reached the breakpoint should report **that**, not a pass.
 
+**Never compare a capture without checking its palette is up.** A screen
+sampled mid-fade has an all-black DAC and every index still in place, so it
+compares as an enormous difference for a reason that has nothing to do with
+what is being tested - and it does not look like a mistake in a report, it
+looks like a finding. It produced two here: F3 appeared to redraw 77,433 pixels
+of the menu, and two captures of the same briefing appeared to disagree on a
+fifth of their background. `play.capture_lit()` takes a capture and refuses a
+faded one; use it rather than `screen` directly.
+
 ## Compare against what the original composes, not what it displays
 
 The strongest check here is not a screenshot. A screen carries sprites, a
@@ -211,6 +220,7 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
 | **`tools/verify_menu.py`** | the port's main menu against the one the original composes, in EGA mode 10h - and it scores the parts the port does not build separately rather than hiding them |
 | `tools/hotspots.py` | ranks routines by how much work they do, not by whether they are code. `--after-read` counts only inside the windows following an INT 21h AH=3Fh, which is how the decompressor was found |
+| **`tools/probe_briefing_bg.py`** | is a screen's background stored or generated? Two lit captures from separate runs, then a search of every file **with a control** - a search that finds nothing proves nothing unless the same search finds something it should |
 | **`tools/probe_menu_keys.py`** | what a menu key actually does, asked of the original: fresh guest per key, held and repeated press, screen diffed against a no-key baseline, and it refuses to compare a capture taken mid-fade |
 | `tools/profile_menu.py` | which routines run while the menu is up, through `LEM_HOOK` |
 | **`tools/verify_level.py`** | the same for the LVL header parse, and the example of a verifier that rides along with `play.py` via `LEM_HOOK` - needed for anything that only happens inside a level |

@@ -23,7 +23,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lemmings
-from play import ask, wait_for
+from play import ask, wait_for, capture_lit, screen_lit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -54,22 +54,9 @@ def diff(a, b, w):
     return n, (x0, y0, x1, y1) if x1 >= 0 else None
 
 
-def palette_of(path):
-    with open(path, "rb") as f:
-        b = f.read()
-    return b[8:8 + 768]
-
-
-def lit(path):
-    """Is this capture taken with the palette actually up?
-
-    A screen sampled mid-fade has an all-black DAC and every index still in
-    place, so it compares as a huge difference for a reason that has nothing to
-    do with what was pressed. The first version of this probe reported that F3
-    changed 77,407 pixels; it had caught a fade.
-    """
-    pal = palette_of(path)
-    return any(pal)
+# The fade guard now lives in play.py as screen_lit/capture_lit, so every tool
+# that captures gets it rather than each one rediscovering the trap.
+lit = screen_lit
 
 
 def one_key(key, settle, after, samples, hold):
@@ -101,8 +88,7 @@ def one_key(key, settle, after, samples, hold):
         # drops keys pressed while it is still fading in.
         time.sleep(settle)
         before = os.path.join(ROOT, "out", f"mk_{key}_before.scrn")
-        ask(sock, f"screen {before}")
-        if not lit(before):
+        if not capture_lit(sock, before):
             return key, "still black after settling", None, None
         w, h, p0 = read_scrn(before)
 
