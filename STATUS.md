@@ -300,7 +300,24 @@ Each of these is stated as what was *checked*, not what was written.
   from that font at every position over the plate is *worse* than leaving it
   alone (76.56% against 83.45%).
 
-  **Why it has been hard to find is now clear.** The writer is image `0x09387`,
+  **FOUND, and drawn.** `MAIN.DAT` section 4, offset **26084**: 72×27, four
+  planes of 243 bytes, at screen **(486,145)**, drawn **opaquely** — the same
+  reason the FX label is, since the rating swaps and drawing one has to erase
+  the last. Fitted at pixel granularity: **100.00% over 1,760 ink pixels, none
+  differing.** The four names follow at a stride of 972; only rating 0 is
+  verified against a capture, and `game.c` says so.
+
+  It sits *below* the font's nominal base, which is why looking "in the font"
+  never found it: the font is indexed from 23888 so ASCII lands correctly, but
+  no printable character reaches below `23888 + 32×96`, and the ratings live in
+  that unused space.
+
+  | | before | after |
+  | --- | --- | --- |
+  | the menu, whole screen | 99.27% | **99.41%** |
+  | of which outside the animated banner | 630 px | **326 px** |
+
+  **How it was found, since three earlier attempts failed:** The writer is image `0x09387`,
   and the routine around it at `0x09360` **pre-shifts** its sprite: it copies
   the artwork into a scratch buffer and shifts the whole buffer right one bit
   at a time (`shr` then `rcr` down the bytes, repeated for each bit) before

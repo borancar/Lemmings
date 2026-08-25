@@ -307,6 +307,11 @@ typedef enum {
 /* Compose the menu from `dir`/main.dat. Returns 0 on success. */
 int  menu_build(const char *dir, menu_screen *m, const char **err);
 
+/* The same, with the rating name on its plate: 0 Fun, 1 Tricky, 2 Taxing,
+ * 3 Mayhem. Only rating 0 is verified against the original - see game.c. */
+int  menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
+                       const char **err);
+
 /* The two sub-screens the menu can reach, both of them the original's own:
  * F2 shows a level-code entry screen and F4 an input-device chooser. Both are
  * the same tiled background and the same font as the menu. */

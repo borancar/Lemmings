@@ -856,6 +856,27 @@ int render_objects(canvas *c, const level *lv, const ground *g,
 #define FONT_H      16
 #define FONT_MASK_PLANE 2
 
+/* THE RATING NAME, drawn over its plate.
+ *
+ * The plate's own bitmap carries a "FUN", and the original overdraws the
+ * current rating on top of it - it has to, because the rating changes. The
+ * artwork is in section 4, not section 3 with the rest of the menu, and it
+ * sits BELOW the font's nominal base: the font is indexed from 23888 so that
+ * ASCII lands correctly, but no printable character reaches below 23888+32*96,
+ * and the ratings live in that unused space.
+ *
+ * 72x27, four planes of 243 bytes, at screen (486,145). Fitted at pixel
+ * granularity: 100.00% over 1,760 ink pixels, none differing. */
+#define RATING_SECTION 4
+#define RATING_BASE    26084
+#define RATING_W       72
+#define RATING_H       27
+#define RATING_STRIDE  9
+#define RATING_PLANE   243
+#define RATING_STEP    (RATING_PLANE * 4)
+#define RATING_X       486
+#define RATING_Y       145
+
 /* Both lines come from the executable, not from a data file, so they are
  * transcribed here with the address they were read from - the same treatment a
  * routine gets. They sit in a table of the menu's and briefing's strings. */
@@ -1393,7 +1414,13 @@ static void draw_banner(uint8_t *dst)
     }
 }
 
-int menu_build(const char *dir, menu_screen *m, const char **err)
+/* `rating` picks which of the four names goes on the plate: 0 Fun, 1 Tricky,
+ * 2 Taxing, 3 Mayhem. ONLY RATING 0 IS VERIFIED - it is the one the original
+ * shows on a fresh start, fitted at 100.00% over 1,760 ink pixels. The other
+ * three are the next three blocks at the same stride, which is the obvious
+ * reading and is not the same as a checked one. */
+int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
+                      const char **err)
 {
     memset(m, 0, sizeof(*m));
 
@@ -1494,6 +1521,20 @@ int menu_build(const char *dir, menu_screen *m, const char **err)
         blit(m->pix, sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
              SIGN_W, SIGN_H, SIGN_STRIDE, SIGN_PLANE,
              SIGN_POS[i].x, SIGN_POS[i].y);
+
+    /* The rating name, over its plate. Opaque for the same reason the FX
+     * label is: it swaps, so drawing one rating has to erase the last. */
+    for (uint16_t sy = 0; sy < RATING_H; sy++) {
+        uint16_t y = (uint16_t)(RATING_Y + sy);
+        if (y >= MENU_H) break;
+        for (uint16_t sx = 0; sx < RATING_W; sx++) {
+            uint16_t x = (uint16_t)(RATING_X + sx);
+            if (x >= BG_DRAWN_W) break;
+            m->pix[(size_t)y * MENU_W + x] =
+                planar(font, RATING_BASE + (uint32_t)(rating % 4) * RATING_STEP,
+                       RATING_PLANE, RATING_STRIDE, 4, sx, sy);
+        }
+    }
 
     /* The FX plate's label, which is not part of its plate bitmap - and which
      * is drawn OPAQUELY, unlike everything else on this screen.
@@ -1628,4 +1669,10 @@ menu_action menu_run(const menu_screen *m, uint8_t scale)
                               "PC Lemmings", scale, spots, MENU_HOTSPOTS);
     if (r == VIEW_CLOSED) return MENU_EXIT;
     return (menu_action)r;
+}
+
+/* The menu with the rating it starts on. */
+int menu_build(const char *dir, menu_screen *m, const char **err)
+{
+    return menu_build_rating(dir, 0, m, err);
 }

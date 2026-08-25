@@ -391,7 +391,7 @@ int main(int argc, char **argv)
         } else {
             built = which_screen == 1 ? menu_code_screen(data, &mm, &err)
                   : which_screen == 2 ? menu_input_screen(data, &mm, &err)
-                                      : menu_build(data, &mm, &err);
+                                      : menu_build_rating(data, rating, &mm, &err);
         }
         if (built != 0) {
             fprintf(stderr, "main menu: %s\n", err);
