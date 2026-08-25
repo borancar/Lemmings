@@ -120,6 +120,11 @@ def wait_for(sock_path, predicate, what, timeout=120.0, poll=0.25):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--window", action="store_true",
+                    help="open a real window. Everything here is headless by "
+                         "default: these tools drive the guest and capture "
+                         "through the socket, and a window nobody reads is "
+                         "just something popping up on a desktop")
     ap.add_argument("--auto", action="store_true",
                     help="answer the adapter and machine-type menus")
     ap.add_argument("--machine", default=lemmings.STARTUP_KEYS[1],
@@ -177,7 +182,13 @@ def main():
             "import sys, os; sys.path.insert(0, %r); import lemmings; "
             "lemmings.run(sys.argv[1:])" % os.path.dirname(os.path.abspath(__file__)),
             "--control-socket", sock] + rest
-    proc = subprocess.Popen(argv)
+    # The child inherits headlessness unless a window was asked for.
+    env = dict(os.environ)
+    if a.window:
+        env["LEM_WINDOW"] = "1"
+        env.pop("SDL_VIDEODRIVER", None)
+        env.pop("SDL_AUDIODRIVER", None)
+    proc = subprocess.Popen(argv, env=env)
     try:
         # The menus are text mode; the game proper is not. That is the cue.
         wait_for(sock, lambda st: "mode=0x03" in st, "the adapter menu")

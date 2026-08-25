@@ -20,13 +20,28 @@ transcribes as array writes and a frame check is a plain byte compare.
 
 ```sh
 uv sync
-uv run python tools/play.py --scale 3      # a window to play in
-uv run python tools/play.py --auto         # answer the start-up menus
+uv run python tools/play.py --window --scale 3   # a window to play in
+uv run python tools/play.py --auto              # answer the start-up menus
 ```
 
 `tools/lemmings.py` is the **one place this project names the game** — its
 directory, its executable, its load segment. Every tool imports the emulator
 *through* it, so when the shared code moves there is one file to fix.
+
+## Everything here is headless unless you ask for a window
+
+`tools/lemmings.py` sets `SDL_VIDEODRIVER=dummy` before `dos_emulator` imports
+pygame, so no tool opens a window on anyone's desktop. That is the right
+default: the proofs, verifiers, probes and the image recorder all drive the
+guest automatically and capture through the **control socket**, and a window
+nobody reads is just something popping up while a sweep runs.
+
+`tools/play.py --window` opts back in - it is the one tool that is for looking
+at. `LEM_WINDOW=1` does the same for anything else, and play.py passes it down
+to the machine it spawns.
+
+The setting has to happen before the pygame import, which is why it is at the
+top of `lemmings.py` and not inside a function.
 
 ## The load segment is not the default — this matters
 

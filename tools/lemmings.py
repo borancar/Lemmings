@@ -9,6 +9,19 @@ import os
 import sys
 import time
 
+# HEADLESS BY DEFAULT. Every tool here drives the guest automatically - proofs,
+# verifiers, probes, the image recorder - and each one used to open a real
+# window on whoever's desktop happened to be running it. Nothing reads those
+# windows; the tools capture through the control socket.
+#
+# This must be set BEFORE dos_emulator imports pygame, which is why it sits
+# above the import rather than in a function. Ask for a window with
+# LEM_WINDOW=1, or `tools/play.py --window`, which is the one tool that is for
+# looking at.
+if not os.environ.get("LEM_WINDOW"):
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
 from dos_emulator import VgaDos, set_game_dir, main as _emu_main, KEYMAP
 
 # ---------------------------------------------------------------- the game
