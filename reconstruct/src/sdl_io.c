@@ -27,6 +27,66 @@
 
 
 
+/* ONE window, kept across calls.
+ *
+ * This used to create a window and call SDL_Quit on every call, and menu_run
+ * is called once per menu action - so choosing anything at all, including
+ * changing the difficulty, tore the window down and built a new one. That is
+ * visible: the window blinks, moves back to wherever the WM puts a new one,
+ * and loses focus. A menu that reopens itself is not a menu.
+ *
+ * So the window, renderer and texture live here and are reused whenever the
+ * size and scale match. SDL is shut down once, at exit. */
+static SDL_Window   *g_win;
+static SDL_Renderer *g_ren;
+static SDL_Texture  *g_tex;
+static uint16_t      g_w, g_h;
+static uint8_t       g_scale;
+
+static void view_shutdown(void)
+{
+    if (g_tex) SDL_DestroyTexture(g_tex);
+    if (g_ren) SDL_DestroyRenderer(g_ren);
+    if (g_win) SDL_DestroyWindow(g_win);
+    g_tex = NULL; g_ren = NULL; g_win = NULL;
+    SDL_Quit();
+}
+
+/* Returns 0 on success. Reuses what is already open when it fits. */
+static int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
+{
+    static int registered;
+    if (g_win && g_w == w && g_h == h && g_scale == scale) {
+        SDL_SetWindowTitle(g_win, title);
+        return 0;
+    }
+    if (g_win) {                       /* a different size: rebuild */
+        if (g_tex) SDL_DestroyTexture(g_tex);
+        if (g_ren) SDL_DestroyRenderer(g_ren);
+        SDL_DestroyWindow(g_win);
+        g_tex = NULL; g_ren = NULL; g_win = NULL;
+    }
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("SDL_Init: %s", SDL_GetError());
+        return -1;
+    }
+    if (!registered) { atexit(view_shutdown); registered = 1; }
+    if (!SDL_CreateWindowAndRenderer(title, w * scale, h * scale, 0,
+                                     &g_win, &g_ren)) {
+        SDL_Log("SDL_CreateWindowAndRenderer: %s", SDL_GetError());
+        return -1;
+    }
+    SDL_SetRenderLogicalPresentation(g_ren, w, h,
+                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
+    g_tex = SDL_CreateTexture(g_ren, SDL_PIXELFORMAT_XRGB8888,
+                              SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (!g_tex) return -1;
+    SDL_SetTextureScaleMode(g_tex, SDL_SCALEMODE_NEAREST);
+    g_w = w; g_h = h; g_scale = scale;
+    return 0;
+}
+
+
 int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
               uint16_t view_w, uint16_t view_h,
               const lem_rgb *palette, const char *title,
@@ -36,32 +96,17 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
     if (view_w > src_w) view_w = src_w;
     if (view_h > src_h) view_h = src_h;
 
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("SDL_Init: %s", SDL_GetError());
+    /* THE SAME WINDOW the menu uses. This built and destroyed one of its own,
+     * so starting a level opened a SECOND window beside the menu's - which is
+     * what the persistent window in view_open was added to stop, and this
+     * function was simply missed when it was.
+     *
+     * The viewport is a different size from the menu's, so view_open rebuilds
+     * rather than reuses; that is one window changing size, not two. */
+    if (view_open(view_w, view_h, title, scale) != 0)
         return -1;
-    }
-
-    SDL_Window *win = NULL;
-    SDL_Renderer *ren = NULL;
-    if (!SDL_CreateWindowAndRenderer(title, view_w * scale, view_h * scale,
-                                     0, &win, &ren)) {
-        SDL_Log("SDL_CreateWindowAndRenderer: %s", SDL_GetError());
-        SDL_Quit();
-        return -1;
-    }
-    /* Whole pixels. The original had no filtering and neither has this. */
-    SDL_SetRenderLogicalPresentation(ren, view_w, view_h,
-                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
-
-    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888,
-                                         SDL_TEXTUREACCESS_STREAMING,
-                                         view_w, view_h);
-    if (!tex) {
-        SDL_Log("SDL_CreateTexture: %s", SDL_GetError());
-        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
-        return -1;
-    }
-    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+    SDL_Renderer *ren = g_ren;
+    SDL_Texture  *tex = g_tex;
 
     int32_t scroll_x = (int32_t)start_x - view_w / 2;
     int32_t max_x = (int32_t)src_w - view_w;
@@ -115,10 +160,7 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
         SDL_Delay(16);
     }
 
-    SDL_DestroyTexture(tex);
-    SDL_DestroyRenderer(ren);
-    SDL_DestroyWindow(win);
-    SDL_Quit();
+    /* The window stays open; it is torn down at exit. */
     return 0;
 }
 
@@ -179,65 +221,6 @@ int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
      * writes through it when `tick` is NULL. */
     return view_interact_anim((uint8_t *)pix, w, h, palette, title, scale,
                               spots, nspots, NULL, NULL);
-}
-
-/* ONE window, kept across calls.
- *
- * This used to create a window and call SDL_Quit on every call, and menu_run
- * is called once per menu action - so choosing anything at all, including
- * changing the difficulty, tore the window down and built a new one. That is
- * visible: the window blinks, moves back to wherever the WM puts a new one,
- * and loses focus. A menu that reopens itself is not a menu.
- *
- * So the window, renderer and texture live here and are reused whenever the
- * size and scale match. SDL is shut down once, at exit. */
-static SDL_Window   *g_win;
-static SDL_Renderer *g_ren;
-static SDL_Texture  *g_tex;
-static uint16_t      g_w, g_h;
-static uint8_t       g_scale;
-
-static void view_shutdown(void)
-{
-    if (g_tex) SDL_DestroyTexture(g_tex);
-    if (g_ren) SDL_DestroyRenderer(g_ren);
-    if (g_win) SDL_DestroyWindow(g_win);
-    g_tex = NULL; g_ren = NULL; g_win = NULL;
-    SDL_Quit();
-}
-
-/* Returns 0 on success. Reuses what is already open when it fits. */
-static int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
-{
-    static int registered;
-    if (g_win && g_w == w && g_h == h && g_scale == scale) {
-        SDL_SetWindowTitle(g_win, title);
-        return 0;
-    }
-    if (g_win) {                       /* a different size: rebuild */
-        if (g_tex) SDL_DestroyTexture(g_tex);
-        if (g_ren) SDL_DestroyRenderer(g_ren);
-        SDL_DestroyWindow(g_win);
-        g_tex = NULL; g_ren = NULL; g_win = NULL;
-    }
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("SDL_Init: %s", SDL_GetError());
-        return -1;
-    }
-    if (!registered) { atexit(view_shutdown); registered = 1; }
-    if (!SDL_CreateWindowAndRenderer(title, w * scale, h * scale, 0,
-                                     &g_win, &g_ren)) {
-        SDL_Log("SDL_CreateWindowAndRenderer: %s", SDL_GetError());
-        return -1;
-    }
-    SDL_SetRenderLogicalPresentation(g_ren, w, h,
-                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
-    g_tex = SDL_CreateTexture(g_ren, SDL_PIXELFORMAT_XRGB8888,
-                              SDL_TEXTUREACCESS_STREAMING, w, h);
-    if (!g_tex) return -1;
-    SDL_SetTextureScaleMode(g_tex, SDL_SCALEMODE_NEAREST);
-    g_w = w; g_h = h; g_scale = scale;
-    return 0;
 }
 
 int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
@@ -727,7 +710,8 @@ int ground_load(const char *path, ground *g, const char **err)
  * ====================================================================== */
 
 int level_show_briefing(const char *dir, const char *file, uint32_t which,
-                        uint8_t rating, uint16_t number, const char **err)
+                        uint8_t rating, uint16_t number, uint8_t scale,
+                        const char **err)
 {
     char path[1024];
     dat_file levels;
@@ -747,13 +731,13 @@ int level_show_briefing(const char *dir, const char *file, uint32_t which,
 
     menu_screen br;
     if (menu_briefing_screen(dir, &lv, rating, &br, err) != 0) return -1;
-    menu_show_until_dismissed(&br, "PC Lemmings", 1);
+    menu_show_until_dismissed(&br, "PC Lemmings", scale);
     menu_free(&br);
     return 0;
 }
 
 int level_show(const char *dir, const char *file, uint32_t which,
-               level *lv, const char **err)
+               level *lv, uint8_t scale, const char **err)
 {
     char path[1024];
     dat_file levels, gfx;
@@ -786,7 +770,7 @@ int level_show(const char *dir, const char *file, uint32_t which,
     rc = render_terrain(&c, lv, &g, gfx.sections[0].data,
                         gfx.sections[0].size, err);
     if (rc == 0)
-        view_run(&c, g.palette, "PC Lemmings", lv->start_x, 1);
+        view_run(&c, g.palette, "PC Lemmings", lv->start_x, scale);
     canvas_free(&c);
     dat_free(&gfx);
     return rc;

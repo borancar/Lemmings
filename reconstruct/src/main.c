@@ -31,6 +31,12 @@
  * looked in the current directory because that is where DOS put it. */
 #define DATA_DIR "lemming1.pc"
 
+/* Whole-pixel magnification. The original ran on a display where 640x350
+ * filled the screen; on anything modern it is a postage stamp, so the port
+ * enlarges by three and nothing else - no filtering, no stretching, no
+ * decision of the original's undone. */
+#define DEFAULT_SCALE 3
+
 int main(int argc, char **argv)
 {
     const char *data = (argc > 1) ? argv[1] : DATA_DIR;
@@ -47,7 +53,7 @@ int main(int argc, char **argv)
     }
 
     for (;;) {
-        menu_action a = menu_run(&mm, 1);
+        menu_action a = menu_run(&mm, DEFAULT_SCALE);
         if (a == MENU_EXIT) break;
 
         if (a == MENU_PLAY) {
@@ -62,9 +68,11 @@ int main(int argc, char **argv)
             which += 1;             /* level_show takes 1-based sections */
             level lv;
             if (level_show_briefing(data, picked, which, rating,
-                                    (uint16_t)number, &err) != 0)
+                                    (uint16_t)number, DEFAULT_SCALE,
+                                    &err) != 0)
                 fprintf(stderr, "  %s\n", err);
-            else if (level_show(data, picked, which, &lv, &err) != 0)
+            else if (level_show(data, picked, which, &lv,
+                                DEFAULT_SCALE, &err) != 0)
                 fprintf(stderr, "  %s\n", err);
             continue;
         }
@@ -74,7 +82,7 @@ int main(int argc, char **argv)
             int ok = (a == MENU_NEW_LEVEL) ? menu_code_screen(data, &sub, &err)
                                            : menu_input_screen(data, &sub, &err);
             if (ok != 0) continue;
-            menu_show_until_dismissed(&sub, "PC Lemmings", 1);
+            menu_show_until_dismissed(&sub, "PC Lemmings", DEFAULT_SCALE);
             menu_free(&sub);
             continue;
         }
