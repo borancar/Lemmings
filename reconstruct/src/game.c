@@ -1022,6 +1022,66 @@ uint8_t shift_row(const uint8_t *src, uint8_t len, uint8_t bits, uint8_t *out)
     return (uint8_t)(len + 1);          /* 0x09380: inc cl */
 }
 
+/* image 0x05B11 - build the eight pre-shifted copies of a sprite.
+ *
+ * The game cannot blit at an arbitrary x, so for the level's sprites it builds
+ * all eight sub-byte alignments once, at load time, instead of shifting on
+ * every draw the way the menu's 0x09347 does.
+ *
+ * Each copy is `rows` x `cols` groups of THREE bytes: two bytes of source
+ * shifted right into a 24-bit window, so a shift of 7 still has somewhere to
+ * go. After each copy comes one extra row of `cols` groups holding the OR of
+ * every row in that column - a summary of which bits the sprite touches at
+ * all.
+ *
+ *   0x05b1c  mov ah, [si] / mov al, [si+1]   ; two bytes in
+ *   0x05b24  xor bl, bl                      ; the third starts empty
+ *   0x05b2c  shr ah,1 / rcr al,1 / rcr bl,1  ; shift the 24 bits right, CL times
+ *   0x05b36  mov es:[di], ah / +1, al / +2, bl
+ *   0x05b63  or ah, es:[si] / or al, ... / or bl, ...   ; the column OR
+ *   0x05b6e  add si, bp                      ; bp = 3 * cols, i.e. down a column
+ *   0x05b8d  inc cl / cmp cl, 8              ; once per alignment
+ *
+ * `out` needs 8 * 3 * cols * (rows + 1) bytes.
+ */
+void preshift_sprite(const uint8_t *src, uint8_t cols, uint8_t rows,
+                     uint8_t *out)
+{
+    size_t o = 0;
+    for (uint8_t sh = 0; sh < 8; sh++) {
+        const uint8_t *s = src;             /* 0x05b14: si is restored */
+        size_t copy = o;
+        for (uint8_t r = 0; r < rows; r++) {
+            for (uint8_t c = 0; c < cols; c++) {
+                uint8_t hi = s[0], mid = s[1], lo = 0;
+                s += 2;
+                for (uint8_t b = 0; b < sh; b++) {
+                    uint8_t c1 = (uint8_t)(hi & 1u);
+                    hi = (uint8_t)(hi >> 1);
+                    uint8_t c2 = (uint8_t)(mid & 1u);
+                    mid = (uint8_t)((mid >> 1) | (c1 << 7));
+                    lo = (uint8_t)((lo >> 1) | (c2 << 7));
+                }
+                out[o++] = hi;
+                out[o++] = mid;
+                out[o++] = lo;
+            }
+        }
+        for (uint8_t c = 0; c < cols; c++) {      /* the column OR */
+            uint8_t hi = 0, mid = 0, lo = 0;
+            for (uint8_t r = 0; r < rows; r++) {
+                size_t k = copy + ((size_t)r * cols + c) * 3;
+                hi = (uint8_t)(hi | out[k]);
+                mid = (uint8_t)(mid | out[k + 1]);
+                lo = (uint8_t)(lo | out[k + 2]);
+            }
+            out[o++] = hi;
+            out[o++] = mid;
+            out[o++] = lo;
+        }
+    }
+}
+
 /* One pixel out of a planar bitmap. `planes` is how far apart consecutive
  * planes are; pass 0 for the two-plane background and only bits 0 and 1 are
  * read. The leftmost pixel of a byte is its most significant bit. */

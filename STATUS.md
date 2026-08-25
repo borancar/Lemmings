@@ -38,9 +38,10 @@ numbers, re-measured on the current build:
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
+| the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 6 of 211
+**Transcription is a different claim from any of the above, and it is 7 of 211
 call targets.** The port renders these screens from the file formats and from
 geometry measured against the original — that is real evidence, and it is not
 the same as having transcribed the routines. See *Coverage* below.
@@ -646,11 +647,11 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 6 |
-| routines proven (ran, did work, agreed) | 6 |
+| routines transcribed | 7 |
+| routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
-| routines never reached | 205 of the 211 call targets |
+| routines never reached | 204 of the 211 call targets |
 
 | routine | what it is | how it is checked |
 | --- | --- | --- |
@@ -660,11 +661,19 @@ port:
 | `0x01C87` | copy a back-reference | ” |
 | `0x036B6` | LVL header parse | `tools/verify_level.py` — 15 fields, all agree |
 | `0x09347` | the sprite **pre-shift**: copy a row, append a zero byte, shift right N bits | `tools/verify_shift.py` — 200 calls, byte-identical, over shifts of 2, 6 and 7 |
+| `0x05B11` | the level's **sprite pre-builder**: all eight alignments at once, each with a per-column OR | `tools/verify_preshift.py` — 106 calls, byte-identical |
 
 Both verifiers work the same way, and it is the method's way rather than a
 screenshot: stop the original, capture the inputs, let **its own body** run,
 compare its output against the port's C on that same call. Neither needs
 determinism to mean anything.
+
+One caveat on `0x05B11`, stated because the number looks stronger than it is:
+all 106 calls pass the **same shape**, 10 columns by 2 rows. That is not a
+limitation of the test — driving into a level with `play.py` finds no other
+shape either — it is the only shape the game gives that routine. So the
+transcription is proven on what the game actually does with it, and untested
+outside that.
 
 Stated precisely, because the distinction matters: the four DAT routines are
 proven *as a unit*. `0x01C82` and `0x01C87` are folded into the loop body in C

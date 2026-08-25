@@ -153,6 +153,12 @@ int level_parse(const uint8_t *buf, uint32_t len, level *out, const char **err);
  * Checked against the original by tools/verify_shift.py. */
 uint8_t shift_row(const uint8_t *src, uint8_t len, uint8_t bits, uint8_t *out);
 
+/* Build the eight pre-shifted copies of a sprite, each followed by a row of
+ * per-column ORs. Transcribed from image 0x05B11; `out` needs
+ * 8 * 3 * cols * (rows + 1) bytes. Checked by tools/verify_preshift.py. */
+void preshift_sprite(const uint8_t *src, uint8_t cols, uint8_t rows,
+                     uint8_t *out);
+
 /* Where the game's level `number` (1..30) of `rating` (0..3 = Fun, Tricky,
  * Taxing, Mayhem) lives: which levelNNN.dat, and which section inside it.
  * Transcribed from the table at image 0x0EF7E - see game.c. */
