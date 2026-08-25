@@ -2,11 +2,13 @@
 
 Last updated: **2026-08-25**
 
-**Which world this is in: not yet determined.** Whether the original was
-compiled (making a byte-exact *matching* reconstruction possible) or written in
-assembly (leaving behavioural equivalence as the standard) is unanswered — the
-image has only just been unpacked and has not been examined for prologues or a
-compiler banner. Everything below is scaffolding, not port progress.
+**Which world this is in: hand-written assembly** — settled, not assumed. The
+whole 131,072-byte image contains **zero** `push bp / mov bp,sp` prologues and
+**zero** cdecl caller-side cleanups, and carries no compiler banner or runtime
+library fingerprint. A byte-exact *matching* reconstruction is therefore not
+meaningfully available; **behavioural equivalence through differential
+verification is the standard**, and it is the one the terrain result below
+meets. Evidence and how to re-run it: [docs/toolchain.md](docs/toolchain.md).
 
 **Which configuration.** VGA, and machine type **"High Performance PCs"** —
 the one start-up option that sets no compatibility flags, so it is the plain
@@ -132,11 +134,30 @@ Each of these is stated as what was *checked*, not what was written.
   rounds of testing hypotheses about the port while the reference was the
   thing that was wrong.
 
+- **The protected code is recovered and committed, and rebuilds byte-identically
+  from records without running the game.** `image/vgalemmi.decrypted.img` is the
+  unpacked image with 651 bytes of plaintext written back over nine spans — the
+  whole of what the protection was hiding. Checked, not assumed: the recovered
+  handler at image `0x0DFF` disassembles as the rolling-XOR decryptor
+  (`not`/`rol`/`xor`), the re-encrypting `xchg word ptr [si], ax` at `0x0E14`,
+  and the `cmp al, 0xcc` anti-debugger test — matching, byte for byte, what
+  `docs/protection.md` had transcribed by hand from live single-stepping.
+  Rebuilt twice from `image/rec` to the same SHA-256.
+- **The protection runs only on the floppy path, shown by a differential run.**
+  Identical in every respect but the media descriptor byte INT 21h AH=1Bh
+  reports: `0xF8` (fixed disk) gives **0** `INT 01h` events and `IVT[01h]`
+  stays null all run; `0xF9` (floppy) gives **2945**. This also explains, after
+  the fact, why the game used to quit before the menu — it was taking the
+  floppy branch by accident because the emulator did not answer AH=1Bh.
+
 ## Open
 
-- **The pixel comparison now runs, and the port is 79.99% right.** Not done,
-  but no longer blocked, and the number is real. See *Done* for what it
-  established and what it did not.
+- ~~**The pixel comparison now runs, and the port is 79.99% right.**~~
+  **Superseded 2026-08-25** — the terrain comparison is now **100.00%**, 49,741
+  pixels with zero differing, reproducible with `tools/prove.sh`. The 79.99%
+  was measured against the original's *screen*; comparing against what it
+  *composes* is what closed the gap. Kept because the intermediate number was
+  reported and should not vanish.
 - ~~**NOTHING IS VERIFIED PIXEL FOR PIXEL YET, and it is blocked.**~~
   **Retracted 2026-08-25** - the block was the emulator's own terrain, which
   now renders. Original text follows for the record: The
@@ -174,10 +195,19 @@ Each of these is stated as what was *checked*, not what was written.
   bit that could never arrive. Fixed upstream by filling in the BDA variable.
   Recorded here because the first diagnosis was wrong and a status file that
   only ever gains claims is worth nothing.
-- **No unpacked image has been written to disk**, so no code map, no
-  disassembly, and no coverage table. The coverage figures below are absent
-  rather than zero.
-- **Toolchain unidentified** — see the note at the top.
+- ~~**No unpacked image has been written to disk**~~ **Done 2026-08-25** —
+  `image/vgalemmi.img` is the raw unpacked image and
+  `image/vgalemmi.decrypted.img` is the same with the protected stretches
+  recovered, both committed. A **code map and a coverage table are still
+  absent**: the figures below are not yet measurements.
+- ~~**Toolchain unidentified**~~ **Answered 2026-08-25** — hand-written
+  assembly, see [docs/toolchain.md](docs/toolchain.md) and the note at the top.
+- **The protection is only reachable on the floppy path**, so an ordinary run
+  recovers none of it. Understood and handled — `tools/decrypt_image.py`
+  records a deliberate `media=0xF9` run — but it means **anything measured on a
+  run that never touched the protection says nothing about it**, which is how
+  the earlier "108 INT 01h events per start-up" claim came to be wrong. See the
+  correction in [docs/protection.md](docs/protection.md).
 
 ### Coverage, as last measured
 
@@ -194,9 +224,20 @@ the first sweep should write this table rather than have it retyped by hand.
 
 ## Next
 
-1. **Draw the interactive objects in the right animation frame.** The
-   terrain is exact; the objects are the remaining visual difference, and the
-   original composes them in a second pass after the terrain loop.
+1. **Draw the interactive objects as sprites, not as terrain.** The terrain is
+   exact. The objects are the remaining visual difference, and the earlier plan
+   for them was wrong: breaking at image `0x03789`, the final `ret` after all
+   five composition passes, shows the original **never composes objects into
+   the level bitmap at all** — it draws the entrance and the exit as animated
+   sprites at display time. `tools/prove.sh` passes `--no-objects` for exactly
+   this reason, and the port's 807-pixel difference with objects enabled is
+   precisely those three objects painted into a bitmap they do not belong in.
+2. **Write a code map and a real coverage table.** The decrypted image is on
+   disk now, so recursive descent from the entry point — seeded with the
+   handler tables — is unblocked, and the coverage table below can stop being
+   placeholders.
+3. **Prove the unpack by round-tripping** against the PKLITE stub's own output.
+   Still the standard, still not done.
 
 
 - **The machine-type menu is mapped but not explained.** Which flags each of

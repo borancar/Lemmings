@@ -30,8 +30,40 @@ this project loads at `psp_seg = 0x1000`. See `CLAUDE.md`.
 - `IVT[01h]` points at image **`0x00DFF`**.
 - At the moment the handler is entered, `EFLAGS = 0x0146` — **TF set**, and the
   instruction stream contains no `int 1`. The cause is the trap flag.
-- Only **108** `INT 01h` events occur in a whole start-up run, so the protected
-  stretch is a short stub, not the whole program.
+- The protected stretch is a short stub, not the whole program: the recovered
+  plaintext is 651 bytes across nine spans (see *Reading it* below).
+
+### Correction (2026-08-25): the trap-flag layer is the FLOPPY path
+
+This section used to read as though the protection runs on every start-up, on
+the strength of counting 108 `INT 01h` events in one run. It does not, and the
+difference is one byte.
+
+The game asks DOS for the default drive's media descriptor (INT 21h AH=1Bh) and
+branches on the answer. A **differential run** — identical in every other
+respect, only the media byte changed:
+
+| media byte reported | `INT 01h` events in a start-up run |
+| --- | --- |
+| `0xF8` — fixed disk | **0** |
+| `0xF9` — floppy | **2945** |
+
+On a hard disk the handler is never installed at all: `IVT[01h]` reads
+`0000:0000` for the whole run. The 108-event measurement was taken back when
+the emulator did not answer AH=1Bh, so the guest read whatever `DS:BX` happened
+to hold and took the floppy branch by accident. Nothing about the handler's
+*logic* below was wrong; the claim about *when it runs* was.
+
+This matters twice over. It is why the game reaches the first level without any
+of this being defeated — the protection is simply not on that path. And it is
+why recovering the code needs a deliberate floppy run: `tools/decrypt_image.py`
+records one with `media=0xF9` for exactly this reason, and an ordinary run
+recovers none of the nine spans.
+
+The floppy branch is corroborated by what the recovered code does. Image
+`0x00913` reads `es:[0x78]` and `es:[0x7a]` — the **INT 1Eh vector**, i.e. the
+Diskette Parameter Table — copies 11 bytes of it, and patches them. That is a
+routine about floppy geometry, not about disks in general.
 
 The handler decrypts the *next* instruction in place, keyed on the word before
 it:
@@ -122,6 +154,9 @@ drawing any conclusion from it.
 
 ### The full chain, as now understood
 
+This is the chain **on the floppy path** — the one a run with media byte
+`0xF9` takes. On a fixed disk step 2 onwards never happens.
+
 1. **PKLITE** unpacks the image.
 2. An **INT 03h handler at image `0x0DB3`** bootstraps the decryptor. It stores
    its own return address into `0000:0004` (the `IVT[01h]` *offset*), adds
@@ -149,29 +184,86 @@ drawing any conclusion from it.
   no diskette in them.
 
 With both, the guest stops derailing: the protection completes, restores its
-vectors, and the program exits cleanly.
+vectors, and the program exits cleanly — which, on the floppy path with no
+original disk present, is the correct outcome rather than a remaining bug. It
+is also the run `tools/decrypt_image.py` records to recover the protected code.
 
-### Still open: it exits instead of reaching the menu
+### Resolved: why it used to exit instead of reaching the menu
 
-Under DOSBox the same binary reaches the main menu
-(`docs/reference/dosbox-main-menu.png`). Here it runs the protection, then
-takes an orderly shutdown path at image `0x0EE2`-`0x0F08` — restore interrupt
-vectors, restore the video mode via `INT 10h`, reprogram the PIT through ports
-0x43/0x40 — and calls `INT 21h AH=4Ch` with exit code 0. A deliberate quit, not
-a crash.
+This was open for a while. The symptom: under DOSBox the same binary reaches
+the main menu (`docs/reference/dosbox-main-menu.png`), while here it ran the
+protection and then took an orderly shutdown path at image `0x0EE2`-`0x0F08` —
+restore interrupt vectors, restore the video mode via `INT 10h`, reprogram the
+PIT through ports 0x43/0x40 — and called `INT 21h AH=4Ch` with exit code 0. A
+deliberate quit, not a crash.
 
-Tried and **ruled out**: reporting no diskette drive in the BIOS equipment word
-at `0040:0010` changes nothing — same 13 `INT 13h` calls, same exit.
+Ruled out along the way, and worth keeping because each was plausible:
+reporting no diskette drive in the BIOS equipment word at `0040:0010` changed
+nothing (same 13 `INT 13h` calls, same exit); timing and PIT programming were
+never the cause; nor was a specific INT 13h failure code.
 
-Untested hypotheses, in the order worth trying:
+**The cause was the media descriptor byte.** The emulator did not answer INT
+21h AH=1Bh, so the guest read whatever `DS:BX` pointed at, took it for a
+floppy, and ran the floppy protection — which, finding no original disk, quit
+exactly as designed. Answering AH=1Bh with `0xF8` puts the guest on the fixed
+disk path, where it never installs the trap handler and goes straight to the
+menu. See the correction above for the differential that shows it, and
+`dos_emulator` `_dos()` AH=1Bh/1Ch for the fix.
 
-1. **Timing.** The protection reprograms the PIT and calls `INT 1Ah`. A
-   disk-based check often measures rotation or elapsed ticks, and our timer
-   model may put the answer outside whatever window it accepts.
-2. The check may want a *specific* failure code, or a specific number of
-   retries, before concluding "no original disk, run anyway".
-3. Something later — the exit decision has been located but the *condition*
-   that reaches it has not been traced back yet.
+The lesson is the general one: the game was not failing a check, it was
+answering a *different question* than we thought it was asking.
+
+## Reading it: the permanently decrypted image
+
+The protection keeps exactly one instruction in plaintext at a time and
+re-encrypts behind itself, so no memory dump ever holds the protected stretch
+in the clear. But every instruction *is* plaintext for the moment it executes,
+so recording each instruction's bytes as the CPU runs it and writing them back
+into the dumped image produces one that is readable everywhere the program went.
+
+```
+uv run python tools/decrypt_image.py            # merge image/rec -> the image
+uv run python tools/decrypt_image.py --record   # re-record it from the game
+uv run python tools/disasm.py image/vgalemmi.decrypted.img 0xdff -n 32
+```
+
+Only code that *executed* can be recovered — that is inherent to the method,
+not a shortcoming of it — so coverage is the union of the runs merged, and
+`image/vgalemmi.decrypted.json` says which runs contributed what. Three are
+recorded by default because **no single run reaches everything**:
+
+| run | what it covers |
+| --- | --- |
+| `startup.rec` | the fixed-disk start-up path, in-process |
+| `protection.rec` | the same, with the media byte forced to `0xF9` — the only run that executes the protection |
+| `level-250s.rec` | driven by `tools/play.py` through the menus into the first level |
+
+As last measured: **9,010 distinct instructions, 19,742 bytes recovered**, of
+which **651 differed from the dumped image**. The first two numbers move by a
+few either way between rebuilds, because the level run is driven for a fixed
+number of seconds and does not execute exactly the same code each time. The
+**651 does not move**, and neither do the nine spans - the protected stretch
+is fully covered, so re-recording adds nothing to it. That 651 is the whole of what the
+protection was hiding, in nine spans:
+
+```
+0x00000..0x0002c  0x0066d..0x006c0  0x00709..0x00748
+0x0077e..0x007c8  0x00844..0x00877  0x008be..0x008d6
+0x00913..0x0096f  0x00d9e..0x00da2  0x00dff..0x00e39
+```
+
+Two things the report deliberately keeps apart, because reporting them together
+makes the protection look several times larger than it is:
+
+- **encrypted spans** — the image held *different non-zero* bytes there. This
+  is protection.
+- **runtime-loaded spans** — the image held *zeros* there (BSS), and the bytes
+  are code the program loaded at run time. `0x18F00..0x1949F` is the AdLib
+  driver from `ADLIB.DAT`, reached through port `0x388`. Not protection at all.
+
+Records merge rather than each run producing its own image, so coverage only
+grows: reach a new screen, record it, merge it in. Where two runs disagreed
+about an offset the report says so; as last measured, **0**.
 
 ## Layer 3 — a run counter, and magic pairs
 

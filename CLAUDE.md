@@ -49,23 +49,38 @@ The executable is PKLITE-packed *and* the protection decrypts itself one
 instruction at a time under the trap flag, re-encrypting behind itself. Neither
 the file on disk nor a plain memory dump is the program.
 
-Build the readable image **once** and work from it:
+**The readable image is already built and committed.** Work from it; there is
+no need to decrypt anything again:
 
 ```sh
-uv run python tools/decrypt_image.py     # -> out/vgalemmi.decrypted.img
-uv run python tools/disasm.py 0xdff -n 40
+uv run python tools/disasm.py image/vgalemmi.decrypted.img 0xdff -n 40
 ```
 
-`decrypt_image.py` records the bytes of every instruction at the moment it
-executes and writes them back into the dump, so the protected stretch is
-plaintext too. Only code that *ran* can be recovered that way - that is
-inherent. The sidecar `.json` says how many bytes differed from the raw dump
-and in which spans, which is exactly what the protection was hiding; today
-that is 499 bytes across `0x0066d..0x0096f` and `0x00dff..0x00e39`.
+`image/vgalemmi.decrypted.img` is the unpacked image with the protected code
+written back in the clear - 651 bytes across nine spans, which is the whole of
+what the protection was hiding. See [image/README.md](image/README.md).
 
-The count rises as the game gets further: it currently exits during start-up
-(see STATUS.md), so most of the game has never executed and is only as
-readable as the raw dump makes it.
+To rebuild it, or to grow it after reaching a new screen:
+
+```sh
+uv run python tools/decrypt_image.py                 # merge image/rec, ~1s
+uv run python tools/decrypt_image.py --record        # re-record from the game
+```
+
+Three things about this are easy to get wrong, and each cost time here:
+
+- **Only code that *ran* can be recovered.** Coverage is the union of the runs
+  merged, which is why records are kept per run and merged rather than one run
+  producing the image. Reach a new screen, record it, merge it in.
+- **An ordinary run executes none of the protection.** The game installs the
+  trap handler only when INT 21h AH=1Bh says *floppy*: media `0xF8` gives 0
+  `INT 01h` events, `0xF9` gives 2945. `decrypt_image.py` records a deliberate
+  `media=0xF9` run for this. A run that never touched the protection tells you
+  nothing about it - and will not say so.
+- **Bytes differing from the dump are not all protection.** Where the image
+  held *zeros*, that is BSS the program filled in at run time - the AdLib
+  driver at `0x18F00..0x1949F`, for one. The report keeps the two apart;
+  conflating them makes the protection look several times larger than it is.
 
 ## Compare against what the original composes, not what it displays
 
@@ -128,7 +143,7 @@ sweeps are the only thing that would catch a regression there. So:
 | --- | --- |
 | `tools/lemmings.py` | the adapter: game dir, executable, load segment, start-up keys, `LemmingsVga` |
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
-| `tools/decrypt_image.py` | **the one to use** - records each instruction's plaintext as it executes and writes it back, so the protected code is readable too |
+| `tools/decrypt_image.py` | builds `image/vgalemmi.decrypted.img` - records each instruction's plaintext as it executes and writes it back. Merges per-run records, so coverage only grows |
 | `tools/disasm.py` | disassemble the decrypted image at an image offset |
 | `tools/dat.py` | Lemmings DAT decompression, the Python oracle the C port was checked against |
 | `tools/snapshot.py` | capture memory at a chosen point in a run |

@@ -14,7 +14,7 @@ import struct
 ap = argparse.ArgumentParser(
     description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("target", type=lambda v: int(v, 0))
-ap.add_argument("--image", default="out/vgalemmi.decrypted.img")
+ap.add_argument("--image", default="image/vgalemmi.decrypted.img")
 ap.add_argument("--window", type=lambda v: int(v, 0), default=0,
                 help="also report targets within this many bytes")
 a = ap.parse_args()

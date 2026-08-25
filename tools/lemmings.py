@@ -66,12 +66,106 @@ class LemmingsVga(VgaDos):
                "(RUSSELL.DAT is never touched)")
 
 
+REC_MAGIC = b"LEMREC01"
+
+
+def write_records(path, seen):
+    """Write `image offset -> instruction bytes` as a mergeable sidecar.
+
+    A run only recovers the code it actually executed, so no single run is
+    ever complete. Recording the raw (offset, bytes) pairs rather than a
+    patched image means several runs - a menu run, a level run, a run that
+    reaches the results screen - can be merged into one image without either
+    guessing which of two memory dumps is authoritative for a data byte.
+
+    Format: b"LEMREC01", u32 count, then count records of
+    u32 image offset, u8 length, `length` bytes.
+    """
+    import struct
+    with open(path, "wb") as f:
+        f.write(REC_MAGIC)
+        f.write(struct.pack("<I", len(seen)))
+        for off in sorted(seen):
+            b = seen[off]
+            f.write(struct.pack("<IB", off, len(b)))
+            f.write(b)
+
+
+def read_records(path):
+    """Read a sidecar written by write_records(); returns {offset: bytes}."""
+    import struct
+    with open(path, "rb") as f:
+        blob = f.read()
+    if blob[:8] != REC_MAGIC:
+        raise ValueError(f"{path}: not a {REC_MAGIC.decode()} record file")
+    (count,) = struct.unpack_from("<I", blob, 8)
+    seen, pos = {}, 12
+    for _ in range(count):
+        off, n = struct.unpack_from("<IB", blob, pos)
+        pos += 5
+        seen[off] = blob[pos:pos + n]
+        pos += n
+    return seen
+
+
+class RecordingLemmingsVga(LemmingsVga):
+    """Records the bytes of every instruction as it executes.
+
+    The protection keeps one instruction in plaintext at a time and
+    re-encrypts behind it, so the only way to read that code is to catch each
+    instruction at the moment it runs. This is that, wired into the ordinary
+    run so it can be driven by tools/play.py - which is the only driver that
+    reliably gets past the menus, the protection and the briefing screen.
+    Recording in-process with a hand-rolled driver reached the title screen
+    and stopped, which recovers a fraction of what a real run does.
+    """
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.seen = {}
+        base = self.load_seg * 16
+        top = base + 0x20000
+        read = self.uc.mem_read
+        seen = self.seen
+
+        def code(uc, addr, size, _):
+            if base <= addr < top:
+                off = addr - base
+                if off not in seen:
+                    try:
+                        seen[off] = bytes(read(addr, size))
+                    except Exception:
+                        pass
+
+        from unicorn import UC_HOOK_CODE
+        self.uc.hook_add(UC_HOOK_CODE, code)
+
+
 def make_machine(args):
-    """Build the machine from parsed CLI args, for `main(make_machine=...)`."""
-    return LemmingsVga(args.program, blaster=args.blaster, max_insns=1 << 62,
-                       cmdline=args.cmdline,
-                       psp_seg=args.psp_seg if args.psp_seg is not None
-                       else PSP_SEG)
+    """Build the machine from parsed CLI args, for `main(make_machine=...)`.
+
+    LEM_DECRYPT_OUT in the environment turns on instruction recording and
+    writes a permanently decrypted image there when the run ends.
+    """
+    cls = LemmingsVga
+    out = os.environ.get("LEM_DECRYPT_OUT")
+    if out:
+        cls = RecordingLemmingsVga
+    m = cls(args.program, blaster=args.blaster, max_insns=1 << 62,
+            cmdline=args.cmdline,
+            psp_seg=args.psp_seg if args.psp_seg is not None else PSP_SEG)
+    if out:
+        import atexit
+
+        def dump():
+            os.makedirs(os.path.dirname(os.path.abspath(out)) or ".",
+                        exist_ok=True)
+            write_records(out, m.seen)
+            print(f"  [decrypt] recorded {len(m.seen)} distinct instructions "
+                  f"-> {out}")
+
+        atexit.register(dump)
+    return m
 
 
 def run(argv=None):
