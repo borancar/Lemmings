@@ -153,8 +153,8 @@ Each of these is stated as what was *checked*, not what was written.
 - **The main menu is composed, and checked against the original's own screen.**
   The menu runs in EGA mode 10h — 640×350, four planes — a different mode from
   the game itself. `tools/verify_menu.py` drives the original to it, dumps that
-  screen and compares: **95.26% identical over the parts the port builds**, and
-  all 16 palette entries byte for byte. Verified piece by piece: the background
+  screen and compares: **95.04% identical over all 224,000 pixels, with nothing
+  excluded from the count**, and all 16 palette entries byte for byte. Verified piece by piece: the background
   is a 320×104 **two-plane** tile (four colours) repeating from (0,0) — proven
   by measurement, since assembling it from four planes scores 39% and forcing
   planes 2 and 3 to zero scores 95.6%; the logo is 632×94 at (8,10), keyed on

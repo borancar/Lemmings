@@ -122,6 +122,28 @@ of the menu, and two captures of the same briefing appeared to disagree on a
 fifth of their background. `play.capture_lit()` takes a capture and refuses a
 faded one; use it rather than `screen` directly.
 
+## Re-run the numbers before you trust the ones written down
+
+`STATUS.md` accumulates figures over many sessions and they go stale silently -
+a screen improves, one place gets updated and another does not, and the file
+then holds two different answers to the same question. It happened here: the
+menu was quoted at 95.26% in one paragraph and 95.04% in another, the first
+being a figure measured back when the banner was excluded from the count.
+
+Every number in there is cheap to re-derive, so re-derive them rather than
+copying them forward:
+
+```sh
+for s in menu code input briefing; do
+    uv run python tools/verify_menu.py --screen $s --capture out/<the capture>
+done
+make -C reconstruct test
+bash tools/prove.sh
+```
+
+A figure that has drifted is worse than no figure, because it is quoted with
+the same confidence as a measured one.
+
 ## Compare against what the original composes, not what it displays
 
 The strongest check here is not a screenshot. A screen carries sprites, a
