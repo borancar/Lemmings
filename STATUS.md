@@ -34,7 +34,7 @@ numbers, re-measured on the current build:
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing's** text | 99.97% — 4 of 15,188 |
-| the **main menu** | 99.41% — 1,321 of 224,000, of which 995 are its animated banner. Checked at **all four ratings**, not just Fun; Mayhem is 99.13% with 70 unexplained |
+| the **main menu** | 99.41% — 1,321 of 224,000, of which 995 are its animated banner. Checked at **all four ratings**, not just Fun; the spread between them is banner frames |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -493,12 +493,17 @@ Each of these is stated as what was *checked*, not what was written.
   cross-check is a clean diagonal: each capture scores 0 against its own sprite
   and 616–736 against the other three.
 
-  Whole-screen scores: **99.41% at Fun, Tricky and Taxing**, the remainder
-  being the animated banner. **Mayhem is 99.13%**, and the extra 70 pixels are
-  inside the plate's box — single pixels along x=464..465, mostly colour 2
-  where the port has 3. Whether that is the plate's own animation or a real
-  difference is **not settled**, and it is recorded here rather than rounded
-  into the other three.
+  The rating-dependent content is reproduced **exactly**: inside the plate's
+  box the original changes **713** pixels between Fun and Mayhem, and the port
+  changes the same **713**.
+
+  Whole-screen scores run 99.41% (Fun, Tricky, Taxing) to 99.04% (Mayhem), and
+  that spread is **the animated banner alone** — a single composed frame cannot
+  match it, and successive captures of the *same* rating vary by as much. The
+  plate's own box holds a **70-pixel residual that is identical at every
+  rating**, so it belongs to the long-standing unexplained plate pixels rather
+  than to the rating work. An earlier note here attributed those 70 to Mayhem;
+  that was wrong — Fun has exactly the same 70.
 
   The port had `RATING_BASE + rating * RATING_STEP` with the base set to Fun,
   which is right for exactly one of the four values it takes. **At rating 0 the

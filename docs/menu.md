@@ -507,11 +507,15 @@ stored in reverse, Mayhem first. Cross-checked against every capture, the
 matrix is a clean diagonal, each capture 0 against its own sprite and 616–736
 against the other three.
 
-Whole-screen: **99.41% at Fun, Tricky and Taxing**, the remainder being the
-animated banner. **Mayhem is 99.13%** — 70 further pixels inside the plate's
-box, single pixels along x=464..465, mostly colour 2 where the port has 3.
-Whether those are the plate's own animation or a real difference is **not
-settled**.
+The rating-dependent content is reproduced **exactly**. Inside the plate's box
+the original changes **713** pixels between Fun and Mayhem; the port changes
+the same **713**.
+
+Whole-screen scores run 99.41% (Fun, Tricky, Taxing) to 99.04% (Mayhem), and
+that spread is **the animated banner alone** — successive captures of the same
+rating vary by as much. The plate's box holds a **70-pixel residual identical
+at every rating**, which belongs to the unexplained plate pixels recorded
+above, not to the rating.
 
 The direction is the part worth stating plainly, because it hid for a long
 time behind a coincidence: **at rating 0 the sign of the step does not

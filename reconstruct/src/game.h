@@ -335,10 +335,11 @@ int  menu_build(const char *dir, menu_screen *m, const char **err);
 
 /* The same, with the rating name on its plate: 0 Fun, 1 Tricky, 2 Taxing,
  * 3 Mayhem. All four are verified against the original: each rating's
- * name is byte-identical to the sprite the game draws there. The whole
- * screen scores 99.41% at Fun, Tricky and Taxing, with the remainder in
- * the animated banner; Mayhem leaves 70 further pixels inside the plate's
- * box, single pixels along x=464..465, which is not accounted for. See
+ * name is byte-identical to the sprite the game draws there, and inside
+ * the plate's box the original changes 713 pixels between Fun and Mayhem
+ * while the port changes the same 713. The plate also carries a 70-pixel
+ * residual that is IDENTICAL at every rating - part of the long-standing
+ * unexplained plate pixels, nothing to do with the rating. See
  * RATING_BASE in game.c. */
 int  menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
                        const char **err);
