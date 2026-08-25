@@ -18,11 +18,15 @@
 
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
-/* The file stores 6-bit DAC values, as the VGA hardware took them. */
+/* A 6-bit DAC value as 8 bits, the way the hardware does it: the top two bits
+ * repeated into the bottom, not a proportional scale. The two agree at 0 and
+ * 63 and differ by one in between - 0x20 is 130 here and 129 if you compute
+ * v*255/63 - and that one is enough to make every mid-tone pixel of a screen
+ * compare as different against another emulator. */
 static uint8_t widen6(uint8_t v)
 {
     v = (uint8_t)(v & 0x3F);
-    return (uint8_t)((v * 255u) / 63u);
+    return (uint8_t)((v << 2) | (v >> 4));
 }
 
 int ground_load(const char *path, ground *g, const char **err)

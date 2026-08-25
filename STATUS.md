@@ -110,7 +110,17 @@ Each of these is stated as what was *checked*, not what was written.
   - **Best alignment is x = 624** — and 624 is exactly the `start_x` the level
     file declares. Two independent things agreeing that were never fitted to
     each other.
-  - **81.07% of pixels identical** (41 506 of 51 200).
+  - **81.07% of pixels identical** (41 506 of 51 200) against our emulator,
+    and **79.15% against DOSBox** — an entirely independent implementation,
+    driven into the same level and captured at 2x with no aspect correction so
+    it halves back to the guest's own pixels. The two references agreeing with
+    each other is what makes the residual difference believable as a real
+    difference in the port rather than an artefact of our machine.
+  - **Know the noise floor: ~58%.** Two unrelated renderings of this level
+    agree on that much simply because a few colours dominate. Before the
+    colour-expansion fix the DOSBox comparison scored 59.59% — right on the
+    floor, which is how a broken instrument disguises itself as a broken
+    result.
   - The **terrain outline is right**: of ~18 800 background pixels only ~380
     disagree, so where the port says rock and where the original says rock
     agree almost everywhere.
@@ -233,7 +243,17 @@ the first sweep should write this table rather than have it retyped by hand.
    | the viewport is offset vertically | y = 0 is best — **no** |
    | entries after a `FF FF FF FF` are missed | there are none in this level — **no** |
    | the terrain bitmaps or the level are decompressed wrongly | **no** — both are byte-identical to the original's own memory, 30 008 and 2 048 bytes (see *Done*). Every input to the renderer is confirmed, so the difference is in what the port *does* with them. |
+   | the leftmost pixel is a byte's low bit | 58.02% vs 81.07% — **no**, it is the high bit |
+   | terrain is drawn back to front | 66.67% — **no** |
+   | every piece ORs, `no_overwrite` included | 74.57% — **no** |
+   | the port is offset by a pixel, or pixel pairs are swapped | every shift and swap scores 54–60% — **no** |
+   | our emulator's own rendering is at fault | **no** — DOSBox, independently, scores the port at 79.15%, within two points of our emulator's 81.07% |
    | the guest's memory was being corrupted | **partly yes** — `INT 21h AH=48h` returned one segment for every request, so the game's three buffers overlapped. Fixed upstream with a real free list; the skill panel went from mottled noise to proper icons and the score rose 79.99% → 81.07%. It did **not** account for the terrain shades. |
+
+   Eleven hypotheses, all rejected with a number. The port's terrain
+   configuration is now *confirmed* on every axis that can be tested from
+   outside — inputs, placement, order, bit order, plane order, compositing —
+   which is worth more than the percentage.
 
    What is left, and what it looks like: the disagreements are **whole
    8-pixel blocks** — one byte — where the port has index 11 and the original

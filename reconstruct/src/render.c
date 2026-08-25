@@ -20,6 +20,7 @@
 #include "vgagr.h"
 
 terrain_mode g_terrain_mode = TERRAIN_REPLACE;
+uint8_t g_terrain_reverse = 0;
 
 int canvas_init(canvas *c)
 {
@@ -42,7 +43,9 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
     uint8_t *tile = malloc(256u * 256u);
     if (!tile) { if (err) *err = "out of memory"; return -1; }
 
-    for (uint16_t i = 0; i < lv->num_terrain; i++) {
+    for (uint16_t k = 0; k < lv->num_terrain; k++) {
+        uint16_t i = g_terrain_reverse
+                   ? (uint16_t)(lv->num_terrain - 1u - k) : k;
         const level_terrain *t = &lv->terrain[i];
         const ground_terrain *gt = &g->terrain[t->id];
 
@@ -75,6 +78,8 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                 uint8_t *dst = &c->pix[(uint32_t)dy * c->w + dx];
                 if (t->erase)
                     *dst = 0;
+                else if (g_terrain_mode == TERRAIN_OR_ALL)
+                    *dst = (uint8_t)(*dst | v);
                 else if (t->no_overwrite
                          && g_terrain_mode != TERRAIN_NOV_IGNORE) {
                     if (g_terrain_mode == TERRAIN_NOV_INVERT) {

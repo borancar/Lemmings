@@ -39,6 +39,8 @@ static void usage(void)
           "  --scale N     window magnification for --show (default 3)\n"
           "  --terrain M   how terrain pixels combine: replace|or|keep\n"
           "  --planebits O which bit each stored plane feeds, e.g. 0123\n"
+          "  --bitorder B  leftmost pixel is the byte's msb or lsb\n"
+          "  --reverse     draw the terrain list back to front\n"
           "  --raw FILE    also write the raw indices and palette, for\n"
           "                checking against the original: 'LEMRW2', width\n"
           "                and height as u16, 16 RGB triples, then w*h bytes\n",
@@ -70,6 +72,13 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   raw  = argv[++i];
+        else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;
+        else if (!strcmp(argv[i], "--bitorder") && i + 1 < argc) {
+            const char *o = argv[++i];
+            if (!strcmp(o, "msb"))      g_msb_first = 1;
+            else if (!strcmp(o, "lsb")) g_msb_first = 0;
+            else { usage(); return 2; }
+        }
         else if (!strcmp(argv[i], "--planebits") && i + 1 < argc) {
             const char *o = argv[++i];
             if (strlen(o) != 4) { usage(); return 2; }
@@ -83,6 +92,7 @@ int main(int argc, char **argv)
             else if (!strcmp(m, "keep")) g_terrain_mode = TERRAIN_KEEP;
             else if (!strcmp(m, "nov-ignore")) g_terrain_mode = TERRAIN_NOV_IGNORE;
             else if (!strcmp(m, "nov-invert")) g_terrain_mode = TERRAIN_NOV_INVERT;
+            else if (!strcmp(m, "or-all")) g_terrain_mode = TERRAIN_OR_ALL;
             else { usage(); return 2; }
         }
         else { usage(); return 2; }

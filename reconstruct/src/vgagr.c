@@ -16,6 +16,7 @@
 #include "vgagr.h"
 
 uint8_t g_plane_bits[4] = { 0, 1, 2, 3 };
+uint8_t g_msb_first = 1;
 
 int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
                  uint8_t w, uint8_t h, uint8_t *out)
@@ -33,8 +34,9 @@ int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
         for (uint8_t y = 0; y < h; y++) {
             const uint8_t *row = bits + (uint32_t)y * stride;
             for (uint8_t x = 0; x < w; x++) {
-                /* The leftmost pixel of a row is the byte's high bit. */
-                uint8_t bit = (uint8_t)((row[x >> 3] >> (7 - (x & 7))) & 1u);
+                uint8_t sh = g_msb_first ? (uint8_t)(7 - (x & 7))
+                                         : (uint8_t)(x & 7);
+                uint8_t bit = (uint8_t)((row[x >> 3] >> sh) & 1u);
                 out[(uint32_t)y * w + x] |=
                     (uint8_t)(bit << g_plane_bits[p]);
             }
@@ -54,8 +56,8 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
     for (uint8_t y = 0; y < h; y++) {
         const uint8_t *row = sec + loc + (uint32_t)y * stride;
         for (uint8_t x = 0; x < w; x++)
-            out[(uint32_t)y * w + x] =
-                (uint8_t)((row[x >> 3] >> (7 - (x & 7))) & 1u);
+            out[(uint32_t)y * w + x] = (uint8_t)(
+                (row[x >> 3] >> (g_msb_first ? (7 - (x & 7)) : (x & 7))) & 1u);
     }
     return 0;
 }

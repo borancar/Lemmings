@@ -17,6 +17,12 @@
  * tested against the original rather than believed. Default {0,1,2,3}. */
 extern uint8_t g_plane_bits[4];
 
+/* Which end of a byte the leftmost pixel is. 1 = the high bit, which is what
+ * every published description says; selectable because inside a solid area it
+ * makes no difference at all, so believing it is cheap and checking it is
+ * cheaper than the bug it hides. */
+extern uint8_t g_msb_first;
+
 int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
                  uint8_t w, uint8_t h, uint8_t *out);
 

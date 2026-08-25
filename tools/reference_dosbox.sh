@@ -22,6 +22,13 @@ cat > "$WORK/dosbox.conf" <<CONF
 fullscreen=false
 output=surface
 windowresolution=640x400
+[render]
+# No aspect correction and no scaler: 320x200 comes out as exactly 640x400, so
+# it halves back to the guest's own pixels without resampling. With aspect
+# correction on it is 640x480 and every comparison is against a guess about
+# how the rows were stretched.
+aspect=false
+scaler=none
 [dosbox]
 machine=vgaonly
 [cpu]
@@ -47,9 +54,21 @@ xvfb-run -a -s "-screen 0 1024x768x24" bash -c '
   xdotool key --clearmodifiers 1; sleep 3
   import -window root "'"$OUT"'/01-machine-menu.png" || true
   xdotool key --clearmodifiers 2; sleep '"$SETTLE"'
-  import -window root "'"$OUT"'/02-after-machine.png" || true
-  sleep 10
-  import -window root "'"$OUT"'/03-later.png" || true
+  import -window root "'"$OUT"'/02-title.png" || true
+
+  # F1 starts a game. The title fades in first and drops keys during the
+  # fade, so press more than once rather than betting on one moment.
+  for i in 1 2 3; do xdotool key --clearmodifiers F1; sleep 4; done
+  import -window root "'"$OUT"'/03-briefing.png" || true
+
+  # The briefing wants a real mouse button, held - a tap between two of its
+  # polls is invisible to it.
+  for i in 1 2 3; do
+    xdotool mousemove 320 240 mousedown 1; sleep 1; xdotool mouseup 1; sleep 5
+  done
+  import -window root "'"$OUT"'/04-level.png" || true
+  sleep 12
+  import -window root "'"$OUT"'/05-level-later.png" || true
 
   kill $DP 2>/dev/null || true
   wait $DP 2>/dev/null || true

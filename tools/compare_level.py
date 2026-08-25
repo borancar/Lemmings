@@ -26,6 +26,12 @@ import struct
 import numpy as np
 
 
+def _dac8(v):
+    """6-bit DAC to 8 bits by bit replication, as the hardware does."""
+    v &= 0x3F
+    return (v << 2) | (v >> 4)
+
+
 def ground_palette(path):
     """The 16 colours the port draws a level in, from GROUNDxO.DAT."""
     buf = open(path, "rb").read()
@@ -33,8 +39,8 @@ def ground_palette(path):
     pal = np.zeros((16, 3), dtype=np.uint8)
     for i in range(8):
         for c in range(3):
-            pal[i][c] = (standard[i * 3 + c] & 0x3F) * 255 // 63
-            pal[8 + i][c] = (custom[i * 3 + c] & 0x3F) * 255 // 63
+            pal[i][c] = _dac8(standard[i * 3 + c])
+            pal[8 + i][c] = _dac8(custom[i * 3 + c])
     return pal
 
 

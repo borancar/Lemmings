@@ -23,10 +23,16 @@ typedef enum {
     TERRAIN_OR,            /* colour bits are OR'd together */
     TERRAIN_KEEP,          /* the older pixel wins wherever there is one */
     TERRAIN_NOV_IGNORE,    /* replace, ignoring the no-overwrite flag */
-    TERRAIN_NOV_INVERT     /* no-overwrite means "only where terrain is" */
+    TERRAIN_NOV_INVERT,    /* no-overwrite means "only where terrain is" */
+    TERRAIN_OR_ALL         /* every piece ORs, no-overwrite included */
 } terrain_mode;
 
 extern terrain_mode g_terrain_mode;
+
+/* Draw the terrain list back to front. The list order is the drawing order in
+ * every description of the format; selectable so that can be checked rather
+ * than assumed, since it interacts with the no-overwrite flag. */
+extern uint8_t g_terrain_reverse;
 
 int  canvas_init(canvas *c);
 void canvas_free(canvas *c);
