@@ -143,6 +143,7 @@ sweeps are the only thing that would catch a regression there. So:
 | --- | --- |
 | `tools/lemmings.py` | the adapter: game dir, executable, load segment, start-up keys, `LemmingsVga` |
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
+| `tools/codemap.py` | the code map: recursive descent seeded with the entry point *and* every recorded execution, so it separates proven-code from believed-code. `--routine` for one routine, `--tables` for dispatch tables (there are none) |
 | `tools/decrypt_image.py` | builds `image/vgalemmi.decrypted.img` - records each instruction's plaintext as it executes and writes it back. Merges per-run records, so coverage only grows |
 | `tools/disasm.py` | disassemble the decrypted image at an image offset |
 | `tools/dat.py` | Lemmings DAT decompression, the Python oracle the C port was checked against |

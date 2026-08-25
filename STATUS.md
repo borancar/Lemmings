@@ -211,16 +211,42 @@ Each of these is stated as what was *checked*, not what was written.
 
 ### Coverage, as last measured
 
+**Code map** — real measurements now, written by `tools/codemap.py`
+([docs/codemap.md](docs/codemap.md)):
+
+| | |
+| --- | --- |
+| code region (0 .. DGROUP `0x9A90`) | 39,568 bytes |
+| decoded by recursive descent | 33,875 bytes (**85.61%**) |
+| of that, **proven executed by a run** | 19,067 bytes (**48.19%**) |
+| call targets found | 211 |
+| call targets no run ever executed | 44 |
+| offsets that would not decode | 1 |
+
+Only the proven figure is evidence; the rest is a hypothesis that those bytes
+are code. Descent from the entry point *alone* reaches 66.47%, so the recorded
+executions are worth about 19 points.
+
+**Transcription** — separately, and this is the number that matters for the
+port:
+
 | | |
 | --- | --- |
 | routines transcribed | 0 |
 | routines proven (ran, did work, agreed) | 0 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
-| routines never reached | not yet enumerated |
+| routines never reached | 211 call targets enumerated, none transcribed |
 
-No sweep has been run. These are not measurements; they are placeholders, and
-the first sweep should write this table rather than have it retyped by hand.
+**Nothing is transcribed yet.** The port renders the first level exactly, but
+it does that from the *file formats*, written from published descriptions and
+checked against the data — not by transcribing the original's routines. Those
+are different claims and the second has not been started.
+
+Also settled while mapping: **there are no dispatch tables in this binary** —
+zero indirect calls or jumps through memory, six register-indirect sites in
+total, no jump tables. The usual "seed descent with the handler tables" step
+has nothing to seed with here.
 
 ## Next
 
@@ -232,11 +258,15 @@ the first sweep should write this table rather than have it retyped by hand.
    sprites at display time. `tools/prove.sh` passes `--no-objects` for exactly
    this reason, and the port's 807-pixel difference with objects enabled is
    precisely those three objects painted into a bitmap they do not belong in.
-2. **Write a code map and a real coverage table.** The decrypted image is on
-   disk now, so recursive descent from the entry point — seeded with the
-   handler tables — is unblocked, and the coverage table below can stop being
-   placeholders.
-3. **Prove the unpack by round-tripping** against the PKLITE stub's own output.
+2. ~~**Write a code map and a real coverage table.**~~ **Done 2026-08-25** —
+   `tools/codemap.py`, `image/codemap.json`,
+   [docs/codemap.md](docs/codemap.md). The plan said "seeded with the handler
+   tables"; there are none, which the map establishes rather than assumes.
+   What remains is reading the six register-indirect sites, the only dispatch
+   static descent cannot follow.
+3. **Start transcribing.** 211 call targets are enumerated and 48.19% of the
+   code region is proven to be code. Nothing is transcribed. This is the work.
+4. **Prove the unpack by round-tripping** against the PKLITE stub's own output.
    Still the standard, still not done.
 
 
