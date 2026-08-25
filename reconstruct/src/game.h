@@ -231,6 +231,45 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                    const uint8_t *terrain_sec, uint32_t terrain_len,
                    const char **err);
 
+/* ====================================================================
+ * The level's objects, animated at display time.
+ *
+ * The original NEVER bakes these into its terrain (tools/prove.sh relies on
+ * that: it composes terrain only and matches to the pixel). It keeps a
+ * 28-byte state per object at ds:0x17CB, steps them all once a pass at image
+ * 0x07C0A, and draws them all at image 0x07BB8 over whatever the terrain
+ * left. This mirrors that.
+ * ==================================================================== */
+
+typedef struct {
+    uint16_t flags;       /* state[0]: bit 1 animating, bit 0 one-shot */
+    uint8_t  frame;       /* state[2] */
+    uint8_t  end_frame;   /* state[3] */
+    uint8_t  w;           /* state[4], in pixels */
+    uint8_t  rows;        /* state[5] */
+    uint16_t frame_size;  /* state[6] */
+    uint16_t mask_delta;  /* state[8], added to the ink pointer */
+    uint16_t base;        /* state[0x15] */
+    uint16_t ink;         /* state[0x17], recomputed by the stepper */
+    uint8_t  live;        /* the level list's x was non-zero */
+} level_anim;
+
+#define LEVEL_ANIM_MAX 32          /* image 0x07BC0: mov cx, 0x20 */
+
+/* Build the state array the way the original's set-up does, from the level's
+ * own object list and the graphics set's table. */
+void level_anim_init(level_anim *st, const level *lv, const ground *g);
+
+/* One pass of image 0x07C0A. */
+void level_anim_step(level_anim *st, const level *lv);
+
+/* One pass of image 0x07BB8, onto a 320-wide viewport scrolled `scroll`
+ * pixels into the level. */
+void level_anim_draw(const level_anim *st, const level *lv,
+                     const uint8_t *object_sec, uint32_t object_len,
+                     uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                     uint16_t scroll);
+
 /* Draw the level's interactive objects - the entrance, the exit, traps.
  * Terrain must already be composed: an object's "no overwrite" flag is about
  * the terrain underneath it. `frame` selects an animation frame; 0 is the

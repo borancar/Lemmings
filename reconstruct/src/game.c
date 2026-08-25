@@ -561,6 +561,121 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
     return 0;
 }
 
+
+/* ======================================================================
+ * THE LEVEL'S OBJECTS, ANIMATED AT DISPLAY TIME - images 0x07BB8 (draw) and
+ * 0x07C0A (step), with a 28-byte state per object at ds:0x17CB.
+ *
+ * Both walk the same two arrays in step: the level's own 32-entry object list
+ * at ds:0x0FEB, eight bytes each, and the state array, 0x1C bytes each. An
+ * entry whose x reads zero ends that object's turn - image 0x07BCA and
+ * 0x07C1C both `and ax,ax / je`.
+ * ====================================================================== */
+
+/* Image 0x07BB8's set-up, as the original's own loader leaves it. The fields
+ * are the graphics set's, so this is the port assembling what the original
+ * assembles somewhere it has not been read - marked accordingly. */
+void level_anim_init(level_anim *st, const level *lv, const ground *g)
+{
+    memset(st, 0, sizeof(*st) * LEVEL_ANIM_MAX);
+    for (uint16_t i = 0; i < lv->num_objects && i < LEVEL_ANIM_MAX; i++) {
+        const level_object *o = &lv->objects[i];
+        const ground_object *go = &g->objects[o->id & 0x0F];
+        level_anim *a = &st[i];
+        a->live       = 1;
+        a->flags      = go->animation_flags;
+        a->frame      = go->start_frame;
+        a->end_frame  = go->end_frame;
+        a->w          = go->width;
+        a->rows       = go->height;
+        a->frame_size = go->frame_data_size;
+        a->mask_delta = go->mask_offset;
+        a->base       = go->frames_base_loc;
+        a->ink        = (uint16_t)(a->base + a->frame * a->frame_size);
+    }
+}
+
+/* Image 0x07C0A, line for line.
+ *
+ *     bx = [si]              the flags word
+ *     test bx,2 / je         bit 1 clear: this one does not animate
+ *     al = [si+2]  ah = [si+3]
+ *     inc al / cmp al,ah / jne
+ *     xor al,al              wrapped
+ *     test bx,1 / je / and bx,0xfffd    bit 0 set: one-shot, stop animating
+ *     [si+2] = al
+ *     mul word [si+6]        frame * frame_data_size
+ *     add ax, [si+0x15]      + the base
+ *     [si+0x17] = ax         the ink pointer the draw loop reads
+ *
+ * The `cmp al,ah` is against the END frame, not one past it, so the last
+ * frame is never shown - that is what the original does, not a fencepost. */
+void level_anim_step(level_anim *st, const level *lv)
+{
+    for (uint16_t i = 0; i < LEVEL_ANIM_MAX; i++) {
+        level_anim *a = &st[i];
+        if (!a->live) continue;
+        /* Image 0x07C1E: object id 1 is gated on ds:0x55, which is not
+         * established here, so it is left animating like the rest. */
+        if (!(a->flags & 2)) continue;
+        uint8_t f = (uint8_t)(a->frame + 1);
+        if (f == a->end_frame) {
+            f = 0;
+            if (a->flags & 1) a->flags = (uint16_t)(a->flags & ~2u);
+        }
+        a->frame = f;
+        a->ink = (uint16_t)(a->base + (uint16_t)f * a->frame_size);
+    }
+    (void)lv;
+}
+
+/* Image 0x07BB8.
+ *
+ *     ax = be16([di]) ; x from the LEVEL's own list, unbiased
+ *     sub ax,[0]      ; minus the scroll
+ *     add ax,0x10     ; +16 - the same sixteen the canvas is offset by, and
+ *                     ;   the reason level_parse subtracts it there instead
+ *     bx = be16([di+2])                 y
+ *     dl = [si+4] dh = 0                width in pixels
+ *     cl = [si+5] ch = 4                rows, four planes
+ *     si = [si+0x17]                    the ink
+ *     di = [si+8] + si                  the mask
+ */
+void level_anim_draw(const level_anim *st, const level *lv,
+                     const uint8_t *object_sec, uint32_t object_len,
+                     uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                     uint16_t scroll)
+{
+    for (uint16_t i = 0; i < lv->num_objects && i < LEVEL_ANIM_MAX; i++) {
+        const level_anim *a = &st[i];
+        if (!a->live || !a->w || !a->rows) continue;
+        const level_object *o = &lv->objects[i];
+        /* level_parse has already taken the 16 off, so this is the original's
+         * `sub ax,[0] / add ax,0x10` with the +16 already applied. */
+        int32_t x0 = (int32_t)o->x - (int32_t)scroll;
+        int32_t y0 = o->y;
+        uint16_t stride = (uint16_t)((a->w + 7u) / 8u);
+        uint32_t plane  = (uint32_t)stride * a->rows;
+        for (uint8_t r = 0; r < a->rows; r++) {
+            int32_t y = y0 + r;
+            if (y < 0 || y >= dst_h) continue;
+            for (uint8_t c = 0; c < a->w; c++) {
+                int32_t x = x0 + c;
+                if (x < 0 || x >= dst_w) continue;
+                uint32_t ink  = a->ink;
+                uint32_t mask = ink + a->mask_delta;
+                if (mask + plane > object_len) continue;
+                uint8_t m = (object_sec[mask + (uint32_t)r * stride + (c >> 3)]
+                             >> (7 - (c & 7))) & 1u;
+                if (!m) continue;
+                dst[(size_t)y * dst_w + (uint16_t)x] =
+                    planar(object_sec, ink, plane, stride, 4, c, r);
+            }
+        }
+    }
+    (void)st;
+}
+
 /* NOT TRANSCRIBED, and NOT what the original does. Breaking at image
  * 0x03789 - the final `ret` after all five composition passes - shows the
  * original never composes objects into the level bitmap at all: it draws the

@@ -217,6 +217,49 @@ int main(int argc, char **argv)
         menu_anim_reset();
     }
 
+    /* THE LEVEL'S ANIMATED OBJECTS, images 0x07BB8 and 0x07C0A.
+     *
+     * Checked against what the ORIGINAL actually blits. tools/probe_blits.py,
+     * driven into a level, logs the entrance as 48x25 at screen (96,36) with
+     * ten distinct sources 750 apart - 0, 750, 1500 ... 6750 - and si=0 seen
+     * 179 times against one apiece for the rest. That is a one-shot: it runs
+     * its frames once and then sits on frame 0, which is `animation_flags`
+     * bit 0 clearing bit 1 at image 0x07C49.
+     *
+     * So the sequence is the assertion, not a screenshot. */
+    {
+        const char *e = NULL;
+        dat_file levels; ground g; level lv;
+        char p2[512];
+        snprintf(p2, sizeof(p2), "%s/level009.dat", dir);
+        if (dat_load(p2, &levels, &e) == 0) {
+            if (level_parse(levels.sections[1].data, levels.sections[1].size,
+                            &lv, &e) == 0) {
+                snprintf(p2, sizeof(p2), "%s/ground%uo.dat", dir,
+                         lv.graphics_set);
+                if (ground_load(p2, &g, &e) == 0) {
+                    level_anim st[LEVEL_ANIM_MAX];
+                    level_anim_init(st, &lv, &g);
+                    static const uint16_t WANT[10] = {
+                        750, 1500, 2250, 3000, 3750, 4500, 5250, 6000, 6750, 0
+                    };
+                    int ok = 1;
+                    for (int k = 0; k < 10; k++) {
+                        if (st[0].ink != WANT[k]) ok = 0;
+                        level_anim_step(st, &lv);
+                    }
+                    ck("the entrance runs the original's own frames",
+                       ok, "ink sequence differs from the emulator's blits");
+                    /* One-shot: after the wrap it must STAY on frame 0. */
+                    for (int k = 0; k < 20; k++) level_anim_step(st, &lv);
+                    ck("and then rests on frame 0, as a one-shot",
+                       st[0].ink == 0, "it kept animating");
+                }
+            }
+            dat_free(&levels);
+        }
+    }
+
     /* A hotspot table the menu never asked for, to catch an out-of-bounds
      * write in menu_hotspots if MENU_HOTSPOTS and the code disagree. */
     view_hotspot spots[MENU_HOTSPOTS];

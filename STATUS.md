@@ -41,7 +41,7 @@ numbers, re-measured on the current build:
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 30 of
+**Transcription is a different claim from any of the above, and it is 33 of
 211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
@@ -642,6 +642,44 @@ Each of these is stated as what was *checked*, not what was written.
   wrong**, and no amount of further fitting was going to reach zero from 257.
   Reading the routine took less time than the fitting did.
 
+## Into a level
+
+- **The level's objects are animated at display time, and both halves are
+  transcribed** — image `0x07BB8` draws them, image `0x07C0A` steps them, over
+  a 28-byte state per object at `ds:0x17CB`.
+
+  The call graph found them: driving `tools/probe_blits.py` past the briefing
+  with `--play` added exactly **one** call site to the menu's twelve —
+  `0x07BF9` — and its seventeen blits are the entrance and the exit.
+
+  Both routines walk the same two arrays in step: the level's own 32-entry
+  object list at `ds:0x0FEB`, eight bytes each, and the state array at `0x1C`
+  bytes each. An x of zero ends an object's turn.
+
+  The stepper is a small state machine and it is exact:
+
+      bx = [si]                 flags: bit 1 animating, bit 0 one-shot
+      test bx,2 / je            not animating - leave it
+      al = [si+2] / ah = [si+3] current frame, end frame
+      inc al / cmp al,ah / jne
+      xor al,al                 wrapped
+      test bx,1 / and bx,~2     one-shot: stop animating
+      mul word [si+6] / add [si+0x15] / mov [si+0x17],ax
+
+  **Verified against what the original actually blits**, not a screenshot. The
+  probe logs the entrance as 48×25 at screen (96,36) with ten distinct sources
+  750 apart — `0, 750, 1500 … 6750` — and `si=0` seen **179 times** against one
+  apiece for the others. That is a one-shot running its frames once and then
+  sitting on frame 0, and the port reproduces the sequence exactly.
+  `reconstruct/tests/screens.c` asserts it.
+
+  It also settled the sixteen. Image `0x07BCF` reads the level list's x
+  **unbiased** and does `sub ax,[0]` then `add ax,0x10` — so the +16 is the
+  original's own, applied against the scroll at display time, and
+  `level_parse` taking it off at parse time is the same constant seen from the
+  canvas's end. That had been derived by fitting the briefing's preview; it is
+  now read.
+
 - **No function in `game.c` claims to be the port's own any more.** That
   phrase inside the game's file was a contradiction, and it was hiding two
   different things behind one label.
@@ -1181,7 +1219,7 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 30 (`make test` enforces the count) |
+| routines transcribed | 33 (`make test` enforces the count) |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |

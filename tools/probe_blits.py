@@ -115,6 +115,10 @@ def main():
                          "stops while the briefing is still up; too long and "
                          "the demo starts the level on its own and the log "
                          "mixes the two screens together")
+    ap.add_argument("--play", action="store_true",
+                    help="click past the briefing and into the level. Without "
+                         "it the driven run parks on the briefing, which is "
+                         "why it only ever saw the menu's twelve call sites")
     ap.add_argument("--driven", action="store_true",
                     help="ride along with play.py instead of running in "
                          "process - the only way to reach the briefing")
@@ -130,7 +134,8 @@ def main():
                    LEM_BLITS_OUT=cap, LEM_BLITS_ROWS=f"{y0} {y1}")
         subprocess.run([sys.executable, os.path.join(HERE, "play.py"),
                         "--auto", "--start", "--start-delay", "5",
-                        "--start-tries", "3", "--click-tries", "0",
+                        "--start-tries", "3",
+                        "--click-tries", "4" if a.play else "0",
                         "--", "--run-seconds", str(a.seconds)],
                        cwd=ROOT, env=env, stdout=subprocess.DEVNULL)
         if not os.path.exists(cap):
