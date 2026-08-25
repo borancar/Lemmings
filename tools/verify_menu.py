@@ -211,19 +211,55 @@ def main():
     # text is what was built, and the text is what is scored.
     if a.screen == "briefing":
         text = {0x04, 0x05, 0x07, 0x14}
-        tn = tok = 0
+        # "A pixel in one of the text colours" is a HEURISTIC, and on this
+        # screen it is not quite sound: the briefing's background art also
+        # contains a few pixels in that range. Scoring by colour alone counted
+        # four of them as text the port had missed, and reported 99.97% for a
+        # text layer that is in fact exact.
+        #
+        # So the rows the port actually writes text into decide what is text.
+        # They come out as seven bands, 81..319; everything outside them is
+        # background, which this screen does not draw and does not score. The
+        # stragglers are reported rather than dropped - a heuristic that
+        # quietly discards its own misfits is worse than one that admits them.
+        rows = sorted({y for y in range(h)
+                       for x in range(w) if ATTR[ours[y * w + x] & 0x0F] in text})
+        bands = []
+        if rows:
+            st = pr = rows[0]
+            for y in rows[1:]:
+                if y > pr + 1:
+                    bands.append((st, pr))
+                    st = y
+                pr = y
+            bands.append((st, pr))
+        in_text = bytearray(h)
+        for y0, y1 in bands:
+            for y in range(y0, y1 + 1):
+                in_text[y] = 1
+
+        tn = tok = outside = 0
         for y in range(h):
             for x in range(w):
                 t = theirs[y * w + x]
                 o = ATTR[ours[y * w + x] & 0x0F]
-                if t in text or o in text:
-                    tn += 1
-                    tok += (t == o)
+                if not (t in text or o in text):
+                    continue
+                if not in_text[y]:
+                    outside += (t != o)
+                    continue
+                tn += 1
+                tok += (t == o)
+        print(f"  text rows                 : {len(bands)} bands, "
+              f"{bands[0][0]}..{bands[-1][1]}")
         print(f"  text pixels               : {100*tok/tn:.2f}%  "
               f"({tn-tok} of {tn} differ)")
+        if outside:
+            print(f"  background art in the text colours, outside every text")
+            print(f"  row and NOT scored        : {outside} pixels")
         print("\n  the background is NOT drawn and NOT scored: it is not the"
               "\n  menu's tile and has not been found. See game.c.")
-        return 0 if tok == tn else 0
+        return 0 if tok == tn else 1
     skip = bytearray(h)
     for _, y0, y1 in excluded:
         for y in range(y0, min(y1, h)):

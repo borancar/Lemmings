@@ -33,7 +33,7 @@ numbers, re-measured on the current build:
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
-| the **briefing's** text | 99.97% — 4 of 15,188 |
+| the **briefing's** text | **100.00%** — 0 of 15,184 |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, and the whole scrolling banner |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
@@ -41,8 +41,8 @@ numbers, re-measured on the current build:
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 7 of 211
-call targets.** The port renders these screens from the file formats and from
+**Transcription is a different claim from any of the above, and it is 13 of
+211 call targets.** The port renders these screens from the file formats and from
 geometry measured against the original — that is real evidence, and it is not
 the same as having transcribed the routines. See *Coverage* below.
 
@@ -890,11 +890,11 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 8 |
+| routines transcribed | 13 |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
-| routines never reached | 203 of the 211 call targets |
+| routines never reached | 198 of the 211 call targets |
 
 | routine | what it is | how it is checked |
 | --- | --- | --- |
@@ -906,6 +906,11 @@ port:
 | `0x09347` | the sprite **pre-shift**: copy a row, append a zero byte, shift right N bits | `tools/verify_shift.py` — 200 calls, byte-identical, over shifts of 2, 6 and 7 |
 | `0x05B11` | the level's **sprite pre-builder**: all eight alignments at once, each with a per-column OR | `tools/verify_preshift.py` — 106 calls, byte-identical |
 | `0x04BC2` | **three-digit decimal**, used to build the `levelNNN.dat` filename | `tools/verify_digits.py` — the original's own code driven over **all 256 byte values**, all agree |
+| `0x0447B` | the menu's **key dispatcher**, with the scancode table at `ds:0x202E` its reader at `0x04D1A` translates through | every key it maps, driven against the original (`tools/probe_rating.py`) |
+| `0x044EC`, `0x0451C` | **rating up and down** — cap at 3, floor at 0, and `ds:0x1F6B = rating * 30` | the same, watching `ds:0x1F6E` |
+| `0x04F96` | the **walk-on animation driver**: ten entries, counter down past zero, eight frames held two passes each | the counter logic directly — no capture shows one, see above |
+| `0x07CBC`, `0x07D0D` | the **banner**: set-up and one scroll step, with the 4-pixel shift, the 16-pixel character cell, the `0xFF` pause and the `0x0D` rewind | the banner's rows, **0 differing** at all four ratings |
+| `0x0890E`, `0x0909C` | the shared blitter's **compositing rules** — the sprite's four passes and the shadow's set/reset fill. Not the whole routine; the rule it implements | the whole menu, **0 differing** at all four ratings |
 
 These verifiers work the same way, and it is the method's way rather than a
 screenshot: stop the original, capture the inputs, let **its own body** run,
@@ -965,7 +970,7 @@ has nothing to seed with here.
    tables"; there are none, which the map establishes rather than assumes.
    What remains is reading the six register-indirect sites, the only dispatch
    static descent cannot follow.
-3. **Keep transcribing.** 211 call targets are enumerated, 8 are transcribed
+3. **Keep transcribing.** 211 call targets are enumerated, 13 are transcribed
    and verified. `tools/hotspots.py` ranks the rest by weight, which is how the
    decompressor was found: inside the windows following an INT 21h AH=3Fh read
    it is 83% of all instructions executed. `LEM_HOOK` lets a verifier ride

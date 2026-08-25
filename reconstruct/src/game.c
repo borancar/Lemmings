@@ -1229,13 +1229,15 @@ static void draw_char(uint8_t *dst, const uint8_t *font, uint32_t font_len,
             if (x >= MENU_W) break;
             uint32_t o = g + gy * 2 + (gx >> 3);
             uint8_t sh = (uint8_t)(7 - (gx & 7));
+            /* Same two-phase rule as blit(): the glyph's last plane is the
+             * bit mask for pass 0 and an ink plane for the OR passes. */
+            uint8_t p0 = (font[o] >> sh) & 1u;
+            uint8_t p1 = (font[o + FONT_PLANE] >> sh) & 1u;
             uint8_t mask = (font[o + FONT_MASK_PLANE * FONT_PLANE] >> sh) & 1u;
-            if (!mask) continue;
-            uint8_t v = (uint8_t)(
-                (1u << FONT_MASK_PLANE)
-                | ((font[o] >> sh) & 1u)
-                | (((font[o + FONT_PLANE] >> sh) & 1u) << 1));
-            dst[(size_t)y * MENU_W + x] = v;
+            uint8_t v = (uint8_t)(p0 | (p1 << 1) | (mask << FONT_MASK_PLANE));
+            size_t d = (size_t)y * MENU_W + x;
+            if (mask) dst[d] = v;
+            else      dst[d] |= (uint8_t)(v & ~1u);
         }
     }
 }
