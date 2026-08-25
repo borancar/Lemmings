@@ -402,3 +402,17 @@ a `FUN` at one position and the original overdraws the current rating from a
 pre-shifted copy at another. The scratch buffer is what the blit reads, so
 following the blit's source address finds the buffer and not the artwork —
 which is why the rating's own sprite has still not been located.
+
+## MAIN.DAT section 4
+
+Loaded at linear `0x679F0` in the runs measured here. Only its tail is
+understood:
+
+| offset | what |
+| --- | --- |
+| `0` – `23888` | **unexplored.** The rating names are in here; so is whatever else the menu draws that is not in section 3 |
+| `23888` – `36080` | the 16×16 font, 96 bytes a glyph, ASCII-indexed |
+
+The head is not one big planar bitmap — rendering it as four planes at 64 and
+96 pixels wide gives noise — so it is likely several sprites with their own
+dimensions, as section 3 turned out to be.

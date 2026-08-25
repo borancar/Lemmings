@@ -309,9 +309,25 @@ Each of these is stated as what was *checked*, not what was written.
   keeps landing on anonymous memory. Finding the rating's sprite means finding
   what is copied *into* that buffer, one step further back.
 
-  That is the next thread, worth about 630 pixels. It is also the general
-  answer to how this game draws anything at a non-byte-aligned x — the FX label
-  sits at x=351, which is 7 mod 8.
+  It is also the general answer to how this game draws anything at a
+  non-byte-aligned x — the FX label sits at x=351, which is 7 mod 8.
+
+  **Following the fill one step back locates the artwork's file.** The
+  instruction that fills the scratch buffer is image `0x09352`, and its sources
+  land in pages `0x67600`–`0x67900` and `0x6DF00`–`0x6E300`. Probing those
+  against every data file puts both inside **`MAIN.DAT` section 4**, loaded at
+  linear `0x679F0` — the two probes agree on that base independently, which is
+  the check.
+
+  Section 4 is 36,080 bytes and only its tail is understood: the 16×16 font
+  occupies `23888`–`36080`. **Its first 23,888 bytes have never been looked
+  at**, and the rating name is in there. Rendering that head as a 4-plane image
+  at 64 and 96 pixels wide gives noise, so it is not one big bitmap; it is
+  probably several sprites with their own dimensions, the way section 3 turned
+  out to be.
+
+  That is the next thread, worth about 630 pixels, and it is now a question
+  about one known region of one known file.
 
   Two things were tried and rejected on measurement rather than taste: a drop
   shadow for the label (worse — 99.16% to 99.06%), and a one-pixel black
