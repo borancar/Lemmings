@@ -11,3 +11,9 @@ reconstruct/lemmings
 reconstruct/src/*.o
 *.bmp
 reconstruct/tests/menu_input
+
+# Local-only scratch the tooling writes into the repo. `.local.` is the
+# convention for it; the ralph-loop plugin's iteration counter is one, and it
+# had been committed and re-committed on every iteration.
+.claude/*.local.md
+.claude/*.local.json
