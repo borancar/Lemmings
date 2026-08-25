@@ -18,10 +18,10 @@ Two things make the comparison honest rather than flattering:
     4-bit values against DAC indices would report a total mismatch; comparing
     after a mapping chosen to make it pass would report nothing at all.
   * The parts the port does not implement are named and scored SEPARATELY
-    rather than quietly excluded: the two credit lines and the scrolling
-    banner are drawn from a font that has not been located, and the menu also
-    animates (the lemmings blink), so a single number over the whole screen
-    understates what is actually reconstructed and overstates what is not.
+    rather than quietly excluded - and when one of them gets built, it moves
+    out of that list rather than staying there flattering the headline. Only
+    the scrolling banner is left, and the menu also animates (the lemmings
+    blink), which a single composed frame cannot match.
 
 The capture is deleted before the run: a stale one reads as a successful run.
 """
@@ -41,7 +41,6 @@ ATTR = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
 
 # Regions the port does not compose yet, as (name, y0, y1).
 NOT_IMPLEMENTED = [
-    ("the two credit lines", 268, 309),
     ("the scrolling banner", 330, 350),
 ]
 

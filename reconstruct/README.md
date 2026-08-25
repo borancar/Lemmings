@@ -32,6 +32,20 @@ Esc quits.
 
 ![The level in a window](docs/window.png)
 
+## Licence
+
+**The original's licence is unknown**, so this repository does not put one on
+the reconstructed code. `src/game.c` and `src/game.h` are transcribed from, and
+measured against, `vgalemmi.exe` — a binary nobody here owns — and stamping an
+SPDX line on them would assert terms and authorship that are not ours to
+assert, in a form downstream tools would believe. Those files carry a
+provenance header saying what they are and where they came from instead, which
+is the more useful thing anyway.
+
+`src/sdl_io.c`, `src/main.c` and the tests are the port's own work and are a
+separate matter. Nothing of the game's data is redistributed here: it reads
+your own copy.
+
 ## What it needs
 
 A C11 compiler and **SDL3**, which is a hard dependency rather than an option:
@@ -64,7 +78,9 @@ Shows the **main menu** and draws a level's terrain:
 
 - **The main menu** — the tiled background, the logo and all six signs, from
   `MAIN.DAT`, in the original's own EGA 640x350 16-colour screen
-- **DAT decompression** — the container format all of Lemmings' data uses
+- **DAT decompression** — the container format all of Lemmings' data uses,
+  transcribed from image `0x01BAF` and checked call-for-call against the
+  original
 - **Level parsing** — globals, terrain, objects, steel areas, the name
 - **GROUNDxO.DAT** — the per-set index of bitmaps and the 16-colour palette
 - **VGAGRx.DAT** — 4-bit planar bitmaps
@@ -73,13 +89,34 @@ Shows the **main menu** and draws a level's terrain:
 - **Interactive objects** — the entrance and the exit, with their own
   transparency masks and animation frames
 
-There is no game yet: no lemmings, no skills, no animation, no sound. The
-menu is composed but not driven - the signs do not respond, the lemmings on
-them do not blink, and the two credit lines and the scrolling banner at the
-foot are not drawn, because they come from a font that has not been found yet.
-That last point is measured rather than assumed: searching every `MAIN.DAT`
-section for those pixels, at all eight bit alignments, finds nothing - they are
-not stored bitmaps.
+The menu answers to its keys and to the mouse: F1 starts the level, Esc exits,
+and coming out of a level returns to the menu. The other four plates answer too
+and say they are not reconstructed, which beats a silent no-op that reads as a
+broken button.
+
+There is no game yet: no lemmings, no skills, no animation, no sound. Nothing
+on the menu animates either - the lemmings' eyes do not blink and the scrolling
+banner at the foot is not drawn.
+
+## How it is laid out
+
+`src/game.c` and `src/game.h` are the reconstruction, in **one translation
+unit**. That is deliberate and it is not a modern instinct: compilers of the
+period emitted one object per source file and the linker laid each module into
+the segment whole and in link order, so a contiguous run of addresses *is* one
+original source file, and address order is source order inside it. That is the
+only division of this program its authors actually made. This port used to be
+eight files split by concern - `dat.c`, `level.c`, `render.c` and so on - a
+division nothing in the binary supports, and one that left "which file is image
+`0x03F5C` in?" with no answer.
+
+Every function says where it came from: the image offset if it is transcribed,
+or an explicit note that it is not and that where it lives in the original is
+not yet established.
+
+`src/sdl_io.c` and `src/main.c` are boundaries the **port** chose - what a
+modern backend has to replace, and a command line the original never had. Their
+headers say so.
 
 ## How it is known to be right
 

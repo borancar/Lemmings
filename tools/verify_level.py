@@ -46,9 +46,17 @@ SKILLS = ("climber", "floater", "bomber", "blocker",
 
 def build_lib(path):
     src = os.path.join(ROOT, "reconstruct", "src")
+    # The reconstruction is ONE translation unit, mirroring the original's own
+    # layout rather than a split of our invention, so there is one file to
+    # build here and not a hand-picked subset of modules. sdl_io.c comes with
+    # it because game.c calls into the window layer.
+    sdl = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl3"],
+                         capture_output=True, text=True, check=True
+                         ).stdout.split()
     subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-Wall", "-Wextra",
                     "-Wconversion", "-I", src, "-o", path,
-                    os.path.join(src, "level.c")], check=True)
+                    os.path.join(src, "game.c"),
+                    os.path.join(src, "sdl_io.c")] + sdl, check=True)
     lib = ctypes.CDLL(path)
     lib.level_header_fields.restype = ctypes.c_int
     lib.level_header_fields.argtypes = [

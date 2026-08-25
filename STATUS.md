@@ -153,7 +153,7 @@ Each of these is stated as what was *checked*, not what was written.
 - **The main menu is composed, and checked against the original's own screen.**
   The menu runs in EGA mode 10h — 640×350, four planes — a different mode from
   the game itself. `tools/verify_menu.py` drives the original to it, dumps that
-  screen and compares: **94.67% identical over the parts the port builds**, and
+  screen and compares: **95.26% identical over the parts the port builds**, and
   all 16 palette entries byte for byte. Verified piece by piece: the background
   is a 320×104 **two-plane** tile (four colours) repeating from (0,0) — proven
   by measurement, since assembling it from four planes scores 39% and forcing
@@ -164,6 +164,29 @@ Each of these is stated as what was *checked*, not what was written.
   with no arguments opens the main menu; `--out` or `--raw` asks for a file.
   The X11 viewer is gone — see the convention in CLAUDE.md for why a
   platform-specific display layer is not acceptable here.
+
+- **The port is one translation unit, and every function says where it came
+  from.** It was eight files split by modern instinct — `dat.c`, `level.c`,
+  `ground.c`, `vgagr.c`, `render.c`, `menu.c` — a division nothing in the
+  binary supports. Compilers of the period emitted one object per source file
+  and the linker laid each module into the segment whole and in link order, so
+  a contiguous run of addresses **is** one original source file. The port is
+  now `game.c` + `game.h`, with `sdl_io.c` and `main.c` as boundaries the port
+  chose and whose headers say so. Every function carries the image offset it
+  was transcribed from, or an explicit note that it was not transcribed and
+  where it lives is unknown.
+- **No licence is claimed on reconstructed code.** The original's licence is
+  unknown, and a file transcribed out of someone else's binary is not ours to
+  licence. The `SPDX-License-Identifier: GPL-2.0-only` headers that were on
+  every reconstructed file asserted exactly that, machine-readably, and are
+  gone; a provenance header naming the binary is there instead. **The tools in
+  `tools/` still carry that SPDX line** — they are our own work so a licence
+  there is legitimate, but GPL-2.0 was picked by us without being asked for,
+  and the sibling reconstructions use MIT. Worth settling.
+- **The menu answers to its keys and to the mouse.** F1 starts the level and
+  coming out of it returns to the menu; Esc and the window close exit.
+  `reconstruct/tests/menu_input.c` checks all six plates by key and by click,
+  and five points that must *not* be buttons — 18 checks, run by `make test`.
 
 ## Open
 
@@ -191,13 +214,23 @@ Each of these is stated as what was *checked*, not what was written.
   capturing a picture; **not** fine for anything measuring timing.
 - **The port is a menu and a level renderer, not a game.** No lemmings, no
   skills, no animation, no sound, no control panel.
-- **The menu is composed but not driven.** The signs do not respond to the
-  mouse or to F1–F4, the lemmings on them do not blink, and two pieces are not
-  drawn at all: the credit lines and the scrolling banner at the foot. Those
-  come from a font that has not been located — established rather than assumed,
-  by searching every `MAIN.DAT` section for their pixel runs at all eight bit
-  alignments and finding nothing consistent. `tools/verify_menu.py` scores
-  those regions separately instead of excluding them quietly.
+- **Four of the six menu plates do nothing yet.** F1 and Esc work. F2 "NEW
+  LEVEL", F3 "FX", the rating plate and the "?" plate answer to their keys and
+  print that they are not reconstructed, which is better than a silent no-op
+  that reads as a broken button. What they *should* do has not been traced: the
+  key dispatch at image `0x03E6F` turns out to be the in-level control panel,
+  not the menu — there F1 and F2 change the release rate.
+- **The scrolling banner at the foot is not drawn**, and nothing on the menu
+  animates: the lemmings' eyes do not blink. The menu is composed once, not
+  driven. The banner's *strings* are found (image `0x0E45E` onward, in 38-byte
+  slots) but where it is drawn and how it scrolls is not.
+- **The menu font is found and used.** 16×16 glyphs, three 32-byte planes,
+  ASCII-indexed, at `MAIN.DAT` section 4 offset 23888 — which ends at
+  `23888 + 127*96 = 36080`, exactly the section's length. Plane 2 doubles as
+  the opacity mask. Reading the mask as the *first* plane scores 51%; it is the
+  last, and then it is 100.0% over both credit lines. One behaviour came with
+  it: the original draws **nothing** for a space rather than relying on an
+  empty glyph, which is the whole difference between 94.3% and 99.3%.
 - **What maps a level number onto a file and a section is not known.** The
   game's Level 1 is section 1 of `level009.dat`, found by reading the
   original's briefing screen — not derived. `oddtable.dat` is an unexamined

@@ -1,0 +1,1138 @@
+/* game.c - PC Lemmings (VGA), reconstructed.
+ *
+ * Reconstructed from vgalemmi.exe (DMA Design / Psygnosis, 1991), the 10-level
+ * demo build. THE LICENCE OF THE ORIGINAL IS UNKNOWN and nothing here claims
+ * one - a file transcribed out of someone else's binary is not ours to
+ * licence, and an SPDX line would assert exactly that. The provenance note is
+ * what belongs at the top of such a file, and it is the more useful thing
+ * anyway. The project's own tooling is a different matter.
+ *
+ * WHY THIS IS ONE FILE
+ *
+ * Compilers of the period emitted one object per source file and the linker
+ * laid each module's contribution into the segment whole and in link order, so
+ * a contiguous run of addresses is one original source file and address order
+ * is source order inside it. That is the only division of this program its
+ * authors actually made. This port used to be eight files split by modern
+ * instinct - dat.c, level.c, ground.c, vgagr.c, render.c, menu.c - a division
+ * nothing in the binary supports, which also meant "which file is image
+ * 0x03F5C in?" had no answer. So: one file, and the boundaries inside it are
+ * marked with the addresses they came from.
+ *
+ * The one boundary that IS the port's own is sdl_io.c, the window and input
+ * backend. That is not a reconstruction of anything and says so.
+ *
+ * WHAT IS TRANSCRIBED AND WHAT IS NOT
+ *
+ * Only some of this is transcribed from the disassembly. Those routines carry
+ * the image offset they were read from, and are checked against the original
+ * by tools/verify_dat.py and tools/verify_level.py.
+ *
+ * The rest - the object and steel tables, GROUNDxO.DAT, VGAGRx.DAT, terrain
+ * composition, the menu's compositing - is written from published format
+ * descriptions and checked against the data files and against what the
+ * original composes in video memory. That is real evidence but it is NOT
+ * transcription, and where those routines sit in the original is not yet
+ * established. They are marked. See STATUS.md, which keeps the two counts
+ * apart.
+ *
+ * The original is HAND-WRITTEN ASSEMBLY (docs/toolchain.md: zero
+ * push bp / mov bp,sp in the whole 131,072-byte image), so there is no
+ * compiler to match and behavioural equivalence is the standard.
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "game.h"
+
+/* ======================================================================
+ * TRANSCRIBED - image 0x01BAF: DAT decompression.
+ *
+ * Found by weight, not by guessing: inside the windows following an
+ * INT 21h AH=3Fh read this and its helpers are 83% of every instruction
+ * executed (tools/hotspots.py). Checked by tools/verify_dat.py against the
+ * original's own body: 7 calls, 150,807 bytes, byte-identical.
+ * ====================================================================== */
+
+/* The original keeps the whole decoder in registers, and the mapping is worth
+ * stating once rather than repeating at every line:
+ *
+ *   DS:SI  the compressed stream, read downwards      -> pos
+ *   ES:DI  the output, written downwards              -> o
+ *   BP     where the output stops (its start)         -> the o > 0 test
+ *   CH     bits still usable in the byte held in DL   -> avail - idx
+ *   DL     the byte bits are being shifted out of
+ *   DH     the running checksum                       -> sum
+ *   CL     how many bits the next get_bits should take
+ *   BX     a block length, always one less than the count
+ */
+typedef struct {
+    const uint8_t *data;
+    int32_t pos;         /* byte index, walking backwards  (SI) */
+    uint8_t avail;       /* bits still usable in data[pos] (CH) */
+    uint8_t idx;         /* bits taken from data[pos] so far    */
+    uint8_t sum;         /* running checksum               (DH) */
+    int overrun;
+} bitreader;
+
+/* image 0x01CA3 - take one bit, refilling from the preceding byte.
+ *
+ *   0x01ca5  dec ch                 ; a bit left in the byte we hold?
+ *   0x01ca7  jne 0x1cb0
+ *   0x01ca9  dec si                 ; no - step BACK a byte
+ *   0x01caa  mov dl, byte ptr [si]
+ *   0x01cac  xor dh, dl             ; and fold it into the checksum
+ *   0x01cae  mov ch, 8
+ *   0x01cb0  shr dl, 1              ; low bit first out of the byte
+ *
+ * The checksum is folded in as bytes are *consumed*, not computed over the
+ * section up front; see dat_decompress for why that distinction matters.
+ */
+static uint8_t get_bit(bitreader *b)
+{
+    if (b->idx >= b->avail) {
+        b->pos--;
+        b->idx = 0;
+        b->avail = 8;
+        if (b->pos < 0) {          /* addition: the original just walks off */
+            b->overrun = 1;
+            return 0;
+        }
+        b->sum ^= b->data[b->pos];
+    }
+    uint8_t v = (uint8_t)((b->data[b->pos] >> b->idx) & 1u);
+    b->idx++;
+    return v;
+}
+
+/* image 0x01CB2 - `rcl ax, 1` per bit, so the first bit read is the most
+ * significant of the value. */
+static uint32_t get_bits(bitreader *b, uint8_t n)
+{
+    uint32_t v = 0;
+    while (n--)
+        v = (v << 1) | get_bit(b);
+    return v;
+}
+
+/* image 0x01BAF - decompress one section.
+ *
+ * The dispatch is a bit tree, and the original spends 0x01BF7..0x01C6D on it:
+ *
+ *   0x01bf9  1 bit  == 1  -> 0x01c03  2 bits
+ *   0x01c09     0 or 1    -> length 3 or 4, offset in 9 or 10 bits  (0x01c0b)
+ *   0x01c1b     == 3      -> 8 bits: a run of n+9 literal bytes     (0x01c20)
+ *   0x01c38     == 2      -> 8 bits length, offset in 12 bits       (0x01c38)
+ *   0x01c47  1 bit  == 1  -> length 2, offset in 8 bits             (0x01c51)
+ *            else         -> 3 bits: a run of n+1 literal bytes     (0x01c5c)
+ *
+ * The length register BX always holds one less than the count, because the
+ * copy routine at 0x01C87 opens with `inc bx`; that is folded into the
+ * constants here rather than reproduced, since carrying an off-by-one through
+ * C for the sake of resembling the assembly would be a worse transcription.
+ *
+ * The loop ends at 0x01C6F (`cmp di, bp / jbe`), i.e. when the output pointer
+ * has reached its start - never on a marker in the stream.
+ */
+int dat_decompress(const uint8_t *comp, uint32_t comp_len,
+                   uint8_t bits_in_first, uint8_t checksum,
+                   uint8_t *out, uint32_t out_len, const char **err)
+{
+    /* 0x01BF2: the original loads the last byte and folds it into the
+     * checksum before the loop starts, with CH = bits_in_first + 1 so that
+     * the first `dec ch` leaves exactly bits_in_first usable. */
+    bitreader b = { comp, (int32_t)comp_len - 1, bits_in_first, 0, checksum, 0 };
+    if (comp_len == 0) {
+        if (err) *err = "empty section";
+        return -1;
+    }
+    b.sum ^= comp[comp_len - 1];
+    uint32_t o = out_len;
+
+    while (o > 0 && !b.overrun) {
+        uint32_t n, off;
+        if (get_bit(&b)) {                                    /* 0x01BF9 */
+            switch (get_bits(&b, 2)) {                        /* 0x01C03 */
+            case 0:  n = 3; off = get_bits(&b, 9)  + 1; break;   /* 0x01C0B */
+            case 1:  n = 4; off = get_bits(&b, 10) + 1; break;   /* 0x01C0B */
+            case 2:  n = get_bits(&b, 8) + 1;                    /* 0x01C38 */
+                     off = get_bits(&b, 12) + 1; break;
+            default: n = get_bits(&b, 8) + 9; off = 0; break;    /* 0x01C20 */
+            }
+        } else {                                              /* 0x01C47 */
+            if (get_bit(&b)) { n = 2; off = get_bits(&b, 8) + 1; }  /* 0x01C51 */
+            else             { n = get_bits(&b, 3) + 1; off = 0; }  /* 0x01C5C */
+        }
+
+        if (n > o) {               /* addition */
+            if (err) *err = "block runs past the start of the output";
+            return -1;
+        }
+        if (off == 0) {                       /* 0x01C82: emit a literal */
+            while (n--) {
+                o--;
+                out[o] = (uint8_t)get_bits(&b, 8);
+            }
+        } else {                              /* 0x01C87: copy a reference */
+            while (n--) {
+                o--;
+                if ((uint32_t)o + off >= out_len) {   /* addition */
+                    if (err) *err = "back-reference past the end of the output";
+                    return -1;
+                }
+                out[o] = out[o + off];
+            }
+        }
+    }
+    if (b.overrun) {
+        if (err) *err = "ran off the front of the compressed data";
+        return -1;
+    }
+    if (o != 0) {
+        if (err) *err = "output not filled";
+        return -1;
+    }
+    /* 0x01C75 `and dh, dh` - the original checks the running checksum only
+     * once the output is full, so bytes past the last one it needed are never
+     * folded in. Computing the XOR over the whole section up front, as this
+     * code used to, is the same thing only when the decoder consumes every
+     * byte - which is why this now mirrors the original instead. */
+    if (b.sum != 0) {
+        if (err) *err = "section checksum mismatch";
+        return -1;
+    }
+    return 0;
+}
+
+static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
+
+/* NOT TRANSCRIBED. The original streams sections through a read routine
+ * (image 0x01D2E) into one buffer as it goes; this reads the whole file and
+ * decompresses every section up front, which is the port's own arrangement. */
+int dat_load(const char *path, dat_file *out, const char **err)
+{
+    memset(out, 0, sizeof(*out));
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { if (err) *err = "cannot open file"; return -1; }
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len <= 0) { fclose(f); if (err) *err = "empty file"; return -1; }
+
+    uint8_t *blob = malloc((size_t)len);
+    if (!blob) { fclose(f); if (err) *err = "out of memory"; return -1; }
+    if (fread(blob, 1, (size_t)len, f) != (size_t)len) {
+        free(blob); fclose(f);
+        if (err) *err = "short read";
+        return -1;
+    }
+    fclose(f);
+
+    uint32_t cap = 8;
+    out->sections = calloc(cap, sizeof(*out->sections));
+    if (!out->sections) { free(blob); if (err) *err = "out of memory"; return -1; }
+
+    uint32_t pos = 0;
+    while (pos + 10 <= (uint32_t)len) {
+        uint8_t bits_in_first = blob[pos];
+        uint8_t checksum      = blob[pos + 1];
+        uint16_t dec_size     = be16(blob + pos + 4);
+        uint16_t comp_size    = be16(blob + pos + 8);
+
+        if (comp_size < 10 || pos + comp_size > (uint32_t)len)
+            break;                  /* not a section header: stop cleanly */
+
+        if (out->count == cap) {
+            cap *= 2;
+            dat_section *bigger = realloc(out->sections, cap * sizeof(*bigger));
+            if (!bigger) {
+                free(blob);
+                dat_free(out);
+                if (err) *err = "out of memory";
+                return -1;
+            }
+            out->sections = bigger;
+        }
+
+        uint8_t *dec = malloc(dec_size ? dec_size : 1);
+        if (!dec) {
+            free(blob);
+            dat_free(out);
+            if (err) *err = "out of memory";
+            return -1;
+        }
+        if (dat_decompress(blob + pos + 10, (uint32_t)comp_size - 10u,
+                       bits_in_first, checksum, dec, dec_size, err) != 0) {
+            free(dec); free(blob); dat_free(out);
+            return -1;
+        }
+        out->sections[out->count].data = dec;
+        out->sections[out->count].size = dec_size;
+        out->count++;
+        pos += comp_size;
+    }
+
+    free(blob);
+    if (out->count == 0) {
+        if (err) *err = "no sections found";
+        return -1;
+    }
+    return 0;
+}
+
+/* The port's own: the original frees through its DOS allocator. */
+void dat_free(dat_file *d)
+{
+    if (!d) return;
+    for (uint32_t i = 0; i < d->count; i++)
+        free(d->sections[i].data);
+    free(d->sections);
+    d->sections = NULL;
+    d->count = 0;
+}
+
+/* ======================================================================
+ * TRANSCRIBED - image 0x036B6: the LVL header parse; image 0x07C90:
+ * the terrain entry decode. The rest of this section (objects, steel,
+ * the name) is written from the published format, not transcribed.
+ * Checked by tools/verify_level.py: 15 fields, all agreeing.
+ * ====================================================================== */
+
+/* be16 is defined once, above: both the DAT header and the LVL header
+ * are big-endian, which is the Amiga heritage showing through. */
+
+/* A 9-bit two's-complement field, as the terrain y position uses. */
+static int16_t sign9(uint16_t v)
+{
+    return (int16_t)(v >= 256 ? (int32_t)v - 512 : (int32_t)v);
+}
+
+/* image 0x036B6 for the header, image 0x07C90 for each terrain entry. The
+ * object table, the steel table and the name are NOT transcribed - they are
+ * written from the published format, and where they live is not established. */
+int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
+{
+    if (len < 2048) {
+        if (err) *err = "level section shorter than 2048 bytes";
+        return -1;
+    }
+    memset(lv, 0, sizeof(*lv));
+
+    /* image 0x036B6 - the header parse, transcribed.
+     *
+     * The original assembles each field high byte first and then keeps only
+     * AL, so every one of these is effectively a BYTE despite occupying a
+     * word in the file:
+     *
+     *   036bc  mov ah,[di]   / mov al,[di+1]
+     *   036c1  mov [0x64],al                    release rate
+     *   036c4  mov [0x67],al                    ... stored twice
+     *   036cd  mov [0x47],al                    number of lemmings
+     *   036d6  mov [0x44],al                    number to rescue
+     *   036df  add ax,0x30 / mov [0x20a7],al    time limit, as an ASCII DIGIT
+     *   036eb  mov [0x6a],al   climbers         ... and on at stride 3 for
+     *   036f4  mov [0x6d],al   floaters             the eight skills, to
+     *   ...                                         [0x7f] for diggers
+     *   03733  add ax,0x10 / mov [0],ax         start x, plus 16
+     *   03739  shr ax,1 x3   / mov [2],ax       and that over 8
+     *
+     * `add ax, 0x30` is the giveaway on the time limit: the original converts
+     * it straight to a character, so its display only ever holds ONE digit.
+     *
+     * Keeping the low byte is transcribed rather than tidied, because the two
+     * readings differ for any count above 255 and only the original's is
+     * evidence. No level in this set has one, so it changes nothing here - it
+     * is right rather than useful. */
+    lv->release_rate  = (uint8_t)be16(buf + 0x00);
+    lv->num_lemmings  = (uint8_t)be16(buf + 0x02);
+    lv->num_to_rescue = (uint8_t)be16(buf + 0x04);
+    lv->time_limit    = (uint8_t)be16(buf + 0x06);
+    for (uint8_t i = 0; i < 8; i++)
+        lv->skills[i] = (uint8_t)be16(buf + 0x08 + i * 2);
+    /* Not truncated: the original keeps start x as a word (0x03736 stores AX,
+     * not AL), and the graphics set numbers are read elsewhere. */
+    lv->start_x               = be16(buf + 0x18);
+    lv->graphics_set          = be16(buf + 0x1A);
+    lv->extended_graphics_set = be16(buf + 0x1C);
+
+    /* Objects: 32 entries of 8 bytes at 0x20. An all-zero entry is absent. */
+    for (uint16_t i = 0; i < LEVEL_MAX_OBJECTS; i++) {
+        const uint8_t *e = buf + 0x20 + i * 8;
+        uint16_t x = be16(e), y = be16(e + 2);
+        if (!x && !y && !e[4] && !e[5] && !e[6] && !e[7])
+            continue;
+        level_object *o = &lv->objects[lv->num_objects++];
+        o->x = (int16_t)x;
+        o->y = (int16_t)y;
+        o->id = e[5];
+        o->no_overwrite    = (uint8_t)((e[6] & 0x80) != 0);
+        o->only_on_terrain = (uint8_t)((e[6] & 0x40) != 0);
+        o->upside_down     = (uint8_t)(e[7] == 0x8F);
+    }
+
+    /* Terrain: 400 entries of 4 bytes at 0x120, FF FF FF FF terminates.
+     *
+     *   byte 0: flags in bits 7..5, x bits 12..8 in bits 4..0
+     *   byte 1: x bits 7..0            - x is stored +16, so 0x0010 is 0
+     *   byte 2: y bits 8..1
+     *   byte 3: bit 7 is y bit 0; bits 5..0 are the terrain id
+     *
+     * x is THIRTEEN bits, not twelve: image 0x07C95 masks the word with
+     * 0x1FFF, so bit 12 (byte 0's 0x10) belongs to x and only bits 13-15 are
+     * flags. Ten of the 11,637 terrain entries in this demo set that bit, all
+     * in level004, and all of them land far outside the canvas either way -
+     * so it changes nothing visible here and is still what the original does.
+     *
+     * The y decode is the original's, line for line: image 0x07C90 does
+     * `sar bx, cl` with cl = 7, an ARITHMETIC shift that sign-extends the
+     * 9-bit field, and 0x07C92 does `sub bx, 4`.
+     *
+     * y is a 9-bit two's-complement value and then 4 less than it reads.
+     *
+     * Both words are BIG-endian, confirmed at image 0x03752 where the
+     * original assembles them a byte at a time high-first:
+     *   mov ah,[si] / mov al,[si+1]  and  mov bh,[si+2] / mov bl,[si+3]
+     * which is not what an 8086 word load would do, so the byte order is a
+     * deliberate choice in the game and not an artefact of the machine. */
+    for (uint16_t i = 0; i < LEVEL_MAX_TERRAIN; i++) {
+        const uint8_t *e = buf + 0x120 + i * 4;
+        /* The original stops on the FIRST WORD being 0xFFFF, not on all four
+         * bytes - image 0x03760, `cmp ax, 0xffff` where AX was assembled from
+         * e[0] and e[1] alone. Requiring all four would read past the end of
+         * the list for any level whose terminator has other bytes in its
+         * second word. No shipped level here does, but matching the original
+         * costs nothing and the difference is real. */
+        if (e[0] == 0xFF && e[1] == 0xFF)
+            break;
+        level_terrain *t = &lv->terrain[lv->num_terrain++];
+        t->x = (int16_t)((int32_t)(((e[0] & 0x1F) << 8) | e[1]) - 16);
+        t->y = (int16_t)(sign9((uint16_t)((e[2] << 1) | (e[3] >> 7))) - 4);
+        t->id = (uint8_t)(e[3] & 0x3F);
+        t->no_overwrite = (uint8_t)((e[0] & 0x80) != 0);   /* word bit 15 */
+        t->upside_down  = (uint8_t)((e[0] & 0x40) != 0);   /* word bit 14 */
+        t->erase        = (uint8_t)((e[0] & 0x20) != 0);   /* word bit 13 */
+    }
+
+    /* Steel: 32 entries of 4 bytes at 0x760, all-zero means absent.
+     * x and y are in units of 4 pixels; the last byte packs width and
+     * height as nibbles, also in units of 4 pixels. */
+    for (uint16_t i = 0; i < LEVEL_MAX_STEEL; i++) {
+        const uint8_t *e = buf + 0x760 + i * 4;
+        if (!e[0] && !e[1] && !e[2] && !e[3])
+            continue;
+        level_steel *s = &lv->steel[lv->num_steel++];
+        s->x = (int16_t)((int32_t)(((e[0] << 1) | (e[1] >> 7)) * 4) - 16);
+        s->y = (int16_t)((e[1] & 0x7F) * 4);
+        s->w = (uint8_t)((((e[2] >> 4) & 0x0F) + 1) * 4);
+        s->h = (uint8_t)(((e[2] & 0x0F) + 1) * 4);
+    }
+
+    memcpy(lv->name, buf + 0x7E0, 32);
+    lv->name[32] = '\0';
+    return 0;
+}
+
+/* A flat view of the parsed header, so tools/verify_level.py can compare
+ * against the original without mirroring `level`'s layout in Python.
+ * The order is the order the original stores them in.
+ */
+int level_header_fields(const uint8_t *buf, uint32_t len,
+                        uint16_t *out, uint32_t n_out, const char **err)
+{
+    static level lv;
+    if (n_out < 15) {
+        if (err) *err = "need room for 15 fields";
+        return -1;
+    }
+    if (level_parse(buf, len, &lv, err) != 0)
+        return -1;
+    out[0] = lv.release_rate;
+    out[1] = lv.num_lemmings;
+    out[2] = lv.num_to_rescue;
+    out[3] = lv.time_limit;
+    for (uint32_t i = 0; i < 8; i++)
+        out[4 + i] = lv.skills[i];
+    out[12] = lv.start_x;
+    out[13] = lv.graphics_set;
+    out[14] = lv.extended_graphics_set;
+    return 0;
+}
+
+/* ======================================================================
+ * NOT TRANSCRIBED - GROUNDxO.DAT, from the published description.
+ * Where this lives in the original is not established.
+ * ====================================================================== */
+
+#define GROUND_SIZE 1056
+
+static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+
+/* A 6-bit DAC value as 8 bits, the way the hardware does it: the top two bits
+ * repeated into the bottom, not a proportional scale. The two agree at 0 and
+ * 63 and differ by one in between - 0x20 is 130 here and 129 if you compute
+ * v*255/63 - and that one is enough to make every mid-tone pixel of a screen
+ * compare as different against another emulator. */
+static uint8_t widen6(uint8_t v)
+{
+    v = (uint8_t)(v & 0x3F);
+    return (uint8_t)((v << 2) | (v >> 4));
+}
+
+/* NOT TRANSCRIBED - GROUNDxO.DAT, from the published description, checked
+ * against the files. Where the original parses it is not established. */
+int ground_load(const char *path, ground *g, const char **err)
+{
+    uint8_t buf[GROUND_SIZE];
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { if (err) *err = "cannot open ground file"; return -1; }
+    size_t got = fread(buf, 1, sizeof(buf), f);
+    fclose(f);
+    if (got != sizeof(buf)) {
+        if (err) *err = "ground file is not 1056 bytes";
+        return -1;
+    }
+    memset(g, 0, sizeof(*g));
+
+    /* 16 object entries of 28 bytes, from 0x000. */
+    for (uint8_t i = 0; i < GROUND_OBJECTS; i++) {
+        const uint8_t *e = buf + i * 28;
+        ground_object *o = &g->objects[i];
+        o->animation_flags = le16(e + 0x00);
+        o->start_frame     = e[0x02];
+        o->end_frame       = e[0x03];
+        o->width           = e[0x04];
+        o->height          = e[0x05];
+        o->frame_data_size = le16(e + 0x06);
+        o->mask_offset     = le16(e + 0x08);
+        o->trigger_effect  = e[0x14];
+        o->frames_base_loc = le16(e + 0x15);
+        o->preview_frame   = e[0x17];
+    }
+
+    /* 64 terrain entries of 8 bytes, from 0x1C0. */
+    for (uint8_t i = 0; i < GROUND_TERRAIN; i++) {
+        const uint8_t *e = buf + 0x1C0 + i * 8;
+        ground_terrain *t = &g->terrain[i];
+        t->width     = e[0x00];
+        t->height    = e[0x01];
+        t->image_loc = le16(e + 0x02);
+        t->mask_loc  = le16(e + 0x04);
+    }
+
+    /* Palettes from 0x3C0: three EGA sets of 8 bytes, then three VGA sets of
+     * 8 entries x 3 bytes. Terrain only ever uses the upper eight colours,
+     * which is why its fourth bitplane doubles as the mask.
+     *
+     * The upper eight come from this set's `custom` array. The LOWER eight do
+     * NOT come from the file's `standard` array, whatever the published
+     * description implies - the game carries them itself. Measured against the
+     * original running under an emulator, fourteen of sixteen entries agreed
+     * and the two that did not were both here:
+     *
+     *   entry 4  the file holds 3C 3C 00; the game uses 2C 2C 00 - a darker
+     *            yellow. Six of the other seven file entries match the game
+     *            exactly, which is what makes this easy to miss.
+     *   entry 7  is not fixed at all. It is a copy of custom[0], so it equals
+     *            entry 8. The published note does say "entry 7 is variable";
+     *            it does not say the rest are unreliable.
+     *
+     * So the fixed eight are transcribed here as 6-bit DAC values, taken from
+     * what the original actually programs. */
+    static const uint8_t FIXED[7][3] = {
+        { 0x00, 0x00, 0x00 },   /* 0 transparent / background */
+        { 0x10, 0x10, 0x38 },   /* 1 blue    - lemming bodies */
+        { 0x00, 0x2C, 0x00 },   /* 2 green   - lemming hair   */
+        { 0x3C, 0x34, 0x34 },   /* 3 white   - skin           */
+        { 0x2C, 0x2C, 0x00 },   /* 4 dark yellow              */
+        { 0x3C, 0x08, 0x08 },   /* 5 red                      */
+        { 0x20, 0x20, 0x20 },   /* 6 grey                     */
+    };
+    const uint8_t *vga_custom = buf + 0x3D8;
+
+    for (uint8_t i = 0; i < 7; i++) {
+        g->palette[i].r = widen6(FIXED[i][0]);
+        g->palette[i].g = widen6(FIXED[i][1]);
+        g->palette[i].b = widen6(FIXED[i][2]);
+    }
+    for (uint8_t i = 0; i < 8; i++) {
+        lem_rgb c = { widen6(vga_custom[i * 3 + 0]),
+                      widen6(vga_custom[i * 3 + 1]),
+                      widen6(vga_custom[i * 3 + 2]) };
+        g->palette[8 + i] = c;
+    }
+    g->palette[7] = g->palette[8];      /* entry 7 tracks custom[0] */
+    return 0;
+}
+
+/* ======================================================================
+ * NOT TRANSCRIBED - VGAGRx.DAT, from the published description.
+ * Where this lives in the original is not established.
+ * ====================================================================== */
+
+uint8_t g_plane_bits[4] = { 0, 1, 2, 3 };
+uint8_t g_msb_first = 1;
+
+/* NOT TRANSCRIBED - a 4-bit planar bitmap out of VGAGRx.DAT. Where the
+ * original decodes these is not established. */
+int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
+                 uint8_t w, uint8_t h, uint8_t *out)
+{
+    uint32_t stride = ((uint32_t)w + 7u) / 8u;
+    uint32_t plane  = stride * (uint32_t)h;
+
+    if (loc + plane * 4u > len)
+        return -1;
+
+    memset(out, 0, (size_t)w * h);
+
+    for (uint8_t p = 0; p < 4; p++) {
+        const uint8_t *bits = sec + loc + (uint32_t)p * plane;
+        for (uint8_t y = 0; y < h; y++) {
+            const uint8_t *row = bits + (uint32_t)y * stride;
+            for (uint8_t x = 0; x < w; x++) {
+                uint8_t sh = g_msb_first ? (uint8_t)(7 - (x & 7))
+                                         : (uint8_t)(x & 7);
+                uint8_t bit = (uint8_t)((row[x >> 3] >> sh) & 1u);
+                out[(uint32_t)y * w + x] |=
+                    (uint8_t)(bit << g_plane_bits[p]);
+            }
+        }
+    }
+    return 0;
+}
+
+/* NOT TRANSCRIBED - the 1-bit transparency mask beside a bitmap. */
+int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
+                      uint8_t w, uint8_t h, uint8_t *out)
+{
+    uint32_t stride = ((uint32_t)w + 7u) / 8u;
+
+    if (loc + stride * (uint32_t)h > len)
+        return -1;
+
+    for (uint8_t y = 0; y < h; y++) {
+        const uint8_t *row = sec + loc + (uint32_t)y * stride;
+        for (uint8_t x = 0; x < w; x++)
+            out[(uint32_t)y * w + x] = (uint8_t)(
+                (row[x >> 3] >> (g_msb_first ? (7 - (x & 7)) : (x & 7))) & 1u);
+    }
+    return 0;
+}
+
+/* ======================================================================
+ * NOT TRANSCRIBED - terrain composition.
+ *
+ * Proven against what the original composes rather than against its
+ * screen: tools/prove.sh, 49,741 pixels, zero differing. That is strong
+ * evidence of equivalence and is not the same claim as transcription.
+ * ====================================================================== */
+
+terrain_mode g_terrain_mode = TERRAIN_REPLACE;
+uint8_t g_terrain_reverse = 0;
+
+/* The port's own: the original composes straight into video memory. */
+int canvas_init(canvas *c)
+{
+    c->w = LEVEL_W;
+    c->h = LEVEL_H;
+    c->pix = calloc((size_t)c->w * c->h, 1);
+    return c->pix ? 0 : -1;
+}
+
+/* The port's own. */
+void canvas_free(canvas *c)
+{
+    free(c->pix);
+    c->pix = NULL;
+}
+
+/* NOT TRANSCRIBED, but PROVEN equivalent. The original's loop is at image
+ * 0x03752..0x03768, calling a blitter at image 0x07C67; this composes the
+ * same picture without being a transcription of it. tools/prove.sh compares
+ * against what the original composes: 49,741 pixels, zero differing. */
+int render_terrain(canvas *c, const level *lv, const ground *g,
+                   const uint8_t *sec, uint32_t sec_len, const char **err)
+{
+    /* The largest terrain bitmap in any shipped set comfortably fits this. */
+    uint8_t *tile = malloc(256u * 256u);
+    if (!tile) { if (err) *err = "out of memory"; return -1; }
+
+    for (uint16_t k = 0; k < lv->num_terrain; k++) {
+        uint16_t i = g_terrain_reverse
+                   ? (uint16_t)(lv->num_terrain - 1u - k) : k;
+        const level_terrain *t = &lv->terrain[i];
+        const ground_terrain *gt = &g->terrain[t->id];
+
+        if (!gt->width || !gt->height)
+            continue;               /* a set need not define all 64 ids */
+
+        if (vgagr_decode(sec, sec_len, gt->image_loc,
+                         gt->width, gt->height, tile) != 0) {
+            free(tile);
+            if (err) *err = "terrain bitmap runs past the end of the section";
+            return -1;
+        }
+
+        for (uint8_t sy = 0; sy < gt->height; sy++) {
+            int32_t dy = t->y + sy;
+            if (dy < 0 || dy >= c->h)
+                continue;
+            uint8_t src_y = t->upside_down
+                          ? (uint8_t)(gt->height - 1u - sy) : sy;
+
+            for (uint8_t sx = 0; sx < gt->width; sx++) {
+                int32_t dx = t->x + sx;
+                if (dx < 0 || dx >= c->w)
+                    continue;
+
+                uint8_t v = tile[(uint32_t)src_y * gt->width + sx];
+
+                if (g_terrain_mode == TERRAIN_HW) {
+                    /* What the original's blitter does, read from its own
+                     * code at image 0x08B42-0x08BE2:
+                     *
+                     *   - the Graphics Controller is put in read mode 1 with
+                     *     colour compare 0x08 and don't-care 0x08, so reading
+                     *     video memory answers "is this pixel already solid
+                     *     terrain?" one bit per pixel;
+                     *   - NOT of that becomes the bit mask, so a write cannot
+                     *     land on existing terrain - that is what "do not
+                     *     overwrite" is, done in hardware;
+                     *   - GC index 3 is set to 0x10, which selects the OR
+                     *     function, so what is written is source OR latch;
+                     *   - and the inner loop is a plain `lodsb / stosb` over
+                     *     the whole row. It NEVER tests whether the source
+                     *     pixel is transparent.
+                     *
+                     * That last point is the one a per-pixel renderer gets
+                     * wrong by being sensible: the transparent parts of a
+                     * piece still deposit their colour bits, and a later
+                     * piece ORs on top of them. The result is pixels whose
+                     * value is a superset of any single piece's - which is
+                     * exactly what the original's screen shows and a
+                     * skip-if-transparent renderer cannot produce.
+                     */
+                    uint8_t *d = &c->pix[(uint32_t)dy * c->w + dx];
+                    if (!(*d & 0x08))
+                        *d = (uint8_t)(*d | v);
+                    continue;
+                }
+
+                if (!(v & 0x08))
+                    continue;       /* transparent */
+
+                uint8_t *dst = &c->pix[(uint32_t)dy * c->w + dx];
+                if (t->erase)
+                    *dst = 0;
+                else if (g_terrain_mode == TERRAIN_OR_ALL)
+                    *dst = (uint8_t)(*dst | v);
+                else if (t->no_overwrite
+                         && g_terrain_mode != TERRAIN_NOV_IGNORE) {
+                    if (g_terrain_mode == TERRAIN_NOV_INVERT) {
+                        if (*dst != 0)
+                            *dst = v;
+                    } else if (*dst == 0)
+                        *dst = v;
+                } else switch (g_terrain_mode) {
+                case TERRAIN_OR:
+                    *dst = (uint8_t)(*dst | v);
+                    break;
+                case TERRAIN_KEEP:
+                    if (*dst == 0)
+                        *dst = v;
+                    break;
+                default:
+                    *dst = v;
+                    break;
+                }
+            }
+        }
+    }
+    free(tile);
+    return 0;
+}
+
+/* NOT TRANSCRIBED, and NOT what the original does. Breaking at image
+ * 0x03789 - the final `ret` after all five composition passes - shows the
+ * original never composes objects into the level bitmap at all: it draws the
+ * entrance and the exit as animated sprites at display time. This bakes them
+ * in, which is why tools/prove.sh passes --no-objects. */
+int render_objects(canvas *c, const level *lv, const ground *g,
+                   const uint8_t *sec, uint32_t sec_len,
+                   uint8_t frame, const char **err)
+{
+    uint8_t *pix  = malloc(256u * 256u);
+    uint8_t *mask = malloc(256u * 256u);
+    if (!pix || !mask) {
+        free(pix); free(mask);
+        if (err) *err = "out of memory";
+        return -1;
+    }
+
+    for (uint16_t i = 0; i < lv->num_objects; i++) {
+        const level_object *o = &lv->objects[i];
+        if (o->id >= GROUND_OBJECTS)
+            continue;
+        const ground_object *go = &g->objects[o->id];
+        if (!go->width || !go->height)
+            continue;
+
+        /* Frames sit one after another, each frame_data_size bytes: four
+         * image planes and then the mask at mask_offset within the frame. */
+        uint8_t f = frame;
+        if (f < go->start_frame) f = go->start_frame;
+        if (f > go->end_frame)   f = go->end_frame;
+        uint32_t at = (uint32_t)go->frames_base_loc
+                    + (uint32_t)f * go->frame_data_size;
+
+        if (vgagr_decode(sec, sec_len, at, go->width, go->height, pix) != 0 ||
+            vgagr_decode_mask(sec, sec_len, at + go->mask_offset,
+                              go->width, go->height, mask) != 0) {
+            free(pix); free(mask);
+            if (err) *err = "object bitmap runs past the end of the section";
+            return -1;
+        }
+
+        for (uint8_t sy = 0; sy < go->height; sy++) {
+            int32_t dy = o->y + sy;
+            if (dy < 0 || dy >= c->h)
+                continue;
+            uint8_t src_y = o->upside_down
+                          ? (uint8_t)(go->height - 1u - sy) : sy;
+
+            for (uint8_t sx = 0; sx < go->width; sx++) {
+                int32_t dx = o->x + sx;
+                if (dx < 0 || dx >= c->w)
+                    continue;
+                uint32_t si = (uint32_t)src_y * go->width + sx;
+                if (!mask[si])
+                    continue;
+
+                uint8_t *dst = &c->pix[(uint32_t)dy * c->w + dx];
+                if (o->only_on_terrain && *dst == 0)
+                    continue;
+                if (o->no_overwrite && *dst != 0)
+                    continue;
+                *dst = pix[si];
+            }
+        }
+    }
+    free(pix);
+    free(mask);
+    return 0;
+}
+
+/* ======================================================================
+ * PARTLY TRANSCRIBED - the main menu screen.
+ *
+ * The palette (image 0x0E3C0) and both credit strings (image 0x0E56C and
+ * 0x0E587) are transcribed and carry their addresses. The geometry was
+ * MEASURED against the original's composed screen, and the compositing
+ * code is the port's own. tools/verify_menu.py: 94.67%.
+ * ====================================================================== */
+
+/* MAIN.DAT section 3 holds the menu's graphics; section 4 ends with its font. */
+#define MENU_SECTION 3
+#define FONT_SECTION 4
+
+/* The font: 16x16 glyphs, three 32-byte planes each, indexed straight by ASCII
+ * code. 96 bytes a glyph, and the block runs from character 0 to 126 - which
+ * ends at 23888 + 127*96 = 36080, exactly the length of section 4. That the
+ * arithmetic lands on the end of the section is the confirmation that the
+ * glyph size and the base are both right.
+ *
+ * Plane 2 doubles as the opacity mask, because every colour the font uses is
+ * 4..7 and so has bit 2 set. Deriving the layout took three tries: the mask is
+ * the LAST of the three planes, not the first, and reading it as the first
+ * scores 51%. As the last, with plane 0 then plane 1 before it, it is 100.0%
+ * over both credit lines - 5606 masked pixels, none differing. */
+#define FONT_BASE   23888
+#define FONT_GLYPH  96
+#define FONT_PLANE  32
+#define FONT_W      16
+#define FONT_H      16
+#define FONT_MASK_PLANE 2
+
+/* Both lines come from the executable, not from a data file, so they are
+ * transcribed here with the address they were read from - the same treatment a
+ * routine gets. They sit in a table of the menu's and briefing's strings. */
+static const char CREDIT_1[] = "(C)MCMXCI Psygnosis Ltd";   /* image 0x0E56C */
+static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
+
+/* Where a line of n characters starts. Centring alone gives 136 and 184 for
+ * the two lines; the original draws them at 128 and 176, so it centres and
+ * then backs off half a character. Both lines agree on that, which is why it
+ * is written as a rule rather than as two measured constants. */
+#define TEXT_X(n)   (uint16_t)((MENU_W - (n) * FONT_W) / 2 - FONT_W / 2)
+#define CREDIT_1_Y  272
+#define CREDIT_2_Y  288
+
+/* The background tile. Two planes only - it uses four colours - so values are
+ * 0..3 and planes 2 and 3 are implicitly zero. Confirmed by measurement:
+ * assembling it from four consecutive 4160-byte blocks scores 39%, and
+ * forcing planes 2 and 3 to zero scores 95.6%. */
+#define BG_W      320
+#define BG_H      104
+#define BG_STRIDE 40
+#define BG_PLANE0 0
+#define BG_PLANE1 4160
+
+/* The logo, at screen (8,10). 632 wide, so it ends exactly at x=639. */
+#define LOGO_BASE   8320
+#define LOGO_W      632
+#define LOGO_H      94
+#define LOGO_STRIDE 79
+#define LOGO_PLANE  7426
+#define LOGO_X      8
+#define LOGO_Y      10
+
+/* The six signs, one atlas entry each, 4 x 915 = 3660 bytes apart. The atlas
+ * begins at 38024, which is exactly where the logo's fourth plane ends. */
+#define SIGN_BASE   38024
+#define SIGN_W      120
+#define SIGN_H      61
+#define SIGN_STRIDE 15
+#define SIGN_PLANE  915
+#define SIGN_STEP   3660
+
+static const struct { uint16_t x, y; } SIGN_POS[6] = {
+    {  68, 120 },   /* F1  1 PLAYER   */
+    { 196, 120 },   /* F2  NEW LEVEL  */
+    { 324, 120 },   /* F3  FX         */
+    { 452, 120 },   /* F4  FUN        */
+    { 196, 197 },   /* ESC EXIT TO DOS*/
+    { 324, 197 },   /* F4  ?          */
+};
+
+/* The menu palette, transcribed from image 0x0E3C0 - sixteen 6-bit RGB
+ * triples, in attribute-register order. It is a table in the executable, not
+ * in any data file, so it is transcribed here the way a routine would be.
+ *
+ * These go to DAC entries 0-5, 0x14, 7, 0x38-0x3F, which is the BIOS default
+ * attribute palette for mode 10h - the game does not reprogram it. That
+ * mapping matters only when comparing against the emulator's own screen dump,
+ * which reports DAC indices; the port keeps the 4-bit values. */
+static const uint8_t MENU_PAL6[48] = {
+    0x00,0x00,0x00,  0x20,0x10,0x08,  0x18,0x0c,0x08,  0x0c,0x00,0x04,
+    0x08,0x02,0x1f,  0x10,0x0b,0x24,  0x1a,0x16,0x29,  0x26,0x23,0x2f,
+    0x00,0x14,0x00,  0x00,0x18,0x04,  0x00,0x1c,0x08,  0x00,0x20,0x10,
+    0x34,0x34,0x34,  0x2c,0x2c,0x00,  0x10,0x14,0x2c,  0x38,0x20,0x24,
+};
+
+/* 6 bits to 8 by REPLICATING the top bits, not by scaling to 255. 0x3F must
+ * come out 255 and 0x00 must come out 0, and v*255/63 gets both right and
+ * everything between subtly wrong. */
+static uint8_t dac8(uint8_t v)
+{
+    v &= 0x3F;
+    return (uint8_t)((v << 2) | (v >> 4));
+}
+
+/* One pixel out of a planar bitmap. `planes` is how far apart consecutive
+ * planes are; pass 0 for the two-plane background and only bits 0 and 1 are
+ * read. The leftmost pixel of a byte is its most significant bit. */
+static uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
+                      uint16_t stride, uint8_t nplanes,
+                      uint16_t x, uint16_t y)
+{
+    uint8_t v = 0;
+    for (uint8_t p = 0; p < nplanes; p++) {
+        uint32_t o = base + p * plane_step + (uint32_t)y * stride + (x >> 3);
+        v = (uint8_t)(v | (((sec[o] >> (7 - (x & 7))) & 1u) << p));
+    }
+    return v;
+}
+
+/* Blit a 4-plane sprite, treating value 0 as transparent. That the logo and
+ * the signs are keyed on 0 rather than drawn opaquely is measured: drawn
+ * opaquely the logo's own bounding box scores 35%, keyed it scores 95%+, and
+ * the background texture is plainly visible between the letters. */
+static void blit(uint8_t *dst, const uint8_t *sec, uint32_t base,
+                 uint16_t w, uint16_t h, uint16_t stride, uint32_t plane,
+                 uint16_t at_x, uint16_t at_y)
+{
+    for (uint16_t sy = 0; sy < h; sy++) {
+        uint16_t y = at_y + sy;
+        if (y >= MENU_H) break;
+        for (uint16_t sx = 0; sx < w; sx++) {
+            uint16_t x = at_x + sx;
+            if (x >= MENU_W) break;
+            uint8_t v = planar(sec, base, plane, stride, 4, sx, sy);
+            if (v) dst[(size_t)y * MENU_W + x] = v;
+        }
+    }
+}
+
+/* One glyph, keyed on plane 2. Characters outside the block are skipped
+ * rather than clamped: a wrong glyph is worse than a gap, because it looks
+ * like a font bug rather than a missing character. */
+static void draw_char(uint8_t *dst, const uint8_t *font, uint32_t font_len,
+                      uint8_t ch, uint16_t at_x, uint16_t at_y)
+{
+    /* A space draws NOTHING. Its slot in the font is not blank - it holds
+     * something, and drawing it puts ink where the original leaves background,
+     * which is the whole of the difference between 94.3% and 100% on the
+     * credit lines. So the original's text routine skips the character rather
+     * than relying on an empty glyph. */
+    if (ch == ' ') return;
+    uint32_t g = FONT_BASE + (uint32_t)ch * FONT_GLYPH;
+    if (ch > 126 || g + FONT_GLYPH > font_len) return;
+    for (uint16_t gy = 0; gy < FONT_H; gy++) {
+        uint16_t y = at_y + gy;
+        if (y >= MENU_H) break;
+        for (uint16_t gx = 0; gx < FONT_W; gx++) {
+            uint16_t x = at_x + gx;
+            if (x >= MENU_W) break;
+            uint32_t o = g + gy * 2 + (gx >> 3);
+            uint8_t sh = (uint8_t)(7 - (gx & 7));
+            uint8_t mask = (font[o + FONT_MASK_PLANE * FONT_PLANE] >> sh) & 1u;
+            if (!mask) continue;
+            uint8_t v = (uint8_t)(
+                (1u << FONT_MASK_PLANE)
+                | ((font[o] >> sh) & 1u)
+                | (((font[o + FONT_PLANE] >> sh) & 1u) << 1));
+            dst[(size_t)y * MENU_W + x] = v;
+        }
+    }
+}
+
+/* The port's own. */
+static void draw_text(uint8_t *dst, const uint8_t *font, uint32_t font_len,
+                      const char *text, uint16_t at_y)
+{
+    size_t n = strlen(text);
+    uint16_t x = TEXT_X((uint16_t)n);
+    for (size_t i = 0; i < n; i++)
+        draw_char(dst, font, font_len, (uint8_t)text[i],
+                  (uint16_t)(x + i * FONT_W), at_y);
+}
+
+/* NOT TRANSCRIBED - the port's own compositing of the original's own
+ * graphics and geometry. Every constant it uses was measured against the
+ * screen the original composes; tools/verify_menu.py scores it at 94.67%. */
+int menu_build(const char *dir, menu_screen *m, const char **err)
+{
+    memset(m, 0, sizeof(*m));
+
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/main.dat", dir);
+    dat_file d;
+    if (dat_load(path, &d, err) != 0)
+        return -1;
+    if (d.count <= MENU_SECTION) {
+        dat_free(&d);
+        if (err) *err = "main.dat has no menu section";
+        return -1;
+    }
+    if (d.count <= FONT_SECTION) {
+        dat_free(&d);
+        if (err) *err = "main.dat has no font section";
+        return -1;
+    }
+    const uint8_t *sec = d.sections[MENU_SECTION].data;
+    uint32_t seclen = d.sections[MENU_SECTION].size;
+    const uint8_t *font = d.sections[FONT_SECTION].data;
+    uint32_t fontlen = d.sections[FONT_SECTION].size;
+    if (seclen < SIGN_BASE + 6u * SIGN_STEP) {
+        dat_free(&d);
+        if (err) *err = "menu section is shorter than the menu needs";
+        return -1;
+    }
+
+    m->pix = calloc((size_t)MENU_W * MENU_H, 1);
+    if (!m->pix) {
+        dat_free(&d);
+        if (err) *err = "out of memory";
+        return -1;
+    }
+    for (uint8_t i = 0; i < 16; i++) {
+        m->palette[i].r = dac8(MENU_PAL6[i * 3 + 0]);
+        m->palette[i].g = dac8(MENU_PAL6[i * 3 + 1]);
+        m->palette[i].b = dac8(MENU_PAL6[i * 3 + 2]);
+    }
+
+    /* The background, tiled from (0,0). 640 is exactly two tiles across; the
+     * vertical repeat at 104 does not divide 350, so the bottom tile is cut
+     * off mid-way, which is what the original shows too. */
+    for (uint16_t y = 0; y < MENU_H; y++)
+        for (uint16_t x = 0; x < MENU_W; x++)
+            m->pix[(size_t)y * MENU_W + x] =
+                planar(sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE, 2,
+                       x % BG_W, y % BG_H);
+
+    blit(m->pix, sec, LOGO_BASE, LOGO_W, LOGO_H, LOGO_STRIDE, LOGO_PLANE,
+         LOGO_X, LOGO_Y);
+    for (uint8_t i = 0; i < 6; i++)
+        blit(m->pix, sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
+             SIGN_W, SIGN_H, SIGN_STRIDE, SIGN_PLANE,
+             SIGN_POS[i].x, SIGN_POS[i].y);
+
+    draw_text(m->pix, font, fontlen, CREDIT_1, CREDIT_1_Y);
+    draw_text(m->pix, font, fontlen, CREDIT_2, CREDIT_2_Y);
+
+    dat_free(&d);
+    return 0;
+}
+
+/* The port's own. */
+void menu_free(menu_screen *m)
+{
+    if (!m) return;
+    free(m->pix);
+    m->pix = NULL;
+}
+
+/* The signs, as things the player can choose.
+ *
+ * The keys are the ones the original prints on the plates themselves - F1, F2,
+ * F3, ESC and F4 - so the mapping is read off the game's own screen rather
+ * than guessed at. The "FUN" plate carries two small arrow tabs instead of a
+ * function key, which is why it answers to Up and Down.
+ *
+ * The box is the whole 120x61 sprite, which includes the lemming standing
+ * behind the plate. Whether the original's own hit test is that generous has
+ * not been checked; it is the obvious reading of the sprite and it is marked
+ * here as unverified rather than presented as transcribed.
+ */
+static const view_hotspot SIGN_SPOT[6] = {
+    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F1,   MENU_PLAY      },
+    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F2,   MENU_NEW_LEVEL },
+    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F3,   MENU_FX        },
+    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_UP,   MENU_RATING    },
+    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_ESC,  MENU_EXIT      },
+    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F4,   MENU_HELP      },
+};
+
+/* The port's own. The KEYS are the original's, read off the plates it draws
+ * on its own screen - F1, F2, F3, ESC, F4 - so the mapping is evidence. What
+ * each does beyond F1 and ESC is not reconstructed. */
+void menu_hotspots(view_hotspot *spots)
+{
+    for (uint8_t i = 0; i < 6; i++) {
+        spots[i].x = SIGN_POS[i].x;
+        spots[i].y = SIGN_POS[i].y;
+        spots[i].w = SIGN_W;
+        spots[i].h = SIGN_H;
+        spots[i].key = SIGN_SPOT[i].key;
+        spots[i].id = SIGN_SPOT[i].id;
+    }
+    /* Down does what Up does: the rating plate has two arrows and neither is
+     * implemented, so pretending they differ would be inventing behaviour. */
+    spots[6] = spots[3];
+    spots[6].w = 0;
+    spots[6].h = 0;
+    spots[6].key = VIEW_KEY_DOWN;
+}
+
+menu_action menu_run(const menu_screen *m, uint8_t scale)
+{
+    view_hotspot spots[MENU_HOTSPOTS];
+    menu_hotspots(spots);
+    int32_t r = view_interact(m->pix, MENU_W, MENU_H, m->palette,
+                              "PC Lemmings", scale, spots, MENU_HOTSPOTS);
+    if (r == VIEW_CLOSED) return MENU_EXIT;
+    return (menu_action)r;
+}

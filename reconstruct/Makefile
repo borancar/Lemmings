@@ -17,7 +17,7 @@ endif
 CFLAGS  += $(SDL_CFLAGS)
 LDFLAGS += $(SDL_LIBS)
 
-SRC := $(wildcard src/*.c)
+SRC := src/game.c src/sdl_io.c src/main.c
 OBJ := $(SRC:.c=.o)
 BIN := lemmings
 
@@ -29,7 +29,22 @@ $(BIN): $(OBJ)
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean:
-	rm -f $(OBJ) $(BIN)
+# The menu's input, checked rather than eyeballed: the test pushes synthetic
+# SDL events and asserts what menu_run returns. SDL's dummy video driver means
+# it needs no display.
+TEST_BIN := tests/menu_input
+TEST_OBJ := src/game.o src/sdl_io.o
 
-.PHONY: all clean
+$(TEST_BIN): tests/menu_input.c $(TEST_OBJ)
+	$(CC) $(CFLAGS) -Isrc -o $@ $< $(TEST_OBJ) $(LDFLAGS)
+
+# SDL's dummy video driver: the test must never try to open a real window, so
+# it runs the same way on a developer's desktop and on a headless machine. The
+# test sets the hint itself as well; this is the belt to that pair of braces.
+test: $(TEST_BIN)
+	SDL_VIDEODRIVER=dummy ./$(TEST_BIN) $(DATA)
+
+clean:
+	rm -f $(OBJ) $(BIN) $(TEST_BIN)
+
+.PHONY: all clean test

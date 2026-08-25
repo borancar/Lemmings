@@ -128,6 +128,24 @@ the original does not.
 - **The port shows a screen by default.** `./lemmings` with no arguments opens
   the game; `--out` or `--raw` is what asks for a file instead. A
   reconstruction whose default output is a bitmap is a converter.
+- **The port's `.c` files mirror the original's translation units**, not our
+  own idea of modules. Compilers of the period emitted one object per source
+  file and the linker laid each module into the segment whole and in link
+  order, so a contiguous run of addresses is one original source file and
+  address order is source order inside it. That is the only division of this
+  program its authors made. The port is `game.c` + `game.h`; `sdl_io.c` and
+  `main.c` are boundaries **the port chose**, and their headers say so.
+- **Every function carries where it came from** — the image offset if it is
+  transcribed, and an explicit "not transcribed, address unknown" if it is
+  not. Transcribed *data* (a palette, a string table) takes the same comment.
+  This is the convention that decays first: each omission is trivial and the
+  loss only shows up later, when a verifier disagrees and there is no way to
+  find the routine it disagreed about.
+- **No licence header on reconstructed code.** The original's licence is
+  unknown and a file transcribed out of someone else's binary is not ours to
+  licence; an SPDX line asserts exactly that, machine-readably. Reconstructed
+  sources carry a provenance header naming the binary instead. Our own
+  tooling is a different matter.
 - **`stdint` types only** in the reconstruction — `uint8_t`, `uint16_t`,
   `int16_t`, `uint32_t`. Never `unsigned`, `unsigned char`, `short`, `long` or a
   bare `int`. `char` stays `char` for real strings (paths, `printf`).

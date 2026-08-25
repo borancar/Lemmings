@@ -1,15 +1,16 @@
-/* SPDX-License-Identifier: GPL-2.0-only
+/* main.c - the command line, and the screens it can ask for.
  *
- * PC Lemmings, reconstructed.
+ * THIS FILE IS THE PORT'S OWN: the original had no command line. It exists so
+ * a developer can ask for one screen, or for a file to compare against the
+ * emulator, without going through the game.
+ *
+ * Run with no arguments it SHOWS A SCREEN - the main menu. A reconstruction
+ * whose default output is a bitmap is a converter; asking for --out or --raw
+ * is what turns the window off.
  *
  *   ./lemmings                       the main menu, in a window
  *   ./lemmings --level 3             the third level in the container
- *   ./lemmings --data ../lemming1.pc
- *   ./lemmings --out /tmp/x.bmp      write a picture instead of showing one
- *
- * Running it with no arguments SHOWS A SCREEN. A reconstruction whose default
- * output is a bitmap is a converter; the burden of proof is to be the game.
- * Asking for a file with --out or --raw is what turns the window off.
+ *   ./lemmings --out x.bmp           write a picture instead of showing one
  *
  * It reads the player's own copy of the original data files; nothing of the
  * game is redistributed here.
@@ -18,14 +19,63 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "bmp.h"
-#include "dat.h"
-#include "ground.h"
-#include "level.h"
-#include "menu.h"
-#include "render.h"
-#include "vgagr.h"
-#include "view.h"
+#include "game.h"
+
+/* --- BMP output: the port's own, for looking at and for diffing. --- */
+
+
+
+static void put16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
+static void put32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)v;         p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
+}
+
+int bmp_write(const char *path, const uint8_t *indices,
+              uint16_t w, uint16_t h, const lem_rgb *palette,
+              const char **err)
+{
+    uint32_t row = ((uint32_t)w * 3u + 3u) & ~3u;   /* rows pad to 4 bytes */
+    uint32_t pix_bytes = row * h;
+
+    uint8_t hdr[54];
+    memset(hdr, 0, sizeof(hdr));
+    hdr[0] = 'B'; hdr[1] = 'M';
+    put32(hdr + 2, 54u + pix_bytes);
+    put32(hdr + 10, 54u);
+    put32(hdr + 14, 40u);
+    put32(hdr + 18, w);
+    put32(hdr + 22, h);
+    put16(hdr + 26, 1);
+    put16(hdr + 28, 24);
+    put32(hdr + 34, pix_bytes);
+
+    FILE *f = fopen(path, "wb");
+    if (!f) { if (err) *err = "cannot open output file"; return -1; }
+    fwrite(hdr, 1, sizeof(hdr), f);
+
+    uint8_t *line = calloc(row, 1);
+    if (!line) { fclose(f); if (err) *err = "out of memory"; return -1; }
+
+    /* BMP rows run bottom to top. */
+    for (int32_t y = (int32_t)h - 1; y >= 0; y--) {
+        memset(line, 0, row);
+        for (uint16_t x = 0; x < w; x++) {
+            lem_rgb c = palette[indices[(uint32_t)y * w + x] & 0x0F];
+            line[x * 3 + 0] = c.b;
+            line[x * 3 + 1] = c.g;
+            line[x * 3 + 2] = c.r;
+        }
+        fwrite(line, 1, row, f);
+    }
+    free(line);
+    fclose(f);
+    return 0;
+}
+
+
+
 
 static const char *SKILL_NAMES[8] = {
     "climber", "floater", "bomber", "blocker",
@@ -56,125 +106,15 @@ static void usage(void)
           stderr);
 }
 
-int main(int argc, char **argv)
+/* Load a level, compose it, and do whatever the command line asked for
+ * with the result. Split out of main() so the menu can start a level and
+ * come back, which is what makes the menu a menu rather than a picture. */
+static int render_level(const char *data, const char *file, uint32_t which,
+                        int objects, const char *out, const char *raw,
+                        uint8_t scale, int show)
 {
-    /* The level the GAME calls "Level 1" is not the first level in the first
-     * file. In this demo build it is section 1 (0-based) of level009.dat -
-     * established by running the original under an emulator and reading its
-     * own briefing screen: "Just dig!", 10 lemmings, 10% to be saved, release
-     * rate 50, 5 minutes, diggers only. Parsing that section gives exactly
-     * those numbers. The demo's level order is not its file order, and what
-     * maps one to the other has not been traced yet. */
-    const char *data = ".";
-    const char *file = "level009.dat";
-    const char *out  = NULL;
-    const char *raw  = NULL;
-    uint32_t which = 2;
-    uint8_t scale = 3;
-    int show = 0;
-    /* The menu is the default screen, and anything that names a level asks
-     * for the level instead. --out and --raw are file requests, so they turn
-     * the window off unless --show says otherwise; that is what keeps
-     * tools/prove.sh working unchanged. */
-    int want_menu = 1;
-    int menu_forced = 0;
-    /* The original composes terrain first and draws objects afterwards, so a
-     * capture taken at the end of its terrain loop has no objects in it. This
-     * lets the port match that, for a comparison that is terrain against
-     * terrain and nothing else. */
-    int objects = 1;
-
-    for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
-        else if (!strcmp(argv[i], "--menu")) menu_forced = 1;
-        else if (!strcmp(argv[i], "--file") && i + 1 < argc)  { file = argv[++i]; want_menu = 0; }
-        else if (!strcmp(argv[i], "--out") && i + 1 < argc)   { out  = argv[++i]; want_menu = 0; }
-        else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
-        else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--show")) show = 1;
-        else if (!strcmp(argv[i], "--no-objects")) objects = 0;
-        else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }
-        else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;
-        else if (!strcmp(argv[i], "--bitorder") && i + 1 < argc) {
-            const char *o = argv[++i];
-            if (!strcmp(o, "msb"))      g_msb_first = 1;
-            else if (!strcmp(o, "lsb")) g_msb_first = 0;
-            else { usage(); return 2; }
-        }
-        else if (!strcmp(argv[i], "--planebits") && i + 1 < argc) {
-            const char *o = argv[++i];
-            if (strlen(o) != 4) { usage(); return 2; }
-            for (uint8_t k = 0; k < 4; k++)
-                g_plane_bits[k] = (uint8_t)(o[k] - '0');
-        }
-        else if (!strcmp(argv[i], "--terrain") && i + 1 < argc) {
-            const char *m = argv[++i];
-            if (!strcmp(m, "replace"))   g_terrain_mode = TERRAIN_REPLACE;
-            else if (!strcmp(m, "or"))   g_terrain_mode = TERRAIN_OR;
-            else if (!strcmp(m, "keep")) g_terrain_mode = TERRAIN_KEEP;
-            else if (!strcmp(m, "nov-ignore")) g_terrain_mode = TERRAIN_NOV_IGNORE;
-            else if (!strcmp(m, "nov-invert")) g_terrain_mode = TERRAIN_NOV_INVERT;
-            else if (!strcmp(m, "or-all")) g_terrain_mode = TERRAIN_OR_ALL;
-            else if (!strcmp(m, "hw")) g_terrain_mode = TERRAIN_HW;
-            else { usage(); return 2; }
-        }
-        else { usage(); return 2; }
-    }
-
     char path[1024];
     const char *err = "unknown error";
-
-    /* An explicit --menu wins whatever else is on the line, and whatever
-     * order it came in; without it, naming a level or a file is what turns
-     * the menu off. */
-    if (menu_forced) want_menu = 1;
-
-    if (want_menu) {
-        menu_screen mm;
-        if (menu_build(data, &mm, &err) != 0) {
-            fprintf(stderr, "main menu: %s\n", err);
-            return 1;
-        }
-        printf("PC Lemmings - main menu  (%dx%d, from main.dat)\n",
-               MENU_W, MENU_H);
-        int rc = 0;
-        if (raw) {
-            /* Same 'LEMRW2' container the level uses, so one comparison tool
-             * reads both: magic, w, h, 16 RGB triples, then w*h indices. */
-            FILE *rf = fopen(raw, "wb");
-            if (!rf) {
-                fprintf(stderr, "%s: cannot open for writing\n", raw);
-                rc = 1;
-            } else {
-                uint16_t wh[2] = { MENU_W, MENU_H };
-                fwrite("LEMRW2", 1, 6, rf);
-                fwrite(wh, sizeof(uint16_t), 2, rf);
-                for (uint8_t i = 0; i < 16; i++) {
-                    fputc(mm.palette[i].r, rf);
-                    fputc(mm.palette[i].g, rf);
-                    fputc(mm.palette[i].b, rf);
-                }
-                fwrite(mm.pix, 1, (size_t)MENU_W * MENU_H, rf);
-                fclose(rf);
-                printf("   wrote %s (raw indices)\n", raw);
-            }
-        }
-        if (out) {
-            if (bmp_write(out, mm.pix, MENU_W, MENU_H, mm.palette,
-                          &err) != 0) {
-                fprintf(stderr, "%s: %s\n", out, err);
-                rc = 1;
-            } else {
-                printf("   wrote %s (%dx%d)\n", out, MENU_W, MENU_H);
-            }
-        }
-        if ((!out && !raw) || show)
-            rc = view_show(mm.pix, MENU_W, MENU_H, MENU_W, MENU_H,
-                           mm.palette, "PC Lemmings", 0, scale);
-        menu_free(&mm);
-        return rc;
-    }
-
     snprintf(path, sizeof(path), "%s/%s", data, file);
     dat_file levels;
     if (dat_load(path, &levels, &err) != 0) {
@@ -294,4 +234,146 @@ int main(int argc, char **argv)
     }
     canvas_free(&c);
     return 0;
+}
+
+int main(int argc, char **argv)
+{
+    /* The level the GAME calls "Level 1" is not the first level in the first
+     * file. In this demo build it is section 1 (0-based) of level009.dat -
+     * established by running the original under an emulator and reading its
+     * own briefing screen: "Just dig!", 10 lemmings, 10% to be saved, release
+     * rate 50, 5 minutes, diggers only. Parsing that section gives exactly
+     * those numbers. The demo's level order is not its file order, and what
+     * maps one to the other has not been traced yet. */
+    const char *data = ".";
+    const char *file = "level009.dat";
+    const char *out  = NULL;
+    const char *raw  = NULL;
+    uint32_t which = 2;
+    uint8_t scale = 3;
+    int show = 0;
+    /* The menu is the default screen, and anything that names a level asks
+     * for the level instead. --out and --raw are file requests, so they turn
+     * the window off unless --show says otherwise; that is what keeps
+     * tools/prove.sh working unchanged. */
+    int want_menu = 1;
+    int menu_forced = 0;
+    /* The original composes terrain first and draws objects afterwards, so a
+     * capture taken at the end of its terrain loop has no objects in it. This
+     * lets the port match that, for a comparison that is terrain against
+     * terrain and nothing else. */
+    int objects = 1;
+
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
+        else if (!strcmp(argv[i], "--menu")) menu_forced = 1;
+        else if (!strcmp(argv[i], "--file") && i + 1 < argc)  { file = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--out") && i + 1 < argc)   { out  = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
+        else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--show")) show = 1;
+        else if (!strcmp(argv[i], "--no-objects")) objects = 0;
+        else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;
+        else if (!strcmp(argv[i], "--bitorder") && i + 1 < argc) {
+            const char *o = argv[++i];
+            if (!strcmp(o, "msb"))      g_msb_first = 1;
+            else if (!strcmp(o, "lsb")) g_msb_first = 0;
+            else { usage(); return 2; }
+        }
+        else if (!strcmp(argv[i], "--planebits") && i + 1 < argc) {
+            const char *o = argv[++i];
+            if (strlen(o) != 4) { usage(); return 2; }
+            for (uint8_t k = 0; k < 4; k++)
+                g_plane_bits[k] = (uint8_t)(o[k] - '0');
+        }
+        else if (!strcmp(argv[i], "--terrain") && i + 1 < argc) {
+            const char *m = argv[++i];
+            if (!strcmp(m, "replace"))   g_terrain_mode = TERRAIN_REPLACE;
+            else if (!strcmp(m, "or"))   g_terrain_mode = TERRAIN_OR;
+            else if (!strcmp(m, "keep")) g_terrain_mode = TERRAIN_KEEP;
+            else if (!strcmp(m, "nov-ignore")) g_terrain_mode = TERRAIN_NOV_IGNORE;
+            else if (!strcmp(m, "nov-invert")) g_terrain_mode = TERRAIN_NOV_INVERT;
+            else if (!strcmp(m, "or-all")) g_terrain_mode = TERRAIN_OR_ALL;
+            else if (!strcmp(m, "hw")) g_terrain_mode = TERRAIN_HW;
+            else { usage(); return 2; }
+        }
+        else { usage(); return 2; }
+    }
+
+    const char *err = "unknown error";
+
+    /* An explicit --menu wins whatever else is on the line, and whatever
+     * order it came in; without it, naming a level or a file is what turns
+     * the menu off. */
+    if (menu_forced) want_menu = 1;
+
+    if (want_menu) {
+        menu_screen mm;
+        if (menu_build(data, &mm, &err) != 0) {
+            fprintf(stderr, "main menu: %s\n", err);
+            return 1;
+        }
+        printf("PC Lemmings - main menu  (%dx%d, from main.dat)\n",
+               MENU_W, MENU_H);
+        int rc = 0;
+        if (raw) {
+            /* Same 'LEMRW2' container the level uses, so one comparison tool
+             * reads both: magic, w, h, 16 RGB triples, then w*h indices. */
+            FILE *rf = fopen(raw, "wb");
+            if (!rf) {
+                fprintf(stderr, "%s: cannot open for writing\n", raw);
+                rc = 1;
+            } else {
+                uint16_t wh[2] = { MENU_W, MENU_H };
+                fwrite("LEMRW2", 1, 6, rf);
+                fwrite(wh, sizeof(uint16_t), 2, rf);
+                for (uint8_t i = 0; i < 16; i++) {
+                    fputc(mm.palette[i].r, rf);
+                    fputc(mm.palette[i].g, rf);
+                    fputc(mm.palette[i].b, rf);
+                }
+                fwrite(mm.pix, 1, (size_t)MENU_W * MENU_H, rf);
+                fclose(rf);
+                printf("   wrote %s (raw indices)\n", raw);
+            }
+        }
+        if (out) {
+            if (bmp_write(out, mm.pix, MENU_W, MENU_H, mm.palette,
+                          &err) != 0) {
+                fprintf(stderr, "%s: %s\n", out, err);
+                rc = 1;
+            } else {
+                printf("   wrote %s (%dx%d)\n", out, MENU_W, MENU_H);
+            }
+        }
+        if (out || raw) {          /* a file was the point of the run */
+            menu_free(&mm);
+            return rc;
+        }
+
+        /* The menu loop. F1 starts the level and coming back out of it
+         * returns here, which is the whole point of the screen. */
+        for (;;) {
+            menu_action a = menu_run(&mm, scale);
+            if (a == MENU_EXIT) break;
+            if (a == MENU_PLAY) {
+                render_level(data, file, which, objects, NULL, NULL,
+                             scale, 1);
+                continue;
+            }
+            /* The other four plates are drawn and answer to their keys, but
+             * what they DO is not reconstructed. Saying so is better than a
+             * silent no-op, which reads as a broken button. */
+            printf("  %s is not reconstructed yet\n",
+                   a == MENU_NEW_LEVEL ? "F2, \"NEW LEVEL\"" :
+                   a == MENU_FX        ? "F3, \"FX\"" :
+                   a == MENU_RATING    ? "the rating plate" :
+                                         "F4, the \"?\" plate");
+        }
+        menu_free(&mm);
+        return rc;
+    }
+
+    return render_level(data, file, which, objects, out, raw, scale, show);
 }

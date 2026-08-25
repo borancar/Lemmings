@@ -10,3 +10,4 @@ build/
 reconstruct/lemmings
 reconstruct/src/*.o
 *.bmp
+reconstruct/tests/menu_input
