@@ -21,7 +21,7 @@ import pygame
 set_game_dir(lemmings.GAME_DIR)
 pygame.init()
 
-LO, LEN = 0x00600, 0x400          # a slice of the protected region
+LO, LEN = 0x00D00, 0x200          # the second-stage handler region
 SHOTS = (2_000_000, 3_000_000, 4_000_000)
 
 m = lemmings.LemmingsVga(lemmings.EXE, max_insns=1 << 62,

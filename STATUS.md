@@ -48,14 +48,33 @@ Each of these is stated as what was *checked*, not what was written.
   [docs/protection.md](docs/protection.md). `IVT[01h]` = image 0x00DFF;
   `EFLAGS = 0x0146` (TF set) at handler entry with no `int 1` in the stream;
   108 single-steps in a whole start-up run.
-- **The protected code does not re-encrypt behind itself.** Image
-  0x00600..0x00A00 compared byte-for-byte at instruction 2,000,000 vs 3,000,000
-  and 3,000,000 vs 4,000,000: 0 of 1024 bytes changed. This is what makes a
-  memory snapshot usable and ordinary static disassembly valid, so it is a
-  load-bearing measurement rather than a curiosity.
+- **The original reaches its main menu under DOSBox** — captured in
+  `docs/reference/dosbox-main-menu.png`. So `vgalemmi.exe` runs standalone, its
+  protection is satisfiable, and any failure here is ours.
+
+## Retracted
+
+- **"The protected code does not re-encrypt behind itself" (claimed
+  2026-08-25, withdrawn the same day).** It does. The INT 01h handler
+  re-encrypts the previous instruction (`xchg word ptr [si], ax` at image
+  `0x0E14`) before decrypting the next, so exactly one instruction is plaintext
+  at a time. The measurement behind the original claim compared two regions at
+  instruction counts where neither was under single-step protection, so it
+  showed only that idle memory is idle. See
+  [docs/protection.md](docs/protection.md).
 
 ## Open
 
+- **THE GUEST DERAILS INSIDE THE PROTECTION, and this now outranks the
+  renderer.** After reaching mode 0Dh the game moves `IVT[01h]` from image
+  `0x00DFF` to `0x00D0C`, and under our machine the bytes there are still
+  encrypted: it executes garbage and spins in a ~14-instruction loop at
+  `0x00D17..0x00D39`, taking zero interrupts for 40M+ instructions. DOSBox runs
+  the same binary to the main menu. The decryption depends on receiving exactly
+  one `#DB` per instruction, so a single extra or missing trap desynchronises
+  the rolling key — the `mov ss`/`pop ss` interrupt shadow is the leading
+  suspect, unconfirmed. Building a renderer before this is fixed would be
+  rendering a crashed guest.
 - **THE PORT DRAWS NOTHING, AND NEITHER DOES THE EMULATOR.** PC Lemmings' VGA
   build runs in **BIOS mode 0Dh** — 320x200, 16 colours, four bit-planes, eight
   pixels to the byte. It is *not* mode 13h. `dos_emulator`'s `framebuffer()`
