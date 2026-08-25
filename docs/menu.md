@@ -407,12 +407,44 @@ The templates are in the executable and the numbers are written into the runs
 of spaces each leaves for exactly that: `0x0E59D`, `0x0E5CD`, `0x0E5E7`,
 `0x0E5FB`, `0x0E60E`, `0x0E620`, `0x0E633`.
 
-**Its background is unsolved.** It is not the menu's tile — the original draws
-it in DAC 56–59, which on this screen are the *level's* terrain colours, and
-the tile with bit 3 set scores 1.65% at its best vertical phase. The blit
-source buffer at `0x58000` begins `f1 80 07 fc 00 00 05 f7`, which is `MAIN.DAT`
-section 3 byte for byte — so the data is that section, but not its tile at
-offset 0. Palette entries 8–15 are the same gap.
+### Its background is the menu's own tile, from row 78
+
+This section previously read *"its background is unsolved — it is not the
+menu's tile"*. It is the menu's tile. What was wrong was the vertical phase,
+and the search that concluded otherwise was looking for a stored bitmap.
+
+`tools/probe_blits.py --driven` settles it by logging what the original blits
+rather than searching for pixels. Three pairs of blits, from `srcseg 0x587E`
+offset 0 — `MAIN.DAT` section 3's start, the menu's background — 320×104, two
+planes, exactly as the menu tiles it:
+
+| x | y |
+| --- | --- |
+| 0, 320 | **78** |
+| 0, 320 | **182** |
+| 0, 320 | **286** |
+
+Measured against a capture of the original's own briefing, over rows 78–349,
+`x < 632`, background-coloured pixels: **100.00%, 0 of 156,720 differ.** Tiled
+from row 0 instead — which is what the menu does — the same comparison gives
+**44%**. That single 78-row offset is the whole of it.
+
+Rows **0–77** are not the tile: they are black with the level's own preview art
+over them, about 3,000 pixels in colours 8–15. That preview is not
+reconstructed, and it is the only thing left on this screen.
+
+**Palette entries 8–15** were the other half of the same "gap" and are also
+settled: they are `GROUNDxO.DAT`'s **preview** palette at offset `0x408` — not
+the custom palette at `0x3D8` that the level itself is drawn in. For graphics
+set 0 the two differ in one byte, entry 8's red, `0x38` against `0x34`.
+
+With both, the briefing scores **100.00% over rows 78–349** — background, text
+and palette — and 98.64% over the whole screen, the remainder being the
+preview.
+
+The lesson is the same one the plates taught: a search for a *stored bitmap*
+cannot find a bitmap that is stored but drawn somewhere unexpected. Logging the
+blits finds it immediately, because the original says where it puts things.
 
 ## What animates
 
@@ -656,7 +688,7 @@ dimensions, as section 3 turned out to be.
 | --- | --- |
 | the level-code screen | **100.00%** — 0 of 224,000 |
 | the input chooser | **100.00%** — 0 of 224,000 |
-| the briefing's text | 99.97% — 4 of 15,188 |
+| the briefing, rows 78–349 | **100.00%** — 0 of 174,080; whole screen 98.64%, the rest its unreconstructed level preview |
 | the menu | 99.41% — 1,321 of 224,000, of which 995 are the animated banner |
 
 So two of the four match the original pixel for pixel, and the menu matches

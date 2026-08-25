@@ -33,7 +33,7 @@ numbers, re-measured on the current build:
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
-| the **briefing's** text | **100.00%** — 0 of 15,184, and its **palette is exact too**, all 16 entries |
+| the **briefing**, rows 78–349 | **100.00%** — 0 of 174,080: background, text and palette. Whole screen 98.64%, the rest its unreconstructed level preview |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, and the whole scrolling banner |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
@@ -476,6 +476,32 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
+- **The briefing's background is the menu's own tile, tiled from row 78.**
+  It had been recorded as *"not the menu's tile, and in neither MAIN.DAT nor
+  VGAGR0.DAT"* — searched for as a stored bitmap, at all eight bit alignments,
+  and not found.
+
+  `tools/probe_blits.py --driven` settles it by logging what the original
+  blits rather than searching for pixels: three pairs at y = **78**, **182**
+  and **286**, from `srcseg 0x587E` offset 0 — `MAIN.DAT` section 3's start,
+  the menu's own background — 320×104, two planes, exactly as the menu tiles
+  it.
+
+  Over rows 78–349, `x < 632`, background-coloured pixels: **100.00%, 0 of
+  156,720.** Tiled from row 0, as the menu does, the same comparison gives
+  **44%**. A 78-row offset was the whole of it.
+
+  With the preview palette as well, the briefing is now **100.00% over rows
+  78–349** — background, text and palette together, 0 of 174,080 — and 98.64%
+  over the whole screen. Rows 0–77 are black with the level's preview art over
+  them, about 3,000 pixels, and that preview is the only thing left here.
+
+  Same lesson as the plates: **a search for a stored bitmap cannot find a
+  bitmap that is stored but drawn somewhere unexpected.** Logging the blits
+  finds it at once, because the original says where it puts things. That is
+  now twice in one session that `probe_blits.py` has closed something a pixel
+  search had given up on.
+
 - **The briefing's palette is the level's PREVIEW palette, and it is now
   exact — all 16 entries.** This had been open as "entries 8-15 are the
   level's terrain colours, not the menu's, and come from somewhere that has

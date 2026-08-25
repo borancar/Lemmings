@@ -1321,12 +1321,18 @@ static int screen_start(const char *dir, menu_screen *m, dat_file *d,
         m->palette[i].g = dac8(MENU_PAL6[i * 3 + 1]);
         m->palette[i].b = dac8(MENU_PAL6[i * 3 + 2]);
     }
-    if (tile_background)
-        for (uint16_t y = 0; y < MENU_H; y++)
+    /* `tile_background` is a vertical ORIGIN plus one, so 1 means "tile from
+     * row 0" and 0 means "do not tile". The briefing tiles the very same
+     * bitmap from row 78, which is the whole of what made it look like a
+     * different background for so long. */
+    if (tile_background) {
+        uint16_t org = (uint16_t)(tile_background - 1);
+        for (uint16_t y = org; y < MENU_H; y++)
             for (uint16_t x = 0; x < BG_DRAWN_W; x++)
                 m->pix[(size_t)y * MENU_W + x] =
                     planar(*sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE,
-                           2, x % BG_W, y % BG_H);
+                           2, x % BG_W, (uint16_t)((y - org) % BG_H));
+    }
     return 0;
 }
 
@@ -1473,6 +1479,8 @@ static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
  * rule: this screen's last line is centred exactly, the menu's credit lines
  * are centred less half a character, and "Enter Code" is centred less a whole
  * one. Constants, because that is what the evidence supports. */
+/* Where the briefing's background tiling starts - see menu_briefing_screen. */
+#define BR_BG_Y        78
 #define BR_TITLE_Y     80
 #define BR_LEVEL_X      0
 #define BR_NAME_X     128      /* the LVL's own 32-char field, padding and all */
@@ -1527,7 +1535,27 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
      * while looking about right. The TEXT is right - read back off the
      * original's own briefing by matching each cell against the font's glyph
      * masks - and that is what tools/verify_menu.py scores. */
-    if (screen_start(dir, m, &d, &sec, &font, &fontlen, 0, err) != 0)
+    /* THE BACKGROUND IS THE MENU'S OWN TILE, TILED FROM ROW 78.
+     *
+     * This screen's background was recorded here for a long time as "not the
+     * menu's tile, and in neither MAIN.DAT nor VGAGR0.DAT" - searched for as a
+     * stored bitmap, at all eight bit alignments, and not found. It was the
+     * tile all along; what was wrong was the vertical phase.
+     *
+     * tools/probe_blits.py --driven settles it by logging the blits rather
+     * than searching for pixels. Three pairs of them, at y = 78, 182 and 286,
+     * from srcseg 0x587E offset 0 - MAIN.DAT section 3's start, the menu's own
+     * background - 320x104, two planes, exactly as the menu tiles it.
+     *
+     * Measured against a capture of the original's briefing, over rows 78..349
+     * and x < 632 and background-coloured pixels: **100.00%, 0 of 156,720**.
+     * Tiled from row 0 instead, the same comparison gives 44%.
+     *
+     * Rows 0..77 are NOT the tile - they are black with the level's own
+     * preview art over them, about 3,000 pixels in colours 8..15, and that
+     * preview is not reconstructed. So the tile starts at 78 and above it the
+     * screen stays black, which is what the original has minus the preview. */
+    if (screen_start(dir, m, &d, &sec, &font, &fontlen, BR_BG_Y + 1, err) != 0)
         return -1;
 
     /* PALETTE ENTRIES 8..15 ARE THE LEVEL'S, NOT THE MENU'S.
