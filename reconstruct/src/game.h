@@ -153,6 +153,13 @@ int level_parse(const uint8_t *buf, uint32_t len, level *out, const char **err);
  * Checked against the original by tools/verify_shift.py. */
 uint8_t shift_row(const uint8_t *src, uint8_t len, uint8_t bits, uint8_t *out);
 
+/* Write `v` as three decimal digits, no terminator - it overwrites the digits
+ * in a template such as "level000.dat". Transcribed from image 0x04BC2; the
+ * original subtracts 100 until it borrows, so its counter starts one high and
+ * it adds 0x2F rather than 0x30. Checked against the original by
+ * tools/verify_digits.py, driven over all 256 byte values. */
+void digits3(uint8_t v, char *out);
+
 /* Build the eight pre-shifted copies of a sprite, each followed by a row of
  * per-column ORs. Transcribed from image 0x05B11; `out` needs
  * 8 * 3 * cols * (rows + 1) bytes. Checked by tools/verify_preshift.py. */
