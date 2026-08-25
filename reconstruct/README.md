@@ -101,6 +101,10 @@ what the original does:
 | **Esc** | quits |
 | the rating plate | nothing works it, in the port or the original |
 
+F1 goes through the **level briefing** first, as the original does — its text
+is read back off the original's own screen and matches 97.99% of text pixels,
+though its background has not been found and is left black.
+
 Clicking anywhere acts as F1, including on "EXIT TO DOS" — that is what the
 original does. It hides the mouse cursor on this screen and reads only the
 button, so the plates are keyboard-only.

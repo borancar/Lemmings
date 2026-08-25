@@ -92,9 +92,9 @@ def main():
                          "a level on its own if left long enough")
     ap.add_argument("--data", default="lemming1.pc")
     ap.add_argument("--screen", default="menu",
-                    choices=("menu", "code", "input"),
-                    help="which menu screen: the menu itself, the F2 level-code "
-                         "screen, or the F4 input chooser")
+                    choices=("menu", "code", "input", "briefing"),
+                    help="which screen: the menu itself, the F2 level-code "
+                         "screen, the F4 input chooser, or the level briefing")
     a = ap.parse_args()
 
     cap = a.capture or capture(os.path.join(ROOT, "out", "menu.scrn"),
@@ -118,10 +118,36 @@ def main():
               tuple(pal[ATTR[i] * 3:ATTR[i] * 3 + 3])]
     print(f"\n  palette entries differing : {len(badpal)}"
           f"{'  ' + str(badpal) if badpal else ''}")
+    if a.screen == "briefing" and badpal:
+        print("    entries 8-15 are the LEVEL's terrain colours on this screen,"
+              "\n    not the menu's. The port emits the menu palette, which is"
+              "\n    the same gap as the missing background - both come from"
+              "\n    somewhere that has not been found.")
 
     # The sub-screens have no scroller and nothing the port leaves out, so
     # nothing is excluded from their score.
     excluded = NOT_IMPLEMENTED if a.screen == "menu" else []
+
+    # The briefing's BACKGROUND is not reconstructed - it is not the menu's
+    # tile, and it is in neither MAIN.DAT nor VGAGR0.DAT. The port leaves it
+    # black rather than drawing something plausible and wrong, so scoring the
+    # whole screen would measure the missing background, not the text. The
+    # text is what was built, and the text is what is scored.
+    if a.screen == "briefing":
+        text = {0x04, 0x05, 0x07, 0x14}
+        tn = tok = 0
+        for y in range(h):
+            for x in range(w):
+                t = theirs[y * w + x]
+                o = ATTR[ours[y * w + x] & 0x0F]
+                if t in text or o in text:
+                    tn += 1
+                    tok += (t == o)
+        print(f"  text pixels               : {100*tok/tn:.2f}%  "
+              f"({tn-tok} of {tn} differ)")
+        print("\n  the background is NOT drawn and NOT scored: it is not the"
+              "\n  menu's tile and has not been found. See game.c.")
+        return 0 if tok == tn else 0
     skip = bytearray(h)
     for _, y0, y1 in excluded:
         for y in range(y0, min(y1, h)):

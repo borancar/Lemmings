@@ -1043,7 +1043,8 @@ static const char S_INPUT_3[]     = "3. Keyboard";         /* image 0x0E8F1 */
  * back the section pointers the caller still needs. */
 static int screen_start(const char *dir, menu_screen *m, dat_file *d,
                         const uint8_t **sec, const uint8_t **font,
-                        uint32_t *fontlen, const char **err)
+                        uint32_t *fontlen, int tile_background,
+                        const char **err)
 {
     memset(m, 0, sizeof(*m));
     char path[1024];
@@ -1070,11 +1071,12 @@ static int screen_start(const char *dir, menu_screen *m, dat_file *d,
         m->palette[i].g = dac8(MENU_PAL6[i * 3 + 1]);
         m->palette[i].b = dac8(MENU_PAL6[i * 3 + 2]);
     }
-    for (uint16_t y = 0; y < MENU_H; y++)
-        for (uint16_t x = 0; x < MENU_W; x++)
-            m->pix[(size_t)y * MENU_W + x] =
-                planar(*sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE, 2,
-                       x % BG_W, y % BG_H);
+    if (tile_background)
+        for (uint16_t y = 0; y < MENU_H; y++)
+            for (uint16_t x = 0; x < MENU_W; x++)
+                m->pix[(size_t)y * MENU_W + x] =
+                    planar(*sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE,
+                           2, x % BG_W, y % BG_H);
     return 0;
 }
 
@@ -1094,7 +1096,7 @@ int menu_code_screen(const char *dir, menu_screen *m, const char **err)
     dat_file d;
     const uint8_t *sec, *font;
     uint32_t fontlen;
-    if (screen_start(dir, m, &d, &sec, &font, &fontlen, err) != 0)
+    if (screen_start(dir, m, &d, &sec, &font, &fontlen, 1, err) != 0)
         return -1;
     draw_at(m->pix, font, fontlen, S_ENTER_CODE, CODE_TITLE_X, CODE_TITLE_Y);
     draw_at(m->pix, font, fontlen, S_CODE_DOTS, CODE_DOTS_X, CODE_DOTS_Y);
@@ -1109,7 +1111,7 @@ int menu_input_screen(const char *dir, menu_screen *m, const char **err)
     dat_file d;
     const uint8_t *sec, *font;
     uint32_t fontlen;
-    if (screen_start(dir, m, &d, &sec, &font, &fontlen, err) != 0)
+    if (screen_start(dir, m, &d, &sec, &font, &fontlen, 1, err) != 0)
         return -1;
     draw_at(m->pix, font, fontlen, S_INPUT_TYPE, INPUT_TITLE_X, INPUT_TITLE_Y);
     draw_at(m->pix, font, fontlen, S_INPUT_1, INPUT_OPT_X, INPUT_OPT_Y);
@@ -1117,6 +1119,122 @@ int menu_input_screen(const char *dir, menu_screen *m, const char **err)
             INPUT_OPT_Y + INPUT_OPT_STEP);
     draw_at(m->pix, font, fontlen, S_INPUT_3, INPUT_OPT_X,
             INPUT_OPT_Y + 2 * INPUT_OPT_STEP);
+    dat_free(&d);
+    return 0;
+}
+
+/* The level briefing, which the original shows between the menu and the level.
+ *
+ * The TEMPLATES are transcribed from the executable, with the addresses they
+ * came from, and the numbers are written into them at fixed offsets - which is
+ * what the original does: every one of these strings has exactly the run of
+ * spaces the value needs, in the place it needs them.
+ *
+ * The text was not guessed. It was read back off the original's own briefing
+ * screen by matching each 16x16 cell against the font's own glyph masks, so
+ * these are the strings the original drew, character for character.
+ */
+static const char T_LEVEL[]   = "Level   ";               /* image 0x0E59D */
+static const char T_COUNT[]   = "Number of Lemmings    ";  /* image 0x0E5CD */
+static const char T_SAVED[]   = "     To Be Saved";        /* image 0x0E5E7 */
+static const char T_RATE[]    = "Release Rate   ";         /* image 0x0E5FB */
+static const char T_TIME[]    = "Time   Minutes";          /* image 0x0E60E */
+static const char T_RATING[]  = "Rating  Mayhem";          /* image 0x0E620 */
+static const char T_CONTINUE[] = "Press mouse button to continue"; /* 0x0E633 */
+
+/* The four ratings, six characters each, exactly as they sit in the
+ * executable: "Fun   TrickyTaxingMayhem". */
+static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
+
+/* Cell positions, MEASURED off the original's briefing screen. They are not a
+ * rule: this screen's last line is centred exactly, the menu's credit lines
+ * are centred less half a character, and "Enter Code" is centred less a whole
+ * one. Constants, because that is what the evidence supports. */
+#define BR_TITLE_Y     80
+#define BR_LEVEL_X      0
+#define BR_NAME_X     128      /* the LVL's own 32-char field, padding and all */
+#define BR_BODY_X     160
+#define BR_BODY_Y     128
+#define BR_BODY_STEP   32
+#define BR_CONT_X      80
+#define BR_CONT_Y     304
+
+/* Write `n` right-aligned so that it ENDS at `end` in `dst`. The original
+ * leaves exactly the right run of spaces for this in every template. */
+static void put_num(char *dst, size_t end, uint32_t n)
+{
+    size_t i = end;
+    do {
+        dst[i--] = (char)('0' + n % 10);
+        n /= 10;
+    } while (n && i != (size_t)-1);
+}
+
+int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
+                         menu_screen *m, const char **err)
+{
+    dat_file d;
+    const uint8_t *sec, *font;
+    uint32_t fontlen;
+    /* NO BACKGROUND. The briefing's is NOT the menu's tile - the original
+     * draws it in DAC 56..59, which on this screen are the LEVEL's terrain
+     * colours (227,130,32) and not the menu's greens, and the tile does not
+     * match it at any bit offset. It is not in MAIN.DAT and not in VGAGR0.DAT
+     * either; where it comes from is unfound.
+     *
+     * So this leaves it black rather than drawing the menu's tile underneath.
+     * A plausible-looking wrong background is worse than an obviously missing
+     * one: it invites the screen to be called finished. The TEXT is right -
+     * read back off the original's own briefing by matching each cell against
+     * the font's glyph masks - and that is what tools/verify_menu.py scores. */
+    if (screen_start(dir, m, &d, &sec, &font, &fontlen, 0, err) != 0)
+        return -1;
+
+    char line[64];
+
+    /* "Level   " with the number written into its trailing spaces, then the
+     * level's own 32-character name field - whose padding is what centres the
+     * title, so it is drawn whole rather than trimmed. */
+    snprintf(line, sizeof(line), "%s", T_LEVEL);
+    put_num(line, strlen(T_LEVEL) - 1, lv->level_number);
+    draw_at(m->pix, font, fontlen, line, BR_LEVEL_X, BR_TITLE_Y);
+    draw_at(m->pix, font, fontlen, lv->name, BR_NAME_X, BR_TITLE_Y);
+
+    uint16_t y = BR_BODY_Y;
+
+    snprintf(line, sizeof(line), "%s", T_COUNT);
+    put_num(line, strlen(T_COUNT) - 2, lv->num_lemmings);
+    draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
+    y += BR_BODY_STEP;
+
+    /* The percentage, not the count: "10%  To Be Saved" for 1 of 10. */
+    snprintf(line, sizeof(line), "%s", T_SAVED);
+    {
+        uint32_t pct = lv->num_lemmings
+            ? (uint32_t)lv->num_to_rescue * 100u / lv->num_lemmings : 0;
+        char pc[16];
+        snprintf(pc, sizeof(pc), "%u%%", pct);
+        memcpy(line, pc, strlen(pc));
+    }
+    draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
+    y += BR_BODY_STEP;
+
+    snprintf(line, sizeof(line), "%s", T_RATE);
+    put_num(line, strlen(T_RATE) - 1, lv->release_rate);
+    draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
+    y += BR_BODY_STEP;
+
+    snprintf(line, sizeof(line), "%s", T_TIME);
+    put_num(line, 5, lv->time_limit);
+    draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
+    y += BR_BODY_STEP;
+
+    snprintf(line, sizeof(line), "%s", T_RATING);
+    memcpy(line + 8, RATINGS + (rating % 4) * 6, 6);
+    draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
+
+    draw_at(m->pix, font, fontlen, T_CONTINUE, BR_CONT_X, BR_CONT_Y);
+
     dat_free(&d);
     return 0;
 }

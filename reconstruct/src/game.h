@@ -128,6 +128,8 @@ typedef struct {
     uint16_t time_limit;     /* minutes */
     uint16_t skills[8];      /* climber, floater, bomber, blocker,
                                 builder, basher, miner, digger */
+    uint16_t level_number;   /* the port's own: the briefing prints it, and
+                              * the LVL does not carry it */
     uint16_t start_x;
     uint16_t graphics_set;
     uint16_t extended_graphics_set;
@@ -304,6 +306,12 @@ int  menu_build(const char *dir, menu_screen *m, const char **err);
  * the same tiled background and the same font as the menu. */
 int menu_code_screen(const char *dir, menu_screen *m, const char **err);
 int menu_input_screen(const char *dir, menu_screen *m, const char **err);
+
+/* The level briefing the original shows between the menu and the level.
+ * `rating` indexes "Fun   TrickyTaxingMayhem" (image 0x0E691); this demo is
+ * all Fun, and where the game keeps the current rating is not established. */
+int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
+                         menu_screen *m, const char **err);
 
 /* How many hotspots the menu has: the six plates, and one full-screen box for
  * "a click anywhere", which is what the original does with the mouse - see

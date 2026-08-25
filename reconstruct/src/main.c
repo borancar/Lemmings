@@ -88,7 +88,7 @@ static void usage(void)
           "  with no arguments at all, shows the main menu in a window\n"
           "  --data DIR    directory holding the original files (default .)\n"
           "  --menu        the main menu (the default screen)\n"
-          "  --screen S    menu | code | input - which menu screen to draw\n"
+          "  --screen S    menu | briefing | code | input - which screen\n"
           "  --file NAME   level container (default level009.dat)\n"
           "  --level N     which level inside it, 1-based (default 2)\n"
           "                the default pair is the level the game itself\n"
@@ -110,6 +110,32 @@ static void usage(void)
 /* Load a level, compose it, and do whatever the command line asked for
  * with the result. Split out of main() so the menu can start a level and
  * come back, which is what makes the menu a menu rather than a picture. */
+/* Load and parse one level. Split out so the briefing screen can read the same
+ * level the renderer is about to draw, without loading it twice in two places
+ * that could drift apart. */
+static int load_level(const char *data, const char *file, uint32_t which,
+                      level *lv, const char **err)
+{
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s", data, file);
+    dat_file levels;
+    if (dat_load(path, &levels, err) != 0)
+        return -1;
+    if (which < 1 || which > levels.count) {
+        dat_free(&levels);
+        if (err) *err = "no such level in that container";
+        return -1;
+    }
+    int rc = level_parse(levels.sections[which - 1].data,
+                         levels.sections[which - 1].size, lv, err);
+    dat_free(&levels);
+    /* The LVL does not carry its own number; the briefing prints one. This is
+     * the container index, which is NOT what the game calls the level - see
+     * the note in main() about level009.dat. */
+    lv->level_number = (uint16_t)which;
+    return rc;
+}
+
 static int render_level(const char *data, const char *file, uint32_t which,
                         int objects, const char *out, const char *raw,
                         uint8_t scale, int show)
@@ -274,7 +300,8 @@ int main(int argc, char **argv)
              * original reaches from it. For looking at and for diffing. */
             const char *w = argv[++i];
             menu_forced = 1;
-            which_screen = !strcmp(w, "code") ? 1 : !strcmp(w, "input") ? 2 : 0;
+            which_screen = !strcmp(w, "code") ? 1 : !strcmp(w, "input") ? 2
+                         : !strcmp(w, "briefing") ? 3 : 0;
             if (!which_screen && strcmp(w, "menu")) { usage(); return 2; }
         }
         else if (!strcmp(argv[i], "--file") && i + 1 < argc)  { file = argv[++i]; want_menu = 0; }
@@ -320,9 +347,17 @@ int main(int argc, char **argv)
 
     if (want_menu) {
         menu_screen mm;
-        int built = which_screen == 1 ? menu_code_screen(data, &mm, &err)
+        int built;
+        if (which_screen == 3) {
+            level blv;
+            built = load_level(data, file, which, &blv, &err);
+            if (built == 0)
+                built = menu_briefing_screen(data, &blv, 0, &mm, &err);
+        } else {
+            built = which_screen == 1 ? menu_code_screen(data, &mm, &err)
                   : which_screen == 2 ? menu_input_screen(data, &mm, &err)
                                       : menu_build(data, &mm, &err);
+        }
         if (built != 0) {
             fprintf(stderr, "main menu: %s\n", err);
             return 1;
@@ -378,6 +413,18 @@ int main(int argc, char **argv)
             menu_action a = menu_run(&mm, scale);
             if (a == MENU_EXIT) break;
             if (a == MENU_PLAY) {
+                /* The original shows the briefing between the menu and the
+                 * level, and so does this: menu -> briefing -> level -> menu.
+                 * Its "Press mouse button to continue" means it. */
+                level lv;
+                if (load_level(data, file, which, &lv, &err) == 0) {
+                    menu_screen br;
+                    if (menu_briefing_screen(data, &lv, 0, &br, &err) == 0) {
+                        view_show(br.pix, MENU_W, MENU_H, MENU_W, MENU_H,
+                                  br.palette, "PC Lemmings", 0, scale);
+                        menu_free(&br);
+                    }
+                }
                 render_level(data, file, which, objects, NULL, NULL,
                              scale, 1);
                 continue;

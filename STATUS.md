@@ -197,6 +197,17 @@ Each of these is stated as what was *checked*, not what was written.
   identified it. The harness now asserts on `where`, retries once, and fails
   loudly rather than comparing against a bad capture.
 
+- **The level briefing is drawn, and its text is verified.** The original
+  shows it between the menu and the level and the port now does too:
+  menu → briefing → level → menu. The strings were not guessed — they were read
+  back off the original's own briefing by matching each 16×16 cell against the
+  font's glyph masks, which gives `'Level 1        Just dig!'`,
+  `'Number of Lemmings 10'`, `'10%  To Be Saved'` and the rest character for
+  character. The templates they are built from are transcribed with their
+  addresses (`0x0E59D`, `0x0E5CD`, `0x0E5E7`, `0x0E5FB`, `0x0E60E`, `0x0E620`,
+  `0x0E633`) and the numbers written into the runs of spaces the original
+  leaves for exactly that. **97.99% of text pixels.**
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~
@@ -261,6 +272,13 @@ Each of these is stated as what was *checked*, not what was written.
   clicking bare background does. The port had per-plate click boxes, which was
   behaviour the original does not have — a worse kind of wrong than leaving it
   out — and they are gone.
+- **The briefing's BACKGROUND is not reconstructed, and is left black.** It is
+  not the menu's tile: the original draws it in DAC 56–59, which on that screen
+  are the *level's* terrain colours `(227,130,32)` and not the menu's greens,
+  and the tile matches at no bit offset. It is in neither `MAIN.DAT` nor
+  `VGAGR0.DAT` — searched at all eight alignments. Palette entries 8–15 are the
+  same gap. Black rather than the menu's tile is deliberate: a plausible wrong
+  background invites the screen to be called finished.
 - **The scrolling banner at the foot is not drawn**, and nothing in the port
   animates. The banner's *strings* are found (image `0x0E45E` onward, in
   38-byte slots) but where it is drawn and how it scrolls is not. Correction
