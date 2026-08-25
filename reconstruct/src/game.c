@@ -1150,6 +1150,17 @@ int menu_code_screen(const char *dir, menu_screen *m, const char **err)
     if (screen_start(dir, m, &d, &sec, &font, &fontlen, 1, err) != 0)
         return -1;
     draw_at(m->pix, font, fontlen, S_ENTER_CODE, CODE_TITLE_X, CODE_TITLE_Y);
+
+    /* The dots are an INPUT FIELD, and the original blacks its whole strip
+     * out - every pixel of the ten 16x16 cells that is not a dot is 0, not
+     * the background showing through. Drawing them keyed, as the title above
+     * is drawn, leaves the tile between them and costs 1,230 pixels: the
+     * entire difference on this screen. */
+    for (uint16_t y = CODE_DOTS_Y; y < CODE_DOTS_Y + FONT_H; y++)
+        for (uint16_t x = CODE_DOTS_X;
+             x < CODE_DOTS_X + (uint16_t)(strlen(S_CODE_DOTS) * FONT_W); x++)
+            if (y < MENU_H && x < BG_DRAWN_W)
+                m->pix[(size_t)y * MENU_W + x] = 0;
     draw_at(m->pix, font, fontlen, S_CODE_DOTS, CODE_DOTS_X, CODE_DOTS_Y);
     dat_free(&d);
     return 0;

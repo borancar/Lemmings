@@ -317,6 +317,12 @@ Each of these is stated as what was *checked*, not what was written.
   | the menu, whole screen | 99.27% | **99.41%** |
   | of which outside the animated banner | 630 px | **326 px** |
 
+- **The level-code screen is now exact too, at 100.00%.** All 1,230 of its
+  differing pixels were one thing: the dots are an **input field**, and the
+  original blacks its whole strip out rather than letting the background show
+  between them. The title above it is keyed normally, so the screen needed both
+  behaviours and had only one.
+
   **How it was found, since three earlier attempts failed:** The writer is image `0x09387`,
   and the routine around it at `0x09360` **pre-shifts** its sprite: it copies
   the artwork into a scratch buffer and shifts the whole buffer right one bit

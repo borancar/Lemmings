@@ -191,6 +191,12 @@ Both are the menu's background and font, with text at measured positions.
 **Enter Code** (F2): `"Enter Code"` (image `0x0E874`) at (224,112) and
 `".........."` (image `0x0E882`) at (224,144).
 
+The dots are an **input field**, and the original blacks its whole strip out —
+every pixel of those ten 16×16 cells that is not a dot is 0, not background
+showing through. The title above it is keyed normally. Getting that one
+distinction right is the difference between 99.45% and **100.00%** on this
+screen.
+
 **Choose Input Type** (F4): the title (image `0x0E8CD`) at (176,80), then
 `"1. Microsoft Mouse"` (`0x0E901`), `"2. Joystick"` (`0x0E8E2`) and
 `"3. Keyboard"` (`0x0E8F1`) sharing x=112 at y 128, 160 and 192.
@@ -416,3 +422,15 @@ understood:
 The head is not one big planar bitmap — rendering it as four planes at 64 and
 96 pixels wide gives noise — so it is likely several sprites with their own
 dimensions, as section 3 turned out to be.
+
+## Where the port stands against each screen
+
+| screen | agreement |
+| --- | --- |
+| the level-code screen | **100.00%** — 0 of 224,000 |
+| the input chooser | **100.00%** — 0 of 224,000 |
+| the briefing's text | 99.97% — 4 of 15,188 |
+| the menu | 99.41% — 1,321 of 224,000, of which 995 are the animated banner |
+
+So two of the four match the original pixel for pixel, and the menu matches
+everything on it that holds still to within about 320 pixels.
