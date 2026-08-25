@@ -76,6 +76,11 @@ Each of these is stated as what was *checked*, not what was written.
   has to re-run the PKLITE stub or the protection to read the code.
 - **A C port draws the game's Level 1**, and its reading of that level agrees
   with the original's own briefing screen on all six stated values.
+- **The original reaches gameplay under our emulator** —
+  `docs/reference/original-in-level.png`: lemmings falling out of the trapdoor,
+  the clock counting down, the skill panel and the minimap drawn. Its **terrain
+  is not drawn**, for a reason now diagnosed and recorded upstream (planar
+  reads return flat memory, so a video-to-video blit reads garbage).
 
 ## Retracted
 
@@ -90,10 +95,20 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Open
 
-- **NOTHING IS VERIFIED PIXEL FOR PIXEL YET.** The port's renderer has never
-  been compared against the original's video memory. That is now possible —
-  both sides run — and it is the next real piece of work. Until it happens the
-  port is plausible, not proven.
+- **NOTHING IS VERIFIED PIXEL FOR PIXEL YET, and it is blocked.** The
+  comparison harness exists — `tools/capture_level.py` captures the original's
+  screen, `tools/compare_level.py` slides the port's canvas across it and
+  reports the best alignment and the differing pixel count, and the port emits
+  raw indices with `--raw` for exactly this. But the original's own terrain
+  does not render yet (planar reads, above), so there is nothing to compare
+  against. **Fixing that gap upstream is the single thing standing between
+  this project and a real proof**, and it wants doing in bulk — syncing a
+  plane into flat memory when the read map select changes — because per-access
+  correction was measured and is far too slow.
+- **`tools/capture_level.py` forces a timer tick per chunk**, because an
+  in-process driver runs the guest far faster than the wall clock the timer is
+  paced on. That changes how fast the game thinks time passes. Fine for
+  capturing a picture; **not** fine for anything measuring timing.
 - **The port is a level renderer, not a game.** No lemmings, no skills, no
   animation, no sound, no control panel.
 - **What maps a level number onto a file and a section is not known.** The

@@ -71,6 +71,8 @@ def main():
                     help="once at the title, press F1 to start a game")
     ap.add_argument("--start-tries", type=int, default=4,
                     help="how many times to press F1 (default 4)")
+    ap.add_argument("--click-tries", type=int, default=3,
+                    help="how many times to click past the briefing screen")
     ap.add_argument("--start-delay", type=float, default=6.0,
                     help="seconds between F1 presses (default 6)")
     ap.add_argument("--socket", default="",
@@ -122,6 +124,17 @@ def main():
                 time.sleep(a.start_delay)
                 print(f"[play] title -> F1 (attempt {attempt + 1})")
                 ask(sock, "key f1 4")
+            # The briefing screen says "Press mouse button to continue" and
+            # means a real click; no key gets past it.
+            for attempt in range(a.click_tries):
+                time.sleep(a.start_delay)
+                print(f"[play] briefing -> click (attempt {attempt + 1})")
+                # Held, not instantaneous: a guest that polls the button state
+                # rather than a press count would never see a click that goes
+                # down and up between two of its polls.
+                ask(sock, "click down 0 160 100")
+                time.sleep(0.5)
+                ask(sock, "click up 0")
         proc.wait()
     except KeyboardInterrupt:
         pass

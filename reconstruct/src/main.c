@@ -35,7 +35,10 @@ static void usage(void)
           "                calls Level 1 - the file order is not the game's\n"
           "  --out FILE    where to write the picture (default level.bmp)\n"
           "  --show        open a window on the level (arrows scroll, Esc quits)\n"
-          "  --scale N     window magnification for --show (default 3)\n",
+          "  --scale N     window magnification for --show (default 3)\n"
+          "  --raw FILE    also write the raw palette indices, for checking\n"
+          "                against the original: 'LEMRAW' then width and\n"
+          "                height as little-endian u16, then w*h bytes\n",
           stderr);
 }
 
@@ -51,6 +54,7 @@ int main(int argc, char **argv)
     const char *data = ".";
     const char *file = "level009.dat";
     const char *out  = "level.bmp";
+    const char *raw  = NULL;
     uint32_t which = 2;
     uint8_t scale = 3;
     int show = 0;
@@ -62,6 +66,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) which = (uint32_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
+        else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   raw  = argv[++i];
         else { usage(); return 2; }
     }
 
@@ -152,6 +157,24 @@ int main(int argc, char **argv)
         return 1;
     }
     printf("wrote %s (%dx%d)\n", out, LEVEL_W, LEVEL_H);
+
+    if (raw) {
+        /* Palette indices, one byte per pixel, for a pixel-for-pixel
+         * comparison against the original's video memory. A picture cannot
+         * carry that check: BMP round-tripping through a palette loses which
+         * index a pixel was, and two different indices can share a colour. */
+        FILE *rf = fopen(raw, "wb");
+        if (!rf) {
+            fprintf(stderr, "%s: cannot open for writing\n", raw);
+        } else {
+            uint16_t wh[2] = { c.w, c.h };
+            fwrite("LEMRAW", 1, 6, rf);
+            fwrite(wh, sizeof(uint16_t), 2, rf);
+            fwrite(c.pix, 1, (size_t)c.w * c.h, rf);
+            fclose(rf);
+            printf("wrote %s (raw indices)\n", raw);
+        }
+    }
 
     if (show) {
         char title[128];
