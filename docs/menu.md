@@ -231,6 +231,42 @@ screen against a no-key baseline (`tools/probe_menu_keys.py`):
 | EXIT TO DOS | Esc | quits |
 | ? | F4 | a **"Choose Input Type"** screen |
 
+## How a sprite is actually drawn — image 0x0890E
+
+Not "keyed". The blitter branches on **bit 6 of `bp`** at image `0x08905`; the
+menu passes `0x03` for a sprite and `0xF43` for its shadow. Both paths take a
+mask pointer, which the menu supplies as `ink + 3 * plane_size` — the plates at
+`si+2745` with planes of 915, the logo at `si+22278` with planes of 7426. The
+mask is the sprite's own fourth plane.
+
+**The sprite path is four passes over the planes, and they differ:**
+
+| pass | what it does |
+| --- | --- |
+| 0 | Enable Set/Reset = `0x0E`: planes 1–3 take Set/Reset = 0, plane 0 takes the CPU byte. The mask row goes into **GC 8, the bit mask** (image `0x089B5`), with a latch load before each write. Mask bit set → write plane 0 from the ink and **clear** planes 1–3. Mask bit clear → leave the byte alone. |
+| 1–3 | image `0x089ED`: Enable Set/Reset off, function = **OR** (GC 3 = `0x10`), bit mask back to **`0xFF`**, one plane at a time through the Map Mask. `0xFF` means **unmasked** — every byte in the rectangle is OR-ed. |
+
+So, per pixel:
+
+```
+mask set    dst  = ink
+mask clear  dst |= ink & 0x0E
+```
+
+**The shadow path**, image `0x0909C`: Set/Reset = 0 and Enable Set/Reset =
+`(bp >> 8) & 0xF` = `0xF`, driving all four planes to zero — solid black —
+with the mask as its silhouette.
+
+This is what took the menu to **100.00%, zero pixels differing at all four
+ratings**. It had sat at 326 for a long time and came down to 257 by fitting
+four plausible keying rules against captures; the best-scoring of those was
+still wrong, and no further fitting would have reached zero from it. Reading
+the routine took less time than the fitting had.
+
+The screen had been saying so all along: sprite value 3 over background 0
+gives `0 | (3 & 0xE)` = 2, and the original shows 2 exactly where keying on
+"value != 0" drew 3 — 210 times.
+
 **The plates are keyboard-only.** The menu calls INT 33h AX=0002h once — hide
 cursor — and draws no pointer: moving the position to (600,40) changes nothing
 near it. It polls AX=0003h 1,342 times, so it reads the *button*, and the

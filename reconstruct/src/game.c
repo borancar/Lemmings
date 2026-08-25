@@ -1138,39 +1138,57 @@ static uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
     return v;
 }
 
-/* Blit a 4-plane sprite, keyed on value != 0 - and the drop shadows are cast
- * through the sprite's MASK plane instead. Both of those are now read off the
- * blitter rather than fitted, and the two are not the same rule.
+/* Blit a 4-plane sprite the way image 0x0890E does, which is not "keyed".
  *
- * The blitter branches on bit 6 of bp at image 0x08905. The menu passes
+ * The blitter branches on bit 6 of bp at image 0x08905; the menu passes
  * bp=0x03 for a sprite and bp=0xF43 for its shadow, and 0x40 is the only bit
- * that differs:
+ * that differs. Both paths take a mask pointer, which the menu supplies as
+ * ink + 3 * plane_size - the plates at si+2745 with planes of 915, the logo at
+ * si+22278 with planes of 7426. The mask is the sprite's own fourth plane.
  *
- *   SHADOW, image 0x0909C.  Set/Reset (GC 0) = 0 and Enable Set/Reset (GC 1)
- *   = (bp >> 8) & 0xF = 0xF, so all four planes are driven to zero - the
- *   shadow is solid BLACK. Its silhouette comes from `bx`, which the
- *   `xchg di,bx` at image 0x0887E has left holding the MASK pointer. The menu
- *   passes that as ink + 3 * plane_size - the plates at si+2745 with planes of
- *   915, the logo at si+22278 with planes of 7426 - so the mask is the
- *   sprite's own fourth plane.
+ * THE SHADOW, image 0x0909C. Set/Reset (GC 0) = 0, Enable Set/Reset (GC 1) =
+ * (bp >> 8) & 0xF = 0xF, so all four planes are driven to zero: solid black.
+ * Its silhouette is the mask.
  *
- *   SPRITE, image 0x0890E.  Enable Set/Reset = 0x0E and it stages BOTH the
- *   ink (to 0x6706) and the mask (to 0x6748), so the ink is masked too. That
- *   argues the ink should also key on plane 3.
+ * THE SPRITE, image 0x0890E, in FOUR PASSES over the planes, and the passes
+ * do not do the same thing:
  *
- * It should, and measured it is worse. All four combinations, whole screen,
- * all four ratings:
+ *   pass 0   Enable Set/Reset = 0x0E, so planes 1..3 take Set/Reset = 0 while
+ *            plane 0 takes the CPU byte. The mask row goes into GC 8, the BIT
+ *            MASK (image 0x089B5: `mov ah,[bx]` / `mov al,8` / `out`), with a
+ *            latch load before each write. So where the mask bit is set, this
+ *            writes plane 0 from the ink and CLEARS planes 1..3; where it is
+ *            clear, the byte is left alone.
+ *
+ *   passes 1..3   image 0x089ED turns Enable Set/Reset off, sets the function
+ *            to OR (GC 3 = 0x10), sets the bit mask back to 0xFF, and selects
+ *            one plane at a time through the Map Mask. Bit mask 0xFF means
+ *            these are NOT masked: every byte in the rectangle is OR-ed.
+ *
+ * Net effect per pixel, which is the thing to port:
+ *
+ *     mask set    dst  = ink                (planes 1..3 cleared, then OR-ed)
+ *     mask clear  dst |= ink & 0x0E         (plane 0 untouched, 1..3 OR-ed)
+ *
+ * And that is exactly what the screen shows. Sprite value 3 over background 0
+ * gives 0 | (3 & 0xE) = 2 - the original shows 2, 210 times, where keying on
+ * "value != 0" drew 3. Value 2 gives 2; value 1 gives 0, 22 times. Values
+ * 4..7 never occur.
+ *
+ * Four models were measured before the code was read, and the winner was the
+ * least defensible of them:
  *
  *     ink != 0,   shadow != 0        326 differ
  *     ink plane 3, shadow != 0       460
  *     ink plane 3, shadow plane 3    377
- *     ink != 0,   shadow plane 3     257   <- this
+ *     ink != 0,   shadow plane 3     257
+ *     THIS                              0   <- transcribed, not fitted
  *
- * So the shadow half is settled and transcribed; the ink half is not. The 210
- * remaining differences are all "sprite value 3 where the original shows 2",
- * and the rest of image 0x0890E - which writes the planes through the EGA's
- * set/reset machinery rather than as bytes - has not been read. That is what
- * would settle it, and it is the next thing to do here, not a mystery. */
+ * Zero. All four ratings, every pixel of the screen. The lesson is not that
+ * measurement was useless - it narrowed four models to one and found the
+ * shadow rule - but that the best-scoring model was still wrong, and no
+ * amount of further fitting was going to reach zero from 257. Reading the
+ * routine took less time than the fitting did. */
 static void blit(uint8_t *dst, const uint8_t *sec, uint32_t base,
                  uint16_t w, uint16_t h, uint16_t stride, uint32_t plane,
                  uint16_t at_x, uint16_t at_y)
@@ -1182,7 +1200,9 @@ static void blit(uint8_t *dst, const uint8_t *sec, uint32_t base,
             uint16_t x = at_x + sx;
             if (x >= MENU_W) break;
             uint8_t v = planar(sec, base, plane, stride, 4, sx, sy);
-            if (v) dst[(size_t)y * MENU_W + x] = v;
+            size_t o = (size_t)y * MENU_W + x;
+            if (v & 8) dst[o] = v;              /* mask set: the ink wins */
+            else       dst[o] |= (uint8_t)(v & 0x0E);   /* else OR planes 1..3 */
         }
     }
 }

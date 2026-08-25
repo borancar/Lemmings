@@ -174,6 +174,35 @@ bash tools/prove.sh
 A figure that has drifted is worse than no figure, because it is quoted with
 the same confidence as a measured one.
 
+## Fitting narrows; only reading settles
+
+The menu's last residue is the cleanest example this project has, and it is
+worth keeping because the fitting was *good* work that still could not finish
+the job.
+
+326 pixels differed, in the plates, for many rounds. Four compositing rules
+were measured against four captures — ink keyed on `!= 0` or on plane 3, cross
+with the same two for the drop shadows — and the spread was wide and clear:
+460, 377, 326, **257**. That is a real result: it narrowed the space and it
+established the shadow rule.
+
+It was also still wrong. Reading the blitter at image `0x0890E` gave the
+actual rule in twenty minutes — the sprite is drawn in **four passes**, the
+first masked through GC 8 and clearing planes 1..3, the other three OR-ing
+their plane in **unmasked** — and the port went to **zero differing**.
+
+The trap is that the fitted winner *looked* like convergence. It was the best
+of the candidates, it improved on the baseline, and every further idea would
+have been another candidate in the same family. No amount of it reaches zero,
+because the true rule (`mask ? ink : dst | (ink & 0x0E)`) was not in the
+family at all.
+
+So: **when a comparison plateaus a little short, stop fitting and go read the
+routine.** The clue that this is the situation is a residue that is
+*structured* — here, 210 of the 326 were the single relation "sprite value 3
+where the original shows 2". A structured residue is a rule you have not
+found, not noise to be whittled down.
+
 ## A check at one value of a parameter says nothing about the parameter
 
 The rating plate cost a day twice over, and both halves are general.

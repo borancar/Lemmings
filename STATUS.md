@@ -34,7 +34,7 @@ numbers, re-measured on the current build:
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing's** text | 99.97% — 4 of 15,188 |
-| the **main menu** | **99.885%** — 257 of 224,000, all inside the six plates. The banner is **exact**: bar, scrolling text and both end lemmings, zero differing in its rows at all four ratings |
+| the **main menu** | **100.00%** — zero pixels differing, at all four ratings. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, and the whole scrolling banner |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -476,54 +476,49 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
-- **The drop shadows are cast through the sprite's MASK plane, not its ink.**
-  The menu's residue had sat at 326 pixels, unexplained, for many rounds. It
-  is now **257**, and the part that moved is the shadows.
+- **The main menu is EXACT. 100.00%, zero pixels differing, at all four
+  ratings.**
 
-  Every one of these blits hands the blitter a mask pointer exactly
-  `3 * plane_size` after the ink — the plates at `si+2745` with planes of 915,
-  the logo at `si+22278` with planes of 7426 — so the fourth plane is a mask.
-  The data appears to agree. Tabulating sprite value against screen colour
-  over all six plates:
+  The residue had sat at 326 for many rounds, came down to 257 by fitting, and
+  went to zero the moment the blitter was actually read. The sprite path at
+  image `0x0890E` is **four passes over the planes, and they do not do the
+  same thing**:
 
-  | sprite value | screen |
+  | pass | what it does |
   | --- | --- |
-  | 8..15 | itself — the plate's real ink |
-  | 3 | 2, 210 times |
-  | 2 | 2, 173 times |
-  | 1 | 0, 22 times |
-  | 4..7 | never occurs |
+  | 0 | Enable Set/Reset = `0x0E`, so planes 1..3 take Set/Reset = 0 and plane 0 takes the CPU byte. The **mask row goes into GC 8, the bit mask** (image `0x089B5`), with a latch load before each write. Where the mask bit is set: write plane 0 from the ink and **clear** planes 1..3. Where clear: leave the byte alone. |
+  | 1..3 | image `0x089ED` turns Enable Set/Reset off, sets the function to **OR** (GC 3 = `0x10`), sets the bit mask back to **`0xFF`**, and selects one plane at a time through the Map Mask. Bit mask `0xFF` means these are **not masked** — every byte in the rectangle is OR-ed. |
 
-  which reads as *"1..3 are not ink, they are the two-plane background tile
-  showing through"* — its colours are exactly 0..3. So keying the ink on plane
-  3 should make the port exact.
+  Net effect per pixel, which is the whole of what the port needed:
 
-  **It does not.** All four combinations, measured, whole screen, all four
-  ratings:
+      mask set    dst  = ink
+      mask clear  dst |= ink & 0x0E
 
-  | ink key | shadow key | differing |
+  And that is exactly what the screen had been saying all along. Sprite value
+  3 over background 0 gives `0 | (3 & 0xE)` = **2** — the original shows 2,
+  210 times, where keying on "value != 0" drew 3. Value 2 gives 2. Value 1
+  gives 0, 22 times. Values 4..7 never occur.
+
+  The drop shadows are the other branch, bit 6 of `bp` at image `0x08905`:
+  the menu passes `0x03` for a sprite and `0xF43` for its shadow. The shadow
+  path at image `0x0909C` sets Set/Reset = 0 and Enable Set/Reset =
+  `(bp >> 8) & 0xF` = `0xF`, driving all four planes to zero — solid black —
+  with the mask as its silhouette.
+
+  **Five models, measured, whole screen, all four ratings:**
+
+  | ink rule | shadow rule | differing |
   | --- | --- | --- |
   | `!= 0` | `!= 0` | 326 |
   | plane 3 | `!= 0` | 460 |
   | plane 3 | plane 3 | 377 |
-  | `!= 0` | **plane 3** | **257** |
+  | `!= 0` | plane 3 | 257 |
+  | **the two-phase rule above** | **mask** | **0** |
 
-  The shadow half is then **transcribed, not fitted.** The blitter branches on
-  bit 6 of `bp` at image `0x08905`, and the menu passes `bp=0x03` for a sprite
-  and `bp=0xF43` for its shadow — `0x40` is the only bit that differs. The
-  shadow path at image `0x0909C` sets Set/Reset (GC 0) to 0 and Enable
-  Set/Reset (GC 1) to `(bp >> 8) & 0xF` = `0xF`, driving all four planes to
-  zero, so the shadow is solid **black**; and it takes its silhouette from
-  `bx`, which the `xchg di,bx` at image `0x0887E` has left holding the **mask
-  pointer**. Exactly the model that won.
-
-  The ink half is **not** settled. The sprite path at image `0x0890E` stages
-  both the ink and the mask, which argues the ink should key on plane 3 too —
-  and measured, that is worse. The 210 remaining differences are all "sprite
-  value 3 where the original shows 2". What would settle it is reading the
-  rest of `0x0890E`, which writes the planes through the EGA's set/reset
-  machinery rather than as bytes; that has not been done. It is the next
-  thing here, not a mystery.
+  The lesson is not that measurement was useless — it narrowed four models to
+  one and found the shadow rule. It is that **the best-scoring model was still
+  wrong**, and no amount of further fitting was going to reach zero from 257.
+  Reading the routine took less time than the fitting did.
 
 - **The five walk-on lemmings are transcribed, and no capture can check
   them.** Image `0x04F96` walks a ten-entry table at `ds:0x4960` (image
