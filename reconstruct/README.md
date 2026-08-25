@@ -4,14 +4,20 @@ A reimplementation in C of **PC Lemmings (VGA)** — DMA Design / Psygnosis,
 1991 — reconstructed by reverse engineering the original executable and its
 data files.
 
+![The main menu](docs/menu.png)
+
 ![Level 1, "Just dig!"](docs/level1.png)
 
 ```sh
 make
-./lemmings --data /path/to/lemmings --show   # a window on level 1
-./lemmings --data /path/to/lemmings          # or just write level.bmp
-./lemmings --data /path/to/lemmings --file level000.dat --level 3
+./lemmings --data /path/to/lemmings              # the main menu, in a window
+./lemmings --data /path/to/lemmings --level 2    # a level, in a window
+./lemmings --data /path/to/lemmings --out x.bmp  # write a picture instead
 ```
+
+Run with no arguments it **shows a screen**. A reconstruction whose default
+output is a bitmap is a converter; asking for `--out` or `--raw` is what turns
+the window off.
 
 **The game's level order is not its file order.** What the original calls
 "Level 1" is section 1 of `level009.dat`, not the first level of the first
@@ -28,19 +34,36 @@ Esc quits.
 
 ## What it needs
 
-A C11 compiler and nothing else. **X11 is optional**: with it, `--show` opens
-a window; without it the port still renders to a file. No image codecs, no
-game engine, no other libraries. It reads
-**your own copy of the original data files**: `level000.dat`, `ground0o.dat`
-and `vgagr0.dat` for the first level. Nothing of the game is included here.
+A C11 compiler and **SDL3**, which is a hard dependency rather than an option:
+
+```sh
+sudo dnf install SDL3-devel        # Fedora
+sudo apt install libsdl3-dev       # Debian, Ubuntu
+brew install sdl3                  # macOS
+```
+
+SDL3 and nothing else - no image codecs, no game engine, no other libraries,
+and nothing platform-specific. The point of a reconstruction is that it is the
+same game somewhere the original cannot run, and a display layer tied to one
+platform quietly takes that back. There is deliberately no second rendering
+path and no headless fallback either: two paths drift, and only whichever one
+your build takes ever gets looked at. SDL's job stops at putting the port's own
+composed 8-bit buffer in a window and handing back input - it scales by whole
+pixels and filters nothing.
+
+It reads **your own copy of the original data files**: `main.dat` for the menu,
+and `level009.dat`, `ground0o.dat` and `vgagr0.dat` for the first level.
+Nothing of the game is included here.
 
 `--data` is the directory holding them. The output is a 24-bit BMP, because
 that needs no dependencies; convert it with anything.
 
 ## What it does so far
 
-Loads a level and draws its terrain:
+Shows the **main menu** and draws a level's terrain:
 
+- **The main menu** — the tiled background, the logo and all six signs, from
+  `MAIN.DAT`, in the original's own EGA 640x350 16-colour screen
 - **DAT decompression** — the container format all of Lemmings' data uses
 - **Level parsing** — globals, terrain, objects, steel areas, the name
 - **GROUNDxO.DAT** — the per-set index of bitmaps and the 16-colour palette
@@ -50,7 +73,13 @@ Loads a level and draws its terrain:
 - **Interactive objects** — the entrance and the exit, with their own
   transparency masks and animation frames
 
-There is no game yet: no lemmings, no skills, no animation, no sound.
+There is no game yet: no lemmings, no skills, no animation, no sound. The
+menu is composed but not driven - the signs do not respond, the lemmings on
+them do not blink, and the two credit lines and the scrolling banner at the
+foot are not drawn, because they come from a font that has not been found yet.
+That last point is measured rather than assumed: searching every `MAIN.DAT`
+section for those pixels, at all eight bit alignments, finds nothing - they are
+not stored bitmaps.
 
 ## How it is known to be right
 

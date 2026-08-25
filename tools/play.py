@@ -217,74 +217,79 @@ def main():
                 ask(sock, "click down 0 160 100")
                 time.sleep(0.5)
                 ask(sock, "click up 0")
-            if a.dump_vga:
-                # Gameplay is mode 0Dh again, after the 10h title; the
-                # briefing is still 10h. Which one to sample matters: a game
-                # frees buffers as it finishes with them, so data that is
-                # resident during loading is gone by the time the level runs.
-                want_mode = a.dump_when
-                if want_mode == "0x0d" and not a.start:
-                    # 0Dh is BOTH the loading screen before the title and the
-                    # level after it, so waiting for it alone matches
-                    # immediately and samples the wrong screen. Require the
-                    # title's 10h first - unless --start already went through
-                    # it, in which case waiting for 10h again just times out.
-                    wait_for(sock, lambda st: "mode=0x10" in st,
-                             "the title", timeout=180)
-                wait_for(sock, lambda st: f"mode={want_mode}" in st,
-                         f"mode {want_mode}", timeout=180)
-                # Wait for the guest's own cue rather than a wall clock. The
-                # level fades its palette in, and "some entries are non-black"
-                # is not enough of a cue - mid-fade every entry is non-black
-                # and every one is nearly black, so the capture looks varied
-                # by index and renders as a dark smear. Poll the actual
-                # picture until it is bright.
-                if a.dump_screen:
-                    # Keep the BRIGHTEST sample, not the last. The palette
-                    # fades in and out around a level, so a poll that stops on
-                    # a timeout keeps whatever happened to be on screen at the
-                    # end - which was black, and scored as a perfect match
-                    # against the level's empty left edge.
-                    tmp = a.dump_screen + ".sample"
-                    best = None
-                    deadline = time.time() + a.dump_delay
-                    while time.time() < deadline:
-                        ask(sock, f"screen {tmp}")
-                        err = _palette_error(tmp, a.ground)
-                        if err is not None and (best is None or err < best):
-                            best = err
-                            shutil.copyfile(tmp, a.dump_screen)
-                        if err is not None and err < 1.0:
-                            break
-                        time.sleep(1.5)
-                    try:
-                        os.unlink(tmp)
-                    except OSError:
-                        pass
-                    print(f"[play] kept the screen whose palette is closest to "
-                          f"the level's (mean error {best})")
-                else:
-                    time.sleep(a.dump_delay)
-                print("[play] --- video state in the level ---")
-                print(ask(sock, "vga"))
-                print(ask(sock, "status"))
-                if a.dump_planes:
-                    print(ask(sock, f"planes {a.dump_planes}"))
-                # NOT another `screen` here: the loop above already chose
-                # the best sample, and dumping again overwrote it with
-                # whatever happened to be on screen a moment later. That is
-                # how a carefully chosen capture became a mid-fade one with
-                # the BIOS default EGA palette still in DAC 0x10-0x17.
-                for spec in a.dump_mem:
-                    print(ask(sock, f"dump {spec}"))
-                for c in a.cmd:
-                    if c.startswith("sleep "):
-                        # Local, not a socket verb: a breakpoint needs time to
-                        # be reached before `regs` is worth asking for.
-                        time.sleep(float(c.split()[1]))
-                        continue
-                    print(f"[play] > {c}")
-                    print(ask(sock, c))
+        # Capturing does NOT require --start. It used to sit inside that
+        # branch, so `--dump-vga` without it waited, dumped nothing, and
+        # exited reporting success - which is exactly the failure mode
+        # this file warns about elsewhere. The main menu is a screen you
+        # reach by NOT pressing F1, so it was unreachable.
+        if a.dump_vga:
+            # Gameplay is mode 0Dh again, after the 10h title; the
+            # briefing is still 10h. Which one to sample matters: a game
+            # frees buffers as it finishes with them, so data that is
+            # resident during loading is gone by the time the level runs.
+            want_mode = a.dump_when
+            if want_mode == "0x0d" and not a.start:
+                # 0Dh is BOTH the loading screen before the title and the
+                # level after it, so waiting for it alone matches
+                # immediately and samples the wrong screen. Require the
+                # title's 10h first - unless --start already went through
+                # it, in which case waiting for 10h again just times out.
+                wait_for(sock, lambda st: "mode=0x10" in st,
+                         "the title", timeout=180)
+            wait_for(sock, lambda st: f"mode={want_mode}" in st,
+                     f"mode {want_mode}", timeout=180)
+            # Wait for the guest's own cue rather than a wall clock. The
+            # level fades its palette in, and "some entries are non-black"
+            # is not enough of a cue - mid-fade every entry is non-black
+            # and every one is nearly black, so the capture looks varied
+            # by index and renders as a dark smear. Poll the actual
+            # picture until it is bright.
+            if a.dump_screen:
+                # Keep the BRIGHTEST sample, not the last. The palette
+                # fades in and out around a level, so a poll that stops on
+                # a timeout keeps whatever happened to be on screen at the
+                # end - which was black, and scored as a perfect match
+                # against the level's empty left edge.
+                tmp = a.dump_screen + ".sample"
+                best = None
+                deadline = time.time() + a.dump_delay
+                while time.time() < deadline:
+                    ask(sock, f"screen {tmp}")
+                    err = _palette_error(tmp, a.ground)
+                    if err is not None and (best is None or err < best):
+                        best = err
+                        shutil.copyfile(tmp, a.dump_screen)
+                    if err is not None and err < 1.0:
+                        break
+                    time.sleep(1.5)
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                print(f"[play] kept the screen whose palette is closest to "
+                      f"the level's (mean error {best})")
+            else:
+                time.sleep(a.dump_delay)
+            print("[play] --- video state in the level ---")
+            print(ask(sock, "vga"))
+            print(ask(sock, "status"))
+            if a.dump_planes:
+                print(ask(sock, f"planes {a.dump_planes}"))
+            # NOT another `screen` here: the loop above already chose
+            # the best sample, and dumping again overwrote it with
+            # whatever happened to be on screen a moment later. That is
+            # how a carefully chosen capture became a mid-fade one with
+            # the BIOS default EGA palette still in DAC 0x10-0x17.
+            for spec in a.dump_mem:
+                print(ask(sock, f"dump {spec}"))
+            for c in a.cmd:
+                if c.startswith("sleep "):
+                    # Local, not a socket verb: a breakpoint needs time to
+                    # be reached before `regs` is worth asking for.
+                    time.sleep(float(c.split()[1]))
+                    continue
+                print(f"[play] > {c}")
+                print(ask(sock, c))
         proc.wait()
     except KeyboardInterrupt:
         pass

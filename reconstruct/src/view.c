@@ -1,118 +1,129 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  *
- * An X11 window onto the level.
+ * The window, through SDL3.
  *
- * The original shows a 320x160 window onto the 1584-wide level, with the
- * control panel below it; this shows the same viewport and no panel, scrolled
- * with the arrow keys. It is a way to look at what has been reconstructed, not
- * a reimplementation of the game's own display loop - that has to be
- * transcribed and checked against the original like anything else.
+ * SDL3 is a hard dependency, not an option. A reconstruction's claim is that
+ * it is the same game somewhere the original cannot run, and a display layer
+ * tied to one platform quietly takes that back - it makes this a Linux program
+ * that happens to contain a reconstruction. There is also no second rendering
+ * path here for the same reason: a windowed path beside a file path drifts,
+ * and only whichever one the build takes ever gets looked at. Both come from
+ * the same composed 8-bit buffer.
+ *
+ * SDL's job stops at getting that buffer to a window and handing back input.
+ * Nothing here scales, filters or blends anything the original decided for
+ * itself; `scale` is whole-pixel magnification and nothing more.
  */
 #include <stdlib.h>
 #include <string.h>
 
+#include <SDL3/SDL.h>
+
 #include "view.h"
 
-#ifndef HAVE_X11
-
-int view_run(const canvas *c, const lem_rgb *palette, const char *title,
-             uint16_t start_x, uint8_t scale)
-{
-    (void)c; (void)palette; (void)title; (void)start_x; (void)scale;
-    return -1;
-}
-
-#else
-
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/keysym.h>
-
-#define VIEW_W 320
-#define VIEW_H 160
-
-int view_run(const canvas *c, const lem_rgb *palette, const char *title,
-             uint16_t start_x, uint8_t scale)
+int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
+              uint16_t view_w, uint16_t view_h,
+              const lem_rgb *palette, const char *title,
+              uint16_t start_x, uint8_t scale)
 {
     if (scale < 1) scale = 1;
+    if (view_w > src_w) view_w = src_w;
+    if (view_h > src_h) view_h = src_h;
 
-    Display *dpy = XOpenDisplay(NULL);
-    if (!dpy)
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("SDL_Init: %s", SDL_GetError());
         return -1;
+    }
 
-    int screen = DefaultScreen(dpy);
-    uint16_t win_w = (uint16_t)(VIEW_W * scale);
-    uint16_t win_h = (uint16_t)(VIEW_H * scale);
+    SDL_Window *win = NULL;
+    SDL_Renderer *ren = NULL;
+    if (!SDL_CreateWindowAndRenderer(title, view_w * scale, view_h * scale,
+                                     0, &win, &ren)) {
+        SDL_Log("SDL_CreateWindowAndRenderer: %s", SDL_GetError());
+        SDL_Quit();
+        return -1;
+    }
+    /* Whole pixels. The original had no filtering and neither has this. */
+    SDL_SetRenderLogicalPresentation(ren, view_w, view_h,
+                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
 
-    Window win = XCreateSimpleWindow(dpy, RootWindow(dpy, screen), 0, 0,
-                                     win_w, win_h, 0,
-                                     BlackPixel(dpy, screen),
-                                     BlackPixel(dpy, screen));
-    XStoreName(dpy, win, title);
-    XSelectInput(dpy, win, ExposureMask | KeyPressMask | StructureNotifyMask);
+    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888,
+                                         SDL_TEXTUREACCESS_STREAMING,
+                                         view_w, view_h);
+    if (!tex) {
+        SDL_Log("SDL_CreateTexture: %s", SDL_GetError());
+        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+        return -1;
+    }
+    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
 
-    Atom wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
-    XSetWMProtocols(dpy, win, &wm_delete, 1);
-    XMapWindow(dpy, win);
-
-    GC gc = XCreateGC(dpy, win, 0, NULL);
-
-    /* 32-bit BGRX, which is what every modern TrueColor visual wants. */
-    uint32_t *fb = malloc((size_t)win_w * win_h * 4);
-    if (!fb) { XCloseDisplay(dpy); return -1; }
-
-    XImage *img = XCreateImage(dpy, DefaultVisual(dpy, screen),
-                               (unsigned)DefaultDepth(dpy, screen), ZPixmap, 0,
-                               (char *)fb, win_w, win_h, 32, 0);
-    if (!img) { free(fb); XCloseDisplay(dpy); return -1; }
-
-    int32_t scroll = (int32_t)start_x;
-    int32_t max_scroll = (int32_t)c->w - VIEW_W;
-    if (max_scroll < 0) max_scroll = 0;
-    if (scroll > max_scroll) scroll = max_scroll;
+    int32_t scroll_x = (int32_t)start_x - view_w / 2;
+    int32_t max_x = (int32_t)src_w - view_w;
+    int32_t max_y = (int32_t)src_h - view_h;
+    int32_t scroll_y = 0;
+    if (max_x < 0) max_x = 0;
+    if (max_y < 0) max_y = 0;
 
     int running = 1;
     while (running) {
-        /* Blit the viewport, scaled by whole pixels. */
-        for (uint16_t y = 0; y < win_h; y++) {
-            uint16_t sy = (uint16_t)(y / scale);
-            const uint8_t *row = &c->pix[(uint32_t)sy * c->w];
-            uint32_t *dst = &fb[(uint32_t)y * win_w];
-            for (uint16_t x = 0; x < win_w; x++) {
-                int32_t sx = scroll + x / scale;
-                lem_rgb col = { 0, 0, 0 };
-                if (sx >= 0 && sx < (int32_t)c->w)
-                    col = palette[row[sx] & 0x0F];
-                dst[x] = ((uint32_t)col.r << 16) | ((uint32_t)col.g << 8) | col.b;
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_EVENT_QUIT)
+                running = 0;
+            else if (e.type == SDL_EVENT_KEY_DOWN) {
+                switch (e.key.key) {
+                case SDLK_ESCAPE: case SDLK_Q: running = 0; break;
+                case SDLK_LEFT:   scroll_x -= 16; break;
+                case SDLK_RIGHT:  scroll_x += 16; break;
+                case SDLK_UP:     scroll_y -= 16; break;
+                case SDLK_DOWN:   scroll_y += 16; break;
+                case SDLK_HOME:   scroll_x = 0; break;
+                case SDLK_END:    scroll_x = max_x; break;
+                default: break;
+                }
             }
         }
-        XPutImage(dpy, win, gc, img, 0, 0, 0, 0, win_w, win_h);
-        XFlush(dpy);
+        if (scroll_x < 0) scroll_x = 0;
+        if (scroll_x > max_x) scroll_x = max_x;
+        if (scroll_y < 0) scroll_y = 0;
+        if (scroll_y > max_y) scroll_y = max_y;
 
-        XEvent ev;
-        XNextEvent(dpy, &ev);
-        do {
-            if (ev.type == KeyPress) {
-                KeySym k = XLookupKeysym(&ev.xkey, 0);
-                int32_t step = (ev.xkey.state & ShiftMask) ? 64 : 16;
-                if (k == XK_Escape || k == XK_q)      running = 0;
-                else if (k == XK_Left)                scroll -= step;
-                else if (k == XK_Right)               scroll += step;
-                else if (k == XK_Home)                scroll = 0;
-                else if (k == XK_End)                 scroll = max_scroll;
-                if (scroll < 0)          scroll = 0;
-                if (scroll > max_scroll) scroll = max_scroll;
-            } else if (ev.type == ClientMessage &&
-                       (Atom)ev.xclient.data.l[0] == wm_delete) {
-                running = 0;
+        void *pixels = NULL;
+        int pitch = 0;
+        if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
+            for (uint16_t y = 0; y < view_h; y++) {
+                uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+                const uint8_t *src =
+                    pix + (size_t)(scroll_y + y) * src_w + scroll_x;
+                for (uint16_t x = 0; x < view_w; x++) {
+                    lem_rgb c = palette[src[x]];
+                    row[x] = ((uint32_t)c.r << 16) |
+                             ((uint32_t)c.g << 8) | c.b;
+                }
             }
-        } while (running && XPending(dpy) && (XNextEvent(dpy, &ev), 1));
+            SDL_UnlockTexture(tex);
+        }
+        SDL_RenderClear(ren);
+        SDL_RenderTexture(ren, tex, NULL, NULL);
+        SDL_RenderPresent(ren);
+        SDL_Delay(16);
     }
 
-    XDestroyImage(img);          /* frees fb too */
-    XFreeGC(dpy, gc);
-    XCloseDisplay(dpy);
+    SDL_DestroyTexture(tex);
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
     return 0;
 }
 
-#endif /* HAVE_X11 */
+/* The level viewport: the original shows 320x160 of the 1584-wide level, with
+ * the control panel below it. The panel is not reconstructed yet, so this is
+ * the same viewport and no panel - a way to look at what has been built, not a
+ * reimplementation of the game's display loop. That has to be transcribed and
+ * checked against the original like anything else. */
+int view_run(const canvas *c, const lem_rgb *palette, const char *title,
+             uint16_t start_x, uint8_t scale)
+{
+    return view_show(c->pix, c->w, c->h, 320, 160, palette, title,
+                     start_x, scale);
+}

@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  *
- * Showing a level on screen. Optional: built only when X11 is present, and
- * the port still renders to a file without it.
+ * Showing the game on screen, through SDL3.
+ *
+ * SDL3 is required, not optional - see the note at the top of view.c. There is
+ * deliberately no second, platform-specific path and no headless fallback:
+ * either would drift from this one and never be looked at.
  */
 #ifndef LEM_VIEW_H_
 #define LEM_VIEW_H_
@@ -9,8 +12,15 @@
 #include "lem.h"
 #include "render.h"
 
-/* Open a window on the composed level and let the player scroll it.
- * Returns 0 when the window is closed, -1 if no display could be opened. */
+/* Open a window on an 8-bit indexed buffer and let the viewer scroll it.
+ * `view_w`/`view_h` is the viewport onto a `src_w`x`src_h` picture; pass the
+ * full size for a screen that is not scrolled. Returns 0 when it is closed. */
+int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
+              uint16_t view_w, uint16_t view_h,
+              const lem_rgb *palette, const char *title,
+              uint16_t start_x, uint8_t scale);
+
+/* The level, in the original's own 320x160 viewport. */
 int view_run(const canvas *c, const lem_rgb *palette, const char *title,
              uint16_t start_x, uint8_t scale);
 

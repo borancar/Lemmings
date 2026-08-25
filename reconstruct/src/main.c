@@ -1,10 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  *
- * PC Lemmings, reconstructed - level loader and terrain renderer.
+ * PC Lemmings, reconstructed.
  *
- *   ./lemmings                       level 1 of the Fun set -> level.bmp
+ *   ./lemmings                       the main menu, in a window
  *   ./lemmings --level 3             the third level in the container
- *   ./lemmings --data ../lemming1.pc --out /tmp/x.bmp
+ *   ./lemmings --data ../lemming1.pc
+ *   ./lemmings --out /tmp/x.bmp      write a picture instead of showing one
+ *
+ * Running it with no arguments SHOWS A SCREEN. A reconstruction whose default
+ * output is a bitmap is a converter; the burden of proof is to be the game.
+ * Asking for a file with --out or --raw is what turns the window off.
  *
  * It reads the player's own copy of the original data files; nothing of the
  * game is redistributed here.
@@ -17,6 +22,7 @@
 #include "dat.h"
 #include "ground.h"
 #include "level.h"
+#include "menu.h"
 #include "render.h"
 #include "vgagr.h"
 #include "view.h"
@@ -28,15 +34,17 @@ static const char *SKILL_NAMES[8] = {
 
 static void usage(void)
 {
-    fputs("usage: lemmings [--data DIR] [--file NAME] [--level N] [--out FILE]\n"
+    fputs("usage: lemmings [--data DIR] [--menu|--level N] [--out FILE]\n"
+          "  with no arguments at all, shows the main menu in a window\n"
           "  --data DIR    directory holding the original files (default .)\n"
+          "  --menu        the main menu (the default screen)\n"
           "  --file NAME   level container (default level009.dat)\n"
           "  --level N     which level inside it, 1-based (default 2)\n"
           "                the default pair is the level the game itself\n"
           "                calls Level 1 - the file order is not the game's\n"
-          "  --out FILE    where to write the picture (default level.bmp)\n"
-          "  --show        open a window on the level (arrows scroll, Esc quits)\n"
-          "  --scale N     window magnification for --show (default 3)\n"
+          "  --out FILE    write the picture to FILE instead of showing it\n"
+          "  --show        show it as well, when --out or --raw asked for a file\n"
+          "  --scale N     window magnification (default 3)\n"
           "  --terrain M   how terrain pixels combine: replace|or|keep\n"
           "  --planebits O which bit each stored plane feeds, e.g. 0123\n"
           "  --bitorder B  leftmost pixel is the byte's msb or lsb\n"
@@ -59,11 +67,17 @@ int main(int argc, char **argv)
      * maps one to the other has not been traced yet. */
     const char *data = ".";
     const char *file = "level009.dat";
-    const char *out  = "level.bmp";
+    const char *out  = NULL;
     const char *raw  = NULL;
     uint32_t which = 2;
     uint8_t scale = 3;
     int show = 0;
+    /* The menu is the default screen, and anything that names a level asks
+     * for the level instead. --out and --raw are file requests, so they turn
+     * the window off unless --show says otherwise; that is what keeps
+     * tools/prove.sh working unchanged. */
+    int want_menu = 1;
+    int menu_forced = 0;
     /* The original composes terrain first and draws objects afterwards, so a
      * capture taken at the end of its terrain loop has no objects in it. This
      * lets the port match that, for a comparison that is terrain against
@@ -72,13 +86,14 @@ int main(int argc, char **argv)
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
-        else if (!strcmp(argv[i], "--file") && i + 1 < argc)  file = argv[++i];
-        else if (!strcmp(argv[i], "--out") && i + 1 < argc)   out  = argv[++i];
-        else if (!strcmp(argv[i], "--level") && i + 1 < argc) which = (uint32_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--menu")) menu_forced = 1;
+        else if (!strcmp(argv[i], "--file") && i + 1 < argc)  { file = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--out") && i + 1 < argc)   { out  = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
         else if (!strcmp(argv[i], "--no-objects")) objects = 0;
-        else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   raw  = argv[++i];
+        else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;
         else if (!strcmp(argv[i], "--bitorder") && i + 1 < argc) {
             const char *o = argv[++i];
@@ -108,6 +123,57 @@ int main(int argc, char **argv)
 
     char path[1024];
     const char *err = "unknown error";
+
+    /* An explicit --menu wins whatever else is on the line, and whatever
+     * order it came in; without it, naming a level or a file is what turns
+     * the menu off. */
+    if (menu_forced) want_menu = 1;
+
+    if (want_menu) {
+        menu_screen mm;
+        if (menu_build(data, &mm, &err) != 0) {
+            fprintf(stderr, "main menu: %s\n", err);
+            return 1;
+        }
+        printf("PC Lemmings - main menu  (%dx%d, from main.dat)\n",
+               MENU_W, MENU_H);
+        int rc = 0;
+        if (raw) {
+            /* Same 'LEMRW2' container the level uses, so one comparison tool
+             * reads both: magic, w, h, 16 RGB triples, then w*h indices. */
+            FILE *rf = fopen(raw, "wb");
+            if (!rf) {
+                fprintf(stderr, "%s: cannot open for writing\n", raw);
+                rc = 1;
+            } else {
+                uint16_t wh[2] = { MENU_W, MENU_H };
+                fwrite("LEMRW2", 1, 6, rf);
+                fwrite(wh, sizeof(uint16_t), 2, rf);
+                for (uint8_t i = 0; i < 16; i++) {
+                    fputc(mm.palette[i].r, rf);
+                    fputc(mm.palette[i].g, rf);
+                    fputc(mm.palette[i].b, rf);
+                }
+                fwrite(mm.pix, 1, (size_t)MENU_W * MENU_H, rf);
+                fclose(rf);
+                printf("   wrote %s (raw indices)\n", raw);
+            }
+        }
+        if (out) {
+            if (bmp_write(out, mm.pix, MENU_W, MENU_H, mm.palette,
+                          &err) != 0) {
+                fprintf(stderr, "%s: %s\n", out, err);
+                rc = 1;
+            } else {
+                printf("   wrote %s (%dx%d)\n", out, MENU_W, MENU_H);
+            }
+        }
+        if ((!out && !raw) || show)
+            rc = view_show(mm.pix, MENU_W, MENU_H, MENU_W, MENU_H,
+                           mm.palette, "PC Lemmings", 0, scale);
+        menu_free(&mm);
+        return rc;
+    }
 
     snprintf(path, sizeof(path), "%s/%s", data, file);
     dat_file levels;
@@ -220,11 +286,11 @@ int main(int argc, char **argv)
         }
     }
 
-    if (show) {
+    /* Show it unless a file was the whole point of the run. */
+    if (show || (!out && !raw)) {
         char title[128];
         snprintf(title, sizeof(title), "PC Lemmings - %s", lv.name);
-        if (view_run(&c, g.palette, title, lv.start_x, scale) != 0)
-            fprintf(stderr, "no display available; the picture is in %s\n", out);
+        view_run(&c, g.palette, title, lv.start_x, scale);
     }
     canvas_free(&c);
     return 0;

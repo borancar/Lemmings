@@ -117,6 +117,17 @@ the original does not.
 
 ## Conventions
 
+- **SDL3 for the window, input and sound.** Never X11, Win32, Cocoa or SDL2;
+  never behind an `#ifdef`; never as "the optional viewer" beside a file
+  writer. The port's claim is that it is the same game somewhere the original
+  cannot run, and a platform-specific display layer takes that back. Two
+  rendering paths also drift, and only the one a given build takes is ever
+  looked at. SDL's job stops at putting the port's own composed 8-bit buffer
+  in a window and handing back input - it must not scale, filter or blend
+  anything the original decided for itself.
+- **The port shows a screen by default.** `./lemmings` with no arguments opens
+  the game; `--out` or `--raw` is what asks for a file instead. A
+  reconstruction whose default output is a bitmap is a converter.
 - **`stdint` types only** in the reconstruction — `uint8_t`, `uint16_t`,
   `int16_t`, `uint32_t`. Never `unsigned`, `unsigned char`, `short`, `long` or a
   bare `int`. `char` stays `char` for real strings (paths, `printf`).
@@ -159,6 +170,7 @@ sweeps are the only thing that would catch a regression there. So:
 | --- | --- |
 | `tools/lemmings.py` | the adapter: game dir, executable, load segment, start-up keys, `LemmingsVga` |
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
+| **`tools/verify_menu.py`** | the port's main menu against the one the original composes, in EGA mode 10h - and it scores the parts the port does not build separately rather than hiding them |
 | `tools/hotspots.py` | ranks routines by how much work they do, not by whether they are code. `--after-read` counts only inside the windows following an INT 21h AH=3Fh, which is how the decompressor was found |
 | **`tools/verify_level.py`** | the same for the LVL header parse, and the example of a verifier that rides along with `play.py` via `LEM_HOOK` - needed for anything that only happens inside a level |
 | **`tools/verify_dat.py`** | the differential test, and the pattern to copy for the next routine: stop the original, capture the inputs, let **its own body** run to its `ret`, compare its output with the port's C on the same call |

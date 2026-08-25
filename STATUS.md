@@ -150,6 +150,21 @@ Each of these is stated as what was *checked*, not what was written.
   the fact, why the game used to quit before the menu — it was taking the
   floppy branch by accident because the emulator did not answer AH=1Bh.
 
+- **The main menu is composed, and checked against the original's own screen.**
+  The menu runs in EGA mode 10h — 640×350, four planes — a different mode from
+  the game itself. `tools/verify_menu.py` drives the original to it, dumps that
+  screen and compares: **94.67% identical over the parts the port builds**, and
+  all 16 palette entries byte for byte. Verified piece by piece: the background
+  is a 320×104 **two-plane** tile (four colours) repeating from (0,0) — proven
+  by measurement, since assembling it from four planes scores 39% and forcing
+  planes 2 and 3 to zero scores 95.6%; the logo is 632×94 at (8,10), keyed on
+  index 0; and each of the six signs matched its own slot at 86.7–95.4% against
+  39–78% for every other slot, a clean diagonal.
+- **The reconstruction shows a screen by default and uses SDL3.** `./lemmings`
+  with no arguments opens the main menu; `--out` or `--raw` asks for a file.
+  The X11 viewer is gone — see the convention in CLAUDE.md for why a
+  platform-specific display layer is not acceptable here.
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~
@@ -174,8 +189,15 @@ Each of these is stated as what was *checked*, not what was written.
   in-process driver runs the guest far faster than the wall clock the timer is
   paced on. That changes how fast the game thinks time passes. Fine for
   capturing a picture; **not** fine for anything measuring timing.
-- **The port is a level renderer, not a game.** No lemmings, no skills, no
-  animation, no sound, no control panel.
+- **The port is a menu and a level renderer, not a game.** No lemmings, no
+  skills, no animation, no sound, no control panel.
+- **The menu is composed but not driven.** The signs do not respond to the
+  mouse or to F1–F4, the lemmings on them do not blink, and two pieces are not
+  drawn at all: the credit lines and the scrolling banner at the foot. Those
+  come from a font that has not been located — established rather than assumed,
+  by searching every `MAIN.DAT` section for their pixel runs at all eight bit
+  alignments and finding nothing consistent. `tools/verify_menu.py` scores
+  those regions separately instead of excluding them quietly.
 - **What maps a level number onto a file and a section is not known.** The
   game's Level 1 is section 1 of `level009.dat`, found by reading the
   original's briefing screen — not derived. `oddtable.dat` is an unexamined
