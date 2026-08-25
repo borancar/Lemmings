@@ -232,16 +232,27 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 0 |
-| routines proven (ran, did work, agreed) | 0 |
+| routines transcribed | 4 |
+| routines proven (ran, did work, agreed) | 4, as one unit |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
-| routines never reached | 211 call targets enumerated, none transcribed |
+| routines never reached | 207 of the 211 call targets |
 
-**Nothing is transcribed yet.** The port renders the first level exactly, but
-it does that from the *file formats*, written from published descriptions and
-checked against the data — not by transcribing the original's routines. Those
-are different claims and the second has not been started.
+The four are the DAT decompressor and its helpers — `0x01BAF` (the decode
+loop), `0x01CA3` (the bit reader), `0x01C82` (emit a literal) and `0x01C87`
+(copy a back-reference). `tools/verify_dat.py` stops the original at `0x01BF2`,
+captures the inputs, lets **the original's own body** run to its `ret` at
+`0x01C79`, and compares its output with the port's C on the same call:
+**7 calls, 150,807 bytes decompressed, all byte-identical.**
+
+Stated precisely, because the distinction matters: the four are proven *as a
+unit*. `0x01C82` and `0x01C87` are folded into the loop body in C and are not
+separately compared, so what is checked is their composite behaviour.
+
+Everything else in the port is still written from the file formats rather than
+transcribed — that is the great majority of it. The port rendering the first
+level exactly and the port being a transcription are different claims, and only
+the first is met for the rest.
 
 Also settled while mapping: **there are no dispatch tables in this binary** —
 zero indirect calls or jumps through memory, six register-indirect sites in
@@ -264,8 +275,12 @@ has nothing to seed with here.
    tables"; there are none, which the map establishes rather than assumes.
    What remains is reading the six register-indirect sites, the only dispatch
    static descent cannot follow.
-3. **Start transcribing.** 211 call targets are enumerated and 48.19% of the
-   code region is proven to be code. Nothing is transcribed. This is the work.
+3. **Keep transcribing.** 211 call targets are enumerated, 4 are transcribed
+   and verified. `tools/hotspots.py` ranks the rest by weight, which is how the
+   decompressor was found: inside the windows following an INT 21h AH=3Fh read
+   it is 83% of all instructions executed. The next cluster by weight is
+   `0x057D1..0x05D94`, which is the other thing those read windows spend time
+   in.
 4. **Prove the unpack by round-tripping** against the PKLITE stub's own output.
    Still the standard, still not done.
 

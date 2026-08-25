@@ -20,6 +20,13 @@ typedef struct {
 
 /* Read and decompress every section of `path`. Returns 0 on success.
  * On failure `err` (if not NULL) gets a static reason string. */
+/* One section, decompressed. Exposed so tools/verify_dat.py can run exactly
+ * this code against the original's own body on the same call - see the
+ * PROVENANCE note in dat.c. Transcribed from image 0x01BAF. */
+int dat_decompress(const uint8_t *comp, uint32_t comp_len,
+                   uint8_t bits_in_first, uint8_t checksum,
+                   uint8_t *out, uint32_t out_len, const char **err);
+
 int dat_load(const char *path, dat_file *out, const char **err);
 void dat_free(dat_file *d);
 
