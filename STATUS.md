@@ -76,6 +76,34 @@ Each of these is stated as what was *checked*, not what was written.
   has to re-run the PKLITE stub or the protection to read the code.
 - **A C port draws the game's Level 1**, and its reading of that level agrees
   with the original's own briefing screen on all six stated values.
+- **THE PORT'S DATA LOADING IS PROVEN, BYTE FOR BYTE.**
+  `tools/verify_data.py` takes the bytes the **original** has in RAM after
+  loading a file and compares them against what the port produces from the same
+  file on disk. Two programs, one input, an exact answer. Against a memory dump
+  taken while the game was loading level 1:
+
+  | section | bytes | result |
+  | --- | --- | --- |
+  | `level009.dat` section 1 (the level) | 2 048 | **exact** |
+  | `vgagr0.dat` section 0 (terrain bitmaps) | 30 008 | **exact** |
+  | `vgagr0.dat` section 1 (object bitmaps) | 47 700 | **exact** |
+  | `main.dat` section 3 | 61 968 | **exact** |
+  | `main.dat` section 4 | 36 080 | **exact** |
+  | `main.dat` section 5 | 758 | **exact** |
+  | `ground0o.dat` (uncompressed) | 1 056 | **exact** |
+
+  **179 618 bytes, 0 differing.** That settles the DAT decompressor - written
+  from a published description and corrected against the bytes in three places
+  - and the ground-file reader, and it means every *input* to the terrain
+  renderer is the same as the original's. A section reported "not resident" is
+  one the game had already freed; only a section found *and* differing would be
+  a failure, and there are none.
+
+  The check is careful about one thing worth naming: it scores **every**
+  candidate location, not the first. A 64-byte run of a sprite sheet really
+  does occur inside the video aperture where the game blitted it, and taking
+  the first hit reported two of `main.dat`'s sections as 40% wrong when they
+  had merely been found in the wrong place.
 - **THE PIXEL COMPARISON RUNS.** `tools/compare_level.py` slides the port's
   1584x160 canvas across the original's 320x160 viewport, captured out of the
   guest's own video memory. Results, on level 1:
@@ -204,6 +232,7 @@ the first sweep should write this table rather than have it retyped by hand.
    | the five other plane→bit permutations | 40–58% — **no**, `0123` is right |
    | the viewport is offset vertically | y = 0 is best — **no** |
    | entries after a `FF FF FF FF` are missed | there are none in this level — **no** |
+   | the terrain bitmaps or the level are decompressed wrongly | **no** — both are byte-identical to the original's own memory, 30 008 and 2 048 bytes (see *Done*). Every input to the renderer is confirmed, so the difference is in what the port *does* with them. |
    | the guest's memory was being corrupted | **partly yes** — `INT 21h AH=48h` returned one segment for every request, so the game's three buffers overlapped. Fixed upstream with a real free list; the skill panel went from mottled noise to proper icons and the score rose 79.99% → 81.07%. It did **not** account for the terrain shades. |
 
    What is left, and what it looks like: the disagreements are **whole

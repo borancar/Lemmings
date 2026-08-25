@@ -105,6 +105,9 @@ def main():
                     help="with --dump-vga, write the decoded screen + palette")
     ap.add_argument("--dump-planes", default="",
                     help="with --dump-vga, also write all four planes here")
+    ap.add_argument("--dump-when", default="0x0d",
+                    help="video mode to wait for before dumping: 0x0d is the "
+                         "level, 0x10 the title and briefing (default 0x0d)")
     ap.add_argument("--dump-delay", type=float, default=45.0,
                     help="seconds to wait for the palette to come up in the "
                          "level before --dump-vga")
@@ -175,9 +178,13 @@ def main():
                 time.sleep(0.5)
                 ask(sock, "click up 0")
             if a.dump_vga:
-                # Gameplay is mode 0Dh again, after the 10h title.
-                wait_for(sock, lambda st: "mode=0x0d" in st,
-                         "the level", timeout=180)
+                # Gameplay is mode 0Dh again, after the 10h title; the
+                # briefing is still 10h. Which one to sample matters: a game
+                # frees buffers as it finishes with them, so data that is
+                # resident during loading is gone by the time the level runs.
+                want_mode = a.dump_when
+                wait_for(sock, lambda st: f"mode={want_mode}" in st,
+                         f"mode {want_mode}", timeout=180)
                 # Wait for the guest's own cue rather than a wall clock. The
                 # level fades its palette in, and "some entries are non-black"
                 # is not enough of a cue - mid-fade every entry is non-black
