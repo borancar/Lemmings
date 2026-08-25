@@ -210,10 +210,11 @@ def main():
     # whole screen would measure the missing background, not the text. The
     # text is what was built, and the text is what is scored.
     if a.screen == "briefing":
-        # The background IS drawn now - it is the menu's own tile, tiled from
-        # row 78 - so the whole screen is scored rather than the text alone.
-        # What is not reconstructed is the LEVEL PREVIEW above that row, and
-        # that is reported as its own line instead of being folded in.
+        # Both halves of this screen are drawn now: the background is the
+        # menu's own tile from row 78, and above it is the level's terrain at
+        # quarter scale. They are reported separately because they are checked
+        # differently - the lower rows are exact, the preview is not, and
+        # averaging the two would hide which.
         PREVIEW_Y = 78
         tot = ok = 0
         pre = 0
@@ -230,8 +231,8 @@ def main():
         print(f"  rows {PREVIEW_Y}..{h-1}            : {100*ok/tot:.2f}%  "
               f"({tot-ok} of {tot} differ)")
         print(f"  whole screen              : {100*whole:.2f}%")
-        print(f"\n  rows 0..{PREVIEW_Y-1} are the LEVEL PREVIEW, which is not")
-        print(f"  reconstructed             : {pre} pixels differ there")
+        print(f"\n  rows 0..{PREVIEW_Y-1} are the LEVEL PREVIEW - the level's own")
+        print(f"  terrain at quarter scale  : {pre} pixels differ there")
         return 0 if tot == ok else 1
     skip = bytearray(h)
     for _, y0, y1 in excluded:

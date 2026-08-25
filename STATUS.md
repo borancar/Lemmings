@@ -33,7 +33,7 @@ numbers, re-measured on the current build:
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
-| the **briefing**, rows 78–349 | **100.00%** — 0 of 174,080: background, text and palette. Whole screen 98.64%, the rest its unreconstructed level preview |
+| the **briefing** | **99.93%** whole screen; **100.00%** over rows 78–349 (background, text, palette). The remaining 167 are in the level preview |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, and the whole scrolling banner |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
@@ -476,33 +476,38 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
-- **Open: the briefing's rows 0–77.** One graphic, and here is everything
-  established about it, so the next attempt does not re-derive it:
+- **Rows 0–77 are the level's own terrain at QUARTER SCALE — the level
+  preview.** Boran said so, and the clue had been in hand for two commits: the
+  palette taken from `GROUNDxO.DAT` offset `0x408` is the file's **`preview`**
+  palette. What it is the preview *of* was never asked.
 
-  - It is **127 × 39 at (248, 20)**, 3,052 non-black pixels, in colours 8–15 —
-    the level's preview palette.
-  - It is **deterministic**. Two captures taken seven seconds apart are
-    identical over those rows, pixel for pixel, same 3,052. So it is not
-    composition caught in progress, which was the leading guess.
-  - **No blit targets it in screen coordinates.** `probe_blits.py --driven`
-    logs every call to the shared blitter; the only ones covering that box are
-    the menu's background tile and the logo, and the content matches neither
-    (1,165 of 4,953 pixels agree with the menu's own logo there).
-  - It is **terrain-shaped** — an irregular blob, not text or a sprite — and
-    the blits that do carry the level's graphics (`srcseg 0x7272`) are in
-    LEVEL coordinates, x running to 952 on a 1,584-wide level, so they cannot
-    be read as screen positions.
-  - Searching the port's own composed level for its silhouette gives a best
-    match of **71.4%**, which is not a match.
+  | | |
+  | --- | --- |
+  | the preview's ink box | 127 × 39 |
+  | the composed terrain's | 510 × 160 |
+  | ratio | **4.016** and **4.103** |
 
-  So it is not explained. The port leaves those rows black rather than drawing
-  something plausible and wrong, which keeps the screen honest: 100.00% over
-  rows 78–349 and a named 3,052-pixel gap above them, instead of 98.64%
-  everywhere and no idea where the error is.
+  Sampling pixel (2,2) of each 4×4 block, drawn at **(120, 19)**, 396×40:
+  **98.95%**, 167 of 15,840. **Terrain only** — adding the objects makes it
+  *worse*, 187 against 167, which agrees with what `prove.sh` established about
+  the composition: the original never bakes the entrance and exit in.
 
-  What would settle it is reading the page offsets the blitter adds — `ds:0x1F76`
-  and `ds:0x1F7A`, image `0x08876` — at briefing time against level-composition
-  time. That has not been done.
+  This had been hunted as a stored bitmap, and then as a 1:1 region of the
+  level — which scored **71.4%** and read as "not a match". It was the level
+  all along, at a scale nobody had tried. **A negative result from a search is
+  only as good as the transforms the search covered**, and "same pixels,
+  different size" was not in mine.
+
+  What is left is 167 pixels, almost all at piece edges, and in only 4 of them
+  does the original's colour appear anywhere in the 4×4 block being sampled.
+  So downsampling the finished level is probably not how the original builds
+  it — more likely it scales each terrain piece as it draws, rounding each
+  piece's position independently, which would agree everywhere except where
+  those roundings disagree. That is written as a hypothesis; what is measured
+  is the 4:1 reduction, the origin, and the sample point.
+
+  The briefing is now **99.93%** over the whole screen, and **100.00%** over
+  rows 78–349.
 
 - **The briefing's background is the menu's own tile, tiled from row 78.**
   It had been recorded as *"not the menu's tile, and in neither MAIN.DAT nor

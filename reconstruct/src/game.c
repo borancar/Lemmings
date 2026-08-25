@@ -1501,6 +1501,77 @@ static void put_num(char *dst, size_t end, uint32_t n)
     } while (n && i != (size_t)-1);
 }
 
+/* THE LEVEL PREVIEW, above the briefing's text.
+ *
+ * The palette said so and it took saying out loud to hear it: GROUNDxO.DAT's
+ * third upper-eight palette is called `preview`, and what it is the preview
+ * OF is this. Rows 0..77 of the briefing hold the level's own terrain at
+ * QUARTER SCALE.
+ *
+ * Measured against a capture of the original's briefing:
+ *
+ *   the preview's ink box is 127 x 39; the composed terrain's is 510 x 160,
+ *   which is 4.016 and 4.103 - a 4:1 reduction on both axes
+ *
+ *   sampling pixel (2,2) of each 4x4 block, drawn at (120,19): 98.95%,
+ *   167 of 15,840 differing
+ *
+ * TERRAIN ONLY. Adding the objects makes it worse - 187 against 167 - which
+ * agrees with what tools/prove.sh already established about the composition:
+ * the original never bakes the entrance and exit in, it draws them as sprites
+ * at display time.
+ *
+ * The remaining 167 are almost all at piece edges, and in only 4 of them does
+ * the original's colour appear anywhere in the 4x4 block being sampled. So
+ * this is probably not how the original builds it: it more likely scales each
+ * terrain piece as it draws it, rounding each piece's position on its own,
+ * which would agree everywhere except where those roundings disagree. That is
+ * a hypothesis, and it is written as one - what is measured is the 4:1
+ * reduction, the origin, and the sample point.
+ *
+ * A failed search worth remembering: this was hunted for as a stored bitmap
+ * and then as a 1:1 region of the level, which scored 71.4% and read as "no
+ * match". It is the level, at a scale nobody had tried. */
+#define PV_X      120
+#define PV_Y       19
+#define PV_W      396      /* LEVEL_W / 4 */
+#define PV_H       40      /* LEVEL_H / 4 */
+#define PV_SCALE    4
+#define PV_SAMPLE   2      /* which pixel of each 4x4 block is taken */
+
+static void draw_preview(const char *dir, const level *lv, const ground *g,
+                         uint8_t *dst)
+{
+    char path[1024];
+    dat_file gfx;
+    const char *err = NULL;
+    snprintf(path, sizeof(path), "%s/vgagr%u.dat", dir,
+             (unsigned)(lv->graphics_set & 0x0F));
+    if (dat_load(path, &gfx, &err) != 0)
+        return;                       /* no preview is better than a wrong one */
+    if (gfx.count < 1) { dat_free(&gfx); return; }
+
+    canvas c;
+    if (canvas_init(&c) != 0) { dat_free(&gfx); return; }
+    if (render_terrain(&c, lv, g, gfx.sections[0].data,
+                       gfx.sections[0].size, &err) == 0) {
+        for (uint16_t sy = 0; sy < PV_H; sy++) {
+            uint16_t y = (uint16_t)(PV_Y + sy);
+            uint32_t ly = (uint32_t)sy * PV_SCALE + PV_SAMPLE;
+            if (y >= MENU_H || ly >= c.h) break;
+            for (uint16_t sx = 0; sx < PV_W; sx++) {
+                uint16_t x = (uint16_t)(PV_X + sx);
+                uint32_t lx = (uint32_t)sx * PV_SCALE + PV_SAMPLE;
+                if (x >= MENU_W || lx >= c.w) break;
+                uint8_t v = c.pix[(size_t)ly * c.w + lx];
+                if (v) dst[(size_t)y * MENU_W + x] = v;
+            }
+        }
+    }
+    canvas_free(&c);
+    dat_free(&gfx);
+}
+
 int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
                          menu_screen *m, const char **err)
 {
@@ -1584,9 +1655,11 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
         const char *gerr = NULL;
         snprintf(gpath, sizeof(gpath), "%s/ground%uo.dat", dir,
                  (unsigned)(lv->graphics_set & 0x0F));
-        if (ground_load(gpath, &g, &gerr) == 0)
+        if (ground_load(gpath, &g, &gerr) == 0) {
             for (uint8_t i = 8; i < 16; i++)
                 m->palette[i] = g.preview[i - 8];
+            draw_preview(dir, lv, &g, m->pix);
+        }
     }
 
     char line[64];
