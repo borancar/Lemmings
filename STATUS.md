@@ -58,6 +58,24 @@ Each of these is stated as what was *checked*, not what was written.
 - **The original reaches its main menu under DOSBox** — captured in
   `docs/reference/dosbox-main-menu.png`. So `vgalemmi.exe` runs standalone, its
   protection is satisfiable, and any failure here is ours.
+- **The original now runs under our own emulator too**, through both start-up
+  menus, past the copy protection, to the title screen and on to the level
+  briefing — `docs/reference/emulator-title-screen.png` and
+  `docs/reference/original-level1-briefing.png`. Six emulator defects were in
+  the way and each was diagnosed to an instruction rather than guessed: the
+  load segment, the BIOS CRTC-base variable, an interrupt gate that left TF
+  set, the missing INT 1Eh diskette parameter table, an unhandled INT 13h that
+  reported failure as success, and an unhandled INT 21h AH=1Bh. All are fixed
+  upstream and additive.
+- **The copy protection is understood end to end and defeated by being
+  emulated correctly, not patched.** It runs, checks, and passes: the disk
+  check only fires when a run counter in `RUSSELL.DAT` wraps to zero, one run
+  in ten, and the file ships holding 8.
+- **The program image is extracted and permanently decrypted**, with a sha256
+  and its load segment recorded beside it — `tools/decrypt_image.py`. Nothing
+  has to re-run the PKLITE stub or the protection to read the code.
+- **A C port draws the game's Level 1**, and its reading of that level agrees
+  with the original's own briefing screen on all six stated values.
 
 ## Retracted
 
@@ -72,22 +90,20 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Open
 
-- **THE GAME EXITS INSTEAD OF REACHING ITS MENU, and this outranks the
-  renderer.** The derailment is fixed (see Done), but the copy protection now
-  completes and the program takes a deliberate shutdown path at image
-  `0x0EE2`-`0x0F08`, calling `INT 21h AH=4Ch`. DOSBox reaches the main menu with
-  the same binary. Ruled out: reporting no diskette drive in the equipment word.
-  Leading untested hypothesis is **timing** — the protection reprograms the PIT
-  and calls `INT 1Ah`, and a disk check that measures elapsed ticks would fail
-  against our timer model. Building a renderer before this is fixed would be
-  rendering a guest that quits.
-- **THE PORT DRAWS NOTHING, AND NEITHER DOES THE EMULATOR.** PC Lemmings' VGA
-  build runs in **BIOS mode 0Dh** — 320x200, 16 colours, four bit-planes, eight
-  pixels to the byte. It is *not* mode 13h. `dos_emulator`'s `framebuffer()`
-  handles CGA 04h/05h/06h, chain-4 mode 13h and Mode X, and has no path that
-  gathers a pixel's four bits across planes, so the game reaches its first
-  graphics screen and renders black. Implementing EGA planar upstream is the
-  next piece of work and everything visual is blocked behind it.
+- **NOTHING IS VERIFIED PIXEL FOR PIXEL YET.** The port's renderer has never
+  been compared against the original's video memory. That is now possible —
+  both sides run — and it is the next real piece of work. Until it happens the
+  port is plausible, not proven.
+- **The port is a level renderer, not a game.** No lemmings, no skills, no
+  animation, no sound, no control panel.
+- **What maps a level number onto a file and a section is not known.** The
+  game's Level 1 is section 1 of `level009.dat`, found by reading the
+  original's briefing screen — not derived. `oddtable.dat` is an unexamined
+  candidate.
+- **The C port's file-format code is written from published descriptions**, not
+  transcribed from the disassembly. It is checked against the files and against
+  the briefing screen, which is real evidence but not the standard the method
+  asks for. Provenance is marked in every such file.
 - **The unpack is not yet *proven*.** The skill's standard is a round-trip
   against the stub's own output, and that has not been done. "It produces
   plausible code and the program runs" is evidence, not proof. Nothing has been
@@ -119,12 +135,10 @@ the first sweep should write this table rather than have it retyped by hand.
 
 ## Next
 
-1. **Implement EGA 16-colour planar mode 0Dh in `dos_emulator`** — the
-   framebuffer decode (four planes, eight pixels per byte, a pixel's value
-   gathered across planes), the Graphics Controller write path (set/reset,
-   enable set/reset, bit mask, the write modes and the latches) and the
-   attribute controller's 16-entry palette. Nothing visual can be checked until
-   this exists.
+1. **Reach the level itself in the original** — the briefing wants a mouse
+   click, and the control socket has no verb for one. Then capture its video
+   memory and compare the port's render against it, pixel for pixel. This is
+   the check everything else is waiting on.
 2. Capture the unpacked image to a file at the moment the stub hands control to
    the program, and **prove** it — round-trip against the stub's own output.
 3. Identify the toolchain: count `push bp / mov bp,sp` prologues across the code
