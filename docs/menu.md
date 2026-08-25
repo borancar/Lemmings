@@ -57,9 +57,15 @@ confirmed.
 Its ink uses only values 8–15, never 1–7, so bit 3 is in effect its own mask.
 Index 0 is treated as transparent, which is exact in the logo's upper rows and
 **wrong somewhere below y≈55**: there the original shows black where the tile
-would show through. Four models were tried — keyed 93.64%, opaque per
-byte-column 93.93%, opaque per ink span 90.27%, fully opaque 82.14% — and none
-of them is it. See STATUS.md; this is open.
+would show through. Knocking the ink out of the original's screen shows a black
+halo hugging the outline — [reference/behind-logo.png](reference/behind-logo.png).
+
+Seven models have been tried and none reaches the ~100% that every other piece
+of this screen reaches: keyed 93.64%, opaque per byte-column 93.93%, opaque per
+ink span 90.27%, fully opaque 82.14%, keyed-then-opaque at the best split
+96.42%, a 1-pixel dilation 94.08%, and section 2 as a 1-bit mask 92.29%. It is
+not animation either — those rows are identical between captures. **Open**, and
+STATUS.md carries the list so none of it need be retried.
 
 **The plates** are 120×61, stride 15, planes 915 apart, at
 

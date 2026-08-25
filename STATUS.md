@@ -267,7 +267,12 @@ Each of these is stated as what was *checked*, not what was written.
   original shows **black** and the port shows the background tile. 4,053 such
   pixels in y 0..139, peaking around y 88..98.
 
-  Four compositing models were tested and none explains it:
+  Knocking the logo's own ink out of the original's screen shows what is behind
+  it — [docs/reference/behind-logo.png](docs/reference/behind-logo.png). There
+  is a **black halo hugging the logo's outline**, thick in places and absent in
+  others, and the background texture everywhere else.
+
+  **Seven models have been tested and none explains it:**
 
   | model | agreement over the logo's box |
   | --- | --- |
@@ -275,11 +280,19 @@ Each of these is stated as what was *checked*, not what was written.
   | opaque across each row's byte-columns | 93.93% |
   | opaque across each row's ink span | 90.27% |
   | fully opaque | 82.14% |
+  | keyed above a split row, opaque below (best split, row 50) | 96.42% |
+  | ink dilated by 1 pixel, drawn black | 94.08% |
+  | `MAIN.DAT` section 2 as a 1-bit mask (both alignments, both polarities) | 92.29% |
 
-  A black drop-shadow was tested too — the best offset explains 61% of the
-  suppressed pixels and sits at the edge of the search, so it is not that
-  either. The port keeps the keyed model, which is exact in the logo's upper
-  rows.
+  The best, a hard split at sprite row 50, is 96.42% — better than keyed but
+  not a mechanism: a real one would be near 100%, as every other piece of this
+  screen has been. A black drop-shadow was tried too; the best offset explains
+  61% of the suppressed pixels and sits at the edge of the search.
+
+  The port keeps the keyed model, which is **exact** in the logo's upper rows.
+
+  It is also **not animation**: the rows that differ most, 88–98, are identical
+  between two lit captures 2.5 seconds apart.
 
   Worth noting what this rules out: it is not the logo's data, not its
   position, not the background's tiling (confirmed `y % 104` at 100% on clean
