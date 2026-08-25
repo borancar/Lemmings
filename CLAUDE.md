@@ -43,6 +43,30 @@ So this project loads at `PSP_SEG = 0x1000` (`lemmings.PSP_SEG`, or
 `--psp-seg 0x1000` on the emulator's own CLI). **Anything that builds a machine
 by hand must pass it**, or it will be measuring garbage.
 
+## Do not re-run the decryption
+
+The executable is PKLITE-packed *and* the protection decrypts itself one
+instruction at a time under the trap flag, re-encrypting behind itself. Neither
+the file on disk nor a plain memory dump is the program.
+
+Build the readable image **once** and work from it:
+
+```sh
+uv run python tools/decrypt_image.py     # -> out/vgalemmi.decrypted.img
+uv run python tools/disasm.py 0xdff -n 40
+```
+
+`decrypt_image.py` records the bytes of every instruction at the moment it
+executes and writes them back into the dump, so the protected stretch is
+plaintext too. Only code that *ran* can be recovered that way - that is
+inherent. The sidecar `.json` says how many bytes differed from the raw dump
+and in which spans, which is exactly what the protection was hiding; today
+that is 499 bytes across `0x0066d..0x0096f` and `0x00dff..0x00e39`.
+
+The count rises as the game gets further: it currently exits during start-up
+(see STATUS.md), so most of the game has never executed and is only as
+readable as the raw dump makes it.
+
 ## Conventions
 
 - **`stdint` types only** in the reconstruction — `uint8_t`, `uint16_t`,
@@ -85,7 +109,16 @@ sweeps are the only thing that would catch a regression there. So:
 
 | | |
 | --- | --- |
-| `tools/lemmings.py` | the adapter: game dir, executable, load segment, `LemmingsVga` |
+| `tools/lemmings.py` | the adapter: game dir, executable, load segment, start-up keys, `LemmingsVga` |
+| `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
+| `tools/decrypt_image.py` | **the one to use** - records each instruction's plaintext as it executes and writes it back, so the protected code is readable too |
+| `tools/disasm.py` | disassemble the decrypted image at an image offset |
+| `tools/dat.py` | Lemmings DAT decompression, the Python oracle the C port was checked against |
+| `tools/snapshot.py` | capture memory at a chosen point in a run |
+| `tools/probe_protected.py` | record the protected instruction stream as it runs |
+| `tools/probe_desync.py` | find a single-step desynchronisation, if the decryptor ever loses step |
+| `tools/probe_int13.py`, `tools/probe_exit.py`, `tools/probe_derail.py` | what the disk check asks for, where the program quits, how it derails |
+| `tools/reference_dosbox.sh` | capture DOSBox's screens as a reference (mounts a copy) |
 | `tools/play.py` | run the game; `--auto` answers the start-up menus from the guest's own cue |
 | `tools/trace_stub.py` | instruction trace with registers, for reading a packer stub |
 | `tools/find_write.py` | first guest write into a linear range, and the instruction that did it |
