@@ -650,10 +650,19 @@ void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     }
 }
 
-/* NOT TRANSCRIBED. panel_char below it is - image 0x07756 - but the loop that
- * walks the template and decides which cells get numbers has not been read;
- * where the original keeps the finished line, and what writes the counts into
- * it, are both open. This draws the template as it stands. */
+/* Transcribed from image 0x0417B:
+ *
+ *     lodsb / and al,al / je      a NUL ends the line
+ *     push ax / push si
+ *     call 0x7708                 draw it, cell index in AH
+ *     pop si / pop ax
+ *     inc ah                      the next cell
+ *
+ * One character per cell, and the cell index is a BYTE offset - image 0x07710
+ * adds it straight to 0x1E40 - so cells are eight pixels apart.
+ *
+ * What still is not read is what writes the counts INTO the template before
+ * this walks it. */
 void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                   const uint8_t *sec, uint32_t sec_len,
                   const char *text, uint16_t x, uint16_t y)

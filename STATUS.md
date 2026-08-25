@@ -644,6 +644,23 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Into a level
 
+- **The level's logical line is 44 bytes, not 40 — and that is how it
+  scrolls.** Image `0x07710` puts the panel at `0x1E40`, which is 7744, which
+  is **176 × 44**. So the mode shows 320 pixels of a 352-pixel line and has 32
+  pixels of margin to slide within. It is also why the panel's glyph drawer
+  steps a row by `0x2B` at image `0x077BB` — 43, plus the 1 `stosb` already
+  added.
+
+  The scroll lives at `ds:0x0000` in pixels with `ds:0x0002` the same divided
+  by eight (images `0x0416A` and `0x04175`), and `ds:0x0000` is what the object
+  draw subtracts at image `0x07BCF`.
+
+- **The panel's status line is transcribed** — image `0x0417B`: `lodsb`, a NUL
+  ends the line, the cell index rides in `AH` and is incremented per character,
+  and image `0x07710` adds that index straight to the base, so cells are eight
+  pixels apart. What still is not read is what writes the counts *into* the
+  template before the line is walked.
+
 - **The play area matches the original at 99.95%, and the frame comparison
   exists.** `tools/compare_frame.py` puts one level frame of the original
   beside the port and scores the play area and the panel **separately**,
