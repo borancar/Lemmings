@@ -89,10 +89,12 @@ static void usage(void)
           "  --data DIR    directory holding the original files (default .)\n"
           "  --menu        the main menu (the default screen)\n"
           "  --screen S    menu | briefing | code | input - which screen\n"
-          "  --file NAME   level container (default level009.dat)\n"
-          "  --level N     which level inside it, 1-based (default 2)\n"
-          "                the default pair is the level the game itself\n"
-          "                calls Level 1 - the file order is not the game's\n"
+          "  --rating R    fun | tricky | taxing | mayhem (default fun)\n"
+          "  --number N    the GAME's level number, 1-30 (default 1)\n"
+          "                resolved through the original's own order table,\n"
+          "                so --rating fun --number 1 is \"Just dig!\"\n"
+          "  --file NAME   force a container; --level is then a raw section\n"
+          "  --level N     section inside --file, 1-based\n"
           "  --out FILE    write the picture to FILE instead of showing it\n"
           "  --show        show it as well, when --out or --raw asked for a file\n"
           "  --scale N     window magnification (default 3)\n"
@@ -132,7 +134,10 @@ static int load_level(const char *data, const char *file, uint32_t which,
     /* The LVL does not carry its own number; the briefing prints one. This is
      * the container index, which is NOT what the game calls the level - see
      * the note in main() about level009.dat. */
-    lv->level_number = (uint16_t)which;
+    /* Filled in by the caller when it knows the game's own number; the
+     * container index is NOT it, and printing that gave "Level 2" where the
+     * original says "Level 1". */
+    lv->level_number = 0;
     return rc;
 }
 
@@ -273,7 +278,10 @@ int main(int argc, char **argv)
      * those numbers. The level order is not the file order, and what
      * maps one to the other has not been traced yet. */
     const char *data = ".";
-    const char *file = "level009.dat";
+    const char *file = NULL;        /* NULL = look it up in the game's table */
+    uint8_t rating = 0;             /* 0 Fun, 1 Tricky, 2 Taxing, 3 Mayhem */
+    uint32_t number = 1;            /* the GAME's level number, 1..30 */
+    uint32_t game_number = 0;       /* what the briefing prints; 0 = unknown */
     const char *out  = NULL;
     const char *raw  = NULL;
     uint32_t which = 2;
@@ -305,6 +313,16 @@ int main(int argc, char **argv)
             if (!which_screen && strcmp(w, "menu")) { usage(); return 2; }
         }
         else if (!strcmp(argv[i], "--file") && i + 1 < argc)  { file = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--rating") && i + 1 < argc) {
+            const char *r = argv[++i];
+            rating = !strcmp(r, "fun") ? 0 : !strcmp(r, "tricky") ? 1
+                   : !strcmp(r, "taxing") ? 2 : !strcmp(r, "mayhem") ? 3 : 4;
+            if (rating > 3) { usage(); return 2; }
+            want_menu = 0;
+        }
+        else if (!strcmp(argv[i], "--number") && i + 1 < argc) {
+            number = (uint32_t)atoi(argv[++i]); want_menu = 0;
+        }
         else if (!strcmp(argv[i], "--out") && i + 1 < argc)   { out  = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
@@ -345,14 +363,31 @@ int main(int argc, char **argv)
      * the menu off. */
     if (menu_forced) want_menu = 1;
 
+    /* Turn the GAME's level number into a container and a section, through the
+     * original's own table. --file forces a container, in which case --level
+     * is a raw section index instead, which is what tools/prove.sh uses. */
+    char picked[64];
+    if (!file) {
+        if (level_locate(rating, (uint8_t)number, picked, sizeof(picked),
+                         &which) != 0) {
+            fprintf(stderr, "no such level: rating %u number %u\n",
+                    rating, number);
+            return 1;
+        }
+        file = picked;
+        which += 1;               /* load_level takes 1-based sections */
+        game_number = number;
+    }
+
     if (want_menu) {
         menu_screen mm;
         int built;
         if (which_screen == 3) {
             level blv;
             built = load_level(data, file, which, &blv, &err);
+            blv.level_number = (uint16_t)game_number;
             if (built == 0)
-                built = menu_briefing_screen(data, &blv, 0, &mm, &err);
+                built = menu_briefing_screen(data, &blv, rating, &mm, &err);
         } else {
             built = which_screen == 1 ? menu_code_screen(data, &mm, &err)
                   : which_screen == 2 ? menu_input_screen(data, &mm, &err)
@@ -418,8 +453,9 @@ int main(int argc, char **argv)
                  * Its "Press mouse button to continue" means it. */
                 level lv;
                 if (load_level(data, file, which, &lv, &err) == 0) {
+                    lv.level_number = (uint16_t)game_number;
                     menu_screen br;
-                    if (menu_briefing_screen(data, &lv, 0, &br, &err) == 0) {
+                    if (menu_briefing_screen(data, &lv, rating, &br, &err) == 0) {
                         menu_show_until_dismissed(&br, "PC Lemmings", scale);
                         menu_free(&br);
                     }

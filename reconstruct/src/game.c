@@ -1123,6 +1123,64 @@ int menu_input_screen(const char *dir, menu_screen *m, const char **err)
     return 0;
 }
 
+/* WHICH FILE AND SECTION IS THE GAME'S LEVEL N?
+ *
+ * Transcribed from image 0x0EF7E (DS:0x54EE), and the decode from the loader at
+ * image 0x01983:
+ *
+ *   0x01983  lea si, [0x54ee]        ; this table
+ *   0x01987  mov cl, [bx + si]       ; n = table[level index]
+ *   0x01989  dec cl
+ *   0x0198e  shr cx, 1               ; \ section = ((n-1) >> 1) & 7
+ *   0x01998  and cx, 7               ; /
+ *   0x01990  mov ax, cx              ; \ file    = (n-1) >> 4
+ *   0x01992  shr ax,1 / shr ax,1 / shr ax,1
+ *   0x0199b  lea si, [0x2551]        ; the digits of "level000.dat"
+ *   0x019a4  lea dx, [0x254c]        ; the name itself
+ *
+ * 120 entries - four ratings of thirty - terminated by a zero. They cover all
+ * 80 (file, section) slots the data ships, with 40 slots referenced twice
+ * because those levels appear in two ratings; ODDTABLE.DAT holds the differing
+ * parameters for exactly those 40, which is the check that this reading is
+ * right. It also settles what the game calls its levels: entry 0 is
+ * level009 section 1, and the original's briefing for that level says
+ * "Level 1".
+ *
+ * The low bit of n-1 is discarded by the shift and is not decoded here; the
+ * loader tests something else with it further on. Unread, and said so.
+ */
+static const uint8_t LEVEL_ORDER[120] = {
+    /* Fun 1-30 */
+    147, 155, 157, 149, 151, 153, 159,  14,  22,  54,
+     70,  16,  29,  32,  38,  42,  48,  72,  84, 104,
+    138,  23,  68,  96,  98, 116,  78, 100, 108, 134,
+    /* Tricky 1-30 */
+      1,  30,  36,  50,  52,  56,  58,  80, 102, 120,
+    128, 130, 136,   5, 148, 152, 154, 156, 160,   7,
+     11,  13,  15,  17,  19,  21,  25,  27,  33,  31,
+    /* Taxing 1-30 */
+     37,  39,  41,  43,  45,  47,  49,  51,  53,  55,
+     57,  59,  61,  63,   3,  65,  67,  69,  71,  73,
+     75,  77,  79,  81,  83,  85,  87,  89,  35, 111,
+    /* Mayhem 1-30 */
+     91,  93,  95,  97,  99, 101, 103, 105, 107, 109,
+    112, 113, 115, 117, 119, 121, 123, 125, 127, 150,
+    129,   9, 131, 133, 135, 137, 139, 141, 143, 145,
+};
+
+/* Where the game's level `number` (1..30) of `rating` (0..3) lives. Returns 0
+ * and fills in the container's name and the section index. */
+int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
+                 uint32_t *section)
+{
+    if (rating > 3 || number < 1 || number > 30) return -1;
+    uint8_t n = LEVEL_ORDER[rating * 30 + (number - 1)];
+    if (n == 0) return -1;
+    snprintf(file, file_len, "level%03u.dat", (unsigned)((n - 1) >> 4));
+    *section = (uint32_t)(((n - 1) >> 1) & 7);
+    return 0;
+}
+
 /* The level briefing, which the original shows between the menu and the level.
  *
  * The TEMPLATES are transcribed from the executable, with the addresses they
@@ -1212,8 +1270,17 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
     /* "Level   " with the number written into its trailing spaces, then the
      * level's own 32-character name field - whose padding is what centres the
      * title, so it is drawn whole rather than trimmed. */
+    /* The number goes at offset 6, LEFT-aligned in the two spaces the
+     * template leaves - "Level 1 ", "Level 10". Right-aligning it to the end
+     * of the template gives "Level  1", which is what this drew until the
+     * original's own briefing was read back glyph by glyph and did not
+     * match. */
     snprintf(line, sizeof(line), "%s", T_LEVEL);
-    put_num(line, strlen(T_LEVEL) - 1, lv->level_number);
+    {
+        char num[8];
+        snprintf(num, sizeof(num), "%u", lv->level_number);
+        memcpy(line + 6, num, strlen(num));
+    }
     draw_at(m->pix, font, fontlen, line, BR_LEVEL_X, BR_TITLE_Y);
     draw_at(m->pix, font, fontlen, lv->name, BR_NAME_X, BR_TITLE_Y);
 
@@ -1248,6 +1315,9 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
 
     snprintf(line, sizeof(line), "%s", T_RATING);
     memcpy(line + 8, RATINGS + (rating % 4) * 6, 6);
+    /* The template's own name is "Mayhem", six characters; a shorter one such
+     * as "Fun   " brings its trailing spaces with it, which is why the slots
+     * are padded to six in the executable. */
     draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
 
     draw_at(m->pix, font, fontlen, T_CONTINUE, BR_CONT_X, BR_CONT_Y);

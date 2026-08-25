@@ -19,13 +19,19 @@ Run with no arguments it **shows a screen**. A reconstruction whose default
 output is a bitmap is a converter; asking for `--out` or `--raw` is what turns
 the window off.
 
-**The game's level order is not its file order.** What the original calls
-"Level 1" is section 1 of `level009.dat`, not the first level of the first
-file - established by running the original under an emulator and reading its
-own briefing screen ("Just dig!", 10 lemmings, 10% to be saved, release rate
-50, 5 minutes, diggers only), then confirming this parser gives exactly those
-numbers. That pair is the default. What maps a level number onto a file and a
-section has not been traced yet.
+**The game's level order is not its file order**, and the port now knows the
+real one: a 120-byte table in the executable, four ratings of thirty, decoded
+the way the original's loader decodes it. So `--rating taxing --number 7` means
+what the game means.
+
+```sh
+./lemmings --data DIR --rating fun --number 1     # "Just dig!"
+./lemmings --data DIR --rating mayhem --number 1  # "Steel Works"
+```
+
+There are **120 levels across four ratings** here, stored as 80 unique ones
+with 40 shared between ratings - see [docs/menu.md](../docs/menu.md) for the
+table and the three checks that confirm the reading.
 
 Arrow keys scroll (hold Shift to go faster), Home and End jump to the ends,
 Esc quits.

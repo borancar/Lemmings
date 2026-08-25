@@ -218,3 +218,51 @@ Two lit captures 2.5–7.5 seconds apart, with the palette identical, differ in
 
 A single composed frame cannot match any of it, which is why the port's
 comparison is against one frame and the residual is named rather than chased.
+
+## Which level is "Level 1"? The order table
+
+**Image `0x0EF7E` (DS:`0x54EE`), 120 bytes, zero-terminated.** One entry per
+level: four ratings of thirty, in the order the game presents them. The decode
+is the loader's own, at image `0x01983`:
+
+```
+0x01983  lea si, [0x54ee]     ; the table
+0x01987  mov cl, [bx + si]    ; n = table[level index]
+0x01989  dec cl
+0x0198e  shr cx, 1            \ section = ((n - 1) >> 1) & 7
+0x01998  and cx, 7            /
+0x01990  mov ax, cx           \ file    = (n - 1) >> 4
+0x01992  shr ax,1 x3          /
+0x0199b  lea si, [0x2551]     ; the digits of "level000.dat" at DS:0x254C
+0x019a4  lea dx, [0x254c]
+```
+
+The filename templates sit together at image `0x0BFC4`: `vgagr0.dat`,
+`ground0o.dat`, `level000.dat`, `vgaspec0.dat`, `oddtable.dat`, `adlib.dat`,
+`tandysnd.dat`, `russell.dat`. Only the digits are overwritten.
+
+Three things check the reading:
+
+- the 120 entries cover **all 80** `(file, section)` slots the data ships, with
+  **40 referenced twice** — those levels appear in two ratings;
+- `ODDTABLE.DAT` is 80 records of 56 bytes (the LVL header's first 24 bytes,
+  then a 32-character name) of which **exactly 40** are marked
+  `"This is a non-used duplicate"` — the same 40;
+- entry 0 is `level009` section 1, and the original's briefing for it says
+  **"Level 1"**.
+
+The first level of each rating comes out as the real game's:
+
+| rating | file | section | name |
+| --- | --- | --- | --- |
+| Fun | `level009.dat` | 1 | `Just dig!` |
+| Tricky | `level000.dat` | 0 | `This should be a doddle!` |
+| Taxing | `level002.dat` | 2 | `` If at first you don`t succeed.. `` |
+| Mayhem | `level005.dat` | 5 | `Steel Works` |
+
+The low bit of `n - 1` is discarded by the shift and is not decoded here; the
+loader tests something else with it further on. Unread, and said so.
+
+**So this is the full game — 120 levels across four ratings**, not a demo. The
+file order is not the game's order, which is why the port takes `--rating` and
+`--number` and resolves them through this table.

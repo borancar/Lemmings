@@ -217,6 +217,11 @@ Each of these is stated as what was *checked*, not what was written.
   twice deliberately, to pin that `menu_free` and `dat_free` are idempotent.
   All clean. `make test` runs it alongside the input test.
 
+- **Correction: this is not a demo at all — it is the full game.** The order
+  table has **120 entries**, four ratings of thirty, and every one resolves to
+  a real level. The earlier correction below got the count right (eighty
+  *files*' worth of unique levels) and the conclusion wrong: forty of those are
+  used by two ratings each, which is how 80 stored levels present as 120.
 - **Correction: this is not a ten-level demo.** The project described it that
   way from early on, in `CLAUDE.md` and in the port's own header. It is a
   misreading of "ten level *files*": `level000.dat` .. `level009.dat` each hold
@@ -383,10 +388,20 @@ Each of these is stated as what was *checked*, not what was written.
   last, and then it is 100.0% over both credit lines. One behaviour came with
   it: the original draws **nothing** for a space rather than relying on an
   empty glyph, which is the whole difference between 94.3% and 99.3%.
-- **What maps a level number onto a file and a section is not known.** The
-  game's Level 1 is section 1 of `level009.dat`, found by reading the
-  original's briefing screen — not derived. `oddtable.dat` is an unexamined
-  candidate.
+- ~~**What maps a level number onto a file and a section is not known.**~~
+  **Solved.** The order table is at image `0x0EF7E`, 120 bytes,
+  zero-terminated — four ratings of thirty — and the loader at `0x01983`
+  decodes each entry as `file = (n-1) >> 4`, `section = ((n-1) >> 1) & 7`.
+  Three independent checks agree: the 120 entries cover all 80 `(file,
+  section)` slots with 40 referenced twice; `ODDTABLE.DAT` holds 80 records of
+  which exactly 40 are marked "non-used duplicate" — the same 40; and entry 0
+  is `level009` section 1, which is the level the original's briefing calls
+  "Level 1". The first level of each rating comes out as the real game's:
+  `Just dig!`, `This should be a doddle!`, `` If at first you don`t succeed.. ``,
+  `Steel Works`. See [docs/menu.md](docs/menu.md).
+
+  The port now takes `--rating fun|tricky|taxing|mayhem` and `--number 1..30`
+  and resolves them through that table.
 - **The C port's file-format code is written from published descriptions**, not
   transcribed from the disassembly. It is checked against the files and against
   the briefing screen, which is real evidence but not the standard the method

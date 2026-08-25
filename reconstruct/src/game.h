@@ -147,6 +147,12 @@ typedef struct {
 /* Parse one 2048-byte level section. Returns 0 on success. */
 int level_parse(const uint8_t *buf, uint32_t len, level *out, const char **err);
 
+/* Where the game's level `number` (1..30) of `rating` (0..3 = Fun, Tricky,
+ * Taxing, Mayhem) lives: which levelNNN.dat, and which section inside it.
+ * Transcribed from the table at image 0x0EF7E - see game.c. */
+int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
+                 uint32_t *section);
+
 /* The 15 header fields, flat and in the order the original stores them, for
  * tools/verify_level.py. Transcribed from image 0x036B6. */
 int level_header_fields(const uint8_t *buf, uint32_t len,
