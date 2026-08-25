@@ -644,6 +644,27 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Into a level
 
+- **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
+  run over the rows the missing lemming occupies with the correct 44-byte
+  stride, ranks four writers at 601 bytes apiece — images `0x07F7B`,
+  `0x07FF1`, `0x08067`, `0x080DD`. Four, one per plane.
+
+  It is a **chunky-to-planar transpose**: it reads four consecutive source
+  bytes into `ch/cl/bh/bl` and builds one output byte per plane out of them
+  with `rol`/`ror` and a mask per bit, setting the Sequencer's map mask between
+  passes. Four source bytes become four planar bytes — eight pixels.
+
+  From the masks, the source looked like **4bpp packed two pixels to a byte**:
+  output bit 7 comes from `ch` bit 5 and bit 6 from `ch` bit 1, which is the
+  same plane of two adjacent nibbles. **That inference does not hold.**
+  Rendering `main.dat` section 0 as 16×10 at 4bpp gives noise, not a lemming,
+  so the source is something else — quite possibly a composed buffer rather
+  than stored artwork, since the routine also latch-reads its destination.
+
+  Recorded as a lead, not a finding. What would settle it is dumping the
+  source bytes at the moment of the call, the way `probe_blits.py --dump`
+  does for the blitter, rather than inferring the format from the rotates.
+
 - **The level's logical line is 44 bytes, not 40 — and that is how it
   scrolls.** Image `0x07710` puts the panel at `0x1E40`, which is 7744, which
   is **176 × 44**. So the mode shows 320 pixels of a 352-pixel line and has 32
