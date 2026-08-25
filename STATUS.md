@@ -44,6 +44,13 @@ Each of these is stated as what was *checked*, not what was written.
 
 - **The start-up path runs**: both machine-type menus cleared, BIOS mode 0Dh
   set, and `main.dat` and `adlib.dat` opened. Verified by run log, not by eye.
+- **The derailment inside the protection is fixed, and diagnosed to a cause
+  rather than patched around.** Two BIOS gaps: `INT 1Eh` was zero, so the
+  protection's write to the diskette parameter table's bytes-per-sector field
+  landed on `0000:0003` and corrupted the `0000:0000` pointer its own decryptor
+  uses; and `INT 13h` was unhandled, leaving carry as the caller set it, so 24
+  failed sector reads all looked like successes. Both fixed upstream. The
+  protection now runs to completion and restores its own vectors.
 - **The protection is characterised, and measured rather than assumed** — see
   [docs/protection.md](docs/protection.md). `IVT[01h]` = image 0x00DFF;
   `EFLAGS = 0x0146` (TF set) at handler entry with no `int 1` in the stream;
@@ -65,16 +72,15 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Open
 
-- **THE GUEST DERAILS INSIDE THE PROTECTION, and this now outranks the
-  renderer.** After reaching mode 0Dh the game moves `IVT[01h]` from image
-  `0x00DFF` to `0x00D0C`, and under our machine the bytes there are still
-  encrypted: it executes garbage and spins in a ~14-instruction loop at
-  `0x00D17..0x00D39`, taking zero interrupts for 40M+ instructions. DOSBox runs
-  the same binary to the main menu. The decryption depends on receiving exactly
-  one `#DB` per instruction, so a single extra or missing trap desynchronises
-  the rolling key — the `mov ss`/`pop ss` interrupt shadow is the leading
-  suspect, unconfirmed. Building a renderer before this is fixed would be
-  rendering a crashed guest.
+- **THE GAME EXITS INSTEAD OF REACHING ITS MENU, and this outranks the
+  renderer.** The derailment is fixed (see Done), but the copy protection now
+  completes and the program takes a deliberate shutdown path at image
+  `0x0EE2`-`0x0F08`, calling `INT 21h AH=4Ch`. DOSBox reaches the main menu with
+  the same binary. Ruled out: reporting no diskette drive in the equipment word.
+  Leading untested hypothesis is **timing** — the protection reprograms the PIT
+  and calls `INT 1Ah`, and a disk check that measures elapsed ticks would fail
+  against our timer model. Building a renderer before this is fixed would be
+  rendering a guest that quits.
 - **THE PORT DRAWS NOTHING, AND NEITHER DOES THE EMULATOR.** PC Lemmings' VGA
   build runs in **BIOS mode 0Dh** — 320x200, 16 colours, four bit-planes, eight
   pixels to the byte. It is *not* mode 13h. `dos_emulator`'s `framebuffer()`

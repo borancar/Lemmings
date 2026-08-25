@@ -120,34 +120,58 @@ about protection if the region was **actually being single-stepped in between** 
 the mistake above. Check `int_counts[1]` climbed over the interval before
 drawing any conclusion from it.
 
-### A second-stage handler, and where our emulation currently fails
+### The full chain, as now understood
 
-`IVT[01h]` starts at image `0x00DFF` and is later moved to image `0x00D0C` by
-the game's own code — `les si, ptr [bp+0xf]` at image `0x0942` followed by
-`mov word ptr es:[si+3], bx` at `0x0945`, which writes the new offset straight
-into the vector.
+1. **PKLITE** unpacks the image.
+2. An **INT 03h handler at image `0x0DB3`** bootstraps the decryptor. It stores
+   its own return address into `0000:0004` (the `IVT[01h]` *offset*), adds
+   `0x42` to reach image `0x0DFF`, puts `CS` in `0000:0006`, and then decrypts
+   0x3B bytes with `neg byte ptr cs:[si]` — an involution, so the same loop
+   re-encrypts. That is how the single-step handler is installed and made
+   readable.
+3. The **INT 01h handler** then runs the one-instruction window described above.
+4. The protected stretch reads the **Diskette Parameter Table** through
+   `INT 1Eh` (`0000:0078`), copies its eleven bytes, and writes back to offset
+   3 — bytes-per-sector — before doing **`INT 13h`**: reset plus a one-sector
+   read, on drives 0 and 1, cylinders 0-3, retried 24 times. A floppy check.
+5. `IVT[01h]` is later moved from `0x0DFF` to a second-stage handler at
+   `0x0D0C`.
 
-Under `dos_emulator` the guest then executes **garbage** at `0x00D0C` and spins
-forever in a ~14-instruction loop between `0x00D17` and `0x00D39`, taking no
-interrupts at all. Under DOSBox the same binary reaches the Lemmings main menu,
-so the second-stage handler is plaintext by then on a correct machine and our
-run has failed to decrypt it.
+### Two emulator defects this exposed, both now fixed upstream
 
-**Root cause not yet found.** The scheme depends on receiving *exactly one*
-`#DB` per instruction, so any extra or missing trap desynchronises the rolling
-key and turns following instructions into noise. Candidates, none confirmed:
+- **`INT 1Eh` was zero.** The protection's write to "DPT+3" therefore landed on
+  `0000:0003`, three bytes from the `0000:0000` pointer its own decryptor uses.
+  It corrupted itself and spun forever in encrypted bytes at
+  `0x0D17..0x0D39`. Fixed by putting a real table at F000:EFC7.
+- **`INT 13h` was unhandled**, which is worse than absent: carry was left as
+  the caller set it, so all 24 reads looked like successes returning an
+  uninitialised buffer. Fixed by answering as a machine with drives fitted and
+  no diskette in them.
 
-- the `mov ss` / `pop ss` **interrupt shadow** — a load of `SS` inhibits
-  interrupts, single-step included, for the following instruction. If that is
-  not modelled, one extra trap arrives and the key desynchronises.
-- `REP`-prefixed string instructions, where the trap should arrive per
-  iteration.
-- our INT shim executing `INT 21h` inline rather than through a real gate,
-  changing how many traps the sequence produces.
+With both, the guest stops derailing: the protection completes, restores its
+vectors, and the program exits cleanly.
 
-The instrument to build next is a desync detector: record the return address
-the handler computes from `ss:[sp+6]`, and compare it against the address
-actually executed after the `IRET`. The first mismatch is the bug.
+### Still open: it exits instead of reaching the menu
+
+Under DOSBox the same binary reaches the main menu
+(`docs/reference/dosbox-main-menu.png`). Here it runs the protection, then
+takes an orderly shutdown path at image `0x0EE2`-`0x0F08` — restore interrupt
+vectors, restore the video mode via `INT 10h`, reprogram the PIT through ports
+0x43/0x40 — and calls `INT 21h AH=4Ch` with exit code 0. A deliberate quit, not
+a crash.
+
+Tried and **ruled out**: reporting no diskette drive in the BIOS equipment word
+at `0040:0010` changes nothing — same 13 `INT 13h` calls, same exit.
+
+Untested hypotheses, in the order worth trying:
+
+1. **Timing.** The protection reprograms the PIT and calls `INT 1Ah`. A
+   disk-based check often measures rotation or elapsed ticks, and our timer
+   model may put the answer outside whatever window it accepts.
+2. The check may want a *specific* failure code, or a specific number of
+   retries, before concluding "no original disk, run anyway".
+3. Something later — the exit decision has been located but the *condition*
+   that reaches it has not been traced back yet.
 
 ## Layer 3 — a run counter, and magic pairs
 
