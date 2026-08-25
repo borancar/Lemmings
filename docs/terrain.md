@@ -80,11 +80,66 @@ A piece can start at any x, so the source row is copied to a scratch buffer at
 bit, repeated `[0xa948]` times. A per-pixel renderer gets this for free, which
 is why the port does not need it.
 
+## Four passes, one per plane
+
+The routine is not one blit but four, each writing a single plane through the
+sequencer's map mask, with the source advanced to the next plane between them:
+
+```
+08b59  b80201      mov ax, 0x0102     ; map mask = plane 0
+08c07  b80202      mov ax, 0x0202     ; map mask = plane 1
+                   ...                ; and so on for 2 and 3
+08bff  260336f866  add si, es:[0x66f8]; source -> the next plane
+```
+
+which is why watching the terrain bitmaps reported **four** read sites with
+identical counts.
+
+## The OR turns out to be a no-op, and that matters
+
+`GC 3 = 0x10` selects the OR function, so each write is `source OR latch`, and
+the loop writes every byte of the row without ever testing whether the source
+pixel is transparent. That looks like it should smear colour into the gaps -
+and it is exactly what a per-pixel renderer would get wrong.
+
+It does not, because of what terrain data contains. A terrain pixel is either
+**0** - all four planes clear - or **8-15**, with plane 3 set. There is no
+value with colour bits and no mask bit. So in a transparent area the source
+byte is zero in every plane, and OR-ing zero changes nothing.
+
+The consequence is worth stating: for this data, `source OR latch` under a
+"not already solid" mask is **indistinguishable** from writing solid pixels
+where the canvas is empty. The port's per-pixel rule is equivalent, and this
+was checked rather than argued - implementing the hardware rule literally
+(`--terrain hw`) scores 66.09% against DOSBox where the port's own rule scores
+79.15%, because applying the mask to *every* piece is what that would mean,
+and only some pieces carry the flag.
+
+## There is more than one blitter
+
+That last point is the resolution. Watching reads reported other sites besides
+these four - `0x08A1D`, `0x08A8B`, `0x08AF6` at 6 134 each and `0x0895D`,
+`0x0896F` at 6 092 - so the game has several terrain blitters and picks one per
+piece. The routine documented here is the **masked** variant, used for pieces
+with "do not overwrite"; the others do not set up read mode 1 and simply write.
+
+Which is what the port already models with its flag test, and is why treating
+every piece as masked measures worse.
+
 ## What this does and does not explain
 
-It confirms the port's rules: drawing order, the meaning of "do not
-overwrite", and that pixels are replaced rather than combined. It does **not**
-explain the ~19% of terrain pixels that still differ (see `STATUS.md`), and
-nothing here suggests where that comes from. The next thing to read is what
-sets up `[0xa948]` and the source pointer for each piece — the caller of this
-routine, which is where a placement or piece-selection difference would live.
+It **confirms** the port's rules from the original's own code rather than from
+a published description: drawing order, that "do not overwrite" means "only
+where nothing is yet", that it applies per piece rather than universally, and
+that for this data OR and replace cannot be told apart.
+
+It does **not** explain the ~19% of terrain pixels that still differ (see
+`STATUS.md`). What it does do is remove the last plausible guesses: there is
+no clever combining rule to discover, because the hardware's combining rule is
+a no-op on terrain data.
+
+The next thing to read is the **caller** — what selects between the blitters,
+what it puts in `[0xa948]` (the sub-byte shift) and `[0x6702]`/`[0x6704]` (the
+source and destination row strides), and how it clips a piece to the window.
+A placement or selection difference would live there, and it is now the only
+place left for one to hide.

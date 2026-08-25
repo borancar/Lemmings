@@ -24,7 +24,8 @@ typedef enum {
     TERRAIN_KEEP,          /* the older pixel wins wherever there is one */
     TERRAIN_NOV_IGNORE,    /* replace, ignoring the no-overwrite flag */
     TERRAIN_NOV_INVERT,    /* no-overwrite means "only where terrain is" */
-    TERRAIN_OR_ALL         /* every piece ORs, no-overwrite included */
+    TERRAIN_OR_ALL,        /* every piece ORs, no-overwrite included */
+    TERRAIN_HW             /* what the original's blitter actually does */
 } terrain_mode;
 
 extern terrain_mode g_terrain_mode;

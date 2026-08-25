@@ -72,6 +72,38 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                     continue;
 
                 uint8_t v = tile[(uint32_t)src_y * gt->width + sx];
+
+                if (g_terrain_mode == TERRAIN_HW) {
+                    /* What the original's blitter does, read from its own
+                     * code at image 0x08B42-0x08BE2:
+                     *
+                     *   - the Graphics Controller is put in read mode 1 with
+                     *     colour compare 0x08 and don't-care 0x08, so reading
+                     *     video memory answers "is this pixel already solid
+                     *     terrain?" one bit per pixel;
+                     *   - NOT of that becomes the bit mask, so a write cannot
+                     *     land on existing terrain - that is what "do not
+                     *     overwrite" is, done in hardware;
+                     *   - GC index 3 is set to 0x10, which selects the OR
+                     *     function, so what is written is source OR latch;
+                     *   - and the inner loop is a plain `lodsb / stosb` over
+                     *     the whole row. It NEVER tests whether the source
+                     *     pixel is transparent.
+                     *
+                     * That last point is the one a per-pixel renderer gets
+                     * wrong by being sensible: the transparent parts of a
+                     * piece still deposit their colour bits, and a later
+                     * piece ORs on top of them. The result is pixels whose
+                     * value is a superset of any single piece's - which is
+                     * exactly what the original's screen shows and a
+                     * skip-if-transparent renderer cannot produce.
+                     */
+                    uint8_t *d = &c->pix[(uint32_t)dy * c->w + dx];
+                    if (!(*d & 0x08))
+                        *d = (uint8_t)(*d | v);
+                    continue;
+                }
+
                 if (!(v & 0x08))
                     continue;       /* transparent */
 

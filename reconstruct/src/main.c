@@ -93,6 +93,7 @@ int main(int argc, char **argv)
             else if (!strcmp(m, "nov-ignore")) g_terrain_mode = TERRAIN_NOV_IGNORE;
             else if (!strcmp(m, "nov-invert")) g_terrain_mode = TERRAIN_NOV_INVERT;
             else if (!strcmp(m, "or-all")) g_terrain_mode = TERRAIN_OR_ALL;
+            else if (!strcmp(m, "hw")) g_terrain_mode = TERRAIN_HW;
             else { usage(); return 2; }
         }
         else { usage(); return 2; }

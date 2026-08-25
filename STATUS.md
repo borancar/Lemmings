@@ -255,6 +255,8 @@ the first sweep should write this table rather than have it retyped by hand.
    outside — inputs, placement, order, bit order, plane order, compositing —
    which is worth more than the percentage.
 
+   | the original combines pixels in some cleverer way | **no, and now settled from its own code** — see [docs/terrain.md](docs/terrain.md). Its blitter uses the Graphics Controller's OR function and never tests the source for transparency, which looks like a difference and is not: a terrain pixel is either 0 in all four planes or 8–15 with plane 3 set, so OR-ing a transparent source is a no-op. Implementing the hardware rule literally scores 66.09% against DOSBox where the port's rule scores 79.15%. |
+
    What is left, and what it looks like: the disagreements are **whole
    8-pixel blocks** — one byte — where the port has index 11 and the original
    has 9, a single bit in plane 1. At one such block (level x 632, y 8) only
