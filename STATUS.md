@@ -37,9 +37,10 @@ numbers, re-measured on the current build:
 | the **main menu** | 99.41% — 1,321 of 224,000, of which 995 are its animated banner |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
+| the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 5 of 211
+**Transcription is a different claim from any of the above, and it is 6 of 211
 call targets.** The port renders these screens from the file formats and from
 geometry measured against the original — that is real evidence, and it is not
 the same as having transcribed the routines. See *Coverage* below.
@@ -645,11 +646,11 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 5 |
-| routines proven (ran, did work, agreed) | 5 |
+| routines transcribed | 6 |
+| routines proven (ran, did work, agreed) | 6 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
-| routines never reached | 206 of the 211 call targets |
+| routines never reached | 205 of the 211 call targets |
 
 | routine | what it is | how it is checked |
 | --- | --- | --- |
@@ -658,6 +659,7 @@ port:
 | `0x01C82` | emit a literal | ” |
 | `0x01C87` | copy a back-reference | ” |
 | `0x036B6` | LVL header parse | `tools/verify_level.py` — 15 fields, all agree |
+| `0x09347` | the sprite **pre-shift**: copy a row, append a zero byte, shift right N bits | `tools/verify_shift.py` — 200 calls, byte-identical, over shifts of 2, 6 and 7 |
 
 Both verifiers work the same way, and it is the method's way rather than a
 screenshot: stop the original, capture the inputs, let **its own body** run,

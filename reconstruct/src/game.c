@@ -715,7 +715,7 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                      * exactly what the original's screen shows and a
                      * skip-if-transparent renderer cannot produce.
                      */
-                    uint8_t *d = &c->pix[(uint32_t)dy * c->w + dx];
+                    uint8_t *d = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
                     if (!(*d & 0x08))
                         *d = (uint8_t)(*d | v);
                     continue;
@@ -724,7 +724,7 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                 if (!(v & 0x08))
                     continue;       /* transparent */
 
-                uint8_t *dst = &c->pix[(uint32_t)dy * c->w + dx];
+                uint8_t *dst = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
                 if (t->erase)
                     *dst = 0;
                 else if (g_terrain_mode == TERRAIN_OR_ALL)
@@ -807,11 +807,11 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                 int32_t dx = o->x + sx;
                 if (dx < 0 || dx >= c->w)
                     continue;
-                uint32_t si = (uint32_t)src_y * go->width + sx;
+                uint32_t si = (uint32_t)src_y * go->width + (uint32_t)sx;
                 if (!mask[si])
                     continue;
 
-                uint8_t *dst = &c->pix[(uint32_t)dy * c->w + dx];
+                uint8_t *dst = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
                 if (o->only_on_terrain && *dst == 0)
                     continue;
                 if (o->no_overwrite && *dst != 0)
@@ -980,6 +980,46 @@ static uint8_t dac8(uint8_t v)
 {
     v &= 0x3F;
     return (uint8_t)((v << 2) | (v >> 4));
+}
+
+/* image 0x09347 - copy a sprite row into the scratch buffer, append a zero
+ * byte, and shift the lot right by `bits`.
+ *
+ * This is the game's own way of drawing at an x that is not a multiple of
+ * eight, and it is why so many of its blits read from anonymous memory: the
+ * blit's source is this buffer, never the artwork.
+ *
+ *   0x0934e  lea di, [0x6706]      ; the scratch buffer, in DGROUP
+ *   0x09352  rep movsb             ; CL bytes of the row
+ *   0x09354  xor al, al
+ *   0x09356  stosb                 ; then ONE ZERO BYTE
+ *   0x09365  mov al, [0xa948]      ; the shift count, in bits
+ *   0x0936c  shr byte ptr [si], 1  \ shift the whole buffer right one bit,
+ *   0x09371  rcr byte ptr [si], 1   > the first byte with SHR so a zero comes
+ *   0x09376  loop 0x9371           / in, the rest with RCR to carry across
+ *   0x0937a  dec al / jne          ; once per bit
+ *   0x09380  inc cl                ; and blit ONE MORE byte than was copied
+ *
+ * The appended byte is what catches the bits pushed off the right-hand end, so
+ * a 15-byte sprite shifted by 4 occupies 16 bytes on screen.
+ *
+ * `out` must have room for len + 1 bytes. Returns how many bytes to draw.
+ */
+uint8_t shift_row(const uint8_t *src, uint8_t len, uint8_t bits, uint8_t *out)
+{
+    for (uint8_t i = 0; i < len; i++)
+        out[i] = src[i];
+    out[len] = 0;                       /* 0x09354: xor al,al / stosb */
+
+    for (uint8_t b = 0; b < bits; b++) {
+        uint8_t carry = 0;              /* SHR shifts a zero into the first */
+        for (uint8_t i = 0; i <= len; i++) {
+            uint8_t next = (uint8_t)(out[i] & 1u);
+            out[i] = (uint8_t)((out[i] >> 1) | (carry << 7));
+            carry = next;
+        }
+    }
+    return (uint8_t)(len + 1);          /* 0x09380: inc cl */
 }
 
 /* One pixel out of a planar bitmap. `planes` is how far apart consecutive
@@ -1506,7 +1546,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
             int32_t x = (int32_t)LOGO_X + LOGO_SHADOW_DX + sx;
             if (x < 0 || x >= BG_DRAWN_W) continue;
             if (planar(sec, LOGO_BASE, LOGO_PLANE, LOGO_STRIDE, 4, sx, sy))
-                m->pix[(size_t)y * MENU_W + x] = 0;
+                m->pix[(size_t)y * MENU_W + (uint16_t)x] = 0;
         }
     }
 
@@ -1524,7 +1564,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
                 if (x < 0 || x >= BG_DRAWN_W) continue;
                 if (planar(sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
                            SIGN_PLANE, SIGN_STRIDE, 4, sx, sy))
-                    m->pix[(size_t)y * MENU_W + x] = 0;
+                    m->pix[(size_t)y * MENU_W + (uint16_t)x] = 0;
             }
         }
 

@@ -147,6 +147,12 @@ typedef struct {
 /* Parse one 2048-byte level section. Returns 0 on success. */
 int level_parse(const uint8_t *buf, uint32_t len, level *out, const char **err);
 
+/* Copy a sprite row, append a zero byte, and shift it all right by `bits` -
+ * the original's own way of drawing at a non-byte-aligned x. Transcribed from
+ * image 0x09347; `out` needs len + 1 bytes; returns how many to draw.
+ * Checked against the original by tools/verify_shift.py. */
+uint8_t shift_row(const uint8_t *src, uint8_t len, uint8_t bits, uint8_t *out);
+
 /* Where the game's level `number` (1..30) of `rating` (0..3 = Fun, Tricky,
  * Taxing, Mayhem) lives: which levelNNN.dat, and which section inside it.
  * Transcribed from the table at image 0x0EF7E - see game.c. */
