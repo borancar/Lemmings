@@ -1574,8 +1574,25 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * They are what puts colour 12 in the margins, a stripe of colour 6 at x=592,
  * and the disturbance in the dash near the right edge, where the clean runs
  * stop at 584..587. */
+/* The PAINTED extent of the bar, measured off the original's screen. */
 #define BAR_X0    36
 #define BAR_X1   602
+/* Where the STRIP itself is blitted, which is not the same thing. Image
+ * 0x07CEE loads ax=0x30, bx=0x14E, dx=0x230 and calls the shared blitter at
+ * 0x1010:0x8822, whose convention that entry establishes: ax is x in pixels,
+ * bx is y, cl is rows, ch is planes, dx is the width in pixels. So the strip
+ * is 560 pixels at x=48, y=334 - and the painted bar runs 36..602, which the
+ * strip does not reach at either end.
+ *
+ * The 12 pixels at 36..47 and the few past 602 belong to the two lemmings
+ * holding the bar: their sprites carry its end caps. Until those are located
+ * the port tiles the bar's own artwork through that gap, which is the right
+ * colour and the wrong provenance, and is marked as such rather than folded
+ * into the strip's geometry. A capture cannot tell the two apart - the tile
+ * repeats every 16 pixels, so a 12-pixel error in the origin is absorbed by
+ * the scroll phase, and the fit is degenerate. The blitter's arguments are
+ * not. */
+#define BAR_STRIP_X 48
 #define BAR_Y0   334
 #define BAR_Y1   349
 #define BAR_TILE  23040       /* section 4: the bar's own 16x16 column */
@@ -1661,9 +1678,14 @@ void draw_banner(uint8_t *dst, const uint8_t *font, uint32_t font_len,
             dst[(size_t)y * MENU_W + x] = 0;
 
     for (uint16_t x = BAR_X0; x <= BAR_X1; x++) {
-        uint32_t r = scroll + (uint32_t)(x - BAR_X0);   /* ribbon pixel */
-        uint16_t cx = (uint16_t)(r % BAR_TILE_W);
-        uint8_t ch = scroll_char((int32_t)(r / BAR_TILE_W) - BAR_COLS);
+        /* Ribbon pixel, measured from where the STRIP starts, not from where
+         * the paint starts. Signed: x < BAR_STRIP_X is the end-cap gap. */
+        int32_t r = (int32_t)scroll + (int32_t)x - BAR_STRIP_X;
+        uint16_t cx = (uint16_t)(((r % BAR_TILE_W) + BAR_TILE_W)
+                                 % BAR_TILE_W);
+        int32_t k = (r >= 0 ? r / BAR_TILE_W
+                            : -(((-r) + BAR_TILE_W - 1) / BAR_TILE_W));
+        uint8_t ch = scroll_char(k - BAR_COLS);
         for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++) {
             uint16_t ty = (uint16_t)(y - BAR_Y0);
             uint8_t v = planar(font, BAR_TILE, BAR_TILE_PLANE, 2, 4, cx, ty);
@@ -1991,7 +2013,7 @@ static int banner_tick(void *ctx, uint8_t *pix)
     uint32_t next = menu_get_scroll() + MENU_SCROLL_STEP;
     /* A character boundary just crossed: if the one that entered was preceded
      * by a pause marker, hold. */
-    if ((next % 16) == 0 && scroll_pauses_at(next / 16))
+    if ((next % BAR_TILE_W) == 0 && scroll_pauses_at(next / BAR_TILE_W))
         pause = BANNER_PAUSE;
     menu_set_scroll(next);
     draw_banner(pix, m->gfx, m->gfx_len, next);
