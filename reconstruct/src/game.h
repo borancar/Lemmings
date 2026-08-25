@@ -231,6 +231,17 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                    const uint8_t *terrain_sec, uint32_t terrain_len,
                    const char **err);
 
+/* The level's control panel: its own three-plane font, at the tail of
+ * main.dat section 2. See "THE LEVEL'S CONTROL PANEL" in game.c. */
+#define PANEL_COLS 44
+extern const char PANEL_TEMPLATE[PANEL_COLS + 1];
+void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                const uint8_t *sec, uint32_t sec_len,
+                uint8_t ch, uint16_t x, uint16_t y);
+void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                  const uint8_t *sec, uint32_t sec_len,
+                  const char *text, uint16_t x, uint16_t y);
+
 /* ====================================================================
  * The level's objects, animated at display time.
  *

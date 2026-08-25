@@ -260,6 +260,44 @@ int main(int argc, char **argv)
         }
     }
 
+    /* THE PANEL'S FONT, at the tail of main.dat section 2.
+     *
+     * Checked by drawing and reading back, because the point of finding it was
+     * that it renders characters: '0' and 'A' have ink, ' ' clears its cell,
+     * and a character the dispatch at image 0x07756 does not map - a lower
+     * case letter - draws nothing at all rather than some other glyph. */
+    {
+        const char *e = NULL;
+        dat_file d;
+        char p3[512];
+        snprintf(p3, sizeof(p3), "%s/main.dat", dir);
+        if (dat_load(p3, &d, &e) == 0 && d.count > 2) {
+            static uint8_t cell[16 * 8];
+            const uint8_t *sec = d.sections[2].data;
+            uint32_t len = d.sections[2].size;
+            size_t ink0 = 0, inkA = 0, inkSp = 0, inkLc = 0;
+            memset(cell, 0xAA, sizeof(cell));
+            panel_char(cell, 8, 16, sec, len, '0', 0, 0);
+            for (size_t k = 0; k < sizeof(cell); k++) ink0 += (cell[k] != 0);
+            memset(cell, 0xAA, sizeof(cell));
+            panel_char(cell, 8, 16, sec, len, 'A', 0, 0);
+            for (size_t k = 0; k < sizeof(cell); k++) inkA += (cell[k] != 0);
+            memset(cell, 0xAA, sizeof(cell));
+            panel_char(cell, 8, 16, sec, len, ' ', 0, 0);
+            for (size_t k = 0; k < sizeof(cell); k++) inkSp += (cell[k] != 0);
+            memset(cell, 0, sizeof(cell));
+            panel_char(cell, 8, 16, sec, len, 'a', 0, 0);
+            for (size_t k = 0; k < sizeof(cell); k++) inkLc += (cell[k] != 0);
+            ck("the panel font draws a digit", ink0 > 10 && ink0 < 90,
+               "'0' has no plausible ink");
+            ck("and a letter", inkA > 10 && inkA < 90, "'A' has no ink");
+            ck("a space clears its cell", inkSp == 0, "space left ink");
+            ck("and an unmapped character draws nothing", inkLc == 0,
+               "'a' drew something - the dispatch maps it");
+            dat_free(&d);
+        }
+    }
+
     /* A hotspot table the menu never asked for, to catch an out-of-bounds
      * write in menu_hotspots if MENU_HOTSPOTS and the code disagree. */
     view_hotspot spots[MENU_HOTSPOTS];

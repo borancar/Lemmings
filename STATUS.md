@@ -644,6 +644,42 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Into a level
 
+- **The panel's font is found and transcribed** — `main.dat` section 2's tail,
+  and a **three**-plane font, not four like everything else on this screen.
+
+  It could not be found by hooking the blitter, because the panel does not use
+  it. `tools/probe_writes.py` is new and finds a drawing path the only way that
+  cannot miss: it attributes every write into the EGA window to the
+  instruction that made it. Three `stosb` sites — images `0x077B9`, `0x077DD`,
+  `0x077F5` — and a fourth at `0x07804` that writes zeroes.
+
+  Three sites because there are three planes, and the glyph stride says the
+  same: image `0x07782` shifts the index left four times for ×16, then
+  `0x0778C` shifts once more and adds again for **×48**, which is three planes
+  of sixteen rows.
+
+  The dispatch at image `0x07756`:
+
+  | character | table |
+  | --- | --- |
+  | `' '` | image `0x077FE` — sixteen rows of zero, not a skip |
+  | `'%'` | 0 |
+  | `':'` | `0x210` |
+  | `'0'..'9'` | `0x30` |
+  | `'A'..'Z'` | `0x240` |
+  | anything else | nothing |
+
+  Every glyph is `base + 0xA0 + table + index * 48`, and **that arithmetic
+  closes on the font's size exactly**: `0xA0 + 0x240 + 26*48 = 1984`, which is
+  what image `0x0593C` copies (`cx = 0x3E0` **words**) from offset `0x1900`.
+  6400 + 1984 is section 2's length to the byte.
+
+  Rendered, the glyphs read `0 1 2 3` and `A B C` unmistakably.
+
+  The status line's template is image `0x0BB10`: **44 characters**, which is
+  the panel's own stride — image `0x077BB` steps by `0x2B` and the `stosb`
+  before it has already added the forty-fourth.
+
 - **THE LEVEL IS MODE 0x0D — 320x200 — not the menu's 640x350.** That is the
   single most important thing about this screen and nothing here had recorded
   it. The mode sequence through a whole run is `03 → 05 → 0D → 10 → 0D`: the

@@ -562,6 +562,104 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
 }
 
 
+
+/* ======================================================================
+ * THE LEVEL'S CONTROL PANEL - its font and its status line.
+ *
+ * The level is mode 0x0D, 320x200, and it draws nothing through the blitter
+ * at image 0x8822 that every menu screen uses. tools/probe_writes.py finds
+ * the path instead, by attributing every write into the EGA window to the
+ * instruction that made it: three `stosb` sites at images 0x077B9, 0x077DD
+ * and 0x077F5, and a fourth at 0x07804 that writes zeroes.
+ *
+ * Three, not four: this font has THREE planes. The glyph stride confirms it -
+ * image 0x07782 shifts the index left four times for *16, then 0x0778C shifts
+ * once more and adds again for *48, and 48 is three planes of sixteen rows.
+ *
+ * The character dispatch is image 0x07756:
+ *
+ *     ' '  -> image 0x077FE, sixteen rows of zero
+ *     '%'  -> table 0
+ *     ':'  -> table 0x210
+ *     '0'..'9' -> table 0x30
+ *     'A'..'Z' -> table 0x240
+ *     anything else draws nothing
+ *
+ * and every glyph is reached as base + 0xA0 + table + index * 48. That
+ * arithmetic closes exactly on the font's size: 0xA0 + 0x240 + 26*48 = 1984,
+ * which is the byte count image 0x0593C copies (cx = 0x3E0 WORDS) from offset
+ * 0x1900 of the loaded section. 6400 + 1984 is main.dat section 2's length to
+ * the byte, so the font is the tail of section 2.
+ * ====================================================================== */
+#define PANEL_FONT_SECTION 2
+#define PANEL_FONT_OFF  6400        /* image 0x0592C: mov si, 0x1900 */
+#define PANEL_FONT_LEN  1984        /* image 0x0593C: cx = 0x3E0 words */
+#define PANEL_GLYPH     48          /* image 0x0778C: three planes of 16 */
+#define PANEL_GLYPH_H   16
+#define PANEL_PLANE     16
+#define PANEL_HEAD      0xA0        /* image 0x077A8: add si, 0xa0 */
+#define PANEL_T_PERCENT 0x000
+#define PANEL_T_DIGIT   0x030
+#define PANEL_T_COLON   0x210
+#define PANEL_T_LETTER  0x240
+
+/* The panel's status line, image 0x0BB10 (ds:0x2080). Forty-four characters,
+ * which is the panel's own stride - image 0x077BB steps the destination by
+ * 0x2B and `stosb` has already added the forty-fourth. */
+const char PANEL_TEMPLATE[PANEL_COLS + 1] =
+    "230.              OUT      IN   %  TIME  :  ";
+
+/* Where character `ch`'s glyph starts, or PANEL_FONT_LEN for "draws
+ * nothing" - image 0x07756's dispatch, in the order the original tests. */
+static uint32_t panel_glyph(uint8_t ch)
+{
+    if (ch == '%') return PANEL_HEAD + PANEL_T_PERCENT;
+    if (ch == ':') return PANEL_HEAD + PANEL_T_COLON;
+    if (ch >= '0' && ch <= '9')
+        return PANEL_HEAD + PANEL_T_DIGIT + (uint32_t)(ch - '0') * PANEL_GLYPH;
+    if (ch >= 'A' && ch <= 'Z')
+        return PANEL_HEAD + PANEL_T_LETTER + (uint32_t)(ch - 'A') * PANEL_GLYPH;
+    return PANEL_FONT_LEN;          /* space, and everything unmapped */
+}
+
+/* One panel character at (x, y) in pixels. Three planes, so the colours it
+ * can produce are 0..7. A space clears its cell, which is image 0x077FE
+ * writing sixteen rows of zero rather than skipping. */
+void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                const uint8_t *sec, uint32_t sec_len,
+                uint8_t ch, uint16_t x, uint16_t y)
+{
+    uint32_t g = panel_glyph(ch);
+    int blank = (g >= PANEL_FONT_LEN);
+    uint32_t base = PANEL_FONT_OFF + g;
+    if (!blank && base + PANEL_GLYPH > sec_len) return;
+
+    for (uint16_t r = 0; r < PANEL_GLYPH_H; r++) {
+        uint16_t py = (uint16_t)(y + r);
+        if (py >= dst_h) break;
+        for (uint16_t c = 0; c < 8; c++) {
+            uint16_t px = (uint16_t)(x + c);
+            if (px >= dst_w) break;
+            uint8_t v = 0;
+            if (!blank)
+                for (uint8_t p = 0; p < 3; p++)
+                    v = (uint8_t)(v | (((sec[base + p * PANEL_PLANE + r]
+                                         >> (7 - c)) & 1u) << p));
+            dst[(size_t)py * dst_w + px] = v;
+        }
+    }
+}
+
+/* The status line, one character per cell of PANEL_COLS. */
+void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                  const uint8_t *sec, uint32_t sec_len,
+                  const char *text, uint16_t x, uint16_t y)
+{
+    for (uint16_t i = 0; i < PANEL_COLS && text[i]; i++)
+        panel_char(dst, dst_w, dst_h, sec, sec_len, (uint8_t)text[i],
+                   (uint16_t)(x + i * 8), y);
+}
+
 /* ======================================================================
  * THE LEVEL'S OBJECTS, ANIMATED AT DISPLAY TIME - images 0x07BB8 (draw) and
  * 0x07C0A (step), with a 28-byte state per object at ds:0x17CB.
