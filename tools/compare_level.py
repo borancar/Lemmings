@@ -88,7 +88,34 @@ def main():
     a = ap.parse_args()
 
     oidx, opal, ow, oh = load_screen(a.capture)
+
     orig_rgb = opal[oidx]
+
+    # Refuse a degenerate capture, judged on COLOUR rather than on index.
+    # Both halves of that matter and the second one bit:
+    #
+    #   A screen caught before the level is drawn is nearly all one index, and
+    #   the left edge of a level is nearly all background, so the two line up
+    #   at 100% and the check reports a perfect match for two blank images.
+    #
+    #   Worse, a screen caught mid-FADE has a perfectly varied set of indices
+    #   and a palette that is entirely black. Checking the indices passes it;
+    #   every pixel still renders [0,0,0], the port's empty left edge matches
+    #   it exactly, and the run prints EXACT MATCH. That happened here, and it
+    #   is the reason this test looks at the rendered colours.
+    view_rgb = orig_rgb[:a.rows]
+    flat = (view_rgb[..., 0].astype(np.uint32) << 16
+            | view_rgb[..., 1].astype(np.uint32) << 8
+            | view_rgb[..., 2].astype(np.uint32))
+    counts = np.bincount(flat.ravel())
+    dominant = counts.max() / flat.size
+    distinct = int(np.count_nonzero(counts))
+    if dominant > 0.9 or distinct < 4:
+        raise SystemExit(
+            f"{a.capture}: the captured viewport renders as {dominant*100:.1f}%"
+            f" one colour across {distinct} distinct colour(s) - it was caught"
+            f" blank or mid-fade, and comparing against it would be"
+            f" meaningless. Capture again when the palette is up.")
     port_idx, port_pal, pw, ph = load_raw(a.raw)
     if port_pal is None:
         port_pal = ground_palette(a.ground)

@@ -14,13 +14,37 @@ on one run misses on the next.
 """
 import argparse
 import os
+import shutil
 import socket
+import struct
 import subprocess
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lemmings
+
+
+def _bright(path, value=False, threshold=220):
+    """Is the captured screen actually lit, or still fading in?
+
+    Judged on the rendered colours. A fade leaves the indices perfectly varied
+    and every palette entry nearly black, so anything that looks at indices -
+    or even at "is any entry non-black" - passes a screen that is a dark
+    smear, and a comparison against it is meaningless.
+    """
+    try:
+        import numpy as np
+        with open(path, "rb") as f:
+            if f.read(4) != b"SCRN":
+                return 0 if value else False
+            w, h = struct.unpack("<HH", f.read(4))
+            pal = np.frombuffer(f.read(768), dtype=np.uint8).reshape(256, 3)
+            idx = np.frombuffer(f.read(w * h), dtype=np.uint8).reshape(h, w)
+        peak = int(pal[idx[:160]].max())
+    except Exception:
+        return 0 if value else False
+    return peak if value else peak >= threshold
 
 
 def ask(sock_path, line, timeout=5.0):
@@ -71,6 +95,9 @@ def main():
                     help="once at the title, press F1 to start a game")
     ap.add_argument("--start-tries", type=int, default=4,
                     help="how many times to press F1 (default 4)")
+    ap.add_argument("--cmd", action="append", default=[], metavar="CMD",
+                    help="with --dump-vga, send this control-socket command "
+                         "once in the level (repeatable)")
     ap.add_argument("--dump-mem", action="append", default=[],
                     metavar="ADDR LEN PATH",
                     help="with --dump-vga, dump guest memory (repeatable)")
@@ -79,7 +106,8 @@ def main():
     ap.add_argument("--dump-planes", default="",
                     help="with --dump-vga, also write all four planes here")
     ap.add_argument("--dump-delay", type=float, default=45.0,
-                    help="seconds to wait in the level before --dump-vga")
+                    help="seconds to wait for the palette to come up in the "
+                         "level before --dump-vga")
     ap.add_argument("--dump-vga", action="store_true",
                     help="once in the level, print the video state")
     ap.add_argument("--click-tries", type=int, default=3,
@@ -150,10 +178,37 @@ def main():
                 # Gameplay is mode 0Dh again, after the 10h title.
                 wait_for(sock, lambda st: "mode=0x0d" in st,
                          "the level", timeout=180)
-                # Well after the mode set: sampling straight away catches the
-                # screen before it has been drawn, which reads as "the planes
-                # are empty" and is just early.
-                time.sleep(a.dump_delay)
+                # Wait for the guest's own cue rather than a wall clock. The
+                # level fades its palette in, and "some entries are non-black"
+                # is not enough of a cue - mid-fade every entry is non-black
+                # and every one is nearly black, so the capture looks varied
+                # by index and renders as a dark smear. Poll the actual
+                # picture until it is bright.
+                if a.dump_screen:
+                    # Keep the BRIGHTEST sample, not the last. The palette
+                    # fades in and out around a level, so a poll that stops on
+                    # a timeout keeps whatever happened to be on screen at the
+                    # end - which was black, and scored as a perfect match
+                    # against the level's empty left edge.
+                    tmp = a.dump_screen + ".sample"
+                    best = -1
+                    deadline = time.time() + a.dump_delay
+                    while time.time() < deadline:
+                        ask(sock, f"screen {tmp}")
+                        peak = _bright(tmp, value=True)
+                        if peak > best:
+                            best = peak
+                            shutil.copyfile(tmp, a.dump_screen)
+                        if peak >= 220:
+                            break
+                        time.sleep(1.5)
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+                    print(f"[play] kept the brightest screen (peak {best})")
+                else:
+                    time.sleep(a.dump_delay)
                 print("[play] --- video state in the level ---")
                 print(ask(sock, "vga"))
                 print(ask(sock, "status"))
@@ -163,6 +218,14 @@ def main():
                     print(ask(sock, f"screen {a.dump_screen}"))
                 for spec in a.dump_mem:
                     print(ask(sock, f"dump {spec}"))
+                for c in a.cmd:
+                    if c.startswith("sleep "):
+                        # Local, not a socket verb: a breakpoint needs time to
+                        # be reached before `regs` is worth asking for.
+                        time.sleep(float(c.split()[1]))
+                        continue
+                    print(f"[play] > {c}")
+                    print(ask(sock, c))
         proc.wait()
     except KeyboardInterrupt:
         pass

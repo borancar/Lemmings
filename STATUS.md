@@ -82,10 +82,17 @@ Each of these is stated as what was *checked*, not what was written.
   - **Best alignment is x = 624** — and 624 is exactly the `start_x` the level
     file declares. Two independent things agreeing that were never fitted to
     each other.
-  - **79.99% of pixels identical** (40 956 of 51 200).
-  - The **terrain outline is right**: of ~18 500 background pixels only ~480
+  - **81.07% of pixels identical** (41 506 of 51 200).
+  - The **terrain outline is right**: of ~18 800 background pixels only ~380
     disagree, so where the port says rock and where the original says rock
     agree almost everywhere.
+  - **The capture is taken on a cue, and the checker refuses a bad one.** A
+    screen caught mid palette-fade has perfectly varied indices and an
+    all-black palette; it renders black, the port's empty left margin matches
+    it exactly, and an earlier run of this check printed **EXACT MATCH** for
+    two black rectangles. The driver now polls until the picture is bright and
+    keeps the *brightest* sample, and the checker rejects any capture that
+    renders as one colour. Both are in the skill's trap list.
   - The disagreement is **confined to the four brown shades of the rock
     texture** — a confusion matrix of port index against original index is
     diagonal-dominant with the off-diagonal mass entirely inside indices
@@ -197,6 +204,7 @@ the first sweep should write this table rather than have it retyped by hand.
    | the five other plane→bit permutations | 40–58% — **no**, `0123` is right |
    | the viewport is offset vertically | y = 0 is best — **no** |
    | entries after a `FF FF FF FF` are missed | there are none in this level — **no** |
+   | the guest's memory was being corrupted | **partly yes** — `INT 21h AH=48h` returned one segment for every request, so the game's three buffers overlapped. Fixed upstream with a real free list; the skill panel went from mottled noise to proper icons and the score rose 79.99% → 81.07%. It did **not** account for the terrain shades. |
 
    What is left, and what it looks like: the disagreements are **whole
    8-pixel blocks** — one byte — where the port has index 11 and the original
