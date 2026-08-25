@@ -116,38 +116,73 @@ rather than derived.
 
 The strip at the foot, rows 334–349.
 
-**The bar is not a sprite.** Logging the blits that land in those rows finds
-the source at image `0x191BC`, in BSS, and dumping *that* shows rows of `0xFF`,
-`0xF0` and `0x00` — solid fills. The bar is a strip the game fills and then
-renders scrolling text into, so there is no bitmap in any file to find. Its
-geometry, measured off the original:
+**The bar is not a sprite, and it is not static either.** Logging the blits
+that land in those rows finds the source at image `0x191BC`, in BSS, and
+dumping *that* shows rows of `0xFF`, `0xF0` and `0x00`. That is the strip the
+game **scrolls**, not artwork. The artwork is a single 16×16 column it tiles.
 
-- x 36–**602**, y 334–349, colour 13 (DAC 61)
-- dashed rules at y 336 and y 347, where the colour appears only where
-  **`(x & 7) < 4`**
-- **the whole band, all 640 columns, is black underneath.** The original does
-  not let the background tile show either side of the bar.
+The whole mechanism is readable, at image `0x07CBC` (set-up) and `0x07D0D`
+(one step):
 
-All three of those were recorded wrongly here for a long time — the edge as
-604, the dash phase inverted, and the black band not noticed at all — and the
-reason is the check that passed them: *"checked over x 100–600: 499/500 for
-the solid rows, 495/500 for the dashed ones."* A sample taken from the middle
-and scored as a **count** cannot see an edge, cannot see a phase (half the
-pixels are the colour either way), and never looks outside the bar. It read as
-99% and was wrong about every parameter it was measuring.
+| | |
+| --- | --- |
+| the strip | 35 columns × 16 px, four planes, 70 bytes to a row — image `0x07D54` shifts exactly that: `cx`=4 planes, `cx`=0x10 rows, `cx`=0x46 bytes |
+| one step | shift left **4 pixels**, add 4 to `ds:0x21` |
+| a new character | when that crosses a multiple of 16: image `0x07D8D` stamps the bar template into the rightmost column, image `0x07DB7` masks a glyph over it |
+| `0xFF` in the text | not a glyph — sets `ds:0x23` = 100, a hundred-step **pause**, and the character *after* it is drawn |
+| `0x0D` | rewind to the start of the string |
 
-Measured properly: on row 336 the runs of colour 13 start at 40, 48, 56 … 584,
-sixty-nine of them, every start 0 mod 8 and every run four pixels wide. At
-x=603 and 604 the solid rows carry colour 12, not 13.
+**The tile** is at the original's `ds:0x4C10`, which is **section 4 offset
+23040**. Decoded it is colour 13 everywhere except rows 2 and 13, which run
+`0000dddd0000dddd` — exactly the two dashed rules at screen y 336 and 347.
 
-Fixing the three took the menu from 99.04% to **99.70%** on a capture with no
-scrolling text in the bar, and the bar's own rows from 1,835 differing to 350.
+**So the dashed rules scroll.** They are not a function of x at all. Four
+captures give phases 0, 0, 4 and 4 mod 8, which is what a 4-pixel step
+produces, and any fixed rule fitted to one capture is wrong on the next — that
+happened twice here, once as `(x & 7) >= 4` and once as `(x & 7) < 4`.
 
-The tail of the dashed rows does not follow the rule: the clean runs stop at
-584–587, and 592–595 and 597–600 are overdrawn by something that is not the
-bar — the same thing that puts a stripe of colour 6 at x=592 on every row and
-colour 12 in the margins. That is the unlocated end lemmings. The port draws
-the rule straight through, which costs about five pixels on each dashed row.
+**The text** is at image `0x0E45E` (`ds:0x49CE`), 266 bytes ending in `0x0D`:
+
+```
+         Lemmings By DMA Design      ÿ       Programming By Russell Kay    ÿ
+       Animation By Gary Timmons     ÿ       Graphics By Scott Johnston    ÿ
+ Music By Brian Johnston & Tim Wright       PC Music By Tony Williams     ÿ
+      Copyright 1991 Psygnosis Ltd.  ÿ
+```
+
+**The font is the same one the rest of the menu uses.** The original computes
+the glyph as `0x5BC0 + (ch - 0x21) * 96`, and `0x5BC0 + 3568 - 0x21 * 96` is
+**23888**, which is `FONT_BASE`. This document previously called it "a
+different font"; it is not. (3568 is the offset between section 4 and the
+segment at `[0x1FEE]+0x1000`, and the bar tile lands on its exact artwork at
+the same offset, which is what confirms it.)
+
+One thing that matters and is easy to get backwards: **text enters at the
+right**. At start-up all 35 columns are bare template, so composing at scroll
+0 with the ribbon already in place puts "Lemmings By DMA Design" on a bar the
+original still has empty. Getting the direction wrong cost 3,076 differing
+pixels against 62.
+
+The port draws all of this — `draw_banner` in `game.c`, `--scroll N` on the
+command line, and `menu_run` animates it. Scored against the original at the
+scroll each capture is actually at:
+
+| rating | scroll | whole screen |
+| --- | --- | --- |
+| Fun | 0 | **99.70%** |
+| Tricky | 4 | **99.70%** |
+| Taxing | 4 | **99.70%** |
+| Mayhem | 0 | **99.71%** |
+
+and the model *predicts* those phases rather than being told them. What is
+left inside the bar is 62–72 pixels near x 588–604, which is the same
+unlocated thing that puts colour 12 in the margins and a stripe of colour 6 at
+x=592: the two end lemmings.
+
+The **step rate** is not measured. The 4-pixel step and the 100-step pause
+are; how often the original takes a step is inferred from its menu loop
+waiting on the display once per pass, so the port takes one step per displayed
+frame and says so.
 
 Three shapes draw in those rows, and separating them needs the blit *starts* —
 `cx` counts down inside the loop, so counting hook fires measures bytes and

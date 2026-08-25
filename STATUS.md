@@ -34,7 +34,7 @@ numbers, re-measured on the current build:
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing's** text | 99.97% — 4 of 15,188 |
-| the **main menu** | **99.70%** — 676 of 224,000, of which 350 are the banner's unlocated end lemmings and 326 the long-standing residue. Checked at **all four ratings**, not just Fun |
+| the **main menu** | **99.70%** — 676 of 224,000, of which 326 are a long-standing residue and the rest the banner's unlocated end lemmings. Checked at **all four ratings**, and the scrolling banner is drawn, text and all |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -476,31 +476,55 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
-- **The banner's bar had three faults, and one weak check hid all three.**
-  It was recorded as x 36–604, dashed where `(x & 7) >= 4`, with the
-  background tile showing either side. It is x 36–**602**, dashed where
-  **`(x & 7) < 4`**, and the **whole 640-column band is black underneath**.
+- **The scrolling banner is drawn, text and all, from the game's own
+  artwork.** It was the menu's largest gap and it is now the smallest.
 
-  The check that passed it was *"sample x 100–600 and count how many are
-  colour 13: 499/500 solid, 495/500 dashed."* A count taken from the middle
-  cannot see an edge, cannot see a phase — half the pixels are the colour
-  either way — and never looks outside the bar at all. It read as 99% while
-  being wrong about every parameter it was measuring.
+  The mechanism is readable at image `0x07CBC` and `0x07D0D`: a strip of 35
+  columns of 16 pixels, four planes, 70 bytes to a row; **4 pixels a step**; a
+  new character each time that crosses 16; `0xFF` in the text is a **100-step
+  pause**, not a glyph; `0x0D` rewinds.
 
-  Measured instead as *runs*: on row 336 the colour starts at 40, 48, 56 …
-  584, sixty-nine runs, every start 0 mod 8 and every run four wide. At x=603
-  and 604 the solid rows carry colour 12, not 13.
+  Three things fell out of reading it that no amount of pixel-fitting would
+  have found:
 
-  | | before | after |
+  - **The bar's artwork is a 16×16 tile at section 4 offset 23040** — the
+    original's `ds:0x4C10`. Colour 13 except rows 2 and 13, which run
+    `0000dddd0000dddd`: the two dashed rules.
+  - **So the dashed rules scroll.** They are not a function of x. Four
+    captures give phases 0, 0, 4, 4 mod 8. Any fixed rule fitted to one
+    capture is wrong on the next — which happened here twice, once as
+    `(x & 7) >= 4` and once, earlier this session, as `(x & 7) < 4`. Both
+    scored well on a count and were measuring nothing.
+  - **The scroller's font is the menu's own font.** `0x5BC0 + 3568 - 0x21*96`
+    is 23888, which is `FONT_BASE`. It had been recorded as "a different
+    font".
+
+  The text is at image `0x0E45E`, 266 bytes: *"Lemmings By DMA Design …
+  Programming By Russell Kay … Copyright 1991 Psygnosis Ltd."*
+
+  **Text enters at the right.** At start-up all 35 columns are bare template,
+  so composing at scroll 0 with the ribbon already in place puts the first
+  credit on a bar the original still has empty. That direction cost 3,076
+  differing pixels against 62 — and it is why every capture taken so far shows
+  an empty bar.
+
+  | rating | scroll it was actually at | whole screen |
   | --- | --- | --- |
-  | menu, whole screen (no text in the bar) | 99.04% | **99.70%** |
-  | the bar's own rows | 1,835 differing | **350** |
+  | Fun | 0 | **99.70%** |
+  | Tricky | 4 | **99.70%** |
+  | Taxing | 4 | **99.70%** |
+  | Mayhem | 0 | **99.71%** |
 
-  The remaining 350 is the two end lemmings, still unlocated — they are what
-  puts colour 12 in the margins, a stripe of colour 6 at x=592, and the
-  dash-rule anomaly at 592–600. Across all four ratings the difference
-  *outside* the bar is **exactly 326 every time**, which is the long-standing
-  unexplained residue and is rating-independent.
+  The model **predicts** those phases rather than being told them, which is
+  the check that it is a model and not a fit. What is left inside the bar is
+  62–72 pixels near x 588–604 — the two end lemmings, still unlocated, which
+  are also what puts colour 12 in the margins and a stripe of colour 6 at
+  x=592.
+
+  `menu_run` animates it. The **step rate is inferred, not measured**: the
+  4-pixel step and the 100-step pause are read off the code, but how often the
+  original steps is taken from its menu loop waiting on the display once a
+  pass, so the port steps once per displayed frame and says so.
 
 - **All four rating plates are verified against the original, and the sprites
   ran the wrong way.** Only Fun could be checked before, because only Fun could

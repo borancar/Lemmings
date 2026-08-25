@@ -175,6 +175,17 @@ int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
                       const lem_rgb *palette, const char *title, uint8_t scale,
                       const view_hotspot *spots, uint8_t nspots)
 {
+    /* No tick: the picture is fixed, and the cast is safe because nothing
+     * writes through it when `tick` is NULL. */
+    return view_interact_anim((uint8_t *)pix, w, h, palette, title, scale,
+                              spots, nspots, NULL, NULL);
+}
+
+int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
+                           const lem_rgb *palette, const char *title,
+                           uint8_t scale, const view_hotspot *spots,
+                           uint8_t nspots, view_tick tick, void *ctx)
+{
     if (scale < 1) scale = 1;
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init: %s", SDL_GetError());
@@ -198,20 +209,9 @@ int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
     }
     SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
 
-    /* The picture never changes while this runs, so it is uploaded once. */
-    void *pixels = NULL;
-    int pitch = 0;
-    if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
-        for (uint16_t y = 0; y < h; y++) {
-            uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-            const uint8_t *src = pix + (size_t)y * w;
-            for (uint16_t x = 0; x < w; x++) {
-                lem_rgb c = palette[src[x]];
-                row[x] = ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
-            }
-        }
-        SDL_UnlockTexture(tex);
-    }
+    /* Uploaded once when nothing animates, and again whenever `tick` says the
+     * picture changed. */
+    int dirty = 1;
 
     int32_t chosen = VIEW_CLOSED;
     int running = 1;
@@ -237,6 +237,25 @@ int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
                 chosen = hit;
                 running = 0;
             }
+        }
+        if (tick && tick(ctx, pix))
+            dirty = 1;
+        if (dirty) {
+            void *pixels = NULL;
+            int pitch = 0;
+            if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
+                for (uint16_t y = 0; y < h; y++) {
+                    uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+                    const uint8_t *src = pix + (size_t)y * w;
+                    for (uint16_t x = 0; x < w; x++) {
+                        lem_rgb c = palette[src[x]];
+                        row[x] = ((uint32_t)c.r << 16)
+                               | ((uint32_t)c.g << 8) | c.b;
+                    }
+                }
+                SDL_UnlockTexture(tex);
+            }
+            dirty = 0;
         }
         SDL_RenderClear(ren);
         SDL_RenderTexture(ren, tex, NULL, NULL);

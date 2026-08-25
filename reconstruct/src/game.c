@@ -1533,60 +1533,159 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
     return 0;
 }
 
-/* The scrolling banner's BAR.
+/* THE SCROLLING BANNER.
  *
  * Not a sprite, and worth saying why the search for one was wrong. Logging the
  * blits that land in these rows finds the source at image 0x191BC - in BSS -
- * and dumping it shows rows of 0xFF, 0xF0 and 0x00. Solid fills. The bar is a
- * strip the game FILLS and then renders scrolling text into, so there is no
- * bitmap in any file to go and find; it is drawn.
+ * and dumping it shows rows of 0xFF, 0xF0 and 0x00. That is the strip the game
+ * SCROLLS, not artwork; the artwork is a single 16x16 column it tiles.
  *
- * The geometry is measured off the original's screen, and three things about
- * it were wrong here for a long time because the check that passed them was
- * "sample x 100..600 and count how many are colour 13" - which cannot see an
- * edge, cannot see a phase, and never looks outside the bar at all:
+ * The whole thing is readable in the original, at image 0x07CBC (set up) and
+ * 0x07D0D (one step), and it works like this:
  *
- *   - the bar ends at x=602, not 604. At 603 and 604 the original has colour
- *     12, which belongs to whatever draws the ends.
- *   - the dashed rules carry the colour where (x & 7) < 4, NOT >= 4. Run
- *     starts on row 336 are 40, 48, 56 ... 584, every one of them 0 mod 8,
- *     four pixels wide. The old rule was exactly out of phase, so it scored
- *     well on a count and put every dash in the wrong place.
- *   - the WHOLE band, rows 334..349 across all 640 columns, is black
- *     underneath. The original does not let the background tile show either
- *     side of the bar; the port did, which was ~1,100 pixels on its own.
+ *   - a strip of 35 columns, 16 pixels each, four planes, 70 bytes to a row
+ *     (image 0x07D54 shifts exactly that: cx=4 planes, cx=0x10 rows, cx=0x46
+ *     bytes, shifting the row left four bits at a time)
+ *   - every step shifts it left 4 pixels and adds 4 to ds:0x21
+ *   - when that crosses a multiple of 16 a new character is due: image 0x07D8D
+ *     stamps the BAR TEMPLATE into the rightmost column, then image 0x07DB7
+ *     masks a glyph over it
+ *   - 0xFF in the text is not a glyph. It sets ds:0x23 = 100 - a hundred-step
+ *     pause - and the character after it is drawn instead
+ *   - 0x0D rewinds to the start of the string
  *
- * The TEXT is not drawn, and neither are the two lemmings holding the ends
- * (x 12..35 and 605..628). The text scrolls, so a composed frame cannot match
- * it; the lemmings are sprites that have not been located, and they are what
- * puts colour 12 in the margins and a stripe of colour 6 at x=592.
+ * So the dashed rules are not a property of the bar's position: they are part
+ * of the tile, and they SCROLL. An earlier version of this file had them as
+ * `(x & 7) < 4`, fitted to one capture, and that is wrong in the same way the
+ * `>= 4` before it was wrong - the phase is the scroll offset, and captures
+ * taken at different moments disagree. Four captures give phases 0, 0, 4 and 4
+ * mod 8, which is what a 4-pixel step produces.
  *
- * That last one is why the dash near the right end does not follow the rule:
- * the clean runs stop at 584..587, and 592..595 and 597..600 are overdrawn by
- * something that is not the bar. The port draws the rule through, which costs
- * about five pixels on each dashed row and is honest about why. */
+ * The tile is section 4 offset 23040 - the original's ds:0x4C10, in the
+ * segment at [0x1FEE]+0x1000, which is section 4 shifted by 3568. Decoded it
+ * is colour 13 everywhere except rows 2 and 13, which run 0000dddd0000dddd:
+ * exactly the two dashed rules at screen y 336 and 347.
+ *
+ * The font is the SAME font the rest of the menu uses. The original computes
+ * the glyph as 0x5BC0 + (ch - 0x21) * 96, and 0x5BC0 + 3568 - 0x21 * 96 is
+ * 23888 - FONT_BASE. docs/menu.md called it "a different font"; it is not.
+ *
+ * Still not drawn: the two lemmings holding the ends (x 12..35 and 605..628).
+ * They are what puts colour 12 in the margins, a stripe of colour 6 at x=592,
+ * and the disturbance in the dash near the right edge, where the clean runs
+ * stop at 584..587. */
 #define BAR_X0    36
 #define BAR_X1   602
 #define BAR_Y0   334
 #define BAR_Y1   349
-#define BAR_COL   13
-#define BAR_RULE_A 336
-#define BAR_RULE_B 347
+#define BAR_TILE  23040       /* section 4: the bar's own 16x16 column */
+#define BAR_TILE_W 16
+#define BAR_TILE_PLANE 32     /* 16 rows x 2 bytes */
 
-static void draw_banner(uint8_t *dst)
+/* The scroller's text, image 0x0E45E (ds:0x49CE), 266 bytes, terminated by
+ * 0x0D. Transcribed here with its address for the same reason a routine is:
+ * it is in the executable, not in a data file. 0xFF is the pause marker and
+ * is not a glyph - see above - so it is stripped when the ribbon is built. */
+static const char SCROLL_TEXT[] =
+    "         Lemmings By DMA Design      ÿ"
+    "       Programming By Russell Kay    ÿ"
+    "       Animation By Gary Timmons     ÿ"
+    "       Graphics By Scott Johnston    ÿ"
+    " Music By Brian Johnston & Tim Wright       PC Music By Tony Williams     ÿ"
+    "      Copyright 1991 Psygnosis Ltd.  ÿ ";
+
+/* Where the ribbon has scrolled to, in pixels. The port composes ONE frame,
+ * so this has to be a parameter of the composition rather than something the
+ * drawing invents: two captures of the original taken seconds apart disagree
+ * about it, and a fixed value is right only by luck. menu_set_scroll moves
+ * it; the animation lives in whoever calls that. */
+static uint32_t menu_scroll;
+
+void menu_set_scroll(uint32_t pixels) { menu_scroll = pixels; }
+uint32_t menu_get_scroll(void)        { return menu_scroll; }
+
+/* How many 16-pixel columns the strip holds. Image 0x07CBC stamps 0x23 of
+ * them at start-up and image 0x07D54 shifts 0x46 bytes a row, which is the
+ * same 35 columns counted the other way. */
+#define BAR_COLS 35
+
+/* One character of the ribbon: the text with the 0xFF pause markers removed,
+ * cycling. `k` counts characters that have ENTERED at the right-hand edge, so
+ * it is negative for a column nothing has reached yet - at start-up the strip
+ * is 35 columns of bare template, and the text scrolls in from the right. That
+ * is not a detail: composing at scroll 0 with the ribbon already in place puts
+ * "Lemmings By DMA Design" on a bar the original still has empty. */
+static char  ribbon[sizeof SCROLL_TEXT];
+static uint8_t ribbon_pause[sizeof SCROLL_TEXT];  /* 0xFF came before this */
+static uint16_t ribbon_len;
+
+static void ribbon_build(void)
 {
-    for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++) {
-        int dashed = (y == BAR_RULE_A || y == BAR_RULE_B);
-        /* Black underneath, the full width - not just where the bar goes. */
+    if (ribbon_len) return;
+    uint8_t pending = 0;
+    for (size_t i = 0; i + 1 < sizeof SCROLL_TEXT; i++) {
+        if ((uint8_t)SCROLL_TEXT[i] == 0xFF) { pending = 1; continue; }
+        ribbon_pause[ribbon_len] = pending;
+        ribbon[ribbon_len++] = SCROLL_TEXT[i];
+        pending = 0;
+    }
+}
+
+static uint8_t scroll_char(int32_t k)
+{
+    ribbon_build();
+    if (k < 0) return ' ';               /* nothing has scrolled in yet */
+    return (uint8_t)ribbon[(uint32_t)k % ribbon_len];
+}
+
+/* Does a pause fall as character `k` enters? The original sets ds:0x23 = 100
+ * when it reads 0xFF and then draws the character after it (image 0x07D3C),
+ * so the hold belongs to the character that follows the marker. */
+static int scroll_pauses_at(uint32_t k)
+{
+    ribbon_build();
+    if (k < BAR_COLS) return 0;
+    return ribbon_pause[(k - BAR_COLS) % ribbon_len];
+}
+
+/* Draw the banner with the ribbon scrolled `scroll` pixels to the left.
+ *
+ * The whole band is black underneath, all 640 columns: the original does not
+ * let the background tile show either side of the bar, and letting it did cost
+ * about 1,100 pixels on its own. */
+void draw_banner(uint8_t *dst, const uint8_t *font, uint32_t font_len,
+                 uint32_t scroll)
+{
+    for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++)
         for (uint16_t x = 0; x < MENU_W; x++)
             dst[(size_t)y * MENU_W + x] = 0;
-        for (uint16_t x = BAR_X0; x <= BAR_X1; x++) {
-            if (dashed && (x & 7) >= 4)
-                continue;
-            dst[(size_t)y * MENU_W + x] = BAR_COL;
+
+    for (uint16_t x = BAR_X0; x <= BAR_X1; x++) {
+        uint32_t r = scroll + (uint32_t)(x - BAR_X0);   /* ribbon pixel */
+        uint16_t cx = (uint16_t)(r % BAR_TILE_W);
+        uint8_t ch = scroll_char((int32_t)(r / BAR_TILE_W) - BAR_COLS);
+        for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++) {
+            uint16_t ty = (uint16_t)(y - BAR_Y0);
+            uint8_t v = planar(font, BAR_TILE, BAR_TILE_PLANE, 2, 4, cx, ty);
+            /* The glyph is masked over the tile, exactly as image 0x07DB7
+             * does it: mask plane clear means the tile shows through. A space
+             * has a glyph in the font but the original never draws it. */
+            if (ch != ' ') {
+                uint32_t g = FONT_BASE + (uint32_t)ch * FONT_GLYPH;
+                if (ch <= 126 && g + FONT_GLYPH <= font_len) {
+                    uint32_t o = g + (uint32_t)ty * 2 + (cx >> 3);
+                    uint8_t sh = (uint8_t)(7 - (cx & 7));
+                    if ((font[o + FONT_MASK_PLANE * FONT_PLANE] >> sh) & 1u)
+                        v = (uint8_t)((1u << FONT_MASK_PLANE)
+                                      | ((font[o] >> sh) & 1u)
+                                      | (((font[o + FONT_PLANE] >> sh) & 1u) << 1));
+                }
+            }
+            dst[(size_t)y * MENU_W + x] = v;
         }
     }
 }
+
 
 /* `rating` picks which of the four names goes on the plate: 0 Fun, 1 Tricky,
  * 2 Taxing, 3 Mayhem. ONLY RATING 0 IS VERIFIED - it is the one the original
@@ -1733,7 +1832,16 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
 
     draw_text(m->pix, font, fontlen, CREDIT_1, CREDIT_1_Y);
     draw_text(m->pix, font, fontlen, CREDIT_2, CREDIT_2_Y);
-    draw_banner(m->pix);
+    draw_banner(m->pix, font, fontlen, menu_scroll);
+
+    /* Keep section 4 so the banner can be redrawn as it scrolls; menu_build
+     * composes one frame and the strip moves. Failing to copy it is not fatal
+     * - the screen is already complete - so the banner simply stays still. */
+    m->gfx = malloc(fontlen);
+    if (m->gfx) {
+        memcpy(m->gfx, font, fontlen);
+        m->gfx_len = fontlen;
+    }
 
     dat_free(&d);
     return 0;
@@ -1745,6 +1853,9 @@ void menu_free(menu_screen *m)
     if (!m) return;
     free(m->pix);
     m->pix = NULL;
+    free(m->gfx);
+    m->gfx = NULL;
+    m->gfx_len = 0;
 }
 
 /* The signs, as things the player can choose.
@@ -1860,12 +1971,40 @@ void menu_show_until_dismissed(const menu_screen *m, const char *title,
     view_interact(m->pix, MENU_W, MENU_H, m->palette, title, scale, any, 2);
 }
 
-menu_action menu_run(const menu_screen *m, uint8_t scale)
+/* One frame of the banner. The original advances 4 pixels per pass of its
+ * menu loop (image 0x07D54), and that loop waits on the display once per
+ * pass, so a step per displayed frame is the reading of its structure. The
+ * RATE is not measured - what is measured is the 4-pixel step and the
+ * hundred-step pause - so this is marked as inferred rather than transcribed.
+ *
+ * The pause is honoured: 0xFF in the text stops the scroll for 100 steps, and
+ * without it the credits run past too fast to read, which is visibly not what
+ * the original does. */
+#define BANNER_PAUSE 100
+
+static int banner_tick(void *ctx, uint8_t *pix)
+{
+    menu_screen *m = (menu_screen *)ctx;
+    static uint16_t pause;
+    if (!m->gfx) return 0;
+    if (pause) { pause--; return 0; }
+    uint32_t next = menu_get_scroll() + MENU_SCROLL_STEP;
+    /* A character boundary just crossed: if the one that entered was preceded
+     * by a pause marker, hold. */
+    if ((next % 16) == 0 && scroll_pauses_at(next / 16))
+        pause = BANNER_PAUSE;
+    menu_set_scroll(next);
+    draw_banner(pix, m->gfx, m->gfx_len, next);
+    return 1;
+}
+
+menu_action menu_run(menu_screen *m, uint8_t scale)
 {
     view_hotspot spots[MENU_HOTSPOTS];
     menu_hotspots(spots);
-    int32_t r = view_interact(m->pix, MENU_W, MENU_H, m->palette,
-                              "PC Lemmings", scale, spots, MENU_HOTSPOTS);
+    int32_t r = view_interact_anim(m->pix, MENU_W, MENU_H, m->palette,
+                                   "PC Lemmings", scale, spots,
+                                   MENU_HOTSPOTS, banner_tick, m);
     if (r == VIEW_CLOSED) return MENU_EXIT;
     return (menu_action)r;
 }

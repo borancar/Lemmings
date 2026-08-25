@@ -90,6 +90,7 @@ static void usage(void)
           "  --menu        the main menu (the default screen)\n"
           "  --screen S    menu | briefing | code | input - which screen\n"
           "  --rating R    fun | tricky | taxing | mayhem (default fun)\n"
+          "  --scroll N    banner ribbon position in pixels (default 0)\n"
           "  --number N    the GAME's level number, 1-30 (default 1)\n"
           "                resolved through the original's own order table,\n"
           "                so --rating fun --number 1 is \"Just dig!\"\n"
@@ -319,6 +320,12 @@ int main(int argc, char **argv)
             if (!which_screen && strcmp(w, "menu")) { usage(); return 2; }
         }
         else if (!strcmp(argv[i], "--file") && i + 1 < argc)  { file = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) {
+            /* Where the banner's ribbon has scrolled to, in pixels. The
+             * original is always somewhere in this; a capture cannot be
+             * compared without saying where. */
+            menu_set_scroll((uint32_t)atoi(argv[++i]));
+        }
         else if (!strcmp(argv[i], "--rating") && i + 1 < argc) {
             const char *r = argv[++i];
             rating = !strcmp(r, "fun") ? 0 : !strcmp(r, "tricky") ? 1

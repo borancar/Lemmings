@@ -289,6 +289,17 @@ int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
                       const lem_rgb *palette, const char *title, uint8_t scale,
                       const view_hotspot *spots, uint8_t nspots);
 
+/* Called once per displayed frame to redraw `pix` in place; return non-zero if
+ * anything changed, so the texture is only re-uploaded when it has to be. */
+typedef int (*view_tick)(void *ctx, uint8_t *pix);
+
+/* The same, but animated. `pix` is written by `tick` rather than being fixed.
+ * The menu needs this and nothing else does: its banner scrolls. */
+int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
+                           const lem_rgb *palette, const char *title,
+                           uint8_t scale, const view_hotspot *spots,
+                           uint8_t nspots, view_tick tick, void *ctx);
+
 /* Open a window on an 8-bit indexed buffer and let the viewer scroll it.
  * `view_w`/`view_h` is the viewport onto a `src_w`x`src_h` picture; pass the
  * full size for a screen that is not scrolled. Returns 0 when it is closed. */
@@ -313,6 +324,12 @@ int view_run(const canvas *c, const lem_rgb *palette, const char *title,
 typedef struct {
     uint8_t *pix;            /* MENU_W * MENU_H, values 0..15 */
     lem_rgb  palette[16];
+    /* A copy of MAIN.DAT section 4, kept alive so the banner can be redrawn
+     * as it scrolls. The bar's tile and the font both live in it, and
+     * menu_build composes only one frame. NULL on the screens that do not
+     * animate. */
+    uint8_t *gfx;
+    uint32_t gfx_len;
 } menu_screen;
 
 /* What the player chose. The names are the original's own, read off the signs
@@ -381,7 +398,17 @@ void menu_show_until_dismissed(const menu_screen *m, const char *title,
  * opening a window - see tests/menu_input.c. */
 void menu_hotspots(view_hotspot *spots);
 
-/* Show it and wait for the player to choose. */
-menu_action menu_run(const menu_screen *m, uint8_t scale);
+/* The scrolling banner's position, in pixels, and how far a step moves it.
+ * The original shifts the strip 4 pixels a step (image 0x07D54) and takes a
+ * new character every 16 (image 0x07D29), so a step is MENU_SCROLL_STEP.
+ * The port composes one frame, so the position has to be set before
+ * menu_build rather than invented inside it - see draw_banner in game.c. */
+#define MENU_SCROLL_STEP 4
+void     menu_set_scroll(uint32_t pixels);
+uint32_t menu_get_scroll(void);
+
+/* Show it and wait for the player to choose. Not const: the banner scrolls,
+ * so the picture is redrawn in place while this runs. */
+menu_action menu_run(menu_screen *m, uint8_t scale);
 
 void menu_free(menu_screen *m);
