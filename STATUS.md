@@ -273,10 +273,22 @@ Each of these is stated as what was *checked*, not what was written.
 
   | | before | after |
   | --- | --- | --- |
-  | the menu, whole screen | 95.83% | **99.16%** |
+  | the menu, whole screen | 95.83% | **99.27%** |
 
-  What is left is 1,891 pixels, of which ~1,000 are the banner's scrolling text
-  and its end lemmings — animated, and unmatchable by a composed frame.
+  A second finding came out of the same pass: **the FX plate's label is drawn
+  opaquely**, not keyed. Its own black is real — keying it out leaves the
+  plate's yellow where the original has black around the letters. That follows
+  from what the label is *for*: it swaps between FX and its alternate, so
+  drawing one has to erase the other, and a keyed blit cannot. 94.04% keyed
+  against 98.79% opaque over its neighbourhood.
+
+  What is left is **1,625 pixels, 61% of them in the banner's rows** — its
+  scrolling text and end lemmings, animated and unmatchable by a composed
+  frame. The rest sits inside the plates.
+
+  Two things were tried and rejected on measurement rather than taste: a drop
+  shadow for the label (worse — 99.16% to 99.06%), and a one-pixel black
+  outline (95.55% against opaque's 98.79%).
 
   The shadows use the sprite's own silhouette as a stand-in; the original reads
   a separate buffer (page `0x5F000`), so this is a **fit, not a

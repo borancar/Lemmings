@@ -1495,9 +1495,26 @@ int menu_build(const char *dir, menu_screen *m, const char **err)
              SIGN_W, SIGN_H, SIGN_STRIDE, SIGN_PLANE,
              SIGN_POS[i].x, SIGN_POS[i].y);
 
-    /* The FX plate's label, which is not part of its plate bitmap. */
-    blit(m->pix, sec, LABEL_BASE + LABEL_FX * LABEL_SPRITE,
-         LABEL_W, LABEL_H, LABEL_STRIDE, LABEL_PLANE, LABEL_X, LABEL_Y);
+    /* The FX plate's label, which is not part of its plate bitmap - and which
+     * is drawn OPAQUELY, unlike everything else on this screen.
+     *
+     * Its own black is real, not transparent: keying it out leaves the plate's
+     * yellow showing where the original has black around the letters, and
+     * costs 94.04% against 98.79% over the label's neighbourhood. That it is
+     * opaque follows from what it is for - the label swaps between FX and its
+     * alternate, so drawing one has to erase the other, and a keyed blit
+     * cannot. */
+    for (uint16_t sy = 0; sy < LABEL_H; sy++) {
+        uint16_t y = (uint16_t)(LABEL_Y + sy);
+        if (y >= MENU_H) break;
+        for (uint16_t sx = 0; sx < LABEL_W; sx++) {
+            uint16_t x = (uint16_t)(LABEL_X + sx);
+            if (x >= BG_DRAWN_W) break;
+            m->pix[(size_t)y * MENU_W + x] =
+                planar(sec, LABEL_BASE + LABEL_FX * LABEL_SPRITE,
+                       LABEL_PLANE, LABEL_STRIDE, 4, sx, sy);
+        }
+    }
 
     draw_text(m->pix, font, fontlen, CREDIT_1, CREDIT_1_Y);
     draw_text(m->pix, font, fontlen, CREDIT_2, CREDIT_2_Y);

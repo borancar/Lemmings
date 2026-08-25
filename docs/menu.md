@@ -336,3 +336,26 @@ So sprites are clipped by a genuine per-pixel mask, and that mask is **not**
 the sprite's own ink: where the mask is set and the sprite's pixel is 0, the
 result is black. That is the black halo around the logo and the plates. Where
 the mask data lives is **not yet found**.
+
+## Drop shadows, and one sprite that is not keyed
+
+Everything on this screen casts a **black drop shadow**, drawn as a separate
+blit *before* the sprite:
+
+| sprite | shadow blitter | offset |
+| --- | --- | --- |
+| the logo | image `0x097F4`, 7,426 bytes into rows 20..113 | 8 px left, 10 rows down |
+| the plates | image `0x09128`, into rows 128..188 | 8 px left, 8 rows down |
+
+Each shadow blit is the sprite's own size, so it is a second copy of the
+silhouette rather than anything computed. The port uses each sprite's own ink
+as a stand-in; the original reads a separate buffer (page `0x5F000`), so this
+is a **fit, not a transcription**.
+
+**The FX label is the exception: it is drawn opaquely**, black and all. That
+follows from what it is for — it swaps between `FX` and its alternate, so
+drawing one has to erase the other, which a keyed blit cannot do. Keyed 94.04%
+against opaque 98.79% over its neighbourhood.
+
+A drop shadow for the label, and a one-pixel black outline, were both tried and
+are both worse.
