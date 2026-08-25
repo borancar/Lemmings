@@ -1,24 +1,30 @@
-"""What draws the two lemmings holding the banner?
+"""Every blit the menu makes into a chosen band of rows.
 
-The bar itself is understood - a 16x16 tile scrolled in a 35-column strip, see
-docs/menu.md - but the strip is blitted at x=48 for 560 pixels, and the painted
-bar runs 36..602. Something else paints the ends, and it animates: four
-captures of the same screen carry 288, 292, 276 and 252 non-black pixels in the
-margins (x<36 and x>604) of rows 334..349.
+Image 0x8822 is the shared blitter - everything drawn on this screen goes
+through it - and its own entry fixes the convention, which is what makes this
+useful:
 
-This finds it by hooking the SHARED BLITTER rather than by looking at pixels.
-Image 0x8822 is the routine every draw on this screen goes through, and its
-entry fixes the convention:
+    ax  destination x in pixels    cl  rows
+    bx  destination y              ch  planes
+    dx  width in PIXELS            si  ink, di mask, bp flags
 
-    ax  destination x in pixels        cl  rows
-    bx  destination y                  ch  planes
-    dx  width in pixels                si  ink, di mask
+and the SOURCE SEGMENT is not DS. The blitter takes it from ds:0x1FE4, which
+the caller sets: image 0x04F96 to [0x1FEE]+0x800 and image 0x07CE6 to
+[0x1FF0]. Reading DS instead gives a plausible address that is not the sprite,
+which cost a round here.
 
-So every blit can be logged with its geometry, and the ones landing in the
-banner's rows separated from the 1,584 that draw the bar.
+This is how the two lemmings holding the banner were found, after a pixel
+search had failed: they are simply two more calls, at x=0 and x=592, 48x16,
+and their sprites carry the bar's end caps.
 
-  uv run python tools/probe_banner_ends.py
+  uv run python tools/probe_blits.py                 # the banner's rows
+  uv run python tools/probe_blits.py --rows 120 260  # the plates
+  uv run python tools/probe_blits.py --dump out/x.bin
+
+Counting hook fires instead of blit STARTS reports bytes, not draws - 132,588
+where there were 4,760 - so this keys on the entry instruction only.
 """
+import argparse
 import os
 import sys
 from collections import Counter
@@ -32,10 +38,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 BLIT = 0x8822           # image offset of the shared blitter
-BAR_Y0, BAR_Y1 = 334, 349
+BAR_Y0, BAR_Y1 = 334, 349      # the default band: the banner
 
 
 def main():
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--rows", nargs=2, type=int, default=[BAR_Y0 - 32, BAR_Y1],
+                    metavar=("Y0", "Y1"),
+                    help="only blits whose destination row is in this band")
+    ap.add_argument("--dump", default="",
+                    help="write the first sprite of each distinct x to a file")
+    a = ap.parse_args()
+    y0, y1 = a.rows
+
     set_game_dir(lemmings.GAME_DIR)
     pygame.init()
     m = lemmings.LemmingsVga(lemmings.EXE, max_insns=1 << 62,
@@ -59,7 +76,7 @@ def main():
         # only the START of a blit - the routine is re-entered per row in some
         # paths, which is how counting hook fires once reported 132,588 draws
         # where there were 4,760.
-        if not (BAR_Y0 - 32 <= bx <= BAR_Y1):
+        if not (y0 <= bx <= y1):
             return
         # The source is NOT in DS. The blitter reads it from the segment the
         # caller parks in ds:0x1FE4 - image 0x04F96 sets it to [0x1FEE]+0x800
@@ -70,7 +87,7 @@ def main():
         si = uc.reg_read(RSI)
         key = (ax, bx, cx & 0xFF, (cx >> 8) & 0xFF, dx, srcseg, si,
                uc.reg_read(RDI), uc.reg_read(RBP))
-        if ax != 48 and len(dumps) < 2 and ax not in [d[0] for d in dumps]:
+        if a.dump and len(dumps) < 12 and ax not in [d[0] for d in dumps]:
             # Keep one frame of each end sprite, straight out of guest memory,
             # so it can be matched against the data files.
             n = ((dx // 8) * (cx & 0xFF)) * 4
@@ -112,15 +129,15 @@ def main():
         return 2
 
     print(f"\n  {len(seen)} distinct blits into rows "
-          f"{BAR_Y0 - 32}..{BAR_Y1}, {sum(seen.values())} calls\n")
+          f"{y0}..{y1}, {sum(seen.values())} calls\n")
     print("     x    y  rows planes  width   srcseg     si   mask   bp   calls")
     for k in order:
         ax, by, rows, planes, dx, seg, si, mask, bp = k
         print(f"  {ax:4d} {by:4d}  {rows:4d} {planes:6d} {dx:6d}  "
               f"{seg:#07x} {si:#06x} {mask:#06x} {bp:#04x} {seen[k]:7d}")
 
-    if dumps:
-        out = os.path.join(ROOT, "out", "banner_ends.bin")
+    if dumps and a.dump:
+        out = a.dump
         with open(out, "wb") as f:
             for ax, seg, si, blob in dumps:
                 f.write(blob)

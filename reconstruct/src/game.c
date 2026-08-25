@@ -1599,6 +1599,132 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
 #define BAR_TILE_W 16
 #define BAR_TILE_PLANE 32     /* 16 rows x 2 bytes */
 
+/* THE FIVE LEMMINGS THAT WALK ON, transcribed from image 0x04F96.
+ *
+ * The menu loop calls it once a pass. It walks a ten-entry table at ds:0x4960
+ * (image 0x0E3F0), eleven bytes each - counter, reload, x, y, sprite base -
+ * and the whole of the routine is this:
+ *
+ *     counter == 0x8000        the entry is switched off; five of the ten are
+ *     counter-- each pass
+ *     counter == -17           reload it, and skip
+ *     counter >= 0             still waiting: draw nothing
+ *     counter in -1..-16       frame = (-counter - 1) >> 1, so eight frames
+ *                              held for two passes each
+ *
+ * and then a 32x12 four-plane blit at (x, y) from base + frame * 192. The
+ * frame arithmetic is worth writing out because it does not look like a
+ * multiply: image 0x04FC4 shifts the index into AH (`xchg al,ah` makes it
+ * frame<<8) and then adds frame<<7 and frame<<6, which is frame * 192.
+ *
+ * So each one is on screen for 32 passes out of its reload period of 400 to
+ * 560 - about seven per cent of the time. **That is why no capture shows one**,
+ * and why this is transcribed rather than fitted: all four captures agree with
+ * the port to the pixel inside all five boxes, which says the port was right
+ * to draw nothing there, not that there is nothing to draw.
+ *
+ * Sprite offsets are `bp - 29200`: the table's bp is an offset in the segment
+ * at [0x1FEE]+0x800, and 29200 is where section 4 begins in it - entry 0's bp
+ * exactly, which is what makes the subtraction more than a fitted constant. */
+#define ANIM_W      32
+#define ANIM_H      12
+#define ANIM_STRIDE 4
+#define ANIM_PLANE  (ANIM_STRIDE * ANIM_H)    /* 48 */
+#define ANIM_FRAME  (ANIM_PLANE * 4)          /* 192, and image 0x04FCB */
+#define ANIM_FRAMES 8
+#define ANIM_OFF    29200      /* table bp -> section 4 offset */
+#define ANIM_N      10
+/* Image 0x04FA9 compares the counter against 0x8000. The counter is signed -
+ * the routine's whole structure is "count down past zero" - so as an int16_t
+ * that bit pattern is INT16_MIN, and writing it as 0x8000 overflows the
+ * initialiser. Same sixteen bits, said in the type the value actually has. */
+#define ANIM_IDLE   INT16_MIN  /* the original's 0x8000 */
+#define ANIM_RESET  (-17)      /* image 0x04FB1 */
+
+/* The table itself, image 0x0E3F0. Five live entries and five switched off;
+ * the dead ones are kept because they are in the original and their positions
+ * say where else it once put one. */
+static const struct {
+    int16_t  reload;
+    uint16_t x, y;
+    uint16_t bp;
+} ANIM[ANIM_N] = {
+    { 0x0190,  32,  49, 29200 },
+    { 0x01B8, 256,  47, 30736 },
+    { 0x01E0, 496,  40, 32272 },
+    { 0x0208, 106, 132, 33808 },
+    { 0x0230, 235, 132, 36880 },
+    { ANIM_IDLE, 363, 132, 38416 },
+    { ANIM_IDLE, 495, 130, 38416 },
+    { ANIM_IDLE, 175, 207, 38416 },
+    { ANIM_IDLE, 298, 209, 33808 },
+    { ANIM_IDLE,  42,   9, 38416 },
+};
+
+/* Their counters. Image 0x04FF8 starts entry i at 0x28 * (i + 1), so they do
+ * not all walk on at once. */
+static int16_t anim_ctr[ANIM_N];
+static int     anim_started;
+
+void menu_anim_reset(void)
+{
+    anim_started = 1;
+    for (uint8_t i = 0; i < ANIM_N; i++)
+        anim_ctr[i] = (ANIM[i].reload == ANIM_IDLE)
+                    ? ANIM_IDLE : (int16_t)(0x28 * (i + 1));
+}
+
+/* One pass of image 0x04F96, minus the drawing. Starts the counters if
+ * nothing has yet: zero is a VALID counter value meaning "walk on next pass",
+ * so leaving the array at its static zero would put all five on screen at
+ * once on the first frame - which is the opposite of what the staggered
+ * start at image 0x04FF8 is for. */
+void menu_anim_step(void)
+{
+    if (!anim_started) menu_anim_reset();
+    for (uint8_t i = 0; i < ANIM_N; i++) {
+        if (anim_ctr[i] == ANIM_IDLE) continue;
+        anim_ctr[i]--;
+        if (anim_ctr[i] == ANIM_RESET) anim_ctr[i] = ANIM[i].reload;
+    }
+}
+
+uint8_t menu_anim_visible(void)
+{
+    if (!anim_started) menu_anim_reset();
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < ANIM_N; i++)
+        if (anim_ctr[i] != ANIM_IDLE && anim_ctr[i] < 0) n++;
+    return n;
+}
+
+/* Draw whichever of them are on screen this pass. Keyed on 0, like the rest
+ * of this screen: the sprites set plane 3 wherever they have ink, so their
+ * own colours are 8..15 and 0 is genuinely nothing. */
+static void draw_anim(uint8_t *dst, const uint8_t *gfx, uint32_t len)
+{
+    if (!anim_started) menu_anim_reset();
+    for (uint8_t i = 0; i < ANIM_N; i++) {
+        int16_t c = anim_ctr[i];
+        if (c == ANIM_IDLE || c >= 0) continue;
+        uint8_t frame = (uint8_t)(((-c) - 1) >> 1);
+        if (frame >= ANIM_FRAMES) continue;
+        uint32_t g = (uint32_t)(ANIM[i].bp - ANIM_OFF)
+                   + (uint32_t)frame * ANIM_FRAME;
+        if (g + ANIM_FRAME > len) continue;
+        for (uint16_t r = 0; r < ANIM_H; r++) {
+            uint16_t y = (uint16_t)(ANIM[i].y + r);
+            if (y >= MENU_H) break;
+            for (uint16_t x2 = 0; x2 < ANIM_W; x2++) {
+                uint16_t x = (uint16_t)(ANIM[i].x + x2);
+                if (x >= MENU_W) break;
+                uint8_t v = planar(gfx, g, ANIM_PLANE, ANIM_STRIDE, 4, x2, r);
+                if (v) dst[(size_t)y * MENU_W + x] = v;
+            }
+        }
+    }
+}
+
 /* THE TWO LEMMINGS HOLDING THE BANNER, and the bar's end caps.
  *
  * Found by hooking the shared blitter rather than by looking for a sprite:
@@ -1916,6 +2042,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
 
     draw_text(m->pix, font, fontlen, CREDIT_1, CREDIT_1_Y);
     draw_text(m->pix, font, fontlen, CREDIT_2, CREDIT_2_Y);
+    draw_anim(m->pix, font, fontlen);
     draw_banner(m->pix, font, fontlen, menu_scroll, menu_lem_frame);
 
     /* Keep section 4 so the banner can be redrawn as it scrolls; menu_build
@@ -2079,6 +2206,8 @@ static int banner_tick(void *ctx, uint8_t *pix)
         pause = BANNER_PAUSE;
     menu_set_scroll(next);
     menu_lem_frame = (uint8_t)((menu_lem_frame + 1) % LEM_FRAMES);
+    menu_anim_step();
+    draw_anim(pix, m->gfx, m->gfx_len);
     draw_banner(pix, m->gfx, m->gfx_len, next, menu_lem_frame);
     return 1;
 }

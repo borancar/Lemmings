@@ -476,6 +476,40 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
+- **The five walk-on lemmings are transcribed, and no capture can check
+  them.** Image `0x04F96` walks a ten-entry table at `ds:0x4960` (image
+  `0x0E3F0`) — counter, reload, x, y, sprite base, eleven bytes each. Five
+  entries are live and five are switched off with `0x8000`. The routine is
+  small and completely determined:
+
+  | counter | what happens |
+  | --- | --- |
+  | `0x8000` | switched off |
+  | `>= 0` | still waiting — draw nothing |
+  | `-1 .. -16` | `frame = (-counter - 1) >> 1`: eight frames, two passes each |
+  | `-17` | reload |
+
+  then a 32×12 four-plane blit at (x, y) from `base + frame * 192`. The
+  multiply does not look like one — image `0x04FC4` shifts the index into AH
+  and adds `frame<<7` and `frame<<6`.
+
+  So each is on screen **32 passes out of 400–560**, about seven per cent of
+  the time. **That is why no capture of the original shows one**, and it is
+  worth being precise about what that means: all four captures agree with the
+  port to the pixel inside all five boxes, which says the port was right to
+  draw nothing there — not that there was nothing to draw. The score is
+  unchanged at 99.85% with them implemented, and always will be.
+
+  Since pixels cannot settle it, the counter logic is tested directly:
+  `menu_anim_visible()` is exposed for that. Zero is a **valid** counter value
+  meaning "walk on next pass", so a static array left at its default would put
+  all five on screen at once on the first frame; that is the specific thing the
+  first assertion catches.
+
+  Sprite offsets are `bp - 29200` — the table's `bp` is an offset in the
+  segment at `[0x1FEE]+0x800`, and 29200 is where section 4 begins in it,
+  which is entry 0's `bp` exactly.
+
 - **The banner is finished: bar, text, and both lemmings holding it.
   Zero pixels differing in its rows, on all four captures.**
 

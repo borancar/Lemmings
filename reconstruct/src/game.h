@@ -407,6 +407,18 @@ void menu_hotspots(view_hotspot *spots);
 void     menu_set_scroll(uint32_t pixels);
 uint32_t menu_get_scroll(void);
 
+/* The five lemmings that walk on and off the menu, image 0x04F96. Each is on
+ * screen for 32 passes out of a period of 400-560, so most of the time there
+ * is nothing to draw - which is why no capture of the original shows one.
+ * menu_anim_reset puts the counters back to image 0x04FF8's staggered start;
+ * menu_anim_step is one pass of the routine. */
+void menu_anim_reset(void);
+void menu_anim_step(void);
+/* How many of them are on screen right now. Exposed so the counter logic can
+ * be checked without a window and without a capture - no capture of the
+ * original shows one, so pixels cannot settle this. */
+uint8_t menu_anim_visible(void);
+
 /* Which frame the two lemmings holding the banner's ends are on. Sixteen of
  * them, and NOT tied to the scroll - see draw_end_lemming in game.c. */
 void     menu_set_lem_frame(uint8_t frame);

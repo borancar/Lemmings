@@ -185,6 +185,38 @@ int main(int argc, char **argv)
         }
     }
 
+    /* THE FIVE WALK-ON LEMMINGS, image 0x04F96.
+     *
+     * No capture of the original shows one - each is on screen 32 passes out
+     * of a period of 400 to 560, about seven per cent - so pixels cannot
+     * settle this and the counter logic is checked directly instead.
+     *
+     * Zero is a VALID counter value meaning "walk on next pass", so a static
+     * array left at its default would put all five on at once on frame one.
+     * That is the specific thing the first assertion is here to catch. */
+    {
+        menu_anim_reset();
+        ck("none walks on at the start", menu_anim_visible() == 0,
+           "a lemming is on screen before any has been counted in");
+        /* Entry 0 starts at 0x28 = 40 and is drawn while its counter is
+         * -1..-16, so it is visible on passes 41..56 inclusive. */
+        int seen_at = -1, runs = 0, run = 0, maxseen = 0;
+        for (int pass = 1; pass <= 700; pass++) {
+            menu_anim_step();
+            uint8_t n = menu_anim_visible();
+            if (n > maxseen) maxseen = n;
+            if (n && seen_at < 0) seen_at = pass;
+            if (n) run++;
+            else if (run) { runs++; run = 0; }
+        }
+        ck("the first one walks on when its counter says",
+           seen_at == 41, "wrong first appearance");
+        ck("they walk on and off repeatedly", runs >= 4, "too few walk-ons");
+        ck("and not all at once", maxseen < 5,
+           "every lemming on screen together");
+        menu_anim_reset();
+    }
+
     /* A hotspot table the menu never asked for, to catch an out-of-bounds
      * write in menu_hotspots if MENU_HOTSPOTS and the code disagree. */
     view_hotspot spots[MENU_HOTSPOTS];
