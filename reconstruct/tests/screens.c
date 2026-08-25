@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <stdlib.h>
 #include "game.h"
 
 static int fails;
@@ -82,6 +83,85 @@ int main(int argc, char **argv)
             }
         } else {
             printf("  (no data files at %s - skipping the level half)\n", dir);
+        }
+    }
+
+    /* THE BANNER, which is the part of this screen that moves.
+     *
+     * Both checks exist because both failed in a way nothing else caught.
+     *
+     * `gfx` is the copy of section 4 the banner is redrawn from. Every screen
+     * that animates needs it, and a rating change builds a WHOLE NEW screen -
+     * so if only the first one carried it, the credits would roll until you
+     * touched the difficulty and then stop dead.
+     *
+     * And the ribbon has to actually move, and to pause. The pause markers
+     * are 0xFF bytes inside the text; they were written into game.c as UTF-8
+     * U+00FF - c3 bf, two bytes - instead of the escape, so the string was 12
+     * characters too long and contained no marker at all. Nothing failed: the
+     * banner scrolled, the score was unchanged, and the credits simply never
+     * paused. A test that only asks "did it move" would not have caught that
+     * either, so this asks for both. */
+    {
+        menu_screen a, b;
+        const char *e = NULL;
+        if (menu_build_rating(dir, 0, &a, &e) == 0) {
+            ck("the menu keeps section 4 for the banner", a.gfx != NULL,
+               "no gfx: the banner cannot be redrawn, so it would freeze");
+            if (menu_build_rating(dir, 3, &b, &e) == 0) {
+                ck("and so does the screen a rating change builds",
+                   b.gfx != NULL, "no gfx after a rating change");
+                menu_free(&b);
+            }
+            /* The ribbon moves, and the same scroll gives the same picture. */
+            size_t band = (size_t)MENU_W * 16;
+            uint8_t *at0 = malloc(band), *at8 = malloc(band),
+                    *again = malloc(band);
+            if (at0 && at8 && again) {
+                menu_set_scroll(0);
+                menu_screen s0;
+                if (menu_build_rating(dir, 0, &s0, &e) == 0) {
+                    memcpy(at0, s0.pix + (size_t)334 * MENU_W, band);
+                    menu_free(&s0);
+                }
+                menu_set_scroll(4);
+                if (menu_build_rating(dir, 0, &s0, &e) == 0) {
+                    memcpy(at8, s0.pix + (size_t)334 * MENU_W, band);
+                    menu_free(&s0);
+                }
+                menu_set_scroll(0);
+                if (menu_build_rating(dir, 0, &s0, &e) == 0) {
+                    memcpy(again, s0.pix + (size_t)334 * MENU_W, band);
+                    menu_free(&s0);
+                }
+                /* Far enough in that the credits have scrolled into view:
+                 * the strip is 35 columns of bare template at start-up, so a
+                 * small scroll shows no text at all and a test that only
+                 * moved a little would pass on a banner with no text in it. */
+                uint8_t *lit = malloc(band);
+                menu_set_scroll(35 * 16 + 16 * 12);
+                if (lit && menu_build_rating(dir, 0, &s0, &e) == 0) {
+                    memcpy(lit, s0.pix + (size_t)334 * MENU_W, band);
+                    menu_free(&s0);
+                    size_t ink = 0;
+                    for (size_t i = 0; i < band; i++)
+                        if (lit[i] != 0 && lit[i] != 13) ink++;
+                    ck("and the credits scroll into it",
+                       ink > 200, "no text in the bar once it should be there");
+                }
+                free(lit);
+                menu_set_scroll(0);
+                /* 4, not 8: the bar's dash has period EIGHT, so scroll 0 and
+                 * scroll 8 are the same picture until text arrives. That is
+                 * the tile being what it is, not the scroll failing - and it
+                 * is why this pair is chosen deliberately. */
+                ck("the banner moves when the scroll does",
+                   memcmp(at0, at8, band) != 0, "same picture at 0 and 4");
+                ck("and the same scroll gives the same banner",
+                   memcmp(at0, again, band) == 0, "not reproducible");
+            }
+            free(at0); free(at8); free(again);
+            menu_free(&a);
         }
     }
 

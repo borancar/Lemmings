@@ -1604,12 +1604,12 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * it is in the executable, not in a data file. 0xFF is the pause marker and
  * is not a glyph - see above - so it is stripped when the ribbon is built. */
 static const char SCROLL_TEXT[] =
-    "         Lemmings By DMA Design      ÿ"
-    "       Programming By Russell Kay    ÿ"
-    "       Animation By Gary Timmons     ÿ"
-    "       Graphics By Scott Johnston    ÿ"
-    " Music By Brian Johnston & Tim Wright       PC Music By Tony Williams     ÿ"
-    "      Copyright 1991 Psygnosis Ltd.  ÿ ";
+    "         Lemmings By DMA Design      \xff"
+    "       Programming By Russell Kay    \xff"
+    "       Animation By Gary Timmons     \xff"
+    "       Graphics By Scott Johnston    \xff"
+    " Music By Brian Johnston & Tim Wright       PC Music By Tony Williams     \xff"
+    "      Copyright 1991 Psygnosis Ltd.  \xff ";
 
 /* Where the ribbon has scrolled to, in pixels. The port composes ONE frame,
  * so this has to be a parameter of the composition rather than something the

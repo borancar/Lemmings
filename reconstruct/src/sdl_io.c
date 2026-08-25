@@ -181,33 +181,79 @@ int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
                               spots, nspots, NULL, NULL);
 }
 
+/* ONE window, kept across calls.
+ *
+ * This used to create a window and call SDL_Quit on every call, and menu_run
+ * is called once per menu action - so choosing anything at all, including
+ * changing the difficulty, tore the window down and built a new one. That is
+ * visible: the window blinks, moves back to wherever the WM puts a new one,
+ * and loses focus. A menu that reopens itself is not a menu.
+ *
+ * So the window, renderer and texture live here and are reused whenever the
+ * size and scale match. SDL is shut down once, at exit. */
+static SDL_Window   *g_win;
+static SDL_Renderer *g_ren;
+static SDL_Texture  *g_tex;
+static uint16_t      g_w, g_h;
+static uint8_t       g_scale;
+
+static void view_shutdown(void)
+{
+    if (g_tex) SDL_DestroyTexture(g_tex);
+    if (g_ren) SDL_DestroyRenderer(g_ren);
+    if (g_win) SDL_DestroyWindow(g_win);
+    g_tex = NULL; g_ren = NULL; g_win = NULL;
+    SDL_Quit();
+}
+
+/* Returns 0 on success. Reuses what is already open when it fits. */
+static int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
+{
+    static int registered;
+    if (g_win && g_w == w && g_h == h && g_scale == scale) {
+        SDL_SetWindowTitle(g_win, title);
+        return 0;
+    }
+    if (g_win) {                       /* a different size: rebuild */
+        if (g_tex) SDL_DestroyTexture(g_tex);
+        if (g_ren) SDL_DestroyRenderer(g_ren);
+        SDL_DestroyWindow(g_win);
+        g_tex = NULL; g_ren = NULL; g_win = NULL;
+    }
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("SDL_Init: %s", SDL_GetError());
+        return -1;
+    }
+    if (!registered) { atexit(view_shutdown); registered = 1; }
+    if (!SDL_CreateWindowAndRenderer(title, w * scale, h * scale, 0,
+                                     &g_win, &g_ren)) {
+        SDL_Log("SDL_CreateWindowAndRenderer: %s", SDL_GetError());
+        return -1;
+    }
+    SDL_SetRenderLogicalPresentation(g_ren, w, h,
+                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
+    g_tex = SDL_CreateTexture(g_ren, SDL_PIXELFORMAT_XRGB8888,
+                              SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (!g_tex) return -1;
+    SDL_SetTextureScaleMode(g_tex, SDL_SCALEMODE_NEAREST);
+    g_w = w; g_h = h; g_scale = scale;
+    return 0;
+}
+
 int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
                            const lem_rgb *palette, const char *title,
                            uint8_t scale, const view_hotspot *spots,
                            uint8_t nspots, view_tick tick, void *ctx)
 {
     if (scale < 1) scale = 1;
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("SDL_Init: %s", SDL_GetError());
-        return VIEW_CLOSED;
-    }
-    SDL_Window *win = NULL;
-    SDL_Renderer *ren = NULL;
-    if (!SDL_CreateWindowAndRenderer(title, w * scale, h * scale, 0,
-                                     &win, &ren)) {
-        SDL_Log("SDL_CreateWindowAndRenderer: %s", SDL_GetError());
-        SDL_Quit();
-        return VIEW_CLOSED;
-    }
-    SDL_SetRenderLogicalPresentation(ren, w, h,
-                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
-    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888,
-                                         SDL_TEXTUREACCESS_STREAMING, w, h);
-    if (!tex) {
-        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
-        return VIEW_CLOSED;
-    }
-    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+    if (view_open(w, h, title, scale) != 0) return VIEW_CLOSED;
+    SDL_Renderer *ren = g_ren;
+    SDL_Texture  *tex = g_tex;
+
+    /* A frame budget, for tests: the animation has to be observable without a
+     * person watching it, and a loop that only ends on a keypress is not. */
+    const char *cap = SDL_getenv("LEM_FRAMES");
+    long budget = cap ? SDL_atoi(cap) : 0;
 
     /* Uploaded once when nothing animates, and again whenever `tick` says the
      * picture changed. */
@@ -261,12 +307,9 @@ int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
         SDL_RenderTexture(ren, tex, NULL, NULL);
         SDL_RenderPresent(ren);
         SDL_Delay(16);
+        if (budget && --budget == 0) running = 0;
     }
-
-    SDL_DestroyTexture(tex);
-    SDL_DestroyRenderer(ren);
-    SDL_DestroyWindow(win);
-    SDL_Quit();
+    /* The window stays open. It is torn down at exit, not here. */
     return chosen;
 }
 
