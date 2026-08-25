@@ -259,6 +259,61 @@ Each of these is stated as what was *checked*, not what was written.
   systematic error wearing the costume of noise. About 1,400 pixels spread
   thinly down one edge look like animation until they are counted by band.
 
+- **SOLVED: the black halo was a DROP SHADOW — another sprite, drawn first.**
+  Every model fitted to the pixels was wrong because the compositing was never
+  wrong. Capturing the EGA bit mask the blitter actually uses shows it is
+  **exactly the sprite's own ink, 100.00% agreement** — keying on index 0 is
+  precisely what the original does.
+
+  Attributing every write into the logo's rows to the instruction that made it
+  found a *second* masked blitter, image `0x097F4`, writing **7,426 bytes** —
+  the logo's exact size — into rows 20..113 while the logo occupies 10..103.
+  Ten rows down and eight pixels left, in black. The plates do the same, from
+  image `0x09128`: rows 128..188 against their 120..180, and one byte left.
+
+  | | before | after |
+  | --- | --- | --- |
+  | the menu, whole screen | 95.83% | **99.16%** |
+
+  What is left is 1,891 pixels, of which ~1,000 are the banner's scrolling text
+  and its end lemmings — animated, and unmatchable by a composed frame.
+
+  The shadows use the sprite's own silhouette as a stand-in; the original reads
+  a separate buffer (page `0x5F000`), so this is a **fit, not a
+  transcription**, and it is marked as one in `game.c`.
+
+  The lesson is the expensive one: **three rounds of fitting models to pixels,
+  then one register trace and one write-attribution.** When a port and the
+  original disagree about compositing, ask what the original's blitter did —
+  not what rule would explain the picture.
+
+- **The FX plate's label is drawn, and section 3 is now fully accounted for.**
+  Its lettering is not in the plate's bitmap — the plate is blank because the
+  label swaps. Section 3's last **1,984 bytes** are two 64×31 four-plane
+  sprites, 992 bytes each; sprite 1 is "FX" and sprite 0 is its alternate. At
+  **(351,146)** it matches **100.00%** — 1,654 ink pixels, none differing.
+
+  The pixel that mattered: sweeping positions in steps of 8 gives a
+  convincing-looking 92.74%, and it is wrong. The label is drawn one pixel off
+  byte alignment. A sweep whose step size matches the data's natural alignment
+  will confidently find the wrong answer.
+
+- **The background is 632 pixels wide, not 640 — and finding that made a whole
+  screen exact.** The original leaves the last byte of each row black: no
+  non-black pixel anywhere beyond x=635, while the left edge draws normally.
+  The port was tiling the full 640.
+
+  | screen | before | after |
+  | --- | --- | --- |
+  | the **input chooser** | 99.37% | **100.00%** |
+  | the level-code screen | 98.82% | **99.45%** |
+  | the menu | 95.21% | **95.83%** |
+
+  It was found by *mapping* the residual rather than assuming it: every 16-row
+  band of the menu's differences had a few pixels at x 632–639, which is a
+  systematic error wearing the costume of noise. About 1,400 pixels spread
+  thinly down one edge look like animation until they are counted by band.
+
 - **The menu's remaining difference is under the logo, and the logo itself is
   exact.** Sweeping the logo's position at pixel granularity gives
   **100.00% over its ink** at (8,10) — 7,006 sampled pixels, none differing —

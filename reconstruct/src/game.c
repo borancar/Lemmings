@@ -890,6 +890,9 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define LOGO_PLANE  7426
 #define LOGO_X      8
 #define LOGO_Y      10
+/* Where its shadow falls, measured: eight pixels left, ten rows down. */
+#define LOGO_SHADOW_DX (-8)
+#define LOGO_SHADOW_DY  10
 
 /* The six signs, one atlas entry each, 4 x 915 = 3660 bytes apart. The atlas
  * begins at 38024, which is exactly where the logo's fourth plane ends. */
@@ -899,6 +902,9 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define SIGN_STRIDE 15
 #define SIGN_PLANE  915
 #define SIGN_STEP   3660
+/* Where a plate's shadow falls, measured from where the blitter writes. */
+#define SIGN_SHADOW_DX (-8)
+#define SIGN_SHADOW_DY   8
 
 /* The FX plate's label, and its alternate.
  *
@@ -1442,8 +1448,48 @@ int menu_build(const char *dir, menu_screen *m, const char **err)
                 planar(sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE, 2,
                        x % BG_W, y % BG_H);
 
+    /* The logo's DROP SHADOW, before the logo itself.
+     *
+     * The original blits a second 632x94 sprite - image 0x097F4, 7,426 bytes,
+     * the logo's exact size - into rows 20..113, ten rows below the logo and
+     * eight pixels left of it, in black. That is the black halo that had this
+     * project fitting seven models to it: keyed compositing was right all
+     * along, and there was simply another sprite underneath.
+     *
+     * Its source is a separate buffer (page 0x5F000), not the logo's own data,
+     * so this uses the logo's silhouette as a stand-in. That is a fit, not a
+     * transcription, and it is marked as one: 99.36% against the original's
+     * screen over the logo's rows, up from 93.80% with no shadow at all. The
+     * real shadow bitmap has not been located. */
+    for (uint16_t sy = 0; sy < LOGO_H; sy++) {
+        uint16_t y = (uint16_t)(LOGO_Y + LOGO_SHADOW_DY + sy);
+        if (y >= MENU_H) break;
+        for (uint16_t sx = 0; sx < LOGO_W; sx++) {
+            int32_t x = (int32_t)LOGO_X + LOGO_SHADOW_DX + sx;
+            if (x < 0 || x >= BG_DRAWN_W) continue;
+            if (planar(sec, LOGO_BASE, LOGO_PLANE, LOGO_STRIDE, 4, sx, sy))
+                m->pix[(size_t)y * MENU_W + x] = 0;
+        }
+    }
+
     blit(m->pix, sec, LOGO_BASE, LOGO_W, LOGO_H, LOGO_STRIDE, LOGO_PLANE,
          LOGO_X, LOGO_Y);
+    /* The plates cast shadows too, and the same way: image 0x09128 writes into
+     * rows 128..188 while the plates occupy 120..180, and one byte to the
+     * left. Eight down, eight across. */
+    for (uint8_t i = 0; i < 6; i++)
+        for (uint16_t sy = 0; sy < SIGN_H; sy++) {
+            uint16_t y = (uint16_t)(SIGN_POS[i].y + SIGN_SHADOW_DY + sy);
+            if (y >= MENU_H) break;
+            for (uint16_t sx = 0; sx < SIGN_W; sx++) {
+                int32_t x = (int32_t)SIGN_POS[i].x + SIGN_SHADOW_DX + sx;
+                if (x < 0 || x >= BG_DRAWN_W) continue;
+                if (planar(sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
+                           SIGN_PLANE, SIGN_STRIDE, 4, sx, sy))
+                    m->pix[(size_t)y * MENU_W + x] = 0;
+            }
+        }
+
     for (uint8_t i = 0; i < 6; i++)
         blit(m->pix, sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
              SIGN_W, SIGN_H, SIGN_STRIDE, SIGN_PLANE,
