@@ -22,6 +22,32 @@ three and only presentation differs, so a second variant would re-derive the
 level format and the main loop for no gain. `vgalemmi.exe` also serves EGA
 (menu option 2); only its VGA path is in scope.
 
+## Where it stands, at a glance
+
+Everything below is stated as what was *checked*. These are the headline
+numbers, re-measured on the current build:
+
+| | |
+| --- | --- |
+| the original's composed **level terrain** vs the port | **100.00%** — 49,741 pixels, 0 differing (`tools/prove.sh`) |
+| the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
+| the **level-code** screen | **100.00%** — 0 of 224,000 |
+| the **input chooser** | **100.00%** — 0 of 224,000 |
+| the **briefing's** text | 99.97% — 4 of 15,188 |
+| the **main menu** | 99.41% — 1,321 of 224,000, of which 995 are its animated banner |
+| the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
+| the LVL header parse | 15 fields, all agreeing |
+| tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
+
+**Transcription is a different claim from any of the above, and it is 5 of 211
+call targets.** The port renders these screens from the file formats and from
+geometry measured against the original — that is real evidence, and it is not
+the same as having transcribed the routines. See *Coverage* below.
+
+Reference material lives in `docs/`: [menu.md](docs/menu.md) for the menu
+screens, [protection.md](docs/protection.md), [toolchain.md](docs/toolchain.md),
+[codemap.md](docs/codemap.md), [machine-types.md](docs/machine-types.md).
+
 ## Done
 
 Each of these is stated as what was *checked*, not what was written.
@@ -273,7 +299,7 @@ Each of these is stated as what was *checked*, not what was written.
 
   | | before | after |
   | --- | --- | --- |
-  | the menu, whole screen | 95.83% | **99.27%** |
+  | the menu, whole screen | 95.83% | **99.27%**, and 99.41% once the rating name was found |
 
   A second finding came out of the same pass: **the FX plate's label is drawn
   opaquely**, not keyed. Its own black is real — keying it out leaves the
@@ -282,13 +308,13 @@ Each of these is stated as what was *checked*, not what was written.
   drawing one has to erase the other, and a keyed blit cannot. 94.04% keyed
   against 98.79% opaque over its neighbourhood.
 
-  What is left is **1,625 pixels**, and it is now accounted for rather than
-  guessed at:
+  What is left, **as last measured**, is 1,321 pixels of 224,000:
 
   | where | pixels | what |
   | --- | --- | --- |
-  | the banner's rows | 995 (61%) | its scrolling text and end lemmings — animated, so a composed frame cannot match them |
-  | inside the plates | ~630 | the **rating name**, drawn one pixel left of where the plate's own bitmap has it |
+  | the banner's rows | 995 | its scrolling text and end lemmings — animated, so a composed frame cannot match them |
+  | inside the plates | 317 | unexplained; static, spread 16–113 a plate |
+  | elsewhere | 9 | |
 
   The rating name is drawn *over* the plate, not baked into it — the plate
   carries a "FUN" that the original then overdraws one pixel to the left, which
@@ -364,107 +390,6 @@ Each of these is stated as what was *checked*, not what was written.
   then one register trace and one write-attribution.** When a port and the
   original disagree about compositing, ask what the original's blitter did —
   not what rule would explain the picture.
-
-- **The FX plate's label is drawn, and section 3 is now fully accounted for.**
-  Its lettering is not in the plate's bitmap — the plate is blank because the
-  label swaps. Section 3's last **1,984 bytes** are two 64×31 four-plane
-  sprites, 992 bytes each; sprite 1 is "FX" and sprite 0 is its alternate. At
-  **(351,146)** it matches **100.00%** — 1,654 ink pixels, none differing.
-
-  The pixel that mattered: sweeping positions in steps of 8 gives a
-  convincing-looking 92.74%, and it is wrong. The label is drawn one pixel off
-  byte alignment. A sweep whose step size matches the data's natural alignment
-  will confidently find the wrong answer.
-
-- **The background is 632 pixels wide, not 640 — and finding that made a whole
-  screen exact.** The original leaves the last byte of each row black: no
-  non-black pixel anywhere beyond x=635, while the left edge draws normally.
-  The port was tiling the full 640.
-
-  | screen | before | after |
-  | --- | --- | --- |
-  | the **input chooser** | 99.37% | **100.00%** |
-  | the level-code screen | 98.82% | **99.45%** |
-  | the menu | 95.21% | **95.83%** |
-
-  It was found by *mapping* the residual rather than assuming it: every 16-row
-  band of the menu's differences had a few pixels at x 632–639, which is a
-  systematic error wearing the costume of noise. About 1,400 pixels spread
-  thinly down one edge look like animation until they are counted by band.
-
-- **The menu's remaining difference is under the logo, and the logo itself is
-  exact.** Sweeping the logo's position at pixel granularity gives
-  **100.00% over its ink** at (8,10) — 7,006 sampled pixels, none differing —
-  so its data, its size and its placement are all confirmed and none of them is
-  the problem. Every remaining pixel in that band is a *transparent* one: the
-  original shows **black** and the port shows the background tile. 4,053 such
-  pixels in y 0..139, peaking around y 88..98.
-
-  Knocking the logo's own ink out of the original's screen shows what is behind
-  it — [docs/reference/behind-logo.png](docs/reference/behind-logo.png). There
-  is a **black halo hugging the logo's outline**, thick in places and absent in
-  others, and the background texture everywhere else.
-
-  **Seven models have been tested and none explains it:**
-
-  | model | agreement over the logo's box |
-  | --- | --- |
-  | keyed on index 0 (what the port does) | 93.64% |
-  | opaque across each row's byte-columns | 93.93% |
-  | opaque across each row's ink span | 90.27% |
-  | fully opaque | 82.14% |
-  | keyed above a split row, opaque below (best split, row 50) | 96.42% |
-  | ink dilated by 1 pixel, drawn black | 94.08% |
-  | `MAIN.DAT` section 2 as a 1-bit mask (both alignments, both polarities) | 92.29% |
-
-  The best, a hard split at sprite row 50, is 96.42% — better than keyed but
-  not a mechanism: a real one would be near 100%, as every other piece of this
-  screen has been. A black drop-shadow was tried too; the best offset explains
-  61% of the suppressed pixels and sits at the edge of the search.
-
-  The port keeps the keyed model, which is **exact** in the logo's upper rows.
-
-  It is also **not animation**: the rows that differ most, 88–98, are identical
-  between two lit captures 2.5 seconds apart.
-
-  **And it is not specific to the logo.** Every one of the six plates does the
-  same thing, and a control settles that the background model is not at fault:
-
-  | | transparent pixels blacked out, where the tile is not black |
-  | --- | --- |
-  | the six plates | 18.5% – 30.9% |
-  | **bare background, rows 190–195** | **0.0%** — 0 of 1,731 |
-
-  So the background is *exact* wherever nothing is drawn over it, and every
-  sprite suppresses part of what shows through it. **78.8% of the menu's whole
-  residual falls inside a sprite's bounding box**, and most of the rest sits in
-  the rows immediately below one.
-
-  **The mechanism is now known.** Recording every write to the EGA's sequencer
-  and graphics controller while the menu draws — rather than fitting models to
-  the pixels — shows two blitters:
-
-  - an **opaque** one at image `0x0985F`: map mask `0x0F`, set/reset `0x00`,
-    **enable set/reset `0x0E`**, so plane 0 takes the sprite's data and planes
-    1–3 are forced to zero. Every byte it touches is replaced outright.
-  - a **masked** one, at `0x089BE`, `0x09121`, `0x09442` and `0x097ED`, which
-    drives the **graphics controller's bit mask** per byte. It takes **184
-    distinct values** across a menu draw, and **7,193 of 29,179 writes use a
-    partial mask** — neither `0x00` nor `0xFF`.
-
-  So sprites are clipped by a real per-pixel mask, and that mask is *not* the
-  sprite's own ink: where the mask is set and the sprite's pixel is 0, the
-  result is black. That is exactly the halo. What is left to find is **where
-  the mask data lives** — `MAIN.DAT` section 2 was tried as a 632×94 one-bit
-  mask at both plausible alignments and both polarities and is not it.
-
-  The port keeps the keyed model until that is found; it is exact in the
-  logo's upper rows and 93.64% over its box.
-
-  Worth noting what this rules out: it is not the logo's data, not its
-  position, not the background's tiling (confirmed `y % 104` at 100% on clean
-  rows), and not the palette. Something draws black there that has not been
-  found.
 
 - **The plates are keyed, and that is now measured rather than assumed.**
   Drawn as they are they differ by **317 pixels across all six**; drawn opaquely
@@ -785,7 +710,6 @@ has nothing to seed with here.
    `0x0389F`, which is what `render.c` should be checked against.
 4. **Prove the unpack by round-tripping** against the PKLITE stub's own output.
    Still the standard, still not done.
-
 
 - **The machine-type menu is mapped but not explained.** Which flags each of
   the four options sets is established and written down in

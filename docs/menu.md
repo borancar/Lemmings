@@ -54,18 +54,21 @@ chooser from 99.37% to **100.00%**.
 7,006 sampled ink pixels — so the size, the offsets and the placement are all
 confirmed.
 
-Its ink uses only values 8–15, never 1–7, so bit 3 is in effect its own mask.
-Index 0 is treated as transparent, which is exact in the logo's upper rows and
-**wrong somewhere below y≈55**: there the original shows black where the tile
-would show through. Knocking the ink out of the original's screen shows a black
-halo hugging the outline — [reference/behind-logo.png](reference/behind-logo.png).
+Its ink uses only values 8–15, never 1–7, so bit 3 is in effect its own mask,
+and **index 0 is transparent** — the captured bit mask the blitter programs is
+exactly the sprite's ink, 100.00% agreement, so keying is precisely what the
+original does.
 
-Seven models have been tried and none reaches the ~100% that every other piece
-of this screen reaches: keyed 93.64%, opaque per byte-column 93.93%, opaque per
-ink span 90.27%, fully opaque 82.14%, keyed-then-opaque at the best split
-96.42%, a 1-pixel dilation 94.08%, and section 2 as a 1-bit mask 92.29%. It is
-not animation either — those rows are identical between captures. **Open**, and
-STATUS.md carries the list so none of it need be retried.
+Knocking the ink out of the original's screen leaves a black halo hugging the
+outline — [reference/behind-logo.png](reference/behind-logo.png). That is **not**
+a compositing rule: it is the **drop shadow** described below, a second sprite.
+
+Worth recording because it cost three sessions: seven models were fitted to
+those pixels first, and every one of them plateaued — keyed 93.64%, opaque per
+byte-column 93.93%, opaque per ink span 90.27%, fully opaque 82.14%,
+keyed-then-opaque at the best split 96.42%, a 1-pixel dilation 94.08%, section 2
+as a 1-bit mask 92.29%. None was the answer because the answer was another
+sprite, not a rule.
 
 **The plates** are 120×61, stride 15, planes 915 apart, at
 
