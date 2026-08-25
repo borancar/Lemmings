@@ -450,9 +450,13 @@ static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); 
 /* NOT TRANSCRIBED - GROUNDxO.DAT, from the published description, checked
  * against the files. Where the original parses it is not established.
  *
- * NOT TRANSCRIBED. The original parses GROUNDxO.DAT too and has a routine
- * for it; this was written from the published description instead, and that
- * routine has not been read. Owed.
+ * The port's own, and there is nothing to transcribe: THE ORIGINAL NEVER
+ * PARSES THIS FILE. It loads all 4,096 bytes raw to ds:0x1B4B (image 0x01A0B
+ * names it, 0x01A18 calls the loader at image 0x01916) and then indexes the
+ * bytes in place - image 0x037D1 does `mul 0x1C` on the object id and
+ * `lea si,[0x1b4b]`, reading the trigger box straight out of [si+0x0E] and
+ * [si+0x10]. This struct is a convenience the port chose; the file layout it
+ * fills in is the transcription, and that is in the field comments.
  */
 int ground_load(const char *path, ground *g, const char **err)
 {
@@ -554,59 +558,7 @@ int ground_load(const char *path, ground *g, const char **err)
 uint8_t g_plane_bits[4] = { 0, 1, 2, 3 };
 uint8_t g_msb_first = 1;
 
-/* NOT TRANSCRIBED - a 4-bit planar bitmap out of VGAGRx.DAT. Where the
- * original decodes these is not established.
- *
- * NOT TRANSCRIBED. The original decodes these bitmaps itself; the routine
- * has not been read. Owed.
- */
-int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
-                 uint8_t w, uint8_t h, uint8_t *out)
-{
-    uint32_t stride = ((uint32_t)w + 7u) / 8u;
-    uint32_t plane  = stride * (uint32_t)h;
 
-    if (loc + plane * 4u > len)
-        return -1;
-
-    memset(out, 0, (size_t)w * h);
-
-    for (uint8_t p = 0; p < 4; p++) {
-        const uint8_t *bits = sec + loc + (uint32_t)p * plane;
-        for (uint8_t y = 0; y < h; y++) {
-            const uint8_t *row = bits + (uint32_t)y * stride;
-            for (uint8_t x = 0; x < w; x++) {
-                uint8_t sh = g_msb_first ? (uint8_t)(7 - (x & 7))
-                                         : (uint8_t)(x & 7);
-                uint8_t bit = (uint8_t)((row[x >> 3] >> sh) & 1u);
-                out[(uint32_t)y * w + x] |=
-                    (uint8_t)(bit << g_plane_bits[p]);
-            }
-        }
-    }
-    return 0;
-}
-
-/* NOT TRANSCRIBED - the 1-bit transparency mask beside a bitmap.
- *
- * NOT TRANSCRIBED. As vgagr_decode above. Owed.
- */
-int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
-                      uint8_t w, uint8_t h, uint8_t *out)
-{
-    uint32_t stride = ((uint32_t)w + 7u) / 8u;
-
-    if (loc + stride * (uint32_t)h > len)
-        return -1;
-
-    for (uint8_t y = 0; y < h; y++) {
-        const uint8_t *row = sec + loc + (uint32_t)y * stride;
-        for (uint8_t x = 0; x < w; x++)
-            out[(uint32_t)y * w + x] = (uint8_t)(
-                (row[x >> 3] >> (g_msb_first ? (7 - (x & 7)) : (x & 7))) & 1u);
-    }
-    return 0;
-}
 
 /* ======================================================================
  * NOT TRANSCRIBED - terrain composition.
@@ -874,9 +826,33 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
  * the two lines; the original draws them at 128 and 176, so it centres and
  * then backs off half a character. Both lines agree on that, which is why it
  * is written as a rule rather than as two measured constants. */
-#define TEXT_X(n)   (uint16_t)((MENU_W - (n) * FONT_W) / 2 - FONT_W / 2)
-#define CREDIT_1_Y  272
-#define CREDIT_2_Y  288
+/* WHERE THE TEXT GOES IS DATA, NOT A FORMULA.
+ *
+ * The original's text routine at image 0x04D4D reads a three-byte header off
+ * the front of every string before it draws a character:
+ *
+ *     lodsb / mov cl,al / dec cl     cl = x in 16-pixel cells
+ *     lodsb / mov ch,al              ch = y in 16-pixel cells
+ *     lodsb                          a flag; 0 sets bp=2, else bp=0
+ *     ... characters, terminated by 0x0D
+ *
+ * and the two credit lines carry theirs in the string table: `09 11` before
+ * "(C)MCMXCI Psygnosis Ltd" is x=(9-1)*16=128, y=17*16=272, and `0C 12`
+ * before "A DMA Design Game" is x=176, y=288.
+ *
+ * Those are exactly the numbers this file used to reach by centring and then
+ * subtracting half a character - a rule fitted to two data points that were
+ * never computed at all. The rule got the right answer for the two strings it
+ * was fitted to, which is the whole trouble with it. */
+#define TEXT_CELL   16          /* the header's units, image 0x04D4D */
+#define CREDIT_1_CELL_X  9      /* the stored byte; x is (it - 1) * 16 */
+#define CREDIT_1_CELL_Y 17
+#define CREDIT_2_CELL_X 12
+#define CREDIT_2_CELL_Y 18
+#define CELL_X(b)   (uint16_t)(((b) - 1) * TEXT_CELL)
+#define CELL_Y(b)   (uint16_t)((b) * TEXT_CELL)
+#define CREDIT_1_Y  CELL_Y(CREDIT_1_CELL_Y)
+#define CREDIT_2_Y  CELL_Y(CREDIT_2_CELL_Y)
 
 /* The background tile. Two planes only - it uses four colours - so values are
  * 0..3 and planes 2 and 3 are implicitly zero. Confirmed by measurement:
@@ -1195,19 +1171,19 @@ static void draw_char(uint8_t *dst, const uint8_t *font, uint32_t font_len,
 
 /* The port's own.
  *
- * NOT TRANSCRIBED. Image 0x04D4D walks a string and image 0x04D78 draws the
- * glyph - both transcribed - but the CENTRING here is the port's arithmetic,
- * fitted to where the original puts the credits. Where the original computes
- * it has not been read. Owed.
+ * Transcribed from image 0x04D4D. The x and y come from the string's own
+ * three-byte header there - cl = x in 16-pixel cells with one added, ch = y in
+ * cells - which is why this takes cells rather than pixels and no longer
+ * centres anything.
  */
 static void draw_text(uint8_t *dst, const uint8_t *font, uint32_t font_len,
-                      const char *text, uint16_t at_y)
+                      const char *text, uint8_t cell_x, uint8_t cell_y)
 {
-    size_t n = strlen(text);
-    uint16_t x = TEXT_X((uint16_t)n);
-    for (size_t i = 0; i < n; i++)
+    uint16_t x = CELL_X(cell_x);
+    uint16_t y = CELL_Y(cell_y);
+    for (size_t i = 0; text[i]; i++)
         draw_char(dst, font, font_len, (uint8_t)text[i],
-                  (uint16_t)(x + i * FONT_W), at_y);
+                  (uint16_t)(x + i * FONT_W), y);
 }
 
 /* NOT TRANSCRIBED - the port's own compositing of the original's own
@@ -2272,8 +2248,10 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
         }
     }
 
-    draw_text(m->pix, font, fontlen, CREDIT_1, CREDIT_1_Y);
-    draw_text(m->pix, font, fontlen, CREDIT_2, CREDIT_2_Y);
+    draw_text(m->pix, font, fontlen, CREDIT_1,
+              CREDIT_1_CELL_X, CREDIT_1_CELL_Y);
+    draw_text(m->pix, font, fontlen, CREDIT_2,
+              CREDIT_2_CELL_X, CREDIT_2_CELL_Y);
     draw_anim(m->pix, font, fontlen);
     draw_banner(m->pix, font, fontlen, menu_scroll, menu_lem_frame);
 

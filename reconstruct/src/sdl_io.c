@@ -471,3 +471,64 @@ int level_header_fields(const uint8_t *buf, uint32_t len,
     out[14] = lv.extended_graphics_set;
     return 0;
 }
+
+/* vgagr_decode and vgagr_decode_mask are the same class as `planar` above and
+ * were moved here with it: the original NEVER unpacks these bitmaps. It hands
+ * the planar bytes straight to the EGA and the card assembles the pixels -
+ * every blit logged by tools/probe_blits.py points `si` into the loaded
+ * section itself. Software has to do that work; the original had no code for
+ * it, so there is nothing here to transcribe.
+ */
+/* NOT TRANSCRIBED - a 4-bit planar bitmap out of VGAGRx.DAT. Where the
+ * original decodes these is not established.
+ *
+ * NOT TRANSCRIBED. The original decodes these bitmaps itself; the routine
+ * has not been read. Owed.
+ */
+int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
+                 uint8_t w, uint8_t h, uint8_t *out)
+{
+    uint32_t stride = ((uint32_t)w + 7u) / 8u;
+    uint32_t plane  = stride * (uint32_t)h;
+
+    if (loc + plane * 4u > len)
+        return -1;
+
+    memset(out, 0, (size_t)w * h);
+
+    for (uint8_t p = 0; p < 4; p++) {
+        const uint8_t *bits = sec + loc + (uint32_t)p * plane;
+        for (uint8_t y = 0; y < h; y++) {
+            const uint8_t *row = bits + (uint32_t)y * stride;
+            for (uint8_t x = 0; x < w; x++) {
+                uint8_t sh = g_msb_first ? (uint8_t)(7 - (x & 7))
+                                         : (uint8_t)(x & 7);
+                uint8_t bit = (uint8_t)((row[x >> 3] >> sh) & 1u);
+                out[(uint32_t)y * w + x] |=
+                    (uint8_t)(bit << g_plane_bits[p]);
+            }
+        }
+    }
+    return 0;
+}
+
+/* NOT TRANSCRIBED - the 1-bit transparency mask beside a bitmap.
+ *
+ * NOT TRANSCRIBED. As vgagr_decode above. Owed.
+ */
+int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
+                      uint8_t w, uint8_t h, uint8_t *out)
+{
+    uint32_t stride = ((uint32_t)w + 7u) / 8u;
+
+    if (loc + stride * (uint32_t)h > len)
+        return -1;
+
+    for (uint8_t y = 0; y < h; y++) {
+        const uint8_t *row = sec + loc + (uint32_t)y * stride;
+        for (uint8_t x = 0; x < w; x++)
+            out[(uint32_t)y * w + x] = (uint8_t)(
+                (row[x >> 3] >> (g_msb_first ? (7 - (x & 7)) : (x & 7))) & 1u);
+    }
+    return 0;
+}

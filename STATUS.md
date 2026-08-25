@@ -41,7 +41,7 @@ numbers, re-measured on the current build:
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 29 of
+**Transcription is a different claim from any of the above, and it is 31 of
 211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
@@ -642,6 +642,40 @@ Each of these is stated as what was *checked*, not what was written.
   wrong**, and no amount of further fitting was going to reach zero from 257.
   Reading the routine took less time than the fitting did.
 
+- **The transcription debt: six down to two, and four of them were not debts
+  at all.** Working the list found that in four cases *there is nothing to
+  transcribe*, which is a better answer than a transcription:
+
+  - **`ground_load`** — the original **never parses GROUNDxO.DAT.** It loads
+    all 4,096 bytes raw to `ds:0x1B4B` (image `0x01A0B` names the file,
+    `0x01A18` calls the loader at `0x01916`) and indexes the bytes in place:
+    image `0x037D1` does `mul 0x1C` on the object id, `lea si,[0x1b4b]`, and
+    reads the trigger box straight out of `[si+0x0E]` and `[si+0x10]`. The
+    port's struct is a convenience; the *layout* is the transcription and that
+    lives in the field comments.
+  - **`vgagr_decode` / `vgagr_decode_mask`** — the original never unpacks these
+    bitmaps either. It hands the planar bytes to the EGA and the card
+    assembles the pixels; every blit `probe_blits.py` logs points `si` into the
+    loaded section itself. Same class as `planar`, and moved to `sdl_io.c`
+    with it.
+  - **`draw_text`** — **transcribed, image `0x04D4D`, and it corrected a
+    fitted rule.** That routine reads a three-byte header off the front of
+    every string before drawing: `cl` = x in 16-pixel cells (with one added),
+    `ch` = y in cells, then a flag. The credit lines carry theirs in the
+    string table — `09 11` before *"(C)MCMXCI Psygnosis Ltd"* is x=128, y=272;
+    `0C 12` before *"A DMA Design Game"* is x=176, y=288.
+
+    Those are exactly the numbers this port used to reach by **centring and
+    then subtracting half a character** — a rule invented to explain two
+    coordinates that were never computed at all, and which this file recorded
+    as a finding: *"both lines agree on that, which is why it is written as a
+    rule rather than as two measured constants."* Two data points, a rule
+    fitted to them, and it got them right. That is the whole trouble with it.
+
+  What is left is genuinely owed: `draw_preview` and `draw_end_lemming`, both
+  found by measuring the original's screen and its blits rather than reading
+  its code.
+
 - **The provenance convention had decayed, and is now a test.** `CLAUDE.md`
   says every function carries the address it came from, and calls it "the
   convention that decays first". Audited: **13 functions carried an address, 12
@@ -1042,7 +1076,7 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 29 (`make test` enforces the count) |
+| routines transcribed | 31 (`make test` enforces the count) |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |
