@@ -404,7 +404,12 @@ buffer and shifted right one bit at a time**, then blitted byte-aligned.
 The blit then spans **one byte more than the sprite is wide**: the plates are
 120 pixels — 15 bytes — and sit at x values that are 4 mod 8, and their blits
 cover 16 columns. Shifting right by four pushes the sprite's rightmost bits
-into an extra byte, which has to be written too. That
+into an extra byte, which has to be written too.
+
+Reproducing the shift in the port is **not** worth it: simulating it gains 21
+pixels across the three plates that have nothing drawn over them, and costs a
+second blit path. The port blits per pixel from the unshifted artwork, which is
+identical in the middle of a sprite and near enough at its edges. That
 is why the blitter's own destinations are always byte-aligned even though
 sprites plainly are not — the FX label sits at x=351, which is 7 mod 8.
 

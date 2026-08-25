@@ -476,13 +476,21 @@ Each of these is stated as what was *checked*, not what was written.
   box finds only the screen clear, the background, the plate, and its shadow.
   So the 317 is not a missing overlay.
 
-  What it probably is: the plates go through the **pre-shift buffer** like
-  everything else off a byte boundary — plate 5 sits at x=324, which is 4 mod
-  8 — and the blit then spans **16 columns for a 15-byte sprite**, because
-  shifting right by 4 pushes the sprite's rightmost bits into a seventeenth
-  byte. The port blits per pixel from the unshifted artwork instead, which is
-  equivalent in the middle and need not be at the two edges. That fits where
-  the differences are, and it is a **hypothesis, not a measurement**.
+  A hypothesis was raised and then **refuted by measuring it**, which is the
+  outcome worth recording. The plates do go through the pre-shift buffer —
+  they are read from `0x20200`, they sit at x values that are 4 mod 8, and
+  their blits span 16 columns for a 15-byte sprite. So the port's per-pixel
+  blit from unshifted artwork might differ at the edges.
+
+  Simulating the shift — `shr`/`rcr` down a 16-byte buffer, exactly as image
+  `0x09360` does — does **not** explain the residual. Over the three plates
+  with nothing drawn on top of them it is better by 21 pixels in total
+  (75 against 96); over all six it is much worse, though that count is
+  confounded by the FX and rating labels. Twenty-one pixels is not a mechanism,
+  and it does not justify a second blit path.
+
+  So the 317 remains **unexplained**: static, spread thinly, inside plates
+  whose ink is otherwise exact.
 - **A stale `--raw` file has now cost three measurements**, most recently a
   plate comparison that read 5,528 differing pixels where the truth was 40.
   Each time the file looked valid and was simply from an earlier build.
