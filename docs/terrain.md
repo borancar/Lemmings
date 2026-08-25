@@ -126,6 +126,56 @@ with "do not overwrite"; the others do not set up read mode 1 and simply write.
 Which is what the port already models with its flag test, and is why treating
 every piece as masked measures worse.
 
+## The caller: how a level entry becomes a blit
+
+Found by arming a breakpoint inside the blitter and reading the stack — a far
+return address `1010:7CBA` sits there, CS above offset. `finish` could not walk
+the frame, because this code does not keep a BP chain.
+
+The dispatcher at image `0x07C67` decodes one terrain entry and calls the
+blitter. It confirms, from the original's own instructions, everything the port
+had taken from a published description:
+
+```
+07c67  56          push si
+07c68  8bd0        mov dx, ax        ; the entry's first word
+07c6a  b107        mov cl, 7
+07c6c  d3ea        shr dx, cl
+07c6e  81e2c000    and dx, 0xc0      ; bits 13,14 of the word -> dx bits 6,7
+07c72  83ca0f      or  dx, 0x000f
+07c75  f7c24000    test dx, 0x40     ; bit 13 = 0x20 = ERASE
+07c79  7404        je  0x7c7f
+07c7b  81ca000f    or  dx, 0x0f00
+07c7f  d1d0        rcl ax, 1         ; bit 15 = 0x80 = DO NOT OVERWRITE
+07c81  7304        jae 0x7c87
+07c83  81ca0080    or  dx, 0x8000
+07c89  8bea        mov bp, dx        ; the mode word the blitter takes
+07c8b  8bd3        mov dx, bx
+07c8d  83e23f      and dx, 0x3f      ; TERRAIN ID: six bits
+07c9a  b80800      mov ax, 8
+07c9d  f7e2        mul dx            ; id * 8 -> the terrain table
+07c9f  050b1d      add ax, 0x1d0b    ; its base in DGROUP
+07ca2  8bd8        mov bx, ax
+07ca4  8a17        mov dl, [bx]      ; width
+07ca8  8a4f01      mov cl, [bx + 1]  ; height
+07cab  8b7702      mov si, [bx + 2]  ; image_loc
+07cae  8b7f04      mov di, [bx + 4]  ; mask_loc
+07cb3  b504        mov ch, 4         ; four planes
+07cb5  9a22881010  lcall 0x1010:0x8822
+```
+
+So, confirmed against the binary rather than against a document:
+
+| the port assumes | the original does |
+| --- | --- |
+| terrain id is the low **6** bits | `and dx, 0x3f` |
+| flag `0x80` is "do not overwrite" | bit 15 of the word, `or dx, 0x8000` |
+| flag `0x40` is "upside down" | bit 14, into dx bit 7 |
+| flag `0x20` is "erase" | bit 13, `or dx, 0x0f00` |
+| the ground table is **8** bytes per entry | `mov ax, 8` / `mul dx` |
+| in the order width, height, image_loc, mask_loc | `[bx]`, `[bx+1]`, `[bx+2]`, `[bx+4]` |
+| a bitmap has **four** planes | `mov ch, 4` |
+
 ## What this does and does not explain
 
 It **confirms** the port's rules from the original's own code rather than from
@@ -138,8 +188,14 @@ It does **not** explain the ~19% of terrain pixels that still differ (see
 no clever combining rule to discover, because the hardware's combining rule is
 a no-op on terrain data.
 
-The next thing to read is the **caller** — what selects between the blitters,
-what it puts in `[0xa948]` (the sub-byte shift) and `[0x6702]`/`[0x6704]` (the
-source and destination row strides), and how it clips a piece to the window.
-A placement or selection difference would live there, and it is now the only
-place left for one to hide.
+The caller has now been read too, and it confirms the entry decode rather than
+contradicting it. Every part of the port's terrain handling that can be
+reached this way has been checked against the original's own instructions and
+agrees.
+
+So the residual has no remaining explanation at this level of analysis, and it
+is worth being plain about that rather than inventing one. What has **not**
+been read: the routine that computes the destination address and the sub-byte
+shift `[0xa948]` from the entry's x and y, and whatever clips a piece to the
+window. That arithmetic is the last unexamined step between a level entry and
+a pixel.

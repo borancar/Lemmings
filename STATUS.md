@@ -277,6 +277,12 @@ the first sweep should write this table rather than have it retyped by hand.
    - **Confined to the rock's low bits**, indices 8–11, with the background and
      colours 14–15 near-perfect.
 
+   And the port's reading of a terrain entry is now **confirmed against the
+   original's own instructions**, not against a published description — the
+   6-bit id mask, all three flag bits, the 8-byte ground table and its field
+   order, and the four-plane bitmap. See
+   [docs/terrain.md](docs/terrain.md#the-caller-how-a-level-entry-becomes-a-blit).
+
    The instruments have been checked: the DOSBox capture is a clean 2x (all
    64 000 blocks uniform), so downsampling is exact, and the two references
    agree with each other to within two points.
