@@ -1,0 +1,18 @@
+[project]
+name = "lemmings-reconstruction"
+version = "0.1.0"
+description = "Reverse engineering and reconstruction of PC Lemmings (VGA)"
+requires-python = ">=3.10"
+dependencies = [
+    "dos-emulator",
+    "capstone>=5.0",
+    "numpy>=1.24",
+]
+
+[tool.uv]
+package = false
+
+# The emulator is developed alongside this port; point uv at the working
+# checkout. Replace with a pinned git revision before publishing a measurement.
+[tool.uv.sources]
+dos-emulator = { path = "/home/boran/git/dos_emulator", editable = true }
