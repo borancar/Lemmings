@@ -266,11 +266,11 @@ static int render_level(const char *data, const char *file, uint32_t which,
 int main(int argc, char **argv)
 {
     /* The level the GAME calls "Level 1" is not the first level in the first
-     * file. In this demo build it is section 1 (0-based) of level009.dat -
+     * file. In this set it is section 1 (0-based) of level009.dat -
      * established by running the original under an emulator and reading its
      * own briefing screen: "Just dig!", 10 lemmings, 10% to be saved, release
      * rate 50, 5 minutes, diggers only. Parsing that section gives exactly
-     * those numbers. The demo's level order is not its file order, and what
+     * those numbers. The level order is not the file order, and what
      * maps one to the other has not been traced yet. */
     const char *data = ".";
     const char *file = "level009.dat";

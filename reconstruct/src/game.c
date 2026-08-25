@@ -1,7 +1,7 @@
 /* game.c - PC Lemmings (VGA), reconstructed.
  *
- * Reconstructed from vgalemmi.exe (DMA Design / Psygnosis, 1991), the 10-level
- * demo build. THE LICENCE OF THE ORIGINAL IS UNKNOWN and nothing here claims
+ * Reconstructed from vgalemmi.exe (DMA Design / Psygnosis, 1991).
+ * THE LICENCE OF THE ORIGINAL IS UNKNOWN and nothing here claims
  * one - a file transcribed out of someone else's binary is not ours to
  * licence, and an SPDX line would assert exactly that. The provenance note is
  * what belongs at the top of such a file, and it is the more useful thing

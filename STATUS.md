@@ -217,6 +217,16 @@ Each of these is stated as what was *checked*, not what was written.
   twice deliberately, to pin that `menu_free` and `dat_free` are idempotent.
   All clean. `make test` runs it alongside the input test.
 
+- **Correction: this is not a ten-level demo.** The project described it that
+  way from early on, in `CLAUDE.md` and in the port's own header. It is a
+  misreading of "ten level *files*": `level000.dat` .. `level009.dat` each hold
+  **eight** 2048-byte levels — **eighty** — with names from across the full
+  game's ratings (`Tightrope City`, `Mary Poppins\` land`, `Every Lemming for
+  himself!!!`). Counted with `tools/dat.py`. It surfaced only because a
+  *different* claim leaned on it — "the rating plate does nothing because there
+  is only one rating here" — and that reasoning had to be checked before it
+  could be written down.
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~
@@ -268,11 +278,19 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
-- **The rating list is in the executable** — `Fun   TrickyTaxingMayhem` at
-  image `0x0E691`, four six-character slots — so something works that plate.
-  Not Up, and not Down: Down's screen diff is *identical* to the no-key
-  baseline, digit for digit. The port maps no key to it rather than inventing
-  one.
+- **The rating plate answers to nothing found, and 25 keys have now been
+  tried** — F1–F6, Esc, Up, Down, Left, Right, PgUp, PgDn, keypad ±, ±, Space,
+  Return, Tab, 1–4, `n`, `r` — plus a click, whose position the menu ignores
+  anyway. Every one leaves the plate's box at (452,120)–(571,180) untouched at
+  **zero pixels**, while the scroller keeps moving in the same samples, which
+  is what shows the guest was alive and taking input. `tools/probe_rating.py`
+  does the sweep in one guest and stops if the whole screen changes.
+
+  Why it is inert is **not established**, and the obvious explanation is ruled
+  out: this is not a one-rating set. The data ships **ten level files of eight
+  levels each — eighty levels** — with names spanning "This should be a
+  doddle!" and "MENACING !!". So "nothing to select" does not hold. The port
+  maps no key to the plate rather than inventing one.
 - **The menu's plates are keyboard-only, and a click anywhere acts as F1.**
   Measured three ways: the menu calls INT 33h AX=0002h once — hide cursor — and
   draws no pointer, so moving the position to (600,40) changes nothing near it;

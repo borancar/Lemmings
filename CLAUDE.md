@@ -6,9 +6,15 @@ got to and what is *proven*; `docs/` is what the program *is*.
 ## What this is
 
 A reverse engineering of **PC Lemmings (VGA)** — `lemming1.pc/vgalemmi.exe`,
-the 10-level demo build dated 1996-12-24 in a cracked repackaging — checked
+dated 1996-12-24 in a cracked repackaging — checked
 against the original running under
 [`dos_emulator`](https://github.com/borancar/dos_emulator).
+
+**It is not a ten-level demo.** This file said so for a long time and it was a
+misreading of "ten level *files*": `level000.dat` .. `level009.dat` hold **eight
+2048-byte levels each — eighty in all**, with names from across the full game
+(`Tightrope City`, `Mary Poppins\` land`, `Every Lemming for himself!!!`). Count
+them with `tools/dat.py` before repeating any claim about how much game is here.
 
 **VGA only.** The game shipped one executable per adapter (`cgalemmi.exe`,
 `tgalemmi.exe`, and `vgalemmi.exe` for both EGA and VGA), dispatched by

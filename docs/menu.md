@@ -138,10 +138,30 @@ position reaches it and is ignored. Clicking "EXIT TO DOS" does not exit; it
 starts the level, exactly as clicking bare background does. **A click anywhere
 acts as F1.**
 
-The rating plate carries two arrow tabs rather than a function key, and neither
-Up nor Down works it — Down's screen diff is *identical* to the no-key
-baseline. The four ratings are in the executable at image `0x0E691`,
-`"Fun   TrickyTaxingMayhem"`, four six-character slots, so something works it.
+### The rating plate answers to nothing found
+
+It carries two arrow tabs rather than a function key. **Twenty-five keys have
+been tried** — F1–F6, Esc, Up, Down, Left, Right, PgUp, PgDn, keypad + and −,
+plus and minus, Space, Return, Tab, the digits 1–4, `n`, `r` — and a click,
+which the menu ignores the position of anyway. Every one leaves the plate's box
+at (452,120)–(571,180) **untouched, zero pixels**, while the scroller keeps
+moving in the same samples, which is what shows the guest was alive and taking
+input.
+
+The four ratings *are* in the executable, at image `0x0E691` —
+`"Fun   TrickyTaxingMayhem"`, four six-character slots — so the game knows
+about them.
+
+Why the plate is inert here is **not established**, and one tempting
+explanation is already ruled out: this is not a one-rating set. The data ships
+**ten `levelNNN.dat` files of eight levels each, eighty levels**, with names
+spanning `"Tightrope City"`, `"Mary Poppins` land"` and
+`"Every Lemming for himself!!!"` — names from across the full game's ratings.
+So "there is only one rating here, hence nothing to select" does not hold.
+
+`tools/probe_rating.py` runs the sweep. It watches only the plate's own box, so
+one guest can take every key in turn, and it stops if the whole screen changes
+rather than reporting nonsense from the next screen along.
 
 ## The sub-screens
 
