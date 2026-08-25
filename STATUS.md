@@ -294,6 +294,21 @@ Each of these is stated as what was *checked*, not what was written.
   It is also **not animation**: the rows that differ most, 88–98, are identical
   between two lit captures 2.5 seconds apart.
 
+  **And it is not specific to the logo.** Every one of the six plates does the
+  same thing, and a control settles that the background model is not at fault:
+
+  | | transparent pixels blacked out, where the tile is not black |
+  | --- | --- |
+  | the six plates | 18.5% – 30.9% |
+  | **bare background, rows 190–195** | **0.0%** — 0 of 1,731 |
+
+  So the background is *exact* wherever nothing is drawn over it, and every
+  sprite suppresses part of what shows through it. **78.8% of the menu's whole
+  residual falls inside a sprite's bounding box**, and most of the rest sits in
+  the rows immediately below one. Whatever the rule is, it is the blitter's and
+  it applies to everything — which is what makes it worth finding once, and
+  what makes it too big to guess at.
+
   Worth noting what this rules out: it is not the logo's data, not its
   position, not the background's tiling (confirmed `y % 104` at 100% on clean
   rows), and not the palette. Something draws black there that has not been
