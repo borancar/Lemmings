@@ -71,6 +71,8 @@ def main():
                     help="once at the title, press F1 to start a game")
     ap.add_argument("--start-tries", type=int, default=4,
                     help="how many times to press F1 (default 4)")
+    ap.add_argument("--dump-vga", action="store_true",
+                    help="once in the level, print the video state")
     ap.add_argument("--click-tries", type=int, default=3,
                     help="how many times to click past the briefing screen")
     ap.add_argument("--start-delay", type=float, default=6.0,
@@ -135,6 +137,14 @@ def main():
                 ask(sock, "click down 0 160 100")
                 time.sleep(0.5)
                 ask(sock, "click up 0")
+            if a.dump_vga:
+                # Gameplay is mode 0Dh again, after the 10h title.
+                wait_for(sock, lambda st: "mode=0x0d" in st,
+                         "the level", timeout=180)
+                time.sleep(a.start_delay)
+                print("[play] --- video state in the level ---")
+                print(ask(sock, "vga"))
+                print(ask(sock, "status"))
         proc.wait()
     except KeyboardInterrupt:
         pass

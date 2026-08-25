@@ -7,8 +7,9 @@ there is one file to fix instead of nine.
 """
 import os
 import sys
+import time
 
-from dos_emulator import VgaDos, set_game_dir, main as _emu_main
+from dos_emulator import VgaDos, set_game_dir, main as _emu_main, KEYMAP
 
 # ---------------------------------------------------------------- the game
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -86,3 +87,101 @@ def run(argv=None):
 
 if __name__ == "__main__":
     run()
+
+
+# ---------------------------------------------------------------- driving
+# Reaching the level takes the whole start-up chain, and every probe needs it,
+# so it lives here rather than being written out again in each one.
+#
+# PACING MATTERS. The emulator paces its timer interrupt on the wall clock so
+# an interactive run goes at roughly the speed the game was written for. An
+# in-process driver that runs flat out makes wall clock and guest time come
+# apart, the timer barely fires, and the front end - which is driven entirely
+# by that interrupt - never advances. Probes that skipped this sat on the
+# title screen forever and looked like the game was broken.
+CHUNK = 120_000
+IPS_8086 = 8_000_000
+
+
+def drive_to_level(m, on_chunk=None, chunks=6000, settle=400, verbose=True):
+    """Run `m` from reset into the first level. Returns the chunk it started.
+
+    `on_chunk(m, r, in_level)` is called after each chunk, for a probe that
+    wants to record only once gameplay has begun.
+    """
+    import pygame
+    keys = [getattr(pygame, f"K_{k}") for k in STARTUP_KEYS]
+    addr, sent = m.start, 0
+    saw_title = f1 = clicks = 0
+    down_at = None
+    playing = None
+    budget = time.perf_counter()
+
+    for r in range(chunks):
+        m.blocked_on_input = False
+        try:
+            m.uc.emu_start(addr, 0, count=CHUNK)
+        except Exception as e:
+            if verbose:
+                print("cpu:", e)
+            return playing
+        addr = m._reg(_CS) * 16 + m._reg(_IP)
+        m.service_keyboard()
+        m.service_timer()
+        if m.finished:
+            if verbose:
+                print("exited:", m.finished)
+            return playing
+
+        # Hold to roughly 8086 speed, so the wall-clock timer fires at about
+        # the rate the guest expects. A slice that stopped early waiting for
+        # input ran almost nothing and is not charged.
+        if not m.blocked_on_input:
+            budget += CHUNK / IPS_8086
+            spare = budget - time.perf_counter()
+            if spare > 0.0005:
+                time.sleep(spare)
+            elif spare < -0.25:
+                budget = time.perf_counter()
+
+        if m.blocked_on_input and sent < len(keys):
+            sc, asc = KEYMAP[keys[sent]]
+            m.press_key(sc, asc, True)
+            m.press_key(sc, asc, False)
+            sent += 1
+            continue
+
+        if down_at is not None and r >= down_at + 8:
+            m.click_mouse(0, None, None, down=False)
+            down_at = None
+
+        if m.mode == 0x10:
+            saw_title += 1
+            if playing is None:
+                if saw_title > 900 and f1 < 4 and saw_title % 500 == 0:
+                    sc, asc = KEYMAP[getattr(pygame, "K_F1")]
+                    m.press_key(sc, asc, True)
+                    m.press_key(sc, asc, False)
+                    f1 += 1
+                    if verbose:
+                        print(f"  chunk {r}: F1 ({f1})")
+                elif f1 >= 1 and clicks < 6 and saw_title % 600 == 0 \
+                        and down_at is None:
+                    m.click_mouse(0, 160, 100, down=True)
+                    down_at = r
+                    clicks += 1
+                    if verbose:
+                        print(f"  chunk {r}: click ({clicks})")
+        elif m.mode == 0x0D and saw_title > 500 and playing is None:
+            playing = r
+            if verbose:
+                print(f"  chunk {r}: in the level")
+
+        if on_chunk:
+            on_chunk(m, r, playing is not None)
+        if playing is not None and r - playing > settle:
+            return playing
+    return playing
+
+
+from unicorn.x86_const import UC_X86_REG_CS as _CS, UC_X86_REG_IP as _IP

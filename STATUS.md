@@ -79,10 +79,20 @@ Each of these is stated as what was *checked*, not what was written.
 - **The original reaches gameplay under our emulator** —
   `docs/reference/original-in-level.png`: lemmings falling out of the trapdoor,
   the clock counting down, the skill panel and the minimap drawn. Its **terrain
-  is not drawn**, for a reason now diagnosed and recorded upstream (planar
-  reads return flat memory, so a video-to-video blit reads garbage).
+  is not drawn**, and the cause is still open — see Retracted.
 
 ## Retracted
+
+- **"The terrain is missing because planar reads return flat memory" (claimed
+  and withdrawn 2026-08-25).** The theory was that the play area is copied
+  video-to-video, so a read of video memory returns the wrong plane. It is
+  not: the blit's source segment lives at `ds:0x1fe4` and holds **0x8000** —
+  main RAM at 512 KB — so the copy is memory-to-video and uses the same write
+  path that draws the panel, the minimap and every sprite correctly. A fix was
+  built for this and fixed nothing; it also made the emulator too slow to
+  reach the title screen, and was reverted. What is actually known now: mode
+  0Dh, CRTC offset 22 (**44-byte rows, not 40**), and the start address
+  alternating between `0x27e2` and `0x2c2` — the game page-flips.
 
 - **"The protected code does not re-encrypt behind itself" (claimed
   2026-08-25, withdrawn the same day).** It does. The INT 01h handler

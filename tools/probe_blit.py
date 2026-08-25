@@ -49,44 +49,11 @@ def on_write(uc, access, addr, size, value, user):
 m.uc.hook_add(UC_HOOK_MEM_READ, on_read, None, 0xA0000, 0xAFFFF)
 m.uc.hook_add(UC_HOOK_MEM_WRITE, on_write, None, 0xA0000, 0xAFFFF)
 
-keys = [getattr(pygame, f"K_{k}") for k in lemmings.STARTUP_KEYS]
-addr, sent = m.start, 0
-saw_title = f1 = clicks = 0
-down_at = None
-playing = None
-for r in range(4000):
-    m.blocked_on_input = False
-    try:
-        m.uc.emu_start(addr, 0, count=120_000)
-    except Exception as e:
-        print("cpu:", e); break
-    addr = m._reg(UC_X86_REG_CS) * 16 + m._reg(UC_X86_REG_IP)
-    m.service_keyboard()
-    m.pit0_next = 0.0
-    m.service_timer()
-    if m.finished:
-        print("exited:", m.finished); break
-    if m.blocked_on_input and sent < len(keys):
-        sc, asc = KEYMAP[keys[sent]]
-        m.press_key(sc, asc, True); m.press_key(sc, asc, False); sent += 1
-        continue
-    if down_at is not None and r >= down_at + 6:
-        m.click_mouse(0, None, None, down=False); down_at = None
-    if m.mode == 0x10:
-        saw_title += 1
-        if playing is None:
-            if saw_title > 250 and f1 < 4 and saw_title % 120 == 0:
-                sc, asc = KEYMAP[pygame.K_F1]
-                m.press_key(sc, asc, True); m.press_key(sc, asc, False); f1 += 1
-            elif f1 >= 1 and clicks < 5 and saw_title % 150 == 0 and down_at is None:
-                m.click_mouse(0, 160, 100, down=True); down_at = r; clicks += 1
-    elif m.mode == 0x0D and saw_title > 250:
-        if playing is None:
-            playing = r
-            armed[0] = True          # start recording only in the level
-            print(f"  chunk {r}: in the level - recording")
-        elif r - playing > 400:
-            break
+def on_chunk(mm, r, in_level):
+    armed[0] = in_level
+
+
+playing = lemmings.drive_to_level(m, on_chunk=on_chunk, settle=600)
 
 print(f"\nmode {m.mode:#04x}  in-level: {playing is not None}")
 print(f"A000 reads : {sum(reads.values())}   writes: {sum(writes.values())}")
