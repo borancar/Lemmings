@@ -1533,11 +1533,12 @@ static void put_num(char *dst, size_t end, uint32_t n)
  * and then as a 1:1 region of the level, which scored 71.4% and read as "no
  * match". It is the level, at a scale nobody had tried. */
 #define PV_X      120
-#define PV_Y       19
+#define PV_Y       20
 #define PV_W      396      /* LEVEL_W / 4 */
-#define PV_H       40      /* LEVEL_H / 4 */
+#define PV_H       39      /* not 40: the top row is not drawn - see below */
 #define PV_SCALE    4
 #define PV_SAMPLE   2      /* which pixel of each 4x4 block is taken */
+#define PV_TOP      4      /* the first level row the preview shows */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,
                          uint8_t *dst)
@@ -1574,7 +1575,7 @@ static void draw_preview(const char *dir, const level *lv, const ground *g,
                            gfx.sections[1].size, 0, &err);
         for (uint16_t sy = 0; sy < PV_H; sy++) {
             uint16_t y = (uint16_t)(PV_Y + sy);
-            uint32_t ly = (uint32_t)sy * PV_SCALE + PV_SAMPLE;
+            uint32_t ly = PV_TOP + (uint32_t)sy * PV_SCALE + PV_SAMPLE;
             if (y >= MENU_H || ly >= c.h) break;
             for (uint16_t sx = 0; sx < PV_W; sx++) {
                 uint16_t x = (uint16_t)(PV_X + sx);

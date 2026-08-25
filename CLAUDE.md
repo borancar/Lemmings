@@ -174,6 +174,27 @@ bash tools/prove.sh
 A figure that has drifted is worse than no figure, because it is quoted with
 the same confidence as a measured one.
 
+## A percentage cannot tell you what is wrong
+
+`tools/diff_png.py` writes three images - the original, the port, and the port
+with every differing pixel in magenta. Run it the moment a comparison is not
+zero, before writing a word about what the residue "looks like".
+
+Twice here a perfectly accurate number supported a wrong conclusion:
+
+- A residue was described in `STATUS.md`, twice, as "114 pixels, almost all at
+  piece edges, scattered". The image showed **one horizontal line** - the top
+  row of the level preview, which the port drew a row too high. One constant,
+  and it went to zero.
+- The briefing's preview was recorded as "terrain only" because drawing the
+  objects made the score *worse*, 187 against 167. The differing pixels were
+  two tight clusters exactly where the level's objects are. They were there all
+  along and every object in the game was being drawn sixteen pixels too far
+  right.
+
+Both cost a round. **An aggregate score is a poor way to decide what a screen
+contains** - it is a good way to decide whether you are finished.
+
 ## Fitting narrows; only reading settles
 
 The menu's last residue is the cleanest example this project has, and it is
@@ -330,6 +351,7 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
 | **`tools/verify_menu.py`** | the port's main menu against the one the original composes, in EGA mode 10h - and it scores the parts the port does not build separately rather than hiding them. `--rating 0..3` drives the original's own rating plate first, and reads `ds:0x1F6E` back so a dropped key press costs coverage instead of producing a confident wrong number |
 | `tools/hotspots.py` | ranks routines by how much work they do, not by whether they are code. `--after-read` counts only inside the windows following an INT 21h AH=3Fh, which is how the decompressor was found |
+| **`tools/diff_png.py`** | **three pictures of a difference**: the original, the port, and the port with every differing pixel in magenta. `--rows`/`--cols` to crop, `--scale` to enlarge. Emit these the moment a comparison is not zero - a percentage says how much is wrong and never what, and this has twice here supported a confidently wrong conclusion that one look would have killed |
 | **`tools/menu_diff.py`** | where the port's menu differs from the original's, regenerating the port's output first so a stale file cannot mislead. `--map` for a picture, `--rows`/`--cols` to zoom |
 | **`tools/probe_briefing_bg.py`** | is a screen's background stored or generated? Two lit captures from separate runs, then a search of every file **with a control** - a search that finds nothing proves nothing unless the same search finds something it should |
 | **`tools/probe_menu_keys.py`** | what a menu key actually does, asked of the original: fresh guest per key, held and repeated press, screen diffed against a no-key baseline, and it refuses to compare a capture taken mid-fade |

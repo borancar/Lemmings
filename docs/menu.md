@@ -688,7 +688,7 @@ dimensions, as section 3 turned out to be.
 | --- | --- |
 | the level-code screen | **100.00%** — 0 of 224,000 |
 | the input chooser | **100.00%** — 0 of 224,000 |
-| the briefing, rows 78–349 | **100.00%** — 0 of 174,080; whole screen 98.64%, the rest its unreconstructed level preview |
+| the briefing | **100.00%** — 0 of 224,000: background, text, palette and the level preview |
 | the menu | 99.41% — 1,321 of 224,000, of which 995 are the animated banner |
 
 So two of the four match the original pixel for pixel, and the menu matches

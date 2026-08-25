@@ -33,7 +33,7 @@ numbers, re-measured on the current build:
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
-| the **briefing** | **99.95%** whole screen; **100.00%** over rows 78–349 (background, text, palette). The remaining 114 are in the level preview |
+| the **briefing** | **100.00%** — 0 of 224,000: background, text, palette, and the level preview |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, and the whole scrolling banner |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
@@ -535,12 +535,16 @@ Each of these is stated as what was *checked*, not what was written.
   only as good as the transforms the search covered**, and "same pixels,
   different size" was not in mine.
 
-  What is left is 114 pixels, almost all at piece edges, and in only 4 of them
-  does the original's colour appear anywhere in the 4×4 block being sampled. So
-  downsampling the finished canvas is probably not how the original builds it —
-  more likely it scales each piece as it draws, rounding each piece's position
-  independently. That is written as a hypothesis; what is measured is the 4:1
-  reduction, the origin, and the sample point.
+  **The preview is exact — 0 differing.** Getting the last 114 took one look
+  at a picture. They had been described here, twice, as "almost all at piece
+  edges, scattered"; `tools/diff_png.py` drew them as **a single horizontal
+  magenta line**. Every one was in row 19, and every one was "original black,
+  port has terrain": the preview starts at row **20**, not 19, and shows level
+  rows 4..159 rather than 0..159. One constant.
+
+  A percentage cannot tell you what is wrong. It said 114 and it said 99.95%,
+  both true, and the shape of those 114 - which is the whole of the answer -
+  was invisible in the number and obvious in the image.
 
 - **The briefing's background is the menu's own tile, tiled from row 78.**
   It had been recorded as *"not the menu's tile, and in neither MAIN.DAT nor
