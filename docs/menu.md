@@ -399,7 +399,12 @@ Image `0x09360` holds the mechanism, and it explains several things at once:
 ```
 
 So a sprite that lands at a non-byte-aligned x is **copied into a scratch
-buffer and shifted right one bit at a time**, then blitted byte-aligned. That
+buffer and shifted right one bit at a time**, then blitted byte-aligned.
+
+The blit then spans **one byte more than the sprite is wide**: the plates are
+120 pixels — 15 bytes — and sit at x values that are 4 mod 8, and their blits
+cover 16 columns. Shifting right by four pushes the sprite's rightmost bits
+into an extra byte, which has to be written too. That
 is why the blitter's own destinations are always byte-aligned even though
 sprites plainly are not — the FX label sits at x=351, which is 7 mod 8.
 

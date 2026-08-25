@@ -471,6 +471,18 @@ Each of these is stated as what was *checked*, not what was written.
   they would differ by 7,532. That is essentially the whole of the menu's
   non-banner residual, spread 16–113 pixels per plate, and it is static — those
   rows do not move between captures.
+
+  Nothing is drawn *over* a plate: attributing every write into the "?" plate's
+  box finds only the screen clear, the background, the plate, and its shadow.
+  So the 317 is not a missing overlay.
+
+  What it probably is: the plates go through the **pre-shift buffer** like
+  everything else off a byte boundary — plate 5 sits at x=324, which is 4 mod
+  8 — and the blit then spans **16 columns for a 15-byte sprite**, because
+  shifting right by 4 pushes the sprite's rightmost bits into a seventeenth
+  byte. The port blits per pixel from the unshifted artwork instead, which is
+  equivalent in the middle and need not be at the two edges. That fits where
+  the differences are, and it is a **hypothesis, not a measurement**.
 - **A stale `--raw` file has now cost three measurements**, most recently a
   plate comparison that read 5,528 differing pixels where the truth was 40.
   Each time the file looked valid and was simply from an earlier build.
