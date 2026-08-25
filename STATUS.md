@@ -282,9 +282,25 @@ Each of these is stated as what was *checked*, not what was written.
   drawing one has to erase the other, and a keyed blit cannot. 94.04% keyed
   against 98.79% opaque over its neighbourhood.
 
-  What is left is **1,625 pixels, 61% of them in the banner's rows** — its
-  scrolling text and end lemmings, animated and unmatchable by a composed
-  frame. The rest sits inside the plates.
+  What is left is **1,625 pixels**, and it is now accounted for rather than
+  guessed at:
+
+  | where | pixels | what |
+  | --- | --- | --- |
+  | the banner's rows | 995 (61%) | its scrolling text and end lemmings — animated, so a composed frame cannot match them |
+  | inside the plates | ~630 | the **rating name**, drawn one pixel left of where the plate's own bitmap has it |
+
+  The rating name is drawn *over* the plate, not baked into it — the plate
+  carries a "FUN" that the original then overdraws one pixel to the left, which
+  is why the two nearly coincide and differ along every edge. It has to be
+  drawn separately, because the rating changes; the four names are a string in
+  the executable at image `0x0E691`.
+
+  It is **not** the menu's 16×16 font: overlaying `"Fun"`, `"FUN"` and `"Fun   "`
+  from that font at every position over the plate is *worse* than leaving it
+  alone (76.56% against 83.45%). So there is a second, smaller font or a sprite
+  set for it, not yet found. That is the next thread, and it is worth a pixel
+  count of about 630.
 
   Two things were tried and rejected on measurement rather than taste: a drop
   shadow for the label (worse — 99.16% to 99.06%), and a one-pixel black

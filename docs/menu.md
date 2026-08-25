@@ -359,3 +359,20 @@ against opaque 98.79% over its neighbourhood.
 
 A drop shadow for the label, and a one-pixel black outline, were both tried and
 are both worse.
+
+## What the port still does not match
+
+**1,625 pixels of 224,000**, and they are accounted for:
+
+- **995 in the banner's rows** — the scrolling text and the two end lemmings.
+  Animated, so no composed frame can match them.
+- **about 630 inside the plates** — the **rating name**. The plate's own bitmap
+  carries a `FUN`, and the original overdraws the current rating one pixel to
+  its left, so the two nearly coincide and differ along every edge. It must be
+  drawn separately because the rating changes; the four names are a string at
+  image `0x0E691`.
+
+  It is not drawn with the 16×16 menu font: overlaying `"Fun"`, `"FUN"` or
+  `"Fun   "` from it at every position over the plate scores 76.56% against
+  83.45% for leaving it alone. A second, smaller font or a sprite set is
+  involved and has not been found.
