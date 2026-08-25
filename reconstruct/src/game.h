@@ -407,6 +407,11 @@ void menu_hotspots(view_hotspot *spots);
 void     menu_set_scroll(uint32_t pixels);
 uint32_t menu_get_scroll(void);
 
+/* Which frame the two lemmings holding the banner's ends are on. Sixteen of
+ * them, and NOT tied to the scroll - see draw_end_lemming in game.c. */
+void     menu_set_lem_frame(uint8_t frame);
+uint8_t  menu_get_lem_frame(void);
+
 /* Show it and wait for the player to choose. Not const: the banner scrolls,
  * so the picture is redrawn in place while this runs. */
 menu_action menu_run(menu_screen *m, uint8_t scale);

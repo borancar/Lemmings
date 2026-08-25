@@ -1599,6 +1599,43 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
 #define BAR_TILE_W 16
 #define BAR_TILE_PLANE 32     /* 16 rows x 2 bytes */
 
+/* THE TWO LEMMINGS HOLDING THE BANNER, and the bar's end caps.
+ *
+ * Found by hooking the shared blitter rather than by looking for a sprite:
+ * tools/probe_banner_ends.py logs every call to image 0x8822 landing in the
+ * banner's rows, and two of them are not the strip -
+ *
+ *     x=0    y=334  rows=16  planes=4  width=48
+ *     x=592  y=334  rows=16  planes=4  width=48
+ *
+ * with the source in the segment at ds:0x1FE4, which image 0x04F96 sets to
+ * [0x1FEE]+0x800. That resolves to section 4, and the sprites decode as a
+ * lemming with THE BAR'S END CAP built into the same 48 pixels - dashed rows
+ * and all. Which is why the painted bar runs 36..602 while the strip is only
+ * 48..607: the caps are not the bar, they are part of these two sprites.
+ *
+ * 16 frames, 384 bytes each, left at 10752 and right at 10752 + 6144. Every
+ * one of the four captures matches a frame EXACTLY, zero pixels differing, on
+ * both sides, and in each the two are on the same frame index:
+ *
+ *     Fun frame 14   Tricky 13   Taxing 15   Mayhem 2
+ *
+ * The frame does NOT follow the scroll. Fitting frame = scroll/4 + c gives a
+ * consistent c for three captures and no c at all for the fourth, so the
+ * lemmings run on a counter of their own. What that counter's rate is has not
+ * been established, so the port advances one frame per displayed frame and
+ * this is marked as a choice rather than a measurement. */
+#define LEM_W       48
+#define LEM_H       16
+#define LEM_STRIDE  6
+#define LEM_PLANE   (LEM_STRIDE * LEM_H)   /* 96 */
+#define LEM_FRAME   (LEM_PLANE * 4)        /* 384 */
+#define LEM_FRAMES  16
+#define LEM_L_BASE  10752
+#define LEM_R_BASE  (LEM_L_BASE + LEM_FRAMES * LEM_FRAME)   /* 16896 */
+#define LEM_L_X     0
+#define LEM_R_X     592
+
 /* The scroller's text, image 0x0E45E (ds:0x49CE), 266 bytes, terminated by
  * 0x0D. Transcribed here with its address for the same reason a routine is:
  * it is in the executable, not in a data file. 0xFF is the pause marker and
@@ -1617,9 +1654,14 @@ static const char SCROLL_TEXT[] =
  * about it, and a fixed value is right only by luck. menu_set_scroll moves
  * it; the animation lives in whoever calls that. */
 static uint32_t menu_scroll;
+/* Which frame the two lemmings holding the banner are on. Separate from the
+ * scroll because it is separate in the original - see draw_end_lemming. */
+static uint8_t  menu_lem_frame;
 
 void menu_set_scroll(uint32_t pixels) { menu_scroll = pixels; }
 uint32_t menu_get_scroll(void)        { return menu_scroll; }
+void menu_set_lem_frame(uint8_t f)    { menu_lem_frame = f; }
+uint8_t menu_get_lem_frame(void)      { return menu_lem_frame; }
 
 /* How many 16-pixel columns the strip holds. Image 0x07CBC stamps 0x23 of
  * them at start-up and image 0x07D54 shifts 0x46 bytes a row, which is the
@@ -1670,22 +1712,38 @@ static int scroll_pauses_at(uint32_t k)
  * The whole band is black underneath, all 640 columns: the original does not
  * let the background tile show either side of the bar, and letting it did cost
  * about 1,100 pixels on its own. */
+/* Drawn OPAQUELY, including their black. That is measured, not assumed: with
+ * every pixel compared, index 0 included, each capture matches its frame with
+ * zero differing - so the sprite's own black is what the original leaves
+ * there, and keying it out would be inventing transparency. */
+static void draw_end_lemming(uint8_t *dst, const uint8_t *gfx, uint32_t len,
+                             uint32_t base, uint16_t at_x, uint8_t frame)
+{
+    uint32_t g = base + (uint32_t)(frame % LEM_FRAMES) * LEM_FRAME;
+    if (g + LEM_FRAME > len) return;
+    for (uint16_t r = 0; r < LEM_H; r++) {
+        uint16_t y = (uint16_t)(BAR_Y0 + r);
+        for (uint16_t c = 0; c < LEM_W; c++) {
+            uint16_t x = (uint16_t)(at_x + c);
+            if (x >= MENU_W) break;
+            dst[(size_t)y * MENU_W + x] =
+                planar(gfx, g, LEM_PLANE, LEM_STRIDE, 4, c, r);
+        }
+    }
+}
+
 void draw_banner(uint8_t *dst, const uint8_t *font, uint32_t font_len,
-                 uint32_t scroll)
+                 uint32_t scroll, uint8_t frame)
 {
     for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++)
         for (uint16_t x = 0; x < MENU_W; x++)
             dst[(size_t)y * MENU_W + x] = 0;
 
-    for (uint16_t x = BAR_X0; x <= BAR_X1; x++) {
-        /* Ribbon pixel, measured from where the STRIP starts, not from where
-         * the paint starts. Signed: x < BAR_STRIP_X is the end-cap gap. */
-        int32_t r = (int32_t)scroll + (int32_t)x - BAR_STRIP_X;
-        uint16_t cx = (uint16_t)(((r % BAR_TILE_W) + BAR_TILE_W)
-                                 % BAR_TILE_W);
-        int32_t k = (r >= 0 ? r / BAR_TILE_W
-                            : -(((-r) + BAR_TILE_W - 1) / BAR_TILE_W));
-        uint8_t ch = scroll_char(k - BAR_COLS);
+    for (uint16_t x = BAR_STRIP_X; x <= BAR_STRIP_X + 559; x++) {
+        /* Ribbon pixel, measured from where the STRIP starts. */
+        uint32_t r = scroll + (uint32_t)(x - BAR_STRIP_X);
+        uint16_t cx = (uint16_t)(r % BAR_TILE_W);
+        uint8_t ch = scroll_char((int32_t)(r / BAR_TILE_W) - BAR_COLS);
         for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++) {
             uint16_t ty = (uint16_t)(y - BAR_Y0);
             uint8_t v = planar(font, BAR_TILE, BAR_TILE_PLANE, 2, 4, cx, ty);
@@ -1706,6 +1764,10 @@ void draw_banner(uint8_t *dst, const uint8_t *font, uint32_t font_len,
             dst[(size_t)y * MENU_W + x] = v;
         }
     }
+
+    /* Last, and over the strip: their caps are the bar's own ends. */
+    draw_end_lemming(dst, font, font_len, LEM_L_BASE, LEM_L_X, frame);
+    draw_end_lemming(dst, font, font_len, LEM_R_BASE, LEM_R_X, frame);
 }
 
 
@@ -1854,7 +1916,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
 
     draw_text(m->pix, font, fontlen, CREDIT_1, CREDIT_1_Y);
     draw_text(m->pix, font, fontlen, CREDIT_2, CREDIT_2_Y);
-    draw_banner(m->pix, font, fontlen, menu_scroll);
+    draw_banner(m->pix, font, fontlen, menu_scroll, menu_lem_frame);
 
     /* Keep section 4 so the banner can be redrawn as it scrolls; menu_build
      * composes one frame and the strip moves. Failing to copy it is not fatal
@@ -2016,7 +2078,8 @@ static int banner_tick(void *ctx, uint8_t *pix)
     if ((next % BAR_TILE_W) == 0 && scroll_pauses_at(next / BAR_TILE_W))
         pause = BANNER_PAUSE;
     menu_set_scroll(next);
-    draw_banner(pix, m->gfx, m->gfx_len, next);
+    menu_lem_frame = (uint8_t)((menu_lem_frame + 1) % LEM_FRAMES);
+    draw_banner(pix, m->gfx, m->gfx_len, next, menu_lem_frame);
     return 1;
 }
 

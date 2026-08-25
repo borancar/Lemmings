@@ -91,6 +91,7 @@ static void usage(void)
           "  --screen S    menu | briefing | code | input - which screen\n"
           "  --rating R    fun | tricky | taxing | mayhem (default fun)\n"
           "  --scroll N    banner ribbon position in pixels (default 0)\n"
+          "  --lem-frame N banner end lemmings, frame 0..15 (default 0)\n"
           "  --number N    the GAME's level number, 1-30 (default 1)\n"
           "                resolved through the original's own order table,\n"
           "                so --rating fun --number 1 is \"Just dig!\"\n"
@@ -325,6 +326,11 @@ int main(int argc, char **argv)
              * original is always somewhere in this; a capture cannot be
              * compared without saying where. */
             menu_set_scroll((uint32_t)atoi(argv[++i]));
+        }
+        else if (!strcmp(argv[i], "--lem-frame") && i + 1 < argc) {
+            /* Which frame the banner's two lemmings are on, 0..15. Separate
+             * from --scroll: in the original they are separate. */
+            menu_set_lem_frame((uint8_t)atoi(argv[++i]));
         }
         else if (!strcmp(argv[i], "--rating") && i + 1 < argc) {
             const char *r = argv[++i];

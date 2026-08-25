@@ -194,7 +194,28 @@ reports 132,588 draws instead of 4,760:
 | `cx=70, bp=4` | 1,584 | `0x292BC`, step 70 | the bar |
 | `cx=6, bp=4` | 2,368 | `0x6A000`–`0x6D000` | the scrolling text, a different font |
 
-The two lemmings holding the ends (x 12–35 and 605–628) have not been located.
+**The two lemmings holding the ends are at x 0–47 and 592–639**, found by
+hooking the shared blitter (`tools/probe_banner_ends.py`) rather than by
+looking for a sprite. Two of the calls to image `0x8822` landing in these rows
+are not the strip:
+
+    x=0    y=334  rows=16  planes=4  width=48
+    x=592  y=334  rows=16  planes=4  width=48
+
+with the source in the segment at `ds:0x1FE4`, which image `0x04F96` sets to
+`[0x1FEE]+0x800` — section 4. They decode as a lemming with **the bar's end cap
+built into the same 48 pixels**, dashed rows included, which is why the painted
+bar runs 36–602 while the strip is only 48–607: *the caps are not the bar.*
+
+16 frames of 384 bytes; left at section 4 offset **10752**, right at
+**16896** (= left + 6144). Every capture matches a frame exactly — zero pixels
+differing, both sides — and the two are always on the same frame index: Fun 14,
+Tricky 13, Taxing 15, Mayhem 2. The frame does **not** follow the scroll:
+fitting `frame = scroll/4 + c` gives a consistent `c` for three captures and
+none for the fourth.
+
+With them drawn, the banner's rows differ by **zero** at all four ratings and
+the whole screen scores **99.85%**.
 
 ## What each plate does
 

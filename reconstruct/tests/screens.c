@@ -150,6 +150,26 @@ int main(int argc, char **argv)
                        ink > 200, "no text in the bar once it should be there");
                 }
                 free(lit);
+                /* The two lemmings holding the ends. They are drawn last and
+                 * opaquely, and their sprites carry the bar's end caps - so
+                 * if they were missing, x 0..47 would be black. */
+                menu_set_scroll(0);
+                menu_set_lem_frame(14);
+                if (menu_build_rating(dir, 0, &s0, &e) == 0) {
+                    size_t ink = 0, cap = 0;
+                    for (uint16_t r = 0; r < 16; r++)
+                        for (uint16_t x = 0; x < 48; x++) {
+                            uint8_t v = s0.pix[(size_t)(334 + r) * MENU_W + x];
+                            if (v) ink++;
+                            if (x >= 36 && v == 13) cap++;
+                        }
+                    ck("the left lemming is drawn", ink > 100,
+                       "x 0..47 of the banner is empty");
+                    ck("and it carries the bar's end cap", cap > 100,
+                       "no bar colour at x 36..47");
+                    menu_free(&s0);
+                }
+                menu_set_lem_frame(0);
                 menu_set_scroll(0);
                 /* 4, not 8: the bar's dash has period EIGHT, so scroll 0 and
                  * scroll 8 are the same picture until text arrives. That is

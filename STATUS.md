@@ -34,7 +34,7 @@ numbers, re-measured on the current build:
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing's** text | 99.97% — 4 of 15,188 |
-| the **main menu** | **99.70%** — 676 of 224,000, of which 326 are a long-standing residue and the rest the banner's unlocated end lemmings. Checked at **all four ratings**, and the scrolling banner is drawn, text and all |
+| the **main menu** | **99.85%** — 326 of 224,000, all of it a long-standing residue around the plates. The banner is **exact**: bar, scrolling text and both end lemmings, zero differing in its rows at all four ratings |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -476,6 +476,46 @@ Each of these is stated as what was *checked*, not what was written.
   keys pressed while it is still fading in, so the press has to be repeated.
   The probe now does all three: fresh guest, held press, repeated, and it
   refuses to compare a capture whose palette is black.
+- **The banner is finished: bar, text, and both lemmings holding it.
+  Zero pixels differing in its rows, on all four captures.**
+
+  The two end lemmings were the last thing on this screen that had never been
+  located. They were found by hooking the **shared blitter** rather than by
+  looking for a sprite: `tools/probe_banner_ends.py` logs every call to image
+  `0x8822` landing in the banner's rows, and two of them are not the strip —
+
+      x=0    y=334  rows=16  planes=4  width=48
+      x=592  y=334  rows=16  planes=4  width=48
+
+  with the source in the segment at `ds:0x1FE4`, which image `0x04F96` sets to
+  `[0x1FEE]+0x800`. That resolves into section 4, and the sprites decode as a
+  lemming with **the bar's end cap built into the same 48 pixels**, dashed
+  rows and all.
+
+  That answers a question that had been open all along: why the painted bar
+  runs 36..602 when the strip is only 48..607. **The caps are not the bar.**
+  They are part of these two sprites, which is also what puts colour 12 in the
+  margins and the stripe of colour 6 at x=592.
+
+  16 frames, 384 bytes each; left at 10752, right at 10752 + 6144. Every
+  capture matches a frame **exactly, zero differing, on both sides**, and in
+  each the two are on the same frame: Fun 14, Tricky 13, Taxing 15, Mayhem 2.
+
+  The frame does **not** follow the scroll. Fitting `frame = scroll/4 + c`
+  gives a consistent `c` for three captures and none for the fourth, so the
+  lemmings run on a counter of their own; its rate is not established and the
+  port's choice of one frame per displayed frame is marked as a choice.
+
+  | rating | whole screen | the banner's rows |
+  | --- | --- | --- |
+  | Fun | **99.85%** | **0** |
+  | Tricky | **99.85%** | **0** |
+  | Taxing | **99.85%** | **0** |
+  | Mayhem | **99.85%** | **0** |
+
+  What is left is **326 pixels, identical at every rating**, none of them in
+  the banner — the long-standing residue around the plates.
+
 - **The scrolling banner is drawn, text and all, from the game's own
   artwork.** It was the menu's largest gap and it is now the smallest.
 
