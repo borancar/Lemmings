@@ -644,6 +644,41 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Into a level
 
+- **The play area matches the original at 99.95%, and the frame comparison
+  exists.** `tools/compare_frame.py` puts one level frame of the original
+  beside the port and scores the play area and the panel **separately**,
+  because they are reconstructed to different degrees and an average would
+  hide which.
+
+  | | |
+  | --- | --- |
+  | play area, rows 0..159 | **99.95%** — 28 of 51,200 differ |
+  | the 28 | one 14×14 box at screen (135..148, 85..98) — a lemming, which the port does not draw |
+  | panel, rows 176..199 | 4,361 pixels of ink in the original; the port draws **none** of it |
+
+  Two things fell out of getting there.
+
+  **The mode's colour map is +8.** The port's canvas carries indices 0..15 and
+  the capture carries DAC indices; the histograms line up 19/11, 18/10, 17/9,
+  16/8, and 15/23 and 14/22 agree to the exact pixel count. Measured, not
+  assumed.
+
+  **The level opens scrolled to `start_x`.** The fit lands on 624 and the
+  level's own header says `start x 624`.
+
+  Drawing the objects makes it **worse** — 585 to 843 against 28 — so at this
+  moment the original is not showing them where the port bakes them in. That
+  is consistent with them being animated at display time and is not yet
+  understood; it is recorded rather than papered over.
+
+- **The DAC reads all black in every mode 0x0D capture taken so far.** Two
+  captures sixteen seconds apart are both entirely black, 0 of 256 entries, so
+  the usual "sampled mid-fade" explanation is **not** established - this mode
+  may set its colours somewhere the capture path does not read. The index
+  comparison is unaffected and sound. `compare_frame.py` says so loudly and
+  draws its images in greys by index, so a dead palette can never again look
+  like a broken port.
+
 - **The panel's font is found and transcribed** — `main.dat` section 2's tail,
   and a **three**-plane font, not four like everything else on this screen.
 
