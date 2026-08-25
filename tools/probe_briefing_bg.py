@@ -160,10 +160,16 @@ def main():
                   "\n  and says nothing about the briefing.")
             return 2
     if found == 0:
-        print("\n  Not a stored bitmap, anywhere, while the same search finds"
-              "\n  the menu's. So it is GENERATED at run time, from a fixed"
-              "\n  seed. Searching the data files again will not help; finding"
-              "\n  the generator would.")
+        print("\n  Not a stored bitmap anywhere, while the same search finds"
+              "\n  the menu's. So it is not shipped in this form."
+              "\n"
+              "\n  That is as far as this goes, and it is NOT the same as"
+              "\n  \"generated\": watching writes into the EGA window shows the"
+              "\n  screen cleared at image 0x04E34 and then drawn by the"
+              "\n  ordinary blitter at 0x089C4..0x098D4 from a buffer, so it is"
+              "\n  data when it is drawn. Whether that buffer is filled from a"
+              "\n  file by some transform - which a byte search would not"
+              "\n  catch - or built from nothing, is open.")
     return 0
 
 

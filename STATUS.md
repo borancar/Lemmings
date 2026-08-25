@@ -272,16 +272,26 @@ Each of these is stated as what was *checked*, not what was written.
   clicking bare background does. The port had per-plate click boxes, which was
   behaviour the original does not have — a worse kind of wrong than leaving it
   out — and they are gone.
-- **The briefing's background is GENERATED, not stored — so there is nothing
-  to find in the data files.** Established with a control, which is what makes
-  it a claim rather than a failed search: two lit captures from separate runs
-  are identical pixel for pixel, so it is deterministic; and a search of every
-  data file *and* the executable at all eight bit alignments finds **0**
-  matches for it while the same search finds **298** for the menu's background,
-  which is stored. Deterministic + absent from every file = generated from a
-  fixed seed. `tools/probe_briefing_bg.py` runs the whole argument including
-  the control. Finding the generator is the open work; searching the files
-  again is not.
+- **The briefing's background is not byte-identical to anything in the files,
+  and is drawn through the ordinary blitter from a run-time buffer.** What is
+  established, with a control: two lit captures from separate runs are
+  identical pixel for pixel, so it is deterministic; and a search of every data
+  file *and* the executable at all eight bit alignments finds **0** matches for
+  it, while the same search finds **298** for the menu's background, which is
+  stored. `tools/probe_briefing_bg.py` runs that argument including the
+  control.
+
+  **Correction (same session).** That was written up as "generated from a fixed
+  seed", which overstates it. Watching writes into the EGA window across the
+  transition shows the screen is cleared by image `0x04E34` (a `rep stosb` with
+  all four planes enabled) and then drawn by the blitter at
+  `0x089C4`–`0x098D4` from a **buffer in memory**. So it is data at the moment
+  it is drawn. Whether that buffer is filled from file data by some transform —
+  which a byte search would not catch — or generated, is **not settled**. The
+  buffer's address is the next thing to pin down: sampling the blitter's source
+  caught the *menu's logo* blits instead (source `0x5A861`, `cx=79`, `bp=4`,
+  `di` stepping one 80-byte row from `0x321` = row 10 byte 1 = screen (8,10),
+  which is the logo exactly), so the sample never reached the briefing.
 - **The port leaves that background black**, deliberately. Drawing the menu's
   tile there would score 66% and look about right, which is the failure worth
   avoiding: it invites the screen to be called finished. Palette entries 8–15

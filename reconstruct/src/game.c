@@ -1183,13 +1183,18 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
      * (227,130,32) rather than the menu's greens, and the tile matches at no
      * bit offset - 1.68% with bit 3 set.
      *
-     * tools/probe_briefing_bg.py then settled what it IS. Two lit captures
-     * from separate runs are identical pixel for pixel, so it is
-     * deterministic; but a search of every data file and the executable, at
-     * all eight bit alignments, finds ZERO matches for it while the same
-     * search finds 298 for the menu's background, which is stored. Identical
-     * between runs plus absent from every file means GENERATED, from a fixed
-     * seed. The generator has not been found.
+     * tools/probe_briefing_bg.py narrows it. Two lit captures from separate
+     * runs are identical pixel for pixel, so it is deterministic; and a search
+     * of every data file and the executable, at all eight bit alignments,
+     * finds ZERO matches for it while the same search finds 298 for the menu's
+     * background, which is stored.
+     *
+     * Not "generated", though - that was this project's first write-up of it
+     * and it overstated the evidence. Watching writes into the EGA window
+     * shows the screen cleared at image 0x04E34 and then drawn by the ordinary
+     * blitter at 0x089C4..0x098D4 from a BUFFER. So it is data when it is
+     * drawn; whether that buffer is filled from a file by some transform, or
+     * built from nothing, is not settled. See STATUS.md.
      *
      * So this leaves it black rather than drawing the menu's tile underneath.
      * A plausible-looking wrong background is worse than an obviously missing
