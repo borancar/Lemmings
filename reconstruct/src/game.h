@@ -299,6 +299,12 @@ typedef enum {
 /* Compose the menu from `dir`/main.dat. Returns 0 on success. */
 int  menu_build(const char *dir, menu_screen *m, const char **err);
 
+/* The two sub-screens the menu can reach, both of them the original's own:
+ * F2 shows a level-code entry screen and F4 an input-device chooser. Both are
+ * the same tiled background and the same font as the menu. */
+int menu_code_screen(const char *dir, menu_screen *m, const char **err);
+int menu_input_screen(const char *dir, menu_screen *m, const char **err);
+
 /* How many hotspots the menu has: the six plates, plus Down as a second key
  * for the rating plate. */
 #define MENU_HOTSPOTS 7

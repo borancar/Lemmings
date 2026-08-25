@@ -111,9 +111,15 @@ instruction *after* the loop that builds it - image `0x376A`, the exact moment
 it is complete - dump the buffer, and compare that. Same port, same data:
 **100.00%, 49 741 terrain pixels, zero differing.**
 
-Timing that capture matters and fails silently: a dump taken a second early
-catches composition mid-flight and looks exactly like a port drawing terrain
-the original does not.
+Timing that capture matters and **used to fail silently**: a dump taken at the
+wrong moment looks exactly like a port that is 83% right. `tools/prove.sh` now
+asserts on `where` - the guest must actually be stopped at `0x0376A` - retries
+once, and fails loudly rather than comparing against a bad capture.
+
+When a comparison suddenly regresses, **check whether the port changed at all**
+before believing it: rendering with the previous commit's binary and diffing
+the two raw outputs takes a minute and settles it. Byte-identical output means
+the reference moved, not the port.
 
 ## Conventions
 
@@ -190,6 +196,8 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/extract_image.py` | write the unpacked image once, with a sha256 and the load segment beside it |
 | **`tools/verify_menu.py`** | the port's main menu against the one the original composes, in EGA mode 10h - and it scores the parts the port does not build separately rather than hiding them |
 | `tools/hotspots.py` | ranks routines by how much work they do, not by whether they are code. `--after-read` counts only inside the windows following an INT 21h AH=3Fh, which is how the decompressor was found |
+| **`tools/probe_menu_keys.py`** | what a menu key actually does, asked of the original: fresh guest per key, held and repeated press, screen diffed against a no-key baseline, and it refuses to compare a capture taken mid-fade |
+| `tools/profile_menu.py` | which routines run while the menu is up, through `LEM_HOOK` |
 | **`tools/verify_level.py`** | the same for the LVL header parse, and the example of a verifier that rides along with `play.py` via `LEM_HOOK` - needed for anything that only happens inside a level |
 | **`tools/verify_dat.py`** | the differential test, and the pattern to copy for the next routine: stop the original, capture the inputs, let **its own body** run to its `ret`, compare its output with the port's C on the same call |
 | `tools/codemap.py` | the code map: recursive descent seeded with the entry point *and* every recorded execution, so it separates proven-code from believed-code. `--routine` for one routine, `--tables` for dispatch tables (there are none) |

@@ -188,6 +188,15 @@ Each of these is stated as what was *checked*, not what was written.
   `reconstruct/tests/menu_input.c` checks all six plates by key and by click,
   and five points that must *not* be buttons — 18 checks, run by `make test`.
 
+- **`tools/prove.sh` now checks that it captured what it thinks it did.** It
+  arms a breakpoint at image `0x0376A` and then sleeps; if the guest has not
+  actually stopped there when the dump is taken, the dump is of whatever was in
+  video memory. That happened during this work and reported **83.65%** — which
+  reads as a port that lost a third of its terrain, not as a failed capture.
+  The port's output was byte-identical to the previous commit's, which is what
+  identified it. The harness now asserts on `where`, retries once, and fails
+  loudly rather than comparing against a bad capture.
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~
@@ -214,16 +223,41 @@ Each of these is stated as what was *checked*, not what was written.
   capturing a picture; **not** fine for anything measuring timing.
 - **The port is a menu and a level renderer, not a game.** No lemmings, no
   skills, no animation, no sound, no control panel.
-- **Four of the six menu plates do nothing yet.** F1 and Esc work. F2 "NEW
-  LEVEL", F3 "FX", the rating plate and the "?" plate answer to their keys and
-  print that they are not reconstructed, which is better than a silent no-op
-  that reads as a broken button. What they *should* do has not been traced: the
-  key dispatch at image `0x03E6F` turns out to be the in-level control panel,
-  not the menu — there F1 and F2 change the release rate.
-- **The scrolling banner at the foot is not drawn**, and nothing on the menu
-  animates: the lemmings' eyes do not blink. The menu is composed once, not
-  driven. The banner's *strings* are found (image `0x0E45E` onward, in 38-byte
-  slots) but where it is drawn and how it scrolls is not.
+- **What each menu plate does was settled by asking the original, and four of
+  the six now work.** `tools/probe_menu_keys.py` drives a *fresh* guest to the
+  menu per key, presses one key, and diffs the screen against a no-key
+  baseline:
+
+  | plate | what the original does | the port |
+  | --- | --- | --- |
+  | F1 "1 PLAYER" | fades out into the level | starts the level, returns here after |
+  | F2 "NEW LEVEL" | an **"Enter Code"** screen | drawn, **98.82%** |
+  | F3 "FX" | **nothing** — measured, only the scroller moves | a faithful no-op |
+  | F4 "?" | a **"Choose Input Type"** screen | drawn, **99.37%** |
+  | Esc "EXIT TO DOS" | quits | quits |
+  | the rating plate | no response to Up — measured | not reconstructed |
+
+  What the two screens *do* with the answer is not reconstructed: the port
+  draws them and comes back. Neither excludes anything from its score.
+
+  Getting that table took three wrong runs, and each error is one this project
+  had already written down. A capture taken mid-fade made F3 look like it
+  redrew 77,433 pixels. A zero-duration key press is invisible to a guest that
+  polls the key state, so the first clean run said **F1** does nothing — F1
+  being the one key already known to work is what caught it. And the menu drops
+  keys pressed while it is still fading in, so the press has to be repeated.
+  The probe now does all three: fresh guest, held press, repeated, and it
+  refuses to compare a capture whose palette is black.
+- **The rating list is in the executable** — `Fun   TrickyTaxingMayhem` at
+  image `0x0E691`, four six-character slots — so the plate is meant to cycle.
+  It did not respond to Up in this demo build; whether it responds to something
+  else is untested.
+- **The scrolling banner at the foot is not drawn**, and nothing in the port
+  animates. The banner's *strings* are found (image `0x0E45E` onward, in
+  38-byte slots) but where it is drawn and how it scrolls is not. Correction
+  worth recording: the menu's animation is **not** only the scroller, as this
+  file said a moment ago — a no-key baseline moves 1,381–1,807 pixels in a box
+  from y=49 down, so the logo and the plates animate too.
 - **The menu font is found and used.** 16×16 glyphs, three 32-byte planes,
   ASCII-indexed, at `MAIN.DAT` section 4 offset 23888 — which ends at
   `23888 + 127*96 = 36080`, exactly the section's length. Plane 2 doubles as

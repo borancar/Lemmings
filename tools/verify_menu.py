@@ -91,6 +91,10 @@ def main():
                     help="seconds after mode 10h to sample; the demo starts "
                          "a level on its own if left long enough")
     ap.add_argument("--data", default="lemming1.pc")
+    ap.add_argument("--screen", default="menu",
+                    choices=("menu", "code", "input"),
+                    help="which menu screen: the menu itself, the F2 level-code "
+                         "screen, or the F4 input chooser")
     a = ap.parse_args()
 
     cap = a.capture or capture(os.path.join(ROOT, "out", "menu.scrn"),
@@ -102,7 +106,7 @@ def main():
                    check=True, stdout=subprocess.DEVNULL)
     subprocess.run([os.path.join(ROOT, "reconstruct", "lemmings"),
                     "--data", os.path.join(ROOT, a.data),
-                    "--menu", "--raw", port_raw],
+                    "--screen", a.screen, "--raw", port_raw],
                    check=True, stdout=subprocess.DEVNULL)
     pw, ph, ppal, ours = read_raw(port_raw)
     if (pw, ph) != (w, h):
@@ -115,8 +119,11 @@ def main():
     print(f"\n  palette entries differing : {len(badpal)}"
           f"{'  ' + str(badpal) if badpal else ''}")
 
+    # The sub-screens have no scroller and nothing the port leaves out, so
+    # nothing is excluded from their score.
+    excluded = NOT_IMPLEMENTED if a.screen == "menu" else []
     skip = bytearray(h)
-    for _, y0, y1 in NOT_IMPLEMENTED:
+    for _, y0, y1 in excluded:
         for y in range(y0, min(y1, h)):
             skip[y] = 1
 
@@ -135,16 +142,19 @@ def main():
           f"({tot-ok} of {tot} pixels differ)")
     print(f"  the parts the port builds : {100*part_ok/part_tot:.2f}%  "
           f"({part_tot-part_ok} of {part_tot} differ)")
-    print("\n  not composed by the port, and scored out above:")
-    for name, y0, y1 in NOT_IMPLEMENTED:
+    if not excluded:
+        print("\n  nothing excluded: the port draws all of this screen.")
+    else:
+        print("\n  not composed by the port, and scored out above:")
+    for name, y0, y1 in excluded:
         n = o2 = 0
         for y in range(y0, min(y1, h)):
             for x in range(w):
                 n += 1
                 o2 += theirs[y*w+x] == ATTR[ours[y*w+x] & 0x0F]
         print(f"    {name:24s} y {y0}..{y1}: {100*o2/n:.1f}% by accident")
-    print("\n  The remainder is mostly the menu's own animation - the lemmings"
-          "\n  blink - which a single composed frame cannot match.")
+    print("\n  The remainder is the screen's own animation, which a single"
+          "\n  composed frame cannot match.")
     return 0
 
 

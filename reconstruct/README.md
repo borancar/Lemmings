@@ -89,10 +89,21 @@ Shows the **main menu** and draws a level's terrain:
 - **Interactive objects** — the entrance and the exit, with their own
   transparency masks and animation frames
 
-The menu answers to its keys and to the mouse: F1 starts the level, Esc exits,
-and coming out of a level returns to the menu. The other four plates answer too
-and say they are not reconstructed, which beats a silent no-op that reads as a
-broken button.
+The menu answers to its keys and to the mouse, and four of its six plates do
+what the original does:
+
+| plate | |
+| --- | --- |
+| **F1** "1 PLAYER" | starts the level; leaving it returns to the menu |
+| **F2** "NEW LEVEL" | the "Enter Code" screen |
+| **F3** "FX" | nothing — which is what the original does here too |
+| **F4** "?" | the "Choose Input Type" screen |
+| **Esc** | quits |
+| the rating plate | not reconstructed |
+
+What each plate does was not guessed from its label: a probe drives the
+original to its menu, presses one key, and diffs the screen against a
+no-key baseline.
 
 There is no game yet: no lemmings, no skills, no animation, no sound. Nothing
 on the menu animates either - the lemmings' eyes do not blink and the scrolling

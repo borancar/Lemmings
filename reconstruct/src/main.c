@@ -88,6 +88,7 @@ static void usage(void)
           "  with no arguments at all, shows the main menu in a window\n"
           "  --data DIR    directory holding the original files (default .)\n"
           "  --menu        the main menu (the default screen)\n"
+          "  --screen S    menu | code | input - which menu screen to draw\n"
           "  --file NAME   level container (default level009.dat)\n"
           "  --level N     which level inside it, 1-based (default 2)\n"
           "                the default pair is the level the game itself\n"
@@ -258,6 +259,7 @@ int main(int argc, char **argv)
      * tools/prove.sh working unchanged. */
     int want_menu = 1;
     int menu_forced = 0;
+    int which_screen = 0;   /* 0 menu, 1 enter-code, 2 input type */
     /* The original composes terrain first and draws objects afterwards, so a
      * capture taken at the end of its terrain loop has no objects in it. This
      * lets the port match that, for a comparison that is terrain against
@@ -267,6 +269,14 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
         else if (!strcmp(argv[i], "--menu")) menu_forced = 1;
+        else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
+            /* Which menu screen: the menu itself, or one of the two the
+             * original reaches from it. For looking at and for diffing. */
+            const char *w = argv[++i];
+            menu_forced = 1;
+            which_screen = !strcmp(w, "code") ? 1 : !strcmp(w, "input") ? 2 : 0;
+            if (!which_screen && strcmp(w, "menu")) { usage(); return 2; }
+        }
         else if (!strcmp(argv[i], "--file") && i + 1 < argc)  { file = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--out") && i + 1 < argc)   { out  = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
@@ -310,7 +320,10 @@ int main(int argc, char **argv)
 
     if (want_menu) {
         menu_screen mm;
-        if (menu_build(data, &mm, &err) != 0) {
+        int built = which_screen == 1 ? menu_code_screen(data, &mm, &err)
+                  : which_screen == 2 ? menu_input_screen(data, &mm, &err)
+                                      : menu_build(data, &mm, &err);
+        if (built != 0) {
             fprintf(stderr, "main menu: %s\n", err);
             return 1;
         }
@@ -352,6 +365,13 @@ int main(int argc, char **argv)
             return rc;
         }
 
+        if (which_screen) {       /* a sub-screen: draw it and stop */
+            view_show(mm.pix, MENU_W, MENU_H, MENU_W, MENU_H, mm.palette,
+                      "PC Lemmings", 0, scale);
+            menu_free(&mm);
+            return rc;
+        }
+
         /* The menu loop. F1 starts the level and coming back out of it
          * returns here, which is the whole point of the screen. */
         for (;;) {
@@ -362,14 +382,34 @@ int main(int argc, char **argv)
                              scale, 1);
                 continue;
             }
-            /* The other four plates are drawn and answer to their keys, but
-             * what they DO is not reconstructed. Saying so is better than a
-             * silent no-op, which reads as a broken button. */
-            printf("  %s is not reconstructed yet\n",
-                   a == MENU_NEW_LEVEL ? "F2, \"NEW LEVEL\"" :
-                   a == MENU_FX        ? "F3, \"FX\"" :
-                   a == MENU_RATING    ? "the rating plate" :
-                                         "F4, the \"?\" plate");
+            /* F2 and F4 reach real screens in the original - a level-code
+             * entry and an input-device chooser - and the port draws both.
+             * What they DO with the answer is not reconstructed, so they come
+             * straight back. */
+            if (a == MENU_NEW_LEVEL || a == MENU_HELP) {
+                menu_screen sub;
+                int ok = (a == MENU_NEW_LEVEL)
+                    ? menu_code_screen(data, &sub, &err)
+                    : menu_input_screen(data, &sub, &err);
+                if (ok != 0) {
+                    fprintf(stderr, "  %s\n", err);
+                    continue;
+                }
+                view_show(sub.pix, MENU_W, MENU_H, MENU_W, MENU_H,
+                          sub.palette, "PC Lemmings", 0, scale);
+                menu_free(&sub);
+                continue;
+            }
+            /* F3 "FX" changes NOTHING on the original's screen in this build -
+             * measured with tools/probe_menu_keys.py, which finds only the
+             * scroller moving. There is no sound here to toggle either, so
+             * this is a faithful no-op rather than a missing feature. The
+             * rating plate is a real gap and says so. */
+            printf("  %s\n",
+                   a == MENU_FX ? "F3, \"FX\": the original's screen does not "
+                                  "change here either, and there is no sound "
+                                  "yet"
+                                : "the rating plate is not reconstructed yet");
         }
         menu_free(&mm);
         return rc;

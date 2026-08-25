@@ -22,20 +22,40 @@ cd "$REPO"
 # composition is complete and before anything else touches that memory. A dump
 # taken by wall clock instead catches it mid-flight and looks exactly like a
 # port that draws terrain the original does not.
-echo "== driving the original to the end of its terrain composition =="
-uv run python tools/play.py --auto --start --dump-vga --dump-when 0x10 \
-    --dump-delay 2 --click-tries 0 \
-    --cmd "break i+0x376a" --cmd "sleep 25" \
-    --cmd "click down 0 160 100" --cmd "sleep 1" --cmd "click up 0" \
-    --cmd "sleep 25" --cmd "where" --cmd "planes $OUT/composed.bin" \
-    --cmd "delete" --cmd "cont" \
-    --start-delay 4 --start-tries 3 \
-    -- --shots 1 --shot-every 900 --shot-dir "$OUT/shots" \
-       --run-seconds 210 > "$OUT/prove.log" 2>&1 || true
-grep -E "planes .*composed.bin" "$OUT/prove.log" || {
-    echo "!! the emulator never reached the breakpoint; see $OUT/prove.log" >&2
-    exit 1
+# The capture is timing-dependent, so it is CHECKED rather than assumed. The
+# harness arms a breakpoint and then sleeps; if the guest has not actually
+# stopped there when the dump is taken, the dump is of whatever happened to be
+# in video memory - and that reads as a port that is 83% right rather than as a
+# failed capture. That happened, and this is the guard for it: `where` reports
+# where the guest is stopped, and the run is only believed if it says 0x0376a.
+capture() {
+    uv run python tools/play.py --auto --start --dump-vga --dump-when 0x10 \
+        --dump-delay 2 --click-tries 0 \
+        --cmd "break i+0x376a" --cmd "sleep 25" \
+        --cmd "click down 0 160 100" --cmd "sleep 1" --cmd "click up 0" \
+        --cmd "sleep 25" --cmd "where" --cmd "planes $OUT/composed.bin" \
+        --cmd "delete" --cmd "cont" \
+        --start-delay 4 --start-tries 3 \
+        -- --shots 1 --shot-every 900 --shot-dir "$OUT/shots" \
+           --run-seconds 210 > "$OUT/prove.log" 2>&1 || true
+    grep -q -E "planes .*composed.bin" "$OUT/prove.log" || return 1
+    # The line after the `where` command is its answer.
+    grep -A1 '^\[play\] > where$' "$OUT/prove.log" | grep -q "image 0x0376a"
 }
+
+echo "== driving the original to the end of its terrain composition =="
+rm -f "$OUT/composed.bin"
+if ! capture; then
+    echo "   the guest was not stopped at image 0x0376a - capture discarded," >&2
+    echo "   retrying once (this is timing-dependent, not a port failure)" >&2
+    rm -f "$OUT/composed.bin"
+    capture || {
+        echo "!! could not stop the original at its terrain composition." >&2
+        echo "!! That is a FAILED CAPTURE, not a comparison result." >&2
+        echo "!! See $OUT/prove.log" >&2
+        exit 1
+    }
+fi
 
 echo "== rendering the same level with the port =="
 make -C reconstruct >/dev/null

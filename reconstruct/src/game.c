@@ -1013,6 +1013,114 @@ static void draw_text(uint8_t *dst, const uint8_t *font, uint32_t font_len,
 /* NOT TRANSCRIBED - the port's own compositing of the original's own
  * graphics and geometry. Every constant it uses was measured against the
  * screen the original composes; tools/verify_menu.py scores it at 94.67%. */
+/* The strings for the two sub-screens, transcribed from the executable with
+ * the addresses they were read from. They are not in any data file. */
+static const char S_ENTER_CODE[]  = "Enter Code";          /* image 0x0E874 */
+static const char S_CODE_DOTS[]   = "..........";          /* image 0x0E882 */
+static const char S_INPUT_TYPE[]  = "Choose Input Type";   /* image 0x0E8CD */
+static const char S_INPUT_1[]     = "1. Microsoft Mouse";  /* image 0x0E901 */
+static const char S_INPUT_2[]     = "2. Joystick";         /* image 0x0E8E2 */
+static const char S_INPUT_3[]     = "3. Keyboard";         /* image 0x0E8F1 */
+
+/* Where each line goes. MEASURED off the original's own screens, not derived:
+ * the menu's two credit lines are centred and then backed off half a
+ * character, and these are not - "Enter Code" sits a whole character further
+ * left than that rule predicts, and the three input options share a left
+ * margin rather than each being centred. So they are constants, and they are
+ * constants because that is what the evidence says. Where the original keeps
+ * them is not established. */
+#define CODE_TITLE_X   224
+#define CODE_TITLE_Y   112
+#define CODE_DOTS_X    224
+#define CODE_DOTS_Y    144
+#define INPUT_TITLE_X  176
+#define INPUT_TITLE_Y   80
+#define INPUT_OPT_X    112
+#define INPUT_OPT_Y    128
+#define INPUT_OPT_STEP  32
+
+/* Shared by all three screens: load main.dat, tile the background, and hand
+ * back the section pointers the caller still needs. */
+static int screen_start(const char *dir, menu_screen *m, dat_file *d,
+                        const uint8_t **sec, const uint8_t **font,
+                        uint32_t *fontlen, const char **err)
+{
+    memset(m, 0, sizeof(*m));
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/main.dat", dir);
+    if (dat_load(path, d, err) != 0)
+        return -1;
+    if (d->count <= FONT_SECTION) {
+        dat_free(d);
+        if (err) *err = "main.dat is missing a section the menu needs";
+        return -1;
+    }
+    *sec = d->sections[MENU_SECTION].data;
+    *font = d->sections[FONT_SECTION].data;
+    *fontlen = d->sections[FONT_SECTION].size;
+
+    m->pix = calloc((size_t)MENU_W * MENU_H, 1);
+    if (!m->pix) {
+        dat_free(d);
+        if (err) *err = "out of memory";
+        return -1;
+    }
+    for (uint8_t i = 0; i < 16; i++) {
+        m->palette[i].r = dac8(MENU_PAL6[i * 3 + 0]);
+        m->palette[i].g = dac8(MENU_PAL6[i * 3 + 1]);
+        m->palette[i].b = dac8(MENU_PAL6[i * 3 + 2]);
+    }
+    for (uint16_t y = 0; y < MENU_H; y++)
+        for (uint16_t x = 0; x < MENU_W; x++)
+            m->pix[(size_t)y * MENU_W + x] =
+                planar(*sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE, 2,
+                       x % BG_W, y % BG_H);
+    return 0;
+}
+
+/* Text at a given cell, rather than centred. */
+static void draw_at(uint8_t *dst, const uint8_t *font, uint32_t font_len,
+                    const char *text, uint16_t at_x, uint16_t at_y)
+{
+    for (size_t i = 0; text[i]; i++)
+        draw_char(dst, font, font_len, (uint8_t)text[i],
+                  (uint16_t)(at_x + i * FONT_W), at_y);
+}
+
+/* The screen F2 reaches: the level-code entry. What it does with the code is
+ * NOT reconstructed - this draws it and comes back. */
+int menu_code_screen(const char *dir, menu_screen *m, const char **err)
+{
+    dat_file d;
+    const uint8_t *sec, *font;
+    uint32_t fontlen;
+    if (screen_start(dir, m, &d, &sec, &font, &fontlen, err) != 0)
+        return -1;
+    draw_at(m->pix, font, fontlen, S_ENTER_CODE, CODE_TITLE_X, CODE_TITLE_Y);
+    draw_at(m->pix, font, fontlen, S_CODE_DOTS, CODE_DOTS_X, CODE_DOTS_Y);
+    dat_free(&d);
+    return 0;
+}
+
+/* The screen F4 reaches: the input-device chooser. Choosing is NOT
+ * reconstructed - the port always uses the mouse and the keyboard. */
+int menu_input_screen(const char *dir, menu_screen *m, const char **err)
+{
+    dat_file d;
+    const uint8_t *sec, *font;
+    uint32_t fontlen;
+    if (screen_start(dir, m, &d, &sec, &font, &fontlen, err) != 0)
+        return -1;
+    draw_at(m->pix, font, fontlen, S_INPUT_TYPE, INPUT_TITLE_X, INPUT_TITLE_Y);
+    draw_at(m->pix, font, fontlen, S_INPUT_1, INPUT_OPT_X, INPUT_OPT_Y);
+    draw_at(m->pix, font, fontlen, S_INPUT_2, INPUT_OPT_X,
+            INPUT_OPT_Y + INPUT_OPT_STEP);
+    draw_at(m->pix, font, fontlen, S_INPUT_3, INPUT_OPT_X,
+            INPUT_OPT_Y + 2 * INPUT_OPT_STEP);
+    dat_free(&d);
+    return 0;
+}
+
 int menu_build(const char *dir, menu_screen *m, const char **err)
 {
     memset(m, 0, sizeof(*m));
