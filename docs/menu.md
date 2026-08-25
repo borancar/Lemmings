@@ -376,3 +376,29 @@ are both worse.
   `"Fun   "` from it at every position over the plate scores 76.56% against
   83.45% for leaving it alone. A second, smaller font or a sprite set is
   involved and has not been found.
+
+## Unaligned sprites are pre-shifted, not drawn shifted
+
+Image `0x09360` holds the mechanism, and it explains several things at once:
+
+```
+0x09365  mov al, [0xa948]      ; how many bits to shift by
+0x09368  push si / push cx
+0x0936c  shr byte ptr [si], 1  \  shift the whole buffer right one bit,
+0x09371  rcr byte ptr [si], 1   >  carrying between bytes
+0x09376  loop 0x9371           /
+0x0937a  dec al / jne 0x9368   ; repeat for each bit
+0x09383  mov al, es:[di]       ; then blit it, latches and all
+0x09386  lodsb / stosb
+```
+
+So a sprite that lands at a non-byte-aligned x is **copied into a scratch
+buffer and shifted right one bit at a time**, then blitted byte-aligned. That
+is why the blitter's own destinations are always byte-aligned even though
+sprites plainly are not — the FX label sits at x=351, which is 7 mod 8.
+
+It also explains the rating name's one-pixel offset: the plate's bitmap carries
+a `FUN` at one position and the original overdraws the current rating from a
+pre-shifted copy at another. The scratch buffer is what the blit reads, so
+following the blit's source address finds the buffer and not the artwork —
+which is why the rating's own sprite has still not been located.

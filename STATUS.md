@@ -298,9 +298,20 @@ Each of these is stated as what was *checked*, not what was written.
 
   It is **not** the menu's 16×16 font: overlaying `"Fun"`, `"FUN"` and `"Fun   "`
   from that font at every position over the plate is *worse* than leaving it
-  alone (76.56% against 83.45%). So there is a second, smaller font or a sprite
-  set for it, not yet found. That is the next thread, and it is worth a pixel
-  count of about 630.
+  alone (76.56% against 83.45%).
+
+  **Why it has been hard to find is now clear.** The writer is image `0x09387`,
+  and the routine around it at `0x09360` **pre-shifts** its sprite: it copies
+  the artwork into a scratch buffer and shifts the whole buffer right one bit
+  at a time (`shr` then `rcr` down the bytes, repeated for each bit) before
+  blitting it byte-aligned. So every blit's source address points at the
+  *scratch buffer*, not at the artwork — which is why following blit sources
+  keeps landing on anonymous memory. Finding the rating's sprite means finding
+  what is copied *into* that buffer, one step further back.
+
+  That is the next thread, worth about 630 pixels. It is also the general
+  answer to how this game draws anything at a non-byte-aligned x — the FX label
+  sits at x=351, which is 7 mod 8.
 
   Two things were tried and rejected on measurement rather than taste: a drop
   shadow for the label (worse — 99.16% to 99.06%), and a one-pixel black
