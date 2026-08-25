@@ -36,18 +36,38 @@ Each of these is stated as what was *checked*, not what was written.
   goes on to run, set a video mode and poll for input — where before it issued
   **zero** interrupts.
 
+- **The start-up path runs**: both machine-type menus cleared, BIOS mode 0Dh
+  set, and `main.dat` and `adlib.dat` opened. Verified by run log, not by eye.
+- **The protection is characterised, and measured rather than assumed** — see
+  [docs/protection.md](docs/protection.md). `IVT[01h]` = image 0x00DFF;
+  `EFLAGS = 0x0146` (TF set) at handler entry with no `int 1` in the stream;
+  108 single-steps in a whole start-up run.
+- **The protected code does not re-encrypt behind itself.** Image
+  0x00600..0x00A00 compared byte-for-byte at instruction 2,000,000 vs 3,000,000
+  and 3,000,000 vs 4,000,000: 0 of 1024 bytes changed. This is what makes a
+  memory snapshot usable and ordinary static disassembly valid, so it is a
+  load-bearing measurement rather than a curiosity.
+
 ## Open
 
+- **THE PORT DRAWS NOTHING, AND NEITHER DOES THE EMULATOR.** PC Lemmings' VGA
+  build runs in **BIOS mode 0Dh** — 320x200, 16 colours, four bit-planes, eight
+  pixels to the byte. It is *not* mode 13h. `dos_emulator`'s `framebuffer()`
+  handles CGA 04h/05h/06h, chain-4 mode 13h and Mode X, and has no path that
+  gathers a pixel's four bits across planes, so the game reaches its first
+  graphics screen and renders black. Implementing EGA planar upstream is the
+  next piece of work and everything visual is blocked behind it.
 - **The unpack is not yet *proven*.** The skill's standard is a round-trip
   against the stub's own output, and that has not been done. "It produces
   plausible code and the program runs" is evidence, not proof. Nothing has been
   transcribed on the strength of it.
-- **The second start-up menu does not respond to RETURN** delivered over the
-  control socket, though `1` on the first menu works. So `tools/play.py --auto`
-  reaches the machine-type menu and stops there. Unknown whether it reads scan
-  codes off port 0x60, wants a longer press, or is waiting on something else
-  entirely. **A person at the keyboard is not blocked by this** — only the
-  unattended path is.
+- ~~**The second start-up menu does not respond to RETURN.**~~ **Retracted
+  2026-08-25.** Not an input problem at all: the menu was waiting on a vertical
+  retrace, reading the CRTC base port from BIOS variable 0040:0063, which the
+  emulator left at zero — so it polled *port 6* twenty-six million times for a
+  bit that could never arrive. Fixed upstream by filling in the BDA variable.
+  Recorded here because the first diagnosis was wrong and a status file that
+  only ever gains claims is worth nothing.
 - **No unpacked image has been written to disk**, so no code map, no
   disassembly, and no coverage table. The coverage figures below are absent
   rather than zero.
@@ -68,14 +88,20 @@ the first sweep should write this table rather than have it retyped by hand.
 
 ## Next
 
-1. Capture the unpacked image to a file at the moment the stub hands control to
+1. **Implement EGA 16-colour planar mode 0Dh in `dos_emulator`** — the
+   framebuffer decode (four planes, eight pixels per byte, a pixel's value
+   gathered across planes), the Graphics Controller write path (set/reset,
+   enable set/reset, bit mask, the write modes and the latches) and the
+   attribute controller's 16-entry palette. Nothing visual can be checked until
+   this exists.
+2. Capture the unpacked image to a file at the moment the stub hands control to
    the program, and **prove** it — round-trip against the stub's own output.
-2. Identify the toolchain: count `push bp / mov bp,sp` prologues across the code
+3. Identify the toolchain: count `push bp / mov bp,sp` prologues across the code
    segment, and look for a compiler banner. Record the finding and the evidence
    in `docs/`, and say which world this is in at the top of this file.
-3. Find the handler tables and map the code by recursive descent from the entry
+4. Find the handler tables and map the code by recursive descent from the entry
    point, seeded with them.
-4. Only then start transcribing.
+5. Only then start transcribing.
 
 ## Deferred
 
