@@ -18,6 +18,7 @@
 #include "ground.h"
 #include "level.h"
 #include "render.h"
+#include "vgagr.h"
 #include "view.h"
 
 static const char *SKILL_NAMES[8] = {
@@ -36,6 +37,8 @@ static void usage(void)
           "  --out FILE    where to write the picture (default level.bmp)\n"
           "  --show        open a window on the level (arrows scroll, Esc quits)\n"
           "  --scale N     window magnification for --show (default 3)\n"
+          "  --terrain M   how terrain pixels combine: replace|or|keep\n"
+          "  --planebits O which bit each stored plane feeds, e.g. 0123\n"
           "  --raw FILE    also write the raw indices and palette, for\n"
           "                checking against the original: 'LEMRW2', width\n"
           "                and height as u16, 16 RGB triples, then w*h bytes\n",
@@ -67,6 +70,21 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   raw  = argv[++i];
+        else if (!strcmp(argv[i], "--planebits") && i + 1 < argc) {
+            const char *o = argv[++i];
+            if (strlen(o) != 4) { usage(); return 2; }
+            for (uint8_t k = 0; k < 4; k++)
+                g_plane_bits[k] = (uint8_t)(o[k] - '0');
+        }
+        else if (!strcmp(argv[i], "--terrain") && i + 1 < argc) {
+            const char *m = argv[++i];
+            if (!strcmp(m, "replace"))   g_terrain_mode = TERRAIN_REPLACE;
+            else if (!strcmp(m, "or"))   g_terrain_mode = TERRAIN_OR;
+            else if (!strcmp(m, "keep")) g_terrain_mode = TERRAIN_KEEP;
+            else if (!strcmp(m, "nov-ignore")) g_terrain_mode = TERRAIN_NOV_IGNORE;
+            else if (!strcmp(m, "nov-invert")) g_terrain_mode = TERRAIN_NOV_INVERT;
+            else { usage(); return 2; }
+        }
         else { usage(); return 2; }
     }
 

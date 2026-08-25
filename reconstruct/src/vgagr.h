@@ -12,6 +12,11 @@
  * `out` must have room for w*h bytes. Pixel 0 means "not drawn": terrain
  * only ever uses colours 8-15, so plane 3 doubles as the shape's mask.
  * Returns 0 on success, -1 if the bitmap would read past `len`. */
+/* Which bit of the pixel value each STORED plane contributes. The published
+ * description says plane i adds 1<<i; this is selectable so that claim can be
+ * tested against the original rather than believed. Default {0,1,2,3}. */
+extern uint8_t g_plane_bits[4];
+
 int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
                  uint8_t w, uint8_t h, uint8_t *out);
 

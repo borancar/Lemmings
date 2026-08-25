@@ -14,6 +14,20 @@ typedef struct {
     uint16_t w, h;
 } canvas;
 
+/* How a terrain pixel combines with what is already on the canvas. The
+ * original is not simply "replace": which of these it is, is being settled
+ * against its video memory rather than assumed, so they are selectable.
+ * See STATUS.md in the development repository. */
+typedef enum {
+    TERRAIN_REPLACE = 0,   /* the newer pixel wins */
+    TERRAIN_OR,            /* colour bits are OR'd together */
+    TERRAIN_KEEP,          /* the older pixel wins wherever there is one */
+    TERRAIN_NOV_IGNORE,    /* replace, ignoring the no-overwrite flag */
+    TERRAIN_NOV_INVERT     /* no-overwrite means "only where terrain is" */
+} terrain_mode;
+
+extern terrain_mode g_terrain_mode;
+
 int  canvas_init(canvas *c);
 void canvas_free(canvas *c);
 

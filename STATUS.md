@@ -184,15 +184,31 @@ the first sweep should write this table rather than have it retyped by hand.
 
 ## Next
 
-1. **Close the remaining 20%.** The disagreement is entirely among terrain
-   colour indices 8–11, with the shape correct, so it is how overlapping
-   terrain pieces resolve rather than where they are. Leads, in order: the
-   original blits terrain with the Graphics Controller's function set to **OR**
-   (`gc[3] = 0x10` was observed), where the port replaces; the `no_overwrite`
-   and `erase` flags may not mean what was assumed; and pieces after a
-   `FF FF FF FF` entry are currently treated as the end of the list. Each is
-   testable against the existing harness by changing one thing and re-running
-   the comparison.
+1. **Close the remaining 20%**, with these already ruled out by measurement
+   (the port carries `--terrain` and `--planebits` so each was one run, and
+   every alternative scored *worse* than the default):
+
+   | hypothesis | result |
+   | --- | --- |
+   | terrain pixels are OR'd, not replaced | 73.79% vs 79.99% — **no** |
+   | first piece wins (`keep`) | 65.41% — **no** |
+   | `no_overwrite` should be ignored | 66.71% — **no** |
+   | `no_overwrite` means "only over terrain" | 60.18% — **no** |
+   | the five other plane→bit permutations | 40–58% — **no**, `0123` is right |
+   | the viewport is offset vertically | y = 0 is best — **no** |
+   | entries after a `FF FF FF FF` are missed | there are none in this level — **no** |
+
+   What is left, and what it looks like: the disagreements are **whole
+   8-pixel blocks** — one byte — where the port has index 11 and the original
+   has 9, a single bit in plane 1. At one such block (level x 632, y 8) only
+   two pieces overlap, both `no_overwrite`, and **neither of them produces a 9
+   at that pixel** in an independent Python decode. So the original's value is
+   not coming from a straightforward composite of the two, and the next step
+   is to find the game's own composed level buffer at runtime and compare
+   against *that*, which isolates compositing from the blit to the screen.
+   `ds:0x1fe4` holds 0x8000 in the static image, but 0x80000 does not contain
+   the level in a plain four-plane layout at runtime — dumping and rendering
+   it gives noise — so that address needs establishing from a live run.
 2. Capture the unpacked image to a file at the moment the stub hands control to
    the program, and **prove** it — round-trip against the stub's own output.
 3. Identify the toolchain: count `push bp / mov bp,sp` prologues across the code

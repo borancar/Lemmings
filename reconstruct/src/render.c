@@ -19,6 +19,8 @@
 #include "render.h"
 #include "vgagr.h"
 
+terrain_mode g_terrain_mode = TERRAIN_REPLACE;
+
 int canvas_init(canvas *c)
 {
     c->w = LEVEL_W;
@@ -73,11 +75,25 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                 uint8_t *dst = &c->pix[(uint32_t)dy * c->w + dx];
                 if (t->erase)
                     *dst = 0;
-                else if (t->no_overwrite) {
+                else if (t->no_overwrite
+                         && g_terrain_mode != TERRAIN_NOV_IGNORE) {
+                    if (g_terrain_mode == TERRAIN_NOV_INVERT) {
+                        if (*dst != 0)
+                            *dst = v;
+                    } else if (*dst == 0)
+                        *dst = v;
+                } else switch (g_terrain_mode) {
+                case TERRAIN_OR:
+                    *dst = (uint8_t)(*dst | v);
+                    break;
+                case TERRAIN_KEEP:
                     if (*dst == 0)
                         *dst = v;
-                } else
+                    break;
+                default:
                     *dst = v;
+                    break;
+                }
             }
         }
     }

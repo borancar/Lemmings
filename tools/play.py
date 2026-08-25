@@ -71,6 +71,9 @@ def main():
                     help="once at the title, press F1 to start a game")
     ap.add_argument("--start-tries", type=int, default=4,
                     help="how many times to press F1 (default 4)")
+    ap.add_argument("--dump-mem", action="append", default=[],
+                    metavar="ADDR LEN PATH",
+                    help="with --dump-vga, dump guest memory (repeatable)")
     ap.add_argument("--dump-screen", default="",
                     help="with --dump-vga, write the decoded screen + palette")
     ap.add_argument("--dump-planes", default="",
@@ -158,6 +161,8 @@ def main():
                     print(ask(sock, f"planes {a.dump_planes}"))
                 if a.dump_screen:
                     print(ask(sock, f"screen {a.dump_screen}"))
+                for spec in a.dump_mem:
+                    print(ask(sock, f"dump {spec}"))
         proc.wait()
     except KeyboardInterrupt:
         pass
