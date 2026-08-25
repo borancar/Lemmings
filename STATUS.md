@@ -41,7 +41,7 @@ numbers, re-measured on the current build:
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 32 of
+**Transcription is a different claim from any of the above, and it is 31 of
 211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
@@ -642,6 +642,39 @@ Each of these is stated as what was *checked*, not what was written.
   wrong**, and no amount of further fitting was going to reach zero from 257.
   Reading the routine took less time than the fitting did.
 
+- **The menu is composed by the original's own routines now, not by fitted
+  geometry** — images `0x04EEF`, `0x04F31` and `0x04EC2`, all three found
+  through the call graph rather than by looking at pixels.
+
+  | the port had | the original has |
+  | --- | --- |
+  | `SIGN_POS[6]`, six literal coordinates | **two loops** — four from (68,120), two from (196,197), each `add ax, 0x80` |
+  | `SIGN_BASE + i * SIGN_STEP` | a **table at `CS:0x4F8A`**, read `mov si, cs:[di]` |
+  | `RATING_BASE + (3 - rating) * STEP` | a **table at `CS:0x4EE7`**, indexed `shl bx,1` |
+  | `LOGO_X/Y` plus `LOGO_SHADOW_DX/DY` | two blits at **literal** (0,20) and (8,10) |
+  | `SIGN_SHADOW_DX/DY` | `sub ax,8` / `add bx,8` inside the loop |
+
+  `CS:0x4F8A` holds exactly `38024, 41684, 45344, 49004, 52664, 56324` and
+  `CS:0x4EE7` holds the four rating offsets less the 3,568 segment delta —
+  both byte-for-byte what the fitted arithmetic produced. **That is the point.**
+  The arithmetic was right about the numbers and wrong about the program, and
+  the rating's had already been got backwards once for exactly that reason: a
+  table cannot be reversed by accident.
+
+  Still **0 differing at all four ratings**, and five dead constants are gone.
+  `SIGN_POS` survives only because `menu_hotspots` needs boxes after the fact,
+  and it is now generated from the loop's own parameters so there is one
+  source of truth rather than two.
+
+- **Correction: the transcription counts reported over the last several
+  commits were too high.** `provenance.py` anchored its markers to a line
+  start but did not allow the line that OPENS a comment block, so
+  `/* NOT TRANSCRIBED ...` was invisible to it. Four functions that say so
+  explicitly — `dat_load`, `ground_load`, `render_terrain`, `render_objects` —
+  were being counted as transcribed on the strength of an address mentioned in
+  their prose. The file was honest; the checker was under-reading it. Fixed,
+  and the honest figures are **31 transcribed, 38 the port's own, 5 owed**.
+
 - **Drawing a screen from a spec loses the call graph — and hides an
   overfit.** Boran's point, and it is the sharpest correction of the session.
 
@@ -1118,7 +1151,7 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 32 (`make test` enforces the count) |
+| routines transcribed | 31 (`make test` enforces the count) |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |

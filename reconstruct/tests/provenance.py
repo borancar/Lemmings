@@ -29,7 +29,10 @@ ADDR = re.compile(r'\bimage\s+0x[0-9A-Fa-f]{4,5}|\b0x[0-9A-Fa-f]{4,5}\b')
 # address and merely discuss what was and was not transcribed nearby. Same
 # mistake as searching a window instead of the block: a loose pattern makes
 # the file report something it does not say.
-LINE = r"^[ \t]*\*?[ \t]*"
+# Allow the marker on the line that OPENS the block, not only on a
+# continuation line: `/* The port's own...` is the natural way to write a
+# short one and the first version silently refused it.
+LINE = r"^[ \t]*(?:/\*|\*)?[ \t]*"
 OWN = re.compile(LINE + r"(?:The p|P)ort's own\b|" + LINE + r"THE PORT'S OWN",
                  re.M)
 OWED = re.compile(LINE + r"NOT TRANSCRIBED\b", re.M)

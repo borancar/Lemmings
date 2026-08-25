@@ -813,8 +813,6 @@ int render_objects(canvas *c, const level *lv, const ground *g,
 #define RATING_Y       145
 
 /* Where rating r's sprite starts: they run backwards, so Fun is last. */
-#define RATING_OFF(r)  (RATING_BASE + \
-                        (uint32_t)(MENU_RATING_MAX - ((r) & 3)) * RATING_STEP)
 
 /* Both lines come from the executable, not from a data file, so they are
  * transcribed here with the address they were read from - the same treatment a
@@ -875,8 +873,6 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define LOGO_X      8
 #define LOGO_Y      10
 /* Where its shadow falls, measured: eight pixels left, ten rows down. */
-#define LOGO_SHADOW_DX (-8)
-#define LOGO_SHADOW_DY  10
 
 /* The six signs, one atlas entry each, 4 x 915 = 3660 bytes apart. The atlas
  * begins at 38024, which is exactly where the logo's fourth plane ends. */
@@ -887,8 +883,6 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define SIGN_PLANE  915
 #define SIGN_STEP   3660
 /* Where a plate's shadow falls, measured from where the blitter writes. */
-#define SIGN_SHADOW_DX (-8)
-#define SIGN_SHADOW_DY   8
 
 /* The FX plate's label, and its alternate.
  *
@@ -912,14 +906,33 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define LABEL_X      351
 #define LABEL_Y      146
 
-static const struct { uint16_t x, y; } SIGN_POS[6] = {
-    {  68, 120 },   /* F1  1 PLAYER   */
-    { 196, 120 },   /* F2  NEW LEVEL  */
-    { 324, 120 },   /* F3  FX         */
-    { 452, 120 },   /* F4  FUN        */
-    { 196, 197 },   /* ESC EXIT TO DOS*/
-    { 324, 197 },   /* F4  ?          */
+/* Where the six plates land. NOT a table in the original - image 0x04F31 runs
+ * two loops, four from (68,120) and two from (196,197), each `add ax, 0x80`.
+ * This exists only because menu_hotspots needs the boxes, and it is written as
+ * the loops so there is one source of truth rather than two.
+ *
+ * SIGN_ROW is the loop's own parameters; draw_plate_row takes the same ones. */
+static const struct { uint8_t first, count; uint16_t x, y; } SIGN_ROW[2] = {
+    { 0, 4,  68, 120 },
+    { 4, 2, 196, 197 },
 };
+#define SIGN_STRIDE_X 0x80          /* image 0x04F68: add ax, 0x80 */
+
+/* The port's own. The original has no such query - the loop knows where it
+ * is. This exists for menu_hotspots, which needs the boxes after the fact. */
+static uint16_t sign_x(uint8_t i)
+{
+    const uint8_t r = (i < SIGN_ROW[0].count) ? 0 : 1;
+    return (uint16_t)(SIGN_ROW[r].x
+                      + (i - SIGN_ROW[r].first) * SIGN_STRIDE_X);
+}
+
+/* The port's own, as sign_x above: the original never asks where plate i is,
+ * it just draws them in order. */
+static uint16_t sign_y(uint8_t i)
+{
+    return (i < SIGN_ROW[0].count) ? SIGN_ROW[0].y : SIGN_ROW[1].y;
+}
 
 /* The menu palette, transcribed from image 0x0E3C0 - sixteen 6-bit RGB
  * triples, in attribute-register order. It is a table in the executable, not
@@ -2121,6 +2134,98 @@ void draw_banner(uint8_t *dst, const uint8_t *font, uint32_t font_len,
 }
 
 
+/* ======================================================================
+ * THE THREE ROUTINES THAT COMPOSE THIS SCREEN - images 0x04EEF, 0x04F31 and
+ * 0x04EC2, transcribed.
+ *
+ * They replace constants that agreed with the original to the pixel and got
+ * its STRUCTURE wrong: six literal plate coordinates where the original runs
+ * two loops, and arithmetic progressions where it indexes tables. Both
+ * reproduced the screen exactly, which is why neither was ever questioned -
+ * and one of them, the rating's, had already been got backwards once.
+ *
+ * The call sites came from tools/probe_blits.py recording the far return
+ * address at the blitter's entry. Composing this screen from measured
+ * geometry had never found a single entry point.
+ * ====================================================================== */
+
+/* The plate sprites, image CS:0x4F8A - six words the original reads with
+ * `mov si, cs:[di]`. The port had SIGN_BASE + i * SIGN_STEP; that they happen
+ * to be 3,660 apart is a fact about this data, not about how it is read. */
+static const uint16_t SIGN_SPRITE[6] = {
+    38024, 41684, 45344, 49004, 52664, 56324,
+};
+
+/* The four rating names, image CS:0x4EE7, indexed `shl bx,1` by ds:0x1F6E.
+ * The stored words are 3,568 lower - the offset between section 4 and the
+ * segment the original blits from - added once here rather than carried
+ * through every constant.
+ *
+ * A table cannot be got backwards. The arithmetic version was, and stayed
+ * wrong at three of the four ratings until one of them could be reached. */
+static const uint16_t RATING_SPRITE[4] = {
+    22516 + 3568, 21544 + 3568, 20572 + 3568, 19600 + 3568,
+};
+
+/* Image 0x04EEF: TWO BLITS WITH LITERAL POSITIONS - the shadow at (0,20) with
+ * bp=0xF42, then the logo at (8,10) with bp=2. Not one position and a delta;
+ * the original never computes the second from the first. */
+static void draw_logo(uint8_t *dst, const uint8_t *sec)
+{
+    for (uint16_t sy = 0; sy < LOGO_H; sy++) {
+        uint16_t y = (uint16_t)(20 + sy);
+        if (y >= MENU_H) break;
+        for (uint16_t sx = 0; sx < LOGO_W; sx++) {
+            if (sx >= BG_DRAWN_W) break;
+            if (planar(sec, LOGO_BASE, LOGO_PLANE, LOGO_STRIDE, 4, sx, sy) & 8)
+                dst[(size_t)y * MENU_W + sx] = 0;
+        }
+    }
+    blit(dst, sec, LOGO_BASE, LOGO_W, LOGO_H, LOGO_STRIDE, LOGO_PLANE, 8, 10);
+}
+
+/* Image 0x04F4A, entered twice from 0x04F31: four plates from (68,120) and
+ * two from (196,197), each stepping `add ax, 0x80`. Per plate a shadow at
+ * (x-8, y+8) with bp=0xF43, then the sprite with bp=3. */
+static void draw_plate_row(uint8_t *dst, const uint8_t *sec, uint8_t first,
+                           uint8_t count, uint16_t x, uint16_t y)
+{
+    for (uint8_t i = 0; i < count; i++) {
+        uint32_t base = SIGN_SPRITE[first + i];
+        for (uint16_t sy = 0; sy < SIGN_H; sy++) {
+            uint16_t dy = (uint16_t)(y + 8 + sy);
+            if (dy >= MENU_H) break;
+            for (uint16_t sx = 0; sx < SIGN_W; sx++) {
+                int32_t dx = (int32_t)x - 8 + sx;
+                if (dx < 0 || dx >= BG_DRAWN_W) continue;
+                if (planar(sec, base, SIGN_PLANE, SIGN_STRIDE, 4, sx, sy) & 8)
+                    dst[(size_t)dy * MENU_W + (uint16_t)dx] = 0;
+            }
+        }
+        blit(dst, sec, base, SIGN_W, SIGN_H, SIGN_STRIDE, SIGN_PLANE, x, y);
+        x = (uint16_t)(x + 0x80);
+    }
+}
+
+/* Image 0x04EC2: ax=0x1E6, bx=0x91, dx=0x48, cx=0x41B - (486,145), 72 wide,
+ * 27 rows, four planes - from the table above. Opaque, because the name swaps
+ * and drawing one has to erase the last. */
+static void draw_rating(uint8_t *dst, const uint8_t *font, uint8_t rating)
+{
+    uint32_t base = RATING_SPRITE[rating & 3];
+    for (uint16_t sy = 0; sy < RATING_H; sy++) {
+        uint16_t y = (uint16_t)(RATING_Y + sy);
+        if (y >= MENU_H) break;
+        for (uint16_t sx = 0; sx < RATING_W; sx++) {
+            uint16_t x = (uint16_t)(RATING_X + sx);
+            if (x >= BG_DRAWN_W) break;
+            dst[(size_t)y * MENU_W + x] =
+                planar(font, base, RATING_PLANE, RATING_STRIDE, 4, sx, sy);
+        }
+    }
+}
+
+
 /* `rating` picks which of the four names goes on the plate: 0 Fun, 1 Tricky,
  * 2 Taxing, 3 Mayhem. ONLY RATING 0 IS VERIFIED - it is the one the original
  * shows on a fresh start, fitted at 100.00% over 1,760 ink pixels. The other
@@ -2186,66 +2291,11 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
                 planar(sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE, 2,
                        x % BG_W, y % BG_H);
 
-    /* The logo's DROP SHADOW, before the logo itself.
-     *
-     * The original blits a second 632x94 sprite - image 0x097F4, 7,426 bytes,
-     * the logo's exact size - into rows 20..113, ten rows below the logo and
-     * eight pixels left of it, in black. That is the black halo that had this
-     * project fitting seven models to it: keyed compositing was right all
-     * along, and there was simply another sprite underneath.
-     *
-     * Its source is a separate buffer (page 0x5F000), not the logo's own data,
-     * so this uses the logo's silhouette as a stand-in. That is a fit, not a
-     * transcription, and it is marked as one: 99.36% against the original's
-     * screen over the logo's rows, up from 93.80% with no shadow at all. The
-     * real shadow bitmap has not been located. */
-    for (uint16_t sy = 0; sy < LOGO_H; sy++) {
-        uint16_t y = (uint16_t)(LOGO_Y + LOGO_SHADOW_DY + sy);
-        if (y >= MENU_H) break;
-        for (uint16_t sx = 0; sx < LOGO_W; sx++) {
-            int32_t x = (int32_t)LOGO_X + LOGO_SHADOW_DX + sx;
-            if (x < 0 || x >= BG_DRAWN_W) continue;
-            if (planar(sec, LOGO_BASE, LOGO_PLANE, LOGO_STRIDE, 4, sx, sy) & 8)
-                m->pix[(size_t)y * MENU_W + (uint16_t)x] = 0;
-        }
-    }
-
-    blit(m->pix, sec, LOGO_BASE, LOGO_W, LOGO_H, LOGO_STRIDE, LOGO_PLANE,
-         LOGO_X, LOGO_Y);
-    /* The plates cast shadows too, and the same way: image 0x09128 writes into
-     * rows 128..188 while the plates occupy 120..180, and one byte to the
-     * left. Eight down, eight across. */
-    for (uint8_t i = 0; i < 6; i++)
-        for (uint16_t sy = 0; sy < SIGN_H; sy++) {
-            uint16_t y = (uint16_t)(SIGN_POS[i].y + SIGN_SHADOW_DY + sy);
-            if (y >= MENU_H) break;
-            for (uint16_t sx = 0; sx < SIGN_W; sx++) {
-                int32_t x = (int32_t)SIGN_POS[i].x + SIGN_SHADOW_DX + sx;
-                if (x < 0 || x >= BG_DRAWN_W) continue;
-                if (planar(sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
-                           SIGN_PLANE, SIGN_STRIDE, 4, sx, sy) & 8)
-                    m->pix[(size_t)y * MENU_W + (uint16_t)x] = 0;
-            }
-        }
-
-    for (uint8_t i = 0; i < 6; i++)
-        blit(m->pix, sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
-             SIGN_W, SIGN_H, SIGN_STRIDE, SIGN_PLANE,
-             SIGN_POS[i].x, SIGN_POS[i].y);
-
-    /* The rating name, over its plate. Opaque for the same reason the FX
-     * label is: it swaps, so drawing one rating has to erase the last. */
-    for (uint16_t sy = 0; sy < RATING_H; sy++) {
-        uint16_t y = (uint16_t)(RATING_Y + sy);
-        if (y >= MENU_H) break;
-        for (uint16_t sx = 0; sx < RATING_W; sx++) {
-            uint16_t x = (uint16_t)(RATING_X + sx);
-            if (x >= BG_DRAWN_W) break;
-            m->pix[(size_t)y * MENU_W + x] =
-                planar(font, RATING_OFF(rating),
-                       RATING_PLANE, RATING_STRIDE, 4, sx, sy);
-        }
-    }
+    draw_logo(m->pix, sec);                          /* image 0x04EEF */
+    for (uint8_t r = 0; r < 2; r++)                  /* image 0x04F31 */
+        draw_plate_row(m->pix, sec, SIGN_ROW[r].first, SIGN_ROW[r].count,
+                       SIGN_ROW[r].x, SIGN_ROW[r].y);
+    draw_rating(m->pix, font, rating);               /* image 0x04EC2 */
 
     /* The FX plate's label, which is not part of its plate bitmap - and which
      * is drawn OPAQUELY, unlike everything else on this screen.
@@ -2357,8 +2407,8 @@ void menu_hotspots(view_hotspot *spots)
      * Giving each plate its own box would be inventing behaviour the original
      * does not have, which is a worse kind of wrong than leaving it out. */
     for (uint8_t i = 0; i < 6; i++) {
-        spots[i].x = SIGN_POS[i].x;
-        spots[i].y = SIGN_POS[i].y;
+        spots[i].x = sign_x(i);
+        spots[i].y = sign_y(i);
         spots[i].w = 0;
         spots[i].h = 0;
         spots[i].key = SIGN_SPOT[i].key;
@@ -2373,8 +2423,8 @@ void menu_hotspots(view_hotspot *spots)
         { VIEW_KEY_MINUS,     MENU_RATING_DOWN },
     };
     for (uint8_t i = 0; i < 3; i++) {
-        spots[6 + i].x = SIGN_POS[3].x;
-        spots[6 + i].y = SIGN_POS[3].y;
+        spots[6 + i].x = sign_x(3);
+        spots[6 + i].y = sign_y(3);
         spots[6 + i].w = 0;
         spots[6 + i].h = 0;
         spots[6 + i].key = RATING_ALT[i].key;
