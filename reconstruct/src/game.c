@@ -1762,6 +1762,10 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * the scroll phase, and the fit is degenerate. The blitter's arguments are
  * not. */
 #define BAR_STRIP_X 48
+/* Image 0x07CC6 starts ds:0x21 at FOUR, not zero. This port counts its scroll
+ * from zero, so the original's variable is `scroll + 4` - and that four is the
+ * whole of what stood between a single-parameter model and the captures. */
+#define BAR_SCROLL_INIT 4
 #define BAR_Y0   334
 #define BAR_Y1   349
 #define BAR_TILE  23040       /* section 4: the bar's own 16x16 column */
@@ -1928,11 +1932,28 @@ static void draw_anim(uint8_t *dst, const uint8_t *gfx, uint32_t len)
  *
  *     Fun frame 14   Tricky 13   Taxing 15   Mayhem 2
  *
- * The frame does NOT follow the scroll. Fitting frame = scroll/4 + c gives a
- * consistent c for three captures and no c at all for the fourth, so the
- * lemmings run on a counter of their own. What that counter's rate is has not
- * been established, so the port advances one frame per displayed frame and
- * this is marked as a choice rather than a measurement. */
+ * THE FRAME FOLLOWS THE SCROLL, and this file said the opposite. The whole
+ * routine is image 0x07E2F, found by having tools/probe_blits.py record the
+ * far return address on the stack at the blitter's entry - which is how its
+ * caller was located at all:
+ *
+ *     mov si, 0x1c10        the left sprite's base
+ *     mov ax, [0x21]        the scroll offset
+ *     shr ax,1 / shr ax,1   scroll / 4 - one frame per step
+ *     and ax, 0x0f          sixteen of them
+ *     xchg al,ah            frame * 256
+ *     add si,ax
+ *     shr ax,1 / add si,ax  + frame * 128, so si += frame * 384
+ *     xor ax,ax / call      x = 0; the right one is si + 0x1800 and x = 0x250
+ *     dx=0x30 cx=0x410 bx=0x14e     48 wide, 16 rows, 4 planes, y = 334
+ *
+ * so frame = (scroll >> 2) & 15. Every constant MEASURED here was right - the
+ * 6,144 between the two sprites, the 384 a frame, the sixteen frames, both
+ * positions - and the one thing that was FITTED was wrong. The fit said
+ * "frame = scroll/4 + c has no consistent c, so the lemmings run on a counter
+ * of their own". It never had the information: a capture pins the scroll only
+ * modulo 16, and this needs it modulo 64. Underdetermined was read as
+ * independent. */
 #define LEM_W       48
 #define LEM_H       16
 #define LEM_STRIDE  6
@@ -2037,148 +2058,10 @@ static int scroll_pauses_at(uint32_t k)
  * zero differing - so the sprite's own black is what the original leaves
  * there, and keying it out would be inventing transparency.
  *
- * NOT TRANSCRIBED, address unknown. The two blits were found with
- * tools/probe_blits.py - x=0 and x=592, 48x16 - and their caller has not
- * been located.
- */
-static void draw_end_lemming(uint8_t *dst, const uint8_t *gfx, uint32_t len,
-                             uint32_t base, uint16_t at_x, uint8_t frame)
-{
-    uint32_t g = base + (uint32_t)(frame % LEM_FRAMES) * LEM_FRAME;
-    if (g + LEM_FRAME > len) return;
-    for (uint16_t r = 0; r < LEM_H; r++) {
-        uint16_t y = (uint16_t)(BAR_Y0 + r);
-        for (uint16_t c = 0; c < LEM_W; c++) {
-            uint16_t x = (uint16_t)(at_x + c);
-            if (x >= MENU_W) break;
-            dst[(size_t)y * MENU_W + x] =
-                planar(gfx, g, LEM_PLANE, LEM_STRIDE, 4, c, r);
-        }
-    }
-}
-
-/*
- * Transcribed from image 0x07CE6 (the strip blit, ax=0x30 bx=0x14E dx=0x230)
- * and image 0x07D54 (the four-bit shift). The tile is section 4 offset
- * 23040, the original's ds:0x4C10.
- */
-void draw_banner(uint8_t *dst, const uint8_t *font, uint32_t font_len,
-                 uint32_t scroll, uint8_t frame)
-{
-    for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++)
-        for (uint16_t x = 0; x < MENU_W; x++)
-            dst[(size_t)y * MENU_W + x] = 0;
-
-    for (uint16_t x = BAR_STRIP_X; x <= BAR_STRIP_X + 559; x++) {
-        /* Ribbon pixel, measured from where the STRIP starts. */
-        uint32_t r = scroll + (uint32_t)(x - BAR_STRIP_X);
-        uint16_t cx = (uint16_t)(r % BAR_TILE_W);
-        uint8_t ch = scroll_char((int32_t)(r / BAR_TILE_W) - BAR_COLS);
-        for (uint16_t y = BAR_Y0; y <= BAR_Y1; y++) {
-            uint16_t ty = (uint16_t)(y - BAR_Y0);
-            uint8_t v = planar(font, BAR_TILE, BAR_TILE_PLANE, 2, 4, cx, ty);
-            /* The glyph is masked over the tile, exactly as image 0x07DB7
-             * does it: mask plane clear means the tile shows through. A space
-             * has a glyph in the font but the original never draws it. */
-            if (ch != ' ') {
-                uint32_t g = FONT_BASE + (uint32_t)ch * FONT_GLYPH;
-                if (ch <= 126 && g + FONT_GLYPH <= font_len) {
-                    uint32_t o = g + (uint32_t)ty * 2 + (cx >> 3);
-                    uint8_t sh = (uint8_t)(7 - (cx & 7));
-                    if ((font[o + FONT_MASK_PLANE * FONT_PLANE] >> sh) & 1u)
-                        v = (uint8_t)((1u << FONT_MASK_PLANE)
-                                      | ((font[o] >> sh) & 1u)
-                                      | (((font[o + FONT_PLANE] >> sh) & 1u) << 1));
-                }
-            }
-            dst[(size_t)y * MENU_W + x] = v;
-        }
-    }
-
-    /* Last, and over the strip: their caps are the bar's own ends. */
-    draw_end_lemming(dst, font, font_len, LEM_L_BASE, LEM_L_X, frame);
-    draw_end_lemming(dst, font, font_len, LEM_R_BASE, LEM_R_X, frame);
-}
-
-
-/* `rating` picks which of the four names goes on the plate: 0 Fun, 1 Tricky,
- * 2 Taxing, 3 Mayhem. ONLY RATING 0 IS VERIFIED - it is the one the original
- * shows on a fresh start, fitted at 100.00% over 1,760 ink pixels. The other
- * three are the next three blocks at the same stride, which is the obvious
- * reading and is not the same as a checked one.
- *
- * The port's own composition. Every piece it draws is transcribed and
- * carries its address; the order it draws them in is measured, not read.
- */
-int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
-                      const char **err)
-{
-    memset(m, 0, sizeof(*m));
-
-    char path[1024];
-    snprintf(path, sizeof(path), "%s/main.dat", dir);
-    dat_file d;
-    if (dat_load(path, &d, err) != 0)
-        return -1;
-    if (d.count <= MENU_SECTION) {
-        dat_free(&d);
-        if (err) *err = "main.dat has no menu section";
-        return -1;
-    }
-    if (d.count <= FONT_SECTION) {
-        dat_free(&d);
-        if (err) *err = "main.dat has no font section";
-        return -1;
-    }
-    const uint8_t *sec = d.sections[MENU_SECTION].data;
-    uint32_t seclen = d.sections[MENU_SECTION].size;
-    const uint8_t *font = d.sections[FONT_SECTION].data;
-    uint32_t fontlen = d.sections[FONT_SECTION].size;
-    if (seclen < SIGN_BASE + 6u * SIGN_STEP) {
-        dat_free(&d);
-        if (err) *err = "menu section is shorter than the menu needs";
-        return -1;
-    }
-
-    m->pix = calloc((size_t)MENU_W * MENU_H, 1);
-    if (!m->pix) {
-        dat_free(&d);
-        if (err) *err = "out of memory";
-        return -1;
-    }
-    for (uint8_t i = 0; i < 16; i++) {
-        m->palette[i].r = widen6(MENU_PAL6[i * 3 + 0]);
-        m->palette[i].g = widen6(MENU_PAL6[i * 3 + 1]);
-        m->palette[i].b = widen6(MENU_PAL6[i * 3 + 2]);
-    }
-
-    /* The background, tiled from (0,0) - but only 632 pixels wide, NOT 640.
-     * The original leaves the last byte of each row black: it has no non-black
-     * pixel at all beyond x=635, while the left edge is drawn normally. Two
-     * tile blits of 40 and 39 bytes cover 0..631 and the rest stays as the
-     * screen clear left it.
-     *
-     * The vertical repeat of 104 does not divide 350, so the bottom tile is
-     * cut off mid-way, which is what the original shows too. */
-    for (uint16_t y = 0; y < MENU_H; y++)
-        for (uint16_t x = 0; x < BG_DRAWN_W; x++)
-            m->pix[(size_t)y * MENU_W + x] =
-                planar(sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE, 2,
-                       x % BG_W, y % BG_H);
-
-    /* The logo's DROP SHADOW, before the logo itself.
-     *
-     * The original blits a second 632x94 sprite - image 0x097F4, 7,426 bytes,
-     * the logo's exact size - into rows 20..113, ten rows below the logo and
-     * eight pixels left of it, in black. That is the black halo that had this
-     * project fitting seven models to it: keyed compositing was right all
-     * along, and there was simply another sprite underneath.
-     *
-     * Its source is a separate buffer (page 0x5F000), not the logo's own data,
-     * so this uses the logo's silhouette as a stand-in. That is a fit, not a
-     * transcription, and it is marked as one: 99.36% against the original's
-     * screen over the logo's rows, up from 93.80% with no shadow at all. The
-     * real shadow bitmap has not been located. */
+ * Transcribed from image 0x07E2F. The caller was found by having
+ * tools/probe_blits.py record the far return address on the stack at the
+ * blitter's entry - a pixel search had failed and a geometry fit had located
+ * the sprites without ever finding the code. */
     for (uint16_t sy = 0; sy < LOGO_H; sy++) {
         uint16_t y = (uint16_t)(LOGO_Y + LOGO_SHADOW_DY + sy);
         if (y >= MENU_H) break;
@@ -2253,7 +2136,12 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
     draw_text(m->pix, font, fontlen, CREDIT_2,
               CREDIT_2_CELL_X, CREDIT_2_CELL_Y);
     draw_anim(m->pix, font, fontlen);
-    draw_banner(m->pix, font, fontlen, menu_scroll, menu_lem_frame);
+    /* Image 0x07E2F derives the frame from the scroll; --lem-frame stays only
+     * so a single frame can be forced when comparing one capture. */
+    draw_banner(m->pix, font, fontlen, menu_scroll,
+                menu_lem_frame ? menu_lem_frame
+                : (uint8_t)(((menu_scroll + BAR_SCROLL_INIT) >> 2)
+                            & (LEM_FRAMES - 1)));
 
     /* Keep section 4 so the banner can be redrawn as it scrolls; menu_build
      * composes one frame and the strip moves. Failing to copy it is not fatal
@@ -2392,10 +2280,11 @@ static int banner_tick(void *ctx, uint8_t *pix)
     if ((next % BAR_TILE_W) == 0 && scroll_pauses_at(next / BAR_TILE_W))
         pause = BANNER_PAUSE;
     menu_set_scroll(next);
-    menu_lem_frame = (uint8_t)((menu_lem_frame + 1) % LEM_FRAMES);
     menu_anim_step();
     draw_anim(pix, m->gfx, m->gfx_len);
-    draw_banner(pix, m->gfx, m->gfx_len, next, menu_lem_frame);
+    draw_banner(pix, m->gfx, m->gfx_len, next,
+                (uint8_t)(((next + BAR_SCROLL_INIT) >> 2)
+                          & (LEM_FRAMES - 1)));
     return 1;
 }
 

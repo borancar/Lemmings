@@ -41,7 +41,7 @@ numbers, re-measured on the current build:
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 31 of
+**Transcription is a different claim from any of the above, and it is 32 of
 211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
@@ -642,6 +642,48 @@ Each of these is stated as what was *checked*, not what was written.
   wrong**, and no amount of further fitting was going to reach zero from 257.
   Reading the routine took less time than the fitting did.
 
+- **Drawing a screen from a spec loses the call graph — and hides an
+  overfit.** Boran's point, and it is the sharpest correction of the session.
+
+  This port composed the menu from *measured geometry*: every position, size
+  and offset fitted against captures until the screen matched. It reached
+  100.00% and left **184 of 211 call targets never reached**, because nothing
+  in that process ever followed the original's control flow. A transcription
+  hands you its callees; a spec hands you a picture.
+
+  So `tools/probe_blits.py` now records the **far return address on the stack**
+  at the blitter's entry — the `lcall` pushes `CS:IP`, and reading it turns a
+  list of rectangles into a call graph. **Twelve call sites**, immediately, and
+  one of them was `draw_end_lemming`'s, which had been marked *"address
+  unknown"* after both a pixel search and a geometry fit had failed to find it.
+
+  Reading image `0x07E2F` then overturned something this file had asserted:
+
+      mov si, 0x1c10 / mov ax,[0x21] / shr ax,1 / shr ax,1
+      and ax, 0x0f / xchg al,ah / add si,ax / shr ax,1 / add si,ax
+
+  **`frame = (scroll >> 2) & 15`.** `STATUS.md` had said the opposite — *"the
+  frame does NOT follow the scroll… the lemmings run on a counter of their
+  own"* — on the strength of a fit that never had the information: a capture
+  pins the scroll only modulo 16, and this needs it modulo 64. Underdetermined
+  was read as independent.
+
+  **And that is how the overfit surfaced.** The port had been scoring
+  **0 differing at every rating** using an *independent* frame — two free
+  parameters where the original has one. With the true single parameter it
+  scored 66–120, and the residue was entirely inside the two lemmings. Solving
+  all four captures at once (the dash has period **8**, so only `scroll mod 8`
+  is observable) gave one consistent constant: `frame = ((scroll + 4) >> 2) &
+  15`. **Four is `ds:0x21`'s initial value**, image `0x07CC6`, which this port
+  counts from zero.
+
+  With it: **0 differing at all four ratings, on one parameter**, and the
+  frames come out 14, 13, 15 and 2 — exactly the ones measured a session ago.
+
+  The lesson is not that the fit was sloppy. It matched four captures to the
+  pixel. It is that **a spare parameter buys a perfect score and hides a wrong
+  model**, and only the code says how many parameters there are supposed to be.
+
 - **The transcription debt: six down to two, and four of them were not debts
   at all.** Working the list found that in four cases *there is nothing to
   transcribe*, which is a better answer than a transcription:
@@ -1076,7 +1118,7 @@ port:
 
 | | |
 | --- | --- |
-| routines transcribed | 31 (`make test` enforces the count) |
+| routines transcribed | 32 (`make test` enforces the count) |
 | routines proven (ran, did work, agreed) | 7 |
 | routines shallow (agreed, but every call was an early return) | 0 |
 | routines differing | 0 |

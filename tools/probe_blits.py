@@ -58,7 +58,8 @@ def install(m):
     from unicorn.x86_const import (UC_X86_REG_AX as RAX, UC_X86_REG_BX as RBX,
                                    UC_X86_REG_CX as RCX, UC_X86_REG_DX as RDX,
                                    UC_X86_REG_SI as RSI, UC_X86_REG_DI as RDI,
-                                   UC_X86_REG_BP as RBP, UC_X86_REG_DS as RDS)
+                                   UC_X86_REG_BP as RBP, UC_X86_REG_DS as RDS,
+                                   UC_X86_REG_SS as RSS, UC_X86_REG_SP as RSP)
     base = m.load_seg * 16
     out_path = os.environ["LEM_BLITS_OUT"]
     y0, y1 = (int(v) for v in os.environ.get("LEM_BLITS_ROWS", "0 349").split())
@@ -73,9 +74,19 @@ def install(m):
         ds = uc.reg_read(RDS) * 16
         srcseg = int.from_bytes(uc.mem_read(ds + 0x1FE4, 2), "little")
         cx = uc.reg_read(RCX)
+        # WHO CALLED. The blitter is entered by `lcall`, so the far return
+        # address is on the stack: IP at [SP], CS at [SP+2]. Recording it is
+        # the whole difference between a list of rectangles and a call graph -
+        # composing this port's screens from measured geometry produced a
+        # pixel-exact menu and left 184 of 211 call targets never reached,
+        # because nothing here ever followed the original's control flow.
+        sp = uc.reg_read(RSS) * 16 + uc.reg_read(RSP)
+        rip = int.from_bytes(uc.mem_read(sp, 2), "little")
+        rcs = int.from_bytes(uc.mem_read(sp + 2, 2), "little")
+        caller = rcs * 16 + rip - base
         key = (uc.reg_read(RAX), bx, cx & 0xFF, (cx >> 8) & 0xFF,
                uc.reg_read(RDX), srcseg, uc.reg_read(RSI), uc.reg_read(RDI),
-               uc.reg_read(RBP))
+               uc.reg_read(RBP), caller)
         seen[key] = seen.get(key, 0) + 1
 
     m.uc.hook_add(HC, at)
@@ -129,12 +140,18 @@ def main():
         with open(cap) as f:
             rows = json.load(f)
         print(f"\n  {len(rows)} distinct blits into rows {y0}..{y1}\n")
-        print("     x    y  rows planes  width   srcseg     si   mask   bp"
-              "   calls")
+        print("     x    y  rows planes  width   srcseg     si   bp   calls"
+              "   CALLED FROM")
         for k, n in rows:
-            ax, by, r, pl, dx, seg, si, mask, bp = k
+            ax, by, r, pl, dx, seg, si, mask, bp, caller = k
             print(f"  {ax:4d} {by:4d}  {r:4d} {pl:6d} {dx:6d}  "
-                  f"{seg:#07x} {si:#06x} {mask:#06x} {bp:#04x} {n:7d}")
+                  f"{seg:#07x} {si:#06x} {bp:#04x} {n:6d}   "
+                  f"image {caller - 5:#07x}")
+        from collections import Counter
+        c = Counter(k[9] - 5 for k, n in rows)
+        print(f"\n  {len(c)} distinct call sites into the blitter:")
+        for site, n in sorted(c.items()):
+            print(f"    image {site:#07x}   {n} distinct blits")
         return 0
 
     set_game_dir(lemmings.GAME_DIR)
