@@ -266,3 +266,19 @@ loader tests something else with it further on. Unread, and said so.
 **So this is the full game — 120 levels across four ratings**, not a demo. The
 file order is not the game's order, which is why the port takes `--rating` and
 `--number` and resolves them through this table.
+
+## The FX plate's label
+
+The plate bitmaps carry their own lettering — "1 PLAYER", "NEW LEVEL", "FUN" —
+except the FX one, which is blank in section 3 because its label swaps.
+
+Section 3's last **1,984 bytes** are two 64×31 sprites of four planes each:
+8 × 31 = 248 bytes a plane, 992 a sprite, plane-major. **Sprite 1 is the "FX"
+lettering** the menu shows; sprite 0 is what it swaps to. That accounts for the
+whole of section 3 — background, logo, six plates, two labels — with nothing
+left over.
+
+It is drawn at **(351, 146)**, which is *not* byte-aligned, and that alone is
+the difference between 92.74% and **100.00%**: sweeping candidate positions in
+steps of 8 finds a convincing-looking best fit, and sweeping single pixels
+finds the real one — 1,654 ink pixels, none differing.

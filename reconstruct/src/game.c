@@ -898,6 +898,28 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define SIGN_PLANE  915
 #define SIGN_STEP   3660
 
+/* The FX plate's label, and its alternate.
+ *
+ * Section 3's last 1,984 bytes are TWO 64x31 sprites of four planes each -
+ * 8 x 31 = 248 a plane, 992 a sprite, plane-major. Sprite 1 is the "FX"
+ * lettering the menu shows; sprite 0 is what it swaps to, which is why the
+ * plate's own bitmap has no label baked in while the others do.
+ *
+ * Drawn at (351,146), which is NOT byte-aligned - and that is the whole
+ * difference between 92.74% and 100.00%. A sweep in steps of 8 found the
+ * best aligned position and looked convincing; sweeping single pixels found
+ * the real one, 1,654 ink pixels with none differing.
+ */
+#define LABEL_BASE   59984
+#define LABEL_W      64
+#define LABEL_H      31
+#define LABEL_STRIDE 8
+#define LABEL_PLANE  (LABEL_STRIDE * LABEL_H)
+#define LABEL_SPRITE (LABEL_PLANE * 4)
+#define LABEL_FX     1        /* sprite 1 is "FX"; 0 is the alternate */
+#define LABEL_X      351
+#define LABEL_Y      146
+
 static const struct { uint16_t x, y; } SIGN_POS[6] = {
     {  68, 120 },   /* F1  1 PLAYER   */
     { 196, 120 },   /* F2  NEW LEVEL  */
@@ -1419,6 +1441,10 @@ int menu_build(const char *dir, menu_screen *m, const char **err)
         blit(m->pix, sec, SIGN_BASE + (uint32_t)i * SIGN_STEP,
              SIGN_W, SIGN_H, SIGN_STRIDE, SIGN_PLANE,
              SIGN_POS[i].x, SIGN_POS[i].y);
+
+    /* The FX plate's label, which is not part of its plate bitmap. */
+    blit(m->pix, sec, LABEL_BASE + LABEL_FX * LABEL_SPRITE,
+         LABEL_W, LABEL_H, LABEL_STRIDE, LABEL_PLANE, LABEL_X, LABEL_Y);
 
     draw_text(m->pix, font, fontlen, CREDIT_1, CREDIT_1_Y);
     draw_text(m->pix, font, fontlen, CREDIT_2, CREDIT_2_Y);

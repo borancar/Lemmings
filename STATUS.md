@@ -232,6 +232,17 @@ Each of these is stated as what was *checked*, not what was written.
   is only one rating here" — and that reasoning had to be checked before it
   could be written down.
 
+- **The FX plate's label is drawn, and section 3 is now fully accounted for.**
+  Its lettering is not in the plate's bitmap — the plate is blank because the
+  label swaps. Section 3's last **1,984 bytes** are two 64×31 four-plane
+  sprites, 992 bytes each; sprite 1 is "FX" and sprite 0 is its alternate. At
+  **(351,146)** it matches **100.00%** — 1,654 ink pixels, none differing.
+
+  The pixel that mattered: sweeping positions in steps of 8 gives a
+  convincing-looking 92.74%, and it is wrong. The label is drawn one pixel off
+  byte alignment. A sweep whose step size matches the data's natural alignment
+  will confidently find the wrong answer.
+
 ## Open
 
 - ~~**The pixel comparison now runs, and the port is 79.99% right.**~~
@@ -360,9 +371,10 @@ Each of these is stated as what was *checked*, not what was written.
   where the colour appears only where `(x & 7) >= 4` — 499/500 and 495/500 over
   x 100–600, the misses being the scrolling text passing through.
 
-  With that, **the whole menu is composed: 95.04% over all 224,000 pixels with
-  nothing excluded**, up from 91.28% and from a 95.26% that had the banner
-  scored out. A better number over a bigger area.
+  With that, and with the FX plate's label (below), **the whole menu is
+  composed: 95.21% over all 224,000 pixels with nothing excluded**, up from
+  91.28% and from a 95.26% that had the banner scored out. A better number over
+  a bigger area.
 
   What the three shapes in those rows are, which is how the fill was found:
 
