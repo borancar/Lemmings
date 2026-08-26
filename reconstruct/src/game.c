@@ -3364,34 +3364,36 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * main.dat for them. Searching the file for the GEOMETRY instead had failed
  * repeatedly: eight coherent 52-byte frames match thousands of offsets, and
  * the best of them were not it. */
-/* THE BUILDER'S SPRITE IS NOT FOUND, and this says so rather than carry a
- * number that looks measured.
+/* THE BUILDER'S SPRITE - image 0x032FB names the shape, and WHERE was found
+ * by lifting the original's own pixels off a captured frame.
  *
- * Image 0x032FB names the SHAPE and that much is certain: image 0x03300
- * gives it 0x68 = 104 bytes a frame with image 0x03305 putting the mask
- * 0x4E = 78 in, so the colour is 78 bytes - thirteen rows of two in three
- * planes - the way the digger's is 84 and the exit's 52.
+ * The shape is read: image 0x03300 gives it 0x68 = 104 bytes a frame with
+ * image 0x03305 putting the mask 0x4E = 78 in, so the colour is 78 bytes -
+ * thirteen rows of two in three planes - the way the digger's is 84.
  *
- * WHERE those frames are is the open question. Two attempts failed and both
- * are worth recording, because the second is the honest one:
+ * The offset is measured, and the two wrong turns are worth keeping.
  *
  *   The sprites are consecutive - the walker is 18 frames of 40 from 0, so
  *   the digger starts at 720 and its 16 frames of 84 end at 2064 - and 2064
  *   decodes as a perfectly plausible lemming. Wiring it in changed the
- *   comparison by NOTHING: still 200 of 400 frames exact. A shape that looks
- *   right is not evidence.
+ *   comparison by NOTHING. Every frame of every sprite in this file looks
+ *   like a lemming; looking right is not evidence.
  *
- *   So the builder's actual pixels were lifted off the original's own frame
- *   130, where the record puts it at (796, 94) with hot spot (-8, -13) - a
- *   16x13 block at screen (148, 65) - and every offset in section 0 was
- *   tried as a 16x13 frame in three planes. NONE is consistent with it. So
- *   the layout is not what the digger's and the exit's are, or the frames
- *   are not in section 0 at all.
+ *   Then the original's own pixels were lifted off frame 130 - the record
+ *   puts the builder at (796, 94) with hot spot (-8, -13), so its 16x13 is
+ *   at screen (148, 65) - and every offset tried against them. NONE matched,
+ *   which read as "not in this section". It was the CURSOR: the script parks
+ *   the pointer on the lemming it clicked, so its box sits over the sprite
+ *   and about thirty pixels can never agree. Demanding a perfect match threw
+ *   the right answer away.
  *
- * Until that is settled the port draws a builder as a walker, which is
- * visibly wrong and which the comparison reports: every RECORD agrees on all
- * 400 frames while the screens agree on 200. */
-#define BUILD_SPR_BASE  2064
+ * Scoring instead of demanding gives 4240, and it holds across five
+ * different animation frames - 0, 1, 2, 2 and 0 pixels disagreeing, every
+ * one of them under the cursor. The method was checked on the digger first,
+ * whose offset is already known: it comes back 720 with 2 disagreeing, also
+ * the cursor.
+ */
+#define BUILD_SPR_BASE  4240
 #define BUILD_SPR_W     16
 #define BUILD_SPR_H     13
 #define BUILD_SPR_PLANES 3
@@ -3437,6 +3439,32 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                 for (uint8_t p = 0; p < EXIT_SPR_PLANES; p++) {
                     uint8_t byte = sec[base + p * EXIT_SPR_PLANE
                                        + r * EXIT_SPR_ROW + (c >> 3)];
+                    v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                }
+                if (v) dst[(size_t)py * dst_w + px] = v;
+            }
+        }
+        return;
+    }
+
+    /* A builder has its own too - see BUILD_SPR_BASE. Its counter runs to
+     * sixteen, image 0x02698's `and al, 0x0F`. */
+    if (a->flags & 0x0080) {
+        if (a->anim >= BUILD_SPR_FRAMES) return;
+        base = BUILD_SPR_BASE + (uint32_t)a->anim * BUILD_SPR_FRAME;
+        if (base + BUILD_SPR_FRAME > sec_len) return;
+        x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+        y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+        for (uint8_t r = 0; r < BUILD_SPR_H; r++) {
+            int32_t py = y0 + r;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            for (uint8_t c = 0; c < BUILD_SPR_W; c++) {
+                int32_t px = x0 + c;
+                uint8_t v = 0;
+                if (px < 0 || px >= (int32_t)dst_w) continue;
+                for (uint8_t p = 0; p < BUILD_SPR_PLANES; p++) {
+                    uint8_t byte = sec[base + p * BUILD_SPR_PLANE
+                                       + r * BUILD_SPR_ROW + (c >> 3)];
                     v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
                 }
                 if (v) dst[(size_t)py * dst_w + px] = v;

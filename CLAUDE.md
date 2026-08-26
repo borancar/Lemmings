@@ -275,31 +275,35 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
-## A sprite that looks right is not a sprite that is right
+## Finding a sprite: score it, and check the scorer on one you know
 
 The builder's frames had to be found in MAIN.DAT the way the digger's and the
-exit's were. The sprites sit consecutively - the walker is 18 frames of 40
-from 0, so the digger starts at 720 and its 16 frames of 84 end at 2064 - and
-2064 decodes as a perfectly plausible lemming. It was the obvious answer and
-it was wrong: wiring it in changed the frame comparison by **nothing**, still
-200 of 400 exact.
+exit's were, and it took three attempts.
 
-What settles a sprite is the original's own pixels. The record says where the
-builder is - frame 130, record (796, 94), hot spot (-8, -13) - which puts its
-16x13 at screen (148, 65), so the block can be lifted straight off the
-captured frame and every offset in the section tried against it. None matched,
-which is a real answer too: the layout is not the digger's, or the frames are
-not in that section.
+**A shape that looks right is not evidence.** The sprites sit consecutively -
+the walker is 18 frames of 40 from 0, so the digger starts at 720 and its 16
+frames of 84 end at 2064 - and 2064 decodes as a perfectly plausible lemming.
+Wiring it in changed the comparison by nothing. Every frame of every sprite
+in this file looks like a lemming.
 
-So: **decode a candidate and compare it with the original, never with your
-expectation of what a lemming looks like.** Every frame of every sprite in
-this file looks like a lemming.
+**Lift the original's own pixels.** The record says where a lemming is, so its
+sprite's rectangle on a captured frame is known exactly: frame 130, record
+(796, 94), hot spot (-8, -13), which puts its 16x13 at screen (148, 65). Then
+try every offset in the section against those pixels.
 
-And a number that was guessed must not be left in wearing the word
-"measured". The port draws a builder as a walker until this is settled, which
-is visibly wrong and which the comparison reports - every record agreeing on
-400 frames while the screens agree on 200 is the two halves of the method
-saying different things, and that is exactly when to believe both.
+**But do not demand a perfect match, and this is where a whole round went.**
+Every offset failed, which read as "the frames are not in this section". It
+was the CURSOR - the input script parks the pointer on the lemming it
+clicked, so the cross-hair's box sits over the sprite and about thirty pixels
+can never agree. Scoring instead of demanding gives the answer at once, and
+it holds across five different animation frames with 0, 1, 2, 2 and 0 pixels
+disagreeing, every one of them under the cursor.
+
+**Check the scorer on a sprite whose offset is already known** before
+believing what it says about one that is not. Run it against the digger and
+it comes back 720 with two pixels disagreeing - the same cursor. That is what
+turns "no offset matched" from a fact about the file into a fact about the
+search.
 
 ## The dispatch is not the only thing that dispatches
 
