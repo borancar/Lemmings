@@ -33,6 +33,7 @@ DIG_BTN_X = 8 + 9 * 16 + 8
 DIG_BTN_Y = 190
 
 WAIT = 90               # frames to let some lemmings walk out first
+EXIT_WAIT = 900         # long enough for one to dig down and walk out
 
 
 def r_anim_ok(r):
@@ -218,7 +219,28 @@ def install(m):
                       f"under[0x58]={w(0x58) & 0xffff:#06x}\n")
             out.flush()
 
-        if st["n"] > WAIT + 150:
+        # AND THE EXIT. probe_exit.py has its own assignment logic and it
+        # has failed to land three runs running; this one assigns reliably,
+        # so the exit watch lives here too. On the first lemming to enter,
+        # dump the sprite the store holds for it - image 0x02F4C writes the
+        # base into [si+0x0C], and image 0x07112 turns that into an address
+        # as ([0x1FE6] + base) * 16.
+        if not st.get("exit_dump"):
+            for i in range(n):
+                oo = ARRAY + i * REC
+                if (w(oo + 8) & 0xFFFF) == 0x2000:
+                    seg = int.from_bytes(uc.mem_read(ds + 0x1FE6, 2), "little")
+                    bse = w(oo + 0x0C) & 0xFFFF
+                    raw = bytes(uc.mem_read((seg + bse) * 16, 78))
+                    out.write(f"\n  A LEMMING LEFT at frame {st['n']}, "
+                              f"record ({w(oo)}, {w(oo + 2)})\n"
+                              f"  its sprite, store {seg:#06x}+{bse:#06x}, "
+                              f"78 bytes: {raw.hex()}\n")
+                    out.flush()
+                    st["exit_dump"] = 1
+                    break
+
+        if st["n"] > EXIT_WAIT:
             st["shaft"] = shaft(uc, ds)
             out.close()
             raise SystemExit(0)

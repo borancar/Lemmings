@@ -590,6 +590,31 @@ int main(int argc, char **argv)
         }
     }
 
+    /* The EXIT's sprite, against the bytes the original was reading. The
+     * store frame captured mid-exit begins 00 00 00 00, and its 52 bytes of
+     * colour sit at section 0 + 16816 - found by searching main.dat for the
+     * exact bytes, not by dividing anything. */
+    {
+        char p8[1024];
+        dat_file d8;
+        const char *e8 = "unknown error";
+        snprintf(p8, sizeof p8, "%s/main.dat", dir);
+        if (dat_load(p8, &d8, &e8) == 0 && d8.count > 0
+                && d8.sections[0].size >= 16816 + 52) {
+            const uint8_t *x = d8.sections[0].data + 16816;
+            /* Row 4 of frame 0 reads .....2222....... - two planes, two
+             * bytes a row, thirteen rows. */
+            uint8_t v = 0;
+            for (uint8_t p = 0; p < 2; p++) {
+                uint8_t byte = x[p * 26 + 4 * 2 + (5 >> 3)];
+                v = (uint8_t)(v | (((byte >> (7 - (5 & 7))) & 1u) << p));
+            }
+            ck("the exit sprite is where the guest read it", v == 2,
+               "section 0 + 16816 is not the leaving animation");
+            dat_free(&d8);
+        }
+    }
+
     /* The digger's SPRITE, against the bytes the original was reading.
      *
      * tools/probe_digger.py caught the guest mid-dig and followed image

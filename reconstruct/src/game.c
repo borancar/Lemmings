@@ -1320,7 +1320,9 @@ int level_at_exit(const lemming *a, const level *lv, const ground *g)
 #define EXIT_BIT 0x2000
 #define EXIT_FRAMES 8
 
-/* THE ANIMATION IS NOT DRAWN, and here is what is known about it.
+/* THE ANIMATION IS DRAWN NOW - see EXIT_SPR_BASE. What follows is how it
+ * was found, because two of the three routes to it were dead ends.
+ *
  *
  * The assignment writes the sprite's fields along with the state, so its
  * shape is not in doubt: image 0x02F51 gives it 0x4E = 78 bytes a frame and
@@ -2137,6 +2139,29 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
 #define DIG_SPR_FRAME   (DIG_SPR_PLANE * DIG_SPR_PLANES)     /* 84 */
 #define DIG_SPR_FRAMES  16
 
+/* THE EXIT'S SPRITE - main.dat section 0, offset 16816, and measured the
+ * same way the digger's was.
+ *
+ * Image 0x02F51 gives the state 0x4E = 78 bytes a frame and image 0x02F56
+ * puts the mask at 0x34 = 52, so by the store's formula it is two colour
+ * planes over thirteen rows of two bytes with a mask plane on top. The FILE
+ * holds the 52 bytes of colour, which is why the mask comes out as exactly
+ * the ink - and why this port's "any plane set" rule draws it correctly.
+ *
+ * The bytes were found by capturing what the guest reads at
+ * ([0x1FE6] + [si+0x0C]) * 16 while a lemming was leaving, and searching
+ * main.dat for them. Searching the file for the GEOMETRY instead had failed
+ * repeatedly: eight coherent 52-byte frames match thousands of offsets, and
+ * the best of them were not it. */
+#define EXIT_SPR_BASE   16816
+#define EXIT_SPR_W      16
+#define EXIT_SPR_H      13
+#define EXIT_SPR_PLANES 2
+#define EXIT_SPR_ROW    2
+#define EXIT_SPR_PLANE  (EXIT_SPR_ROW * EXIT_SPR_H)             /* 26 */
+#define EXIT_SPR_FRAME  (EXIT_SPR_PLANE * EXIT_SPR_PLANES)      /* 52 */
+#define EXIT_SPR_FRAMES 8
+
 /* One lemming, at its own coordinates - image 0x070F9 puts the top row at
  * `y + hot_y`, and the canvas sits 16 along and 16 down from those. */
 void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
@@ -2147,6 +2172,31 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     int32_t x0, y0;
 
     if (a->alive == 0xFF) return;
+
+    /* One leaving through the exit, image 0x02326's eight frames. */
+    if (a->flags & 0x2000) {
+        if (a->anim >= EXIT_SPR_FRAMES) return;
+        base = EXIT_SPR_BASE + (uint32_t)a->anim * EXIT_SPR_FRAME;
+        if (base + EXIT_SPR_FRAME > sec_len) return;
+        x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+        y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+        for (uint8_t r = 0; r < EXIT_SPR_H; r++) {
+            int32_t py = y0 + r;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            for (uint8_t c = 0; c < EXIT_SPR_W; c++) {
+                int32_t px = x0 + c;
+                uint8_t v = 0;
+                if (px < 0 || px >= (int32_t)dst_w) continue;
+                for (uint8_t p = 0; p < EXIT_SPR_PLANES; p++) {
+                    uint8_t byte = sec[base + p * EXIT_SPR_PLANE
+                                       + r * EXIT_SPR_ROW + (c >> 3)];
+                    v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                }
+                if (v) dst[(size_t)py * dst_w + px] = v;
+            }
+        }
+        return;
+    }
 
     /* A digger has its own sprite, its own size and its own place in the
      * file - see DIG_SPR_BASE. */

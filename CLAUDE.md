@@ -253,6 +253,27 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
+## A run that reaches the exit takes longer than a command may run
+
+Three attempts at `tools/probe_exit.py` reported **"0 lemmings reached it"**,
+and each time that read as a fact about the game: the digger would not assign,
+the click was mistimed, the probe was flaky. It was none of those. The runs
+were being killed at a ten-minute ceiling on how long a single command may
+take, and the file they left behind said only what they had managed before
+being cut off.
+
+Reaching the exit on "Just dig!" needs a lemming to be given a digger, the
+shaft to break through, the lemming to fall and then walk the lower ledge to
+the far side. That is several hundred game frames, and the emulator runs at a
+few frames a second.
+
+So: **a probe that has to play a level for minutes must run in the
+background**, not inside a command with a timeout. And a probe that finds
+nothing must be able to say whether it finished - "0 lemmings reached it"
+after being killed is not a measurement, and it cost three rounds here of
+treating an instrument's limit as the subject's behaviour. The same rule this
+file already states about stale captures applies to truncated runs.
+
 ## A test written from the same reading as the code proves nothing
 
 `level_lemming_at` was sixteen pixels wrong and its unit test passed. Both
