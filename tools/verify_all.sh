@@ -94,6 +94,16 @@ else
         --dir out/verify_screen 2>/dev/null | tail -4
 fi
 
+# PACE. Every check above compares pictures; none of them can see how long a
+# frame lasts, and a port at four times speed matches all 5,100 of them.
+say ""
+say "  pace, which no picture comparison can see:"
+if uv run python tools/verify_pace.py 2>/dev/null | tail -3; then
+    :
+else
+    fail=1
+fi
+
 say ""
 if [ $fail = 0 ]; then
     say "  everything above ran. Read the numbers, not this line."
