@@ -269,6 +269,12 @@ void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * 0x07A25 and 0x07A39; where it sits is measured. */
 #define MINIMAP_AT_X 241
 #define MINIMAP_AT_Y 17
+/* The minimap's viewport box - 24 minimap pixels wide at scroll >> 4.
+ * Transcribed from image 0x07A5A. */
+#define VIEWPORT_AT_Y 18
+void panel_viewport(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                    uint16_t scroll, uint16_t x0, uint16_t y0);
+
 void panel_minimap(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                    const uint8_t *canvas, uint16_t cw, uint16_t chh,
                    uint16_t x0, uint16_t y0);

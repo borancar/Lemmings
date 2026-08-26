@@ -288,6 +288,10 @@ static int render_level(const char *data, const char *file, uint32_t which,
                                 PANEL_SEL_BUTTON);
                 panel_minimap(pp, PANEL_LINE_W, PANEL_ART_H,
                               c.pix, c.w, c.h, MINIMAP_AT_X, MINIMAP_AT_Y);
+                /* The port does not scroll yet, so the view is where the
+                 * level says it starts. */
+                panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, lv.start_x,
+                               MINIMAP_AT_X, VIEWPORT_AT_Y);
                 /* The status line is NOT drawn. It belongs sixteen rows down
                  * - screen row 176, which is PANEL_BASE / PANEL_STRIDE - but
                  * what writes the counts into the template has not been read,

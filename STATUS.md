@@ -1006,6 +1006,18 @@ Each of these is stated as what was *checked*, not what was written.
   original's copy does - rubs out part of the artwork's frame: 232 differing
   against 137 for ink alone. Until that is read, only the ink is drawn.
 
+- **The minimap's viewport box, image 0x07A5A.** `di = [0] >> 7` puts it at
+  the scroll in minimap bytes, `Enable Set/Reset 0x0C` makes a written bit
+  colour 3, and `cx:bx = 0xFFFF:0xFF00` is a **24-bit** run shifted right by
+  `([0] >> 4) & 7`. Twenty-four minimap pixels - not the twenty that 320
+  screen pixels come to at this scale - and there is no arithmetic behind the
+  24 to get wrong; it is the mask's own width.
+
+  With the scroll at 624, `624 >> 4` is 39, so the box starts at minimap pixel
+  39, which is screen x **248** - and 248..271 is exactly where two separate
+  recorded frames put it, solid top and bottom with a single pixel down each
+  side.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
   game frame):
@@ -1013,10 +1025,13 @@ Each of these is stated as what was *checked*, not what was written.
   | frames | play area | panel |
   | --- | --- | --- |
   | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
-  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 98.26 / **98.92** / 99.04% |
+  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 98.91 / **99.58** / 99.70% |
 
-  The panel's remaining 137 pixels are the minimap's viewport box and the
-  lemming dots on it - both of which need the lemmings.
+  **The panel's remaining 53 pixels are the lemming dots on the minimap.**
+  Everything still outstanding - those, and the play area's half a per cent -
+  is now the lemming simulation: the 45-byte records at `ds:0x88` walked by
+  image 0x03634, drawn by image 0x0706F and plotted on the map by image
+  0x06FE2.
 
   Over 700 frames the play area falls from 99.86% to about 99.34% and then
   **flattens** - that is the ten lemmings coming out one by one and then

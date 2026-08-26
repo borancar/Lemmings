@@ -1247,6 +1247,49 @@ void level_status_in(uint8_t percent)
  * 104-pixel span - which the original's copy does - rubs out part of the
  * artwork's frame. Until that is read, only the ink is drawn.
  * ====================================================================== */
+#define VIEWPORT_W   24      /* image 0x07AAC: cx:bx = 0xFFFF:0xFF00 */
+#define VIEWPORT_H   20
+#define VIEWPORT_INK  3      /* image 0x07A91: Enable Set/Reset 0x0C */
+#define VIEWPORT_Y   18      /* screen row 178 */
+
+/* THE MINIMAP'S VIEWPORT BOX - image 0x07A5A.
+ *
+ *     di = [0] >> 7                   the scroll, in minimap BYTES
+ *     di += 0x2172 + [0x1f76] + 2     the minimap's own base
+ *     Enable Set/Reset 0x0C           so a written bit is colour 3
+ *     cx = 0xFFFF / bx = 0xFF00       a 24-bit run...
+ *     ax = ([0] >> 4) & 7             ...shifted right by the sub-byte part
+ *     shr cx,1 / rcr bx,1             of the scroll, `ax` times
+ *
+ * So it is 24 minimap pixels wide - not the 20 that 320 screen pixels come to
+ * at this scale - starting at `scroll >> 4`. The 24 is the mask's own width
+ * and there is no arithmetic behind it to get wrong.
+ *
+ * Checked against recorded frames: with the scroll at 624, 624 >> 4 is 39, so
+ * the box starts at minimap pixel 39, which is screen x 248 - and 248..271 is
+ * exactly where two separate frames put it, with solid top and bottom rows and
+ * a single pixel down each side.
+ */
+void panel_viewport(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                    uint16_t scroll, uint16_t x0, uint16_t y0)
+{
+    uint16_t bx0 = (uint16_t)(x0 + (scroll >> 4));
+    for (uint16_t r = 0; r < VIEWPORT_H; r++) {
+        uint16_t y = (uint16_t)(y0 + r);
+        if (y >= dst_h) break;
+        if (r == 0 || r == VIEWPORT_H - 1) {
+            for (uint16_t c = 0; c < VIEWPORT_W; c++)
+                if (bx0 + c < dst_w)
+                    dst[(size_t)y * dst_w + bx0 + c] = VIEWPORT_INK;
+        } else {
+            if (bx0 < dst_w)
+                dst[(size_t)y * dst_w + bx0] = VIEWPORT_INK;
+            if (bx0 + VIEWPORT_W - 1 < dst_w)
+                dst[(size_t)y * dst_w + bx0 + VIEWPORT_W - 1] = VIEWPORT_INK;
+        }
+    }
+}
+
 /* Transcribed from images 0x0796F, 0x07A25 and 0x07A39 - see the note above.
  * Built and drawn in one pass: the original's rolling column, ds:0x56 at
  * image 0x0797D, is a way of spreading the cost over thirteen frames and not
