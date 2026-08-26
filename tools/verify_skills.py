@@ -33,6 +33,7 @@ SKILLS = [
     (5, "blocker", "ref_s5",  "out/s5.txt", 1),
     (6, "builder", "ref_s6b", "out/s6.txt", 1),
     (7, "basher",  "ref_s7",  "out/s7.txt", 1),
+    (8, "miner",   "ref_s8",  "out/s8.txt", 1),
     (9, "digger",  "refplay_full", "out/dig.txt", 1),
 ]
 UNTOUCHED = [("level 2, nobody touching it", "ref_l2", None, 2)]

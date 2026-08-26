@@ -3248,6 +3248,259 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     a->extra &= 1;
 }
 
+/* ------------------------------------------------------------------ miner */
+
+#define MINE_ROWS    13         /* 312 bytes a slice / 8 shifts / 3 = 13 */
+
+/* THE MINER'S MASKS, read out of the original's own resource at
+ * ds:0x1FE8 + 0x780 - image 0x06085's base, which is exactly where the
+ * basher's 1,920 bytes end. Image 0x06085 indexes slice * 312 and image
+ * 0x060E2 adds 0x270 for one facing left: two directions of two slices of
+ * eight shifts of THIRTEEN rows of three bytes. Only shift 0 is kept, for
+ * the reason BASH_MASK keeps only shift 0 - the other seven are the same
+ * shape pre-shifted for a byte-addressed plane, and this port's map is a
+ * byte a pixel. Dumped by tools/verify_results.py, not read by eye. */
+static const uint32_t MINE_MASK[2][2][MINE_ROWS] = {
+  { /* facing right */
+    {   /* right, slice 0 */
+        0x01F800,  /* .......######........... */
+        0x01FC00,  /* .......#######.......... */
+        0x01FE00,  /* .......########......... */
+        0x01FE00,  /* .......########......... */
+        0x01FE00,  /* .......########......... */
+        0x01F800,  /* .......######........... */
+        0x01C000,  /* .......###.............. */
+        0x018000,  /* .......##............... */
+        0x018000,  /* .......##............... */
+        0x018000,  /* .......##............... */
+        0x018000,  /* .......##............... */
+        0x018000,  /* .......##............... */
+        0x000000,  /* ........................ */
+    },
+    {   /* right, slice 1 */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+        0x000200,  /* ..............#......... */
+        0x000200,  /* ..............#......... */
+        0x007F00,  /* .........#######........ */
+        0x00FF00,  /* ........########........ */
+        0x00FF00,  /* ........########........ */
+        0x00FF00,  /* ........########........ */
+        0x00FF00,  /* ........########........ */
+        0x00FF00,  /* ........########........ */
+        0x00FF00,  /* ........########........ */
+        0x00FE00,  /* ........#######......... */
+        0x003C00,  /* ..........####.......... */
+    },
+  },
+  { /* facing left */
+    {   /* left, slice 0 */
+        0x0FC000,  /* ....######.............. */
+        0x1FC000,  /* ...#######.............. */
+        0x3FC000,  /* ..########.............. */
+        0x3FC000,  /* ..########.............. */
+        0x3FC000,  /* ..########.............. */
+        0x0FC000,  /* ....######.............. */
+        0x01C000,  /* .......###.............. */
+        0x00C000,  /* ........##.............. */
+        0x00C000,  /* ........##.............. */
+        0x00C000,  /* ........##.............. */
+        0x00C000,  /* ........##.............. */
+        0x00C000,  /* ........##.............. */
+        0x000000,  /* ........................ */
+    },
+    {   /* left, slice 1 */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+        0x200000,  /* ..#..................... */
+        0x200000,  /* ..#..................... */
+        0x7F0000,  /* .#######................ */
+        0x7F8000,  /* .########............... */
+        0x7F8000,  /* .########............... */
+        0x7F8000,  /* .########............... */
+        0x7F8000,  /* .########............... */
+        0x7F8000,  /* .########............... */
+        0x7F8000,  /* .########............... */
+        0x3F8000,  /* ..#######............... */
+        0x1E0000,  /* ...####................. */
+    },
+  },
+};
+
+#define MINE_BIT     0x0800
+/* THE SAME CONSTANT IS THE GUARD AND THE KEEP-MASK, image 0x035A2 and image
+ * 0x035D8 - the trap the digger's assignment was got wrong on. Its zero bits
+ * are 0x10, 0x80 and 0x200, so a digger, a builder or a basher may be turned
+ * into a miner and a miner may not be told to mine again. */
+#define MINE_KEEP    0xFD6F
+#define MINE_STATE   0x18       /* image 0x03604 */
+#define MINE_CYCLE   0x18       /* image 0x02B3A */
+
+/* Image 0x03598. */
+int lem_mine_start(lemming *a)
+{
+    if (a->flags & MINE_KEEP) return 0;             /* image 0x035A2 */
+    /* Image 0x035AC, and NO other skill asks this one: the cell UNDER it. A
+     * miner cuts downwards, so steel underfoot refuses the assignment where
+     * for a basher it is steel AHEAD that does. */
+    if ((a->tcell & 0x0F) == 9) return 0;
+    uint8_t ahead = (uint8_t)(a->tahead & 0x0F);    /* image 0x035B5 */
+    uint8_t wall = (a->dir == 1) ? 7 : 8;           /* image 0x035BC */
+    if (ahead == wall) return 0;                    /* image 0x035C4 */
+    if (ahead == 9) return 0;                       /* image 0x035C8 -> 0x03287 */
+    a->flags = (uint16_t)((a->flags & MINE_KEEP) | MINE_BIT);
+    a->hot_x = -8;                                  /* image 0x035E2 */
+    a->hot_y = -13;                                 /* image 0x035E7: fff3, and
+                                                     * three lower than every
+                                                     * other skill's */
+    a->anim  = 0;                                   /* image 0x035EC */
+    a->state = MINE_STATE;                          /* image 0x03604 */
+    a->extra &= 1;                                  /* image 0x03612 */
+    /* AND THE ASSIGNMENT ITSELF DROPS IT A ROW - image 0x03616, the last
+     * instruction before the jump out, and no other skill's does. Without it
+     * every one of the miner's 288 frames was exactly one row high while x,
+     * the flag word and the animation counter all tracked perfectly: a
+     * residue with one constant in it and nothing else, which is what said
+     * to go back and read the tail of the routine rather than the handler. */
+    a->y = (int16_t)(a->y + 1);
+    return 1;
+}
+
+/* Image 0x0606B: thirteen rows from y + hot_y - 0x10, the span starting at
+ * x + hot_x - and for the second stroke image 0x060AD moves the origin one
+ * row down and one column along, which is half of the miner's diagonal. */
+static void lem_mine_slice(lemming *a, uint8_t slice, uint8_t *lvl,
+                           uint16_t cw, uint16_t chh)
+{
+    const uint32_t *m = MINE_MASK[a->dir < 0 ? 1 : 0][slice & 1];
+    int32_t x0 = (int32_t)a->x;                     /* image 0x060A8 */
+    int32_t y0 = (int32_t)a->y;
+    if (a->anim == 2) {                             /* image 0x060AD */
+        y0 += 1;                                    /* image 0x060B3 */
+        x0 += a->dir;                               /* image 0x060B8 */
+    }
+    y0 += a->hot_y - LEMMING_DY;                    /* image 0x060BA */
+    x0 += a->hot_x - LEMMING_DX;                    /* image 0x060C9 */
+    for (uint8_t r = 0; r < MINE_ROWS; r++) {
+        int32_t y = y0 + r;
+        if (y < 0 || y >= (int32_t)chh) continue;
+        for (uint8_t c = 0; c < 24; c++) {
+            if (!((m[r] >> (23 - c)) & 1u)) continue;
+            int32_t x = x0 + c;
+            if (x < 0 || x >= (int32_t)cw) continue;
+            lvl[(size_t)y * cw + x] = 0;
+        }
+    }
+}
+
+/* Image 0x02CBB: round it goes, and back to walking. Not the same as the
+ * basher's edge case, which only negates the direction. */
+static void lem_mine_turn(lemming *a)
+{
+    a->dir   = (int8_t)-a->dir;                     /* image 0x02CBB */
+    a->flags = 0;                                   /* image 0x02CBE */
+    a->anim  = 0;                                   /* image 0x02CD7 */
+    a->hot_x = -8;                                  /* image 0x02CDB */
+    a->hot_y = -10;
+    a->state = 9;                                   /* image 0x02CE5 */
+    a->extra &= 1;                                  /* image 0x02CF3 */
+}
+
+/* Image 0x02B66, the flat move, and image 0x02BF1, which also drops a row.
+ * Both move x by the direction TWICE, checking the level's edges after each;
+ * then they ask what is under the lemming, and one with nothing under it
+ * becomes a faller. */
+static void lem_mine_move(lemming *a, uint8_t drop, uint8_t *lvl,
+                          uint16_t cw, uint16_t chh)
+{
+    for (uint8_t k = 0; k < 2; k++) {
+        a->x = (int16_t)(a->x + a->dir);            /* image 0x02B6A */
+        if (a->x < 0x10 || a->x >= 0x680) {         /* 0x02B6C, 0x02B74 */
+            lem_mine_turn(a);                       /* image 0x02CBB */
+            return;
+        }
+    }
+    if (drop) {
+        a->y = (int16_t)(a->y + 1);                 /* image 0x02C1B */
+        if (a->y >= LEMMING_DEAD_Y) {               /* image 0x02C1E */
+            a->alive = 0xFF;
+            return;
+        }
+    }
+    if (!lem_solid(lvl, cw, chh, a->x, a->y)) {     /* image 0x02B90 */
+        /* Image 0x02B9D: nothing underneath, so it falls. */
+        a->flags |= 4;
+        a->anim  = 0;
+        a->fall  = 3;                               /* image 0x02BB9 */
+        a->hot_x = -8;                              /* image 0x02BBD */
+        a->hot_y = -10;
+        a->state = 4;                               /* image 0x02BC7 */
+        a->extra &= 1;                              /* image 0x02BD5 */
+        /* AND IT STOPS BEING A MINER - image 0x02BD9, one instruction past
+         * the `and [si+0x24],1` every other conversion here ends on, which
+         * is exactly where the reading stopped the first time. The flag word
+         * came out 0x804 against the original's 4 for ten frames, and the
+         * lemming fell at the right speed to the right place with the wrong
+         * word in it the whole way. */
+        a->flags &= 0xF7FF;
+        return;
+    }
+    /* Image 0x02C76: what it is standing on NOW, read fresh rather than out
+     * of the [si+0x2C] the previous frame left - the same cell arithmetic
+     * level_trigger_at does. */
+    uint8_t cell = (uint8_t)(level_trigger_cell((int32_t)a->x / TRIG_CELL,
+                        ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL) & 0x0F);
+    if (cell == 9) {                                /* image 0x02C9B: steel */
+        lem_mine_turn(a);                           /* image 0x02CFA's jmp */
+        return;
+    }
+    if (cell == 7) {                                /* image 0x02C9F */
+        if (a->dir >= 0) lem_mine_turn(a);          /* image 0x02CA8 */
+        return;
+    }
+    if (cell == 8) {                                /* image 0x02CAD */
+        /* Image 0x02CB9 is `jns` to the instruction AFTER it, so a miner on
+         * an eight turns whichever way it faces. Transcribed as it is rather
+         * than as the mirror of the seven above that it reads like it was
+         * meant to be. */
+        lem_mine_turn(a);
+        return;
+    }
+}
+
+/* Image 0x02B35. A counter of TWENTY-FOUR - image 0x02B3A wraps it at 0x18
+ * rather than masking it, which is why the miner's cycle is not a power of
+ * two like the basher's - and its VALUE dispatches, not its low nibble:
+ *
+ *     0      image 0x02BE1  down one, and dead past 0xB4
+ *     1, 2   image 0x02B60  a stroke of the pick, slice al - 1
+ *     3      image 0x02BF1  along two, and down one
+ *     0x0F   image 0x02B66  along two
+ *
+ * Four columns and two rows a cycle: the 2:1 diagonal a miner cuts. */
+static void lem_mine(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    uint8_t al = (uint8_t)(a->anim + 1);            /* image 0x02B35 */
+    if (al == MINE_CYCLE) al = 0;                   /* image 0x02B3A */
+    a->anim = al;                                   /* image 0x02B40 */
+
+    if (al == 0) {                                  /* image 0x02B43 */
+        a->y = (int16_t)(a->y + 1);                 /* image 0x02BE1 */
+        if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;
+        return;
+    }
+    if (al == 0x0F) {                               /* image 0x02B4A */
+        lem_mine_move(a, 0, lvl, cw, chh);
+        return;
+    }
+    if (al == 3) {                                  /* image 0x02B51 */
+        lem_mine_move(a, 1, lvl, cw, chh);
+        return;
+    }
+    if (al > 3) return;                             /* image 0x02B58 */
+    lem_mine_slice(a, (uint8_t)(al - 1), lvl, cw, chh);   /* image 0x02B5D */
+}
+
 /* THE CRATER - transcribed from image 0x05DF8, its shape MEASURED out of the
  * original's own memory.
  *
@@ -3779,6 +4032,52 @@ void lemmings_reset(lemming *lem)
     }
 }
 
+
+/* Image 0x038A3: the four-entry entrance table at ds:0x0E98, built by walking
+ * the level's 32 object slots and appending every one whose id is 1. Whatever
+ * it finds, all four entries end up valid - image 0x038D6 dispatches on how
+ * many there were and copies the ones it has over the ones it has not:
+ *
+ *     0   image 0x03926   all four become (0x100, 0x10)
+ *     1   image 0x038EA   the one, four times
+ *     2   image 0x03902   1, 0 after the two it found
+ *     3   image 0x0391A   entry 1 again as the fourth
+ *     4                   nothing to do
+ *
+ * Written as a pure function of the level rather than a table filled once at
+ * load: the answer is the same and there is no second copy of the level's
+ * state to keep in step. */
+void level_entrances(const level *lv, int16_t out[4][2])
+{
+    uint8_t bp = 0;                                 /* image 0x038AA */
+    for (uint16_t i = 0; i < lv->num_objects && bp < 4; i++) {
+        if ((lv->objects[i].id & 0xFF) != 1) continue;   /* image 0x038B2 */
+        out[bp][0] = (int16_t)(lv->objects[i].x + LEMMING_DX + LEM_SPAWN_DX);
+        out[bp][1] = (int16_t)(lv->objects[i].y + LEMMING_DY + LEM_SPAWN_DY);
+        bp++;                                       /* image 0x038D0 */
+    }
+    if (bp == 0) {                                  /* image 0x03926 */
+        for (uint8_t k = 0; k < 4; k++) {
+            out[k][0] = 0x100;
+            out[k][1] = 0x10;
+        }
+        return;
+    }
+    if (bp == 1) {                                  /* image 0x038EA */
+        out[1][0] = out[2][0] = out[3][0] = out[0][0];
+        out[1][1] = out[2][1] = out[3][1] = out[0][1];
+        return;
+    }
+    if (bp == 2) {                                  /* image 0x03902 */
+        out[2][0] = out[1][0]; out[2][1] = out[1][1];
+        out[3][0] = out[0][0]; out[3][1] = out[0][1];
+        return;
+    }
+    if (bp == 3) {                                  /* image 0x0391A */
+        out[3][0] = out[1][0]; out[3][1] = out[1][1];
+    }
+}
+
 /* Image 0x030F1: the record is cleared, then filled from the entrance table
  * at ds:0x0E98 - which for "Just dig!" holds 744, 66 against an entrance
  * object at 704, 36. */
@@ -3787,13 +4086,27 @@ void lemmings_release(lemming *lem, uint8_t n, const level *lv)
     lemming *a;
     if (n >= LEMMING_MAX) return;
     a = &lem[n];
-    a->x = a->y = 0;
-    for (uint16_t i = 0; i < lv->num_objects; i++)
-        if ((lv->objects[i].id & 0xFF) == 1) {
-            a->x = (int16_t)(lv->objects[i].x + LEMMING_DX + LEM_SPAWN_DX);
-            a->y = (int16_t)(lv->objects[i].y + LEMMING_DY + LEM_SPAWN_DY);
-            break;
-        }
+    /* THE RECORD IS CLEARED FIRST - image 0x030F1 is a `loop` that writes a
+     * zero over every byte of it before image 0x030F9 fills any in, and the
+     * port had only ever overwritten the fields it went on to set.
+     *
+     * The slot is REUSED from level to level, so everything the last lemming
+     * to occupy it had carried survived into the next one: a level played
+     * after one with floaters started with lemmings that could not be killed
+     * by a fall, which is what this was reported as. The abilities at +0x24
+     * and +0x25 are the visible half; the brick count, the fuse and the
+     * blocker's saved cells are all in there too. */
+    memset(a, 0, sizeof *a);
+    /* FOUR ENTRANCES, TAKEN IN TURN - image 0x030DB is `and bx,3`, so the
+     * release ordinal picks one of four slots in the table at ds:0x0E98, and
+     * the port had always taken the first entrance object it found. Eight of
+     * the eighty levels have more than one entrance (four have two, two have
+     * three, two have four) and on every one of them the port put every
+     * lemming through the same door. */
+    int16_t ent[4][2];
+    level_entrances(lv, ent);                       /* image 0x038A3 */
+    a->x = ent[n & 3][0];                           /* image 0x030FB */
+    a->y = ent[n & 3][1];                           /* image 0x03100 */
     a->hot_x = -8;                                 /* image 0x312F */
     a->hot_y = -10;
     a->flags = 4;                                  /* image 0x310F */
@@ -3898,7 +4211,9 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_splat(a);                            /* image 0x22DF */
         else if (f & 0x0008)
             lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
-        /* 0x0800 0x2B35, 0x1000 0x22F5, 0x4000 0x2340 - none read. */
+        else if (f & 0x0800)
+            lem_mine(a, lvl, cw, chh);               /* image 0x2B35 */
+        /* 0x1000 0x22F5, 0x4000 0x2340 - neither read. */
 
         /* THE TRIGGER IS TESTED AFTER THE MOVE, NOT BEFORE IT.
          *

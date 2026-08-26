@@ -842,12 +842,16 @@ the same poke, so the comparison stays a comparison.
 
 ### What is left of the eight
 
+ALL EIGHT are transcribed and every one of them is exact against the
+original's own record. What is left of them is pictures.
+
 | | state machine | sprites |
 | --- | --- | --- |
 | digger, builder, blocker, climber | **exact** | found |
 | floater | **exact** (level 2, umbrella open) | not searched |
 | bomber | fuse, blast and cloud **exact** | the CRATER is not written |
-| basher, miner | not started | |
+| basher | **exact** | not searched |
+| miner | **exact** | not searched |
 
 Three data locations are open and all three are the same kind of problem -
 a table or a sprite whose bytes are somewhere in a `.dat` and whose address
@@ -898,37 +902,98 @@ puts it back to walking. The original bashed for FOUR frames on "Just dig!"
 where the port bashed for 288, which is what said the test was missing
 rather than mis-read.
 
-### The miner, read but not written
+### The miner, the eighth and last
 
-The last of the eight. Everything here is read; none of it is transcribed.
+**0 of 400 frames differ.** Two readings short of it, and both were a tail
+that had been left unread rather than a rule mis-transcribed.
 
 **Assigning**, image `0x03598`: refuse on `[si+8] & 0xFD6F`; refuse if
-`[si+0x2C] & 0x0F` - the cell UNDER it - is 9, which is steel; then the same
-ahead-test the basher has, `[si+0x2B] & 0x0F` against 7 facing right or 8
-facing left, with 9 diverting to image `0x03287`. Then
-`flags = (flags & 0xFD6F) | 0x800`, hot spot **(-8, -13)**, state `0x18`,
-and a sprite of `0x68` = 104 bytes a frame with the mask `0x4E` in - the
-builder's shape.
+`[si+0x2C] & 0x0F` - the cell UNDER it - is 9, which is steel, and no other
+skill asks that; then the same ahead-test the basher has. Hot spot
+**(-8, -13)**, state `0x18`. The same constant `0xFD6F` is the guard at image
+`0x035A2` and the keep-mask at image `0x035D8`, which is the shape the
+digger's assignment was got wrong on.
+
+**And the assignment drops it a row** - image `0x03616`, `inc word [si+2]`,
+the last instruction before the jump out. Without it every one of the miner's
+288 frames sat exactly one row high while x, the flag word and the animation
+counter all tracked perfectly. A residue with one constant in it and nothing
+else is a rule that has not been read, not a rule read wrongly.
 
 **Doing it**, image `0x02B35`: a counter of TWENTY-FOUR, image `0x02B3A`
-wrapping at `0x18` rather than masking. Its value dispatches:
+wrapping at `0x18` rather than masking, and its VALUE dispatches rather than
+its low nibble:
 
 | | |
 | --- | --- |
 | 0 | image `0x02BE1` drops y by one, and dies past `0xB4` |
 | 1, 2 | image `0x02B60` takes a slice away, index `al - 1` |
-| 3 | image `0x02BF1` moves x by the direction TWICE |
-| 0x0F | image `0x02B66` does the same again |
+| 3 | image `0x02BF1` moves x by the direction TWICE, and down one |
+| 0x0F | image `0x02B66` the same, without the row |
 | otherwise | nothing |
 
-So a miner cuts down and along on a diagonal, two slices a cycle, moving
-twice per cycle - which is why its counter is 24 where the basher's is 32.
+Four columns and two rows a cycle: the 2:1 diagonal a miner cuts. Its counter
+is 24 where the basher's is 32 because it moves twice a cycle.
 
-**The masks**, image `0x0606B`: `0x270` = 624 bytes a direction (image
-`0x060E2`), which for eight shifts of thirteen rows of three bytes is two
-slices. Same resource as the basher's and the crater's, built at run time.
-The tails of image `0x02B66` and image `0x02BF1` past their bounds checks are
-not read yet.
+Both move branches end by asking what is underneath - image `0x02B90` calls
+the same solidity read at image `0x05DC6` everything else uses - and a miner
+with nothing under it becomes a faller. **That conversion clears the miner
+bit**, image `0x02BD9`'s `and [si+8], 0xF7FF`, one instruction past the
+`and [si+0x24],1` every other conversion in the file ends on. Reading stopped
+there the first time and the port's lemming fell at the right speed to the
+right place with `0x804` in its flag word against the original's `4`, for ten
+frames.
+
+Standing on a trigger cell, image `0x02C76`: 9 turns it round, 7 turns it if
+it faces right, and 8 turns it **whichever way it faces** - image `0x02CB9`
+is a `jns` to the instruction after itself, so the test it appears to make is
+not one. Transcribed as it is.
+
+**The masks** are at offset `0x780` of the resource at `ds:0x1FE8`, which is
+exactly where the basher's 1,920 bytes end, and they end at `0xC60` where the
+crater's begin: two directions of two slices of eight shifts of thirteen rows
+of three bytes. `tools/verify_results.py` dumps them; nothing was read by eye.
+
+### Eighty lemmings, not sixteen
+
+`LEMMING_MAX` was **16**, a number nothing in the original says. The array is
+at `ds:0x88` and image `0x030EA` indexes it by the release ordinal times
+`0x2D` with no bound but the level's own total at `ds:0x47` - and
+`0x88 + 0x2D * 80` is `0xE98`, exactly where image `0x030E2` reads the
+entrance table. The array is **eighty** records and ends where the next thing
+begins. The largest of the eighty levels asks for eighty.
+
+So every level wanting more than sixteen released lemmings into a slot
+`lemmings_release` refused to fill: they counted as OUT and existed nowhere
+else. Level 3 of Fun releases fifty, and from frame 692 the panel showed
+none out, none saved and a level that would not end for another 735 frames -
+which is what it was reported as. It ends correctly now, and level 1's 5,100
+frames are unchanged at 5,099 exact.
+
+### A lemming starts each level as a walker
+
+Image `0x030F1` is a `loop` that writes a zero over every byte of the record
+before image `0x030F9` fills any in. The port had only ever overwritten the
+fields it went on to set, and the slot is reused from level to level - so a
+level played after one with floaters started with lemmings that could not be
+killed by a fall. The abilities at `[si+0x24]` and `[si+0x25]` are the
+visible half; the brick count, the fuse and the blocker's saved cells were
+carried across too.
+
+### Four entrances, taken in turn
+
+Image `0x030DB` is `and bx,3`: the release ordinal picks one of four slots in
+the table at `ds:0x0E98`, and the port had always taken the first entrance
+object it found. Eight of the eighty levels have more than one - four have
+two, two have three, two have four - and on every one of them every lemming
+came through the same door.
+
+Image `0x038A3` builds the table by walking the 32 object slots and appending
+each `id == 1`, then image `0x038D6` dispatches on how many it found and
+copies the ones it has over the ones it has not: none gives four of
+`(0x100, 0x10)`, one gives itself four times, two gives `1, 0` after them,
+three repeats entry 1. All four entries are always valid, which is why
+`and bx,3` needs no further check.
 
 ### Level 2, where lemmings fall and die
 

@@ -114,6 +114,13 @@ def install(m):
         # of eight shifts of ten rows of three bytes, 1,920 in all.
         open(os.path.join(out_dir, "bash.bin"), "wb").write(
             bytes(uc.mem_read(mseg * 16, 0x780)))
+        # THE MINER'S, next along. Image 0x06085 adds 0x780 to slice * 312 and
+        # image 0x060E2 adds 0x270 for one facing left - two directions of two
+        # slices of eight shifts of THIRTEEN rows of three bytes, 1,248. The
+        # three tables are contiguous: the basher ends where this starts and
+        # this ends at 0xC60, where the crater's begins.
+        open(os.path.join(out_dir, "mine.bin"), "wb").write(
+            bytes(uc.mem_read(mseg * 16 + 0x780, 0x4E0)))
 
         cseg = int.from_bytes(uc.mem_read(ds + 0x1FEA, 2), "little")
         open(os.path.join(out_dir, "cursor_store.bin"), "wb").write(

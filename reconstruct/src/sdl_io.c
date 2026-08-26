@@ -500,6 +500,8 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
                     took = lem_build_start(&A->lem[k]);    /* image 0x032BD */
                 else if (A->skill == SKILL_BASHER)
                     took = lem_bash_start(&A->lem[k]);     /* image 0x034CE */
+                else if (A->skill == SKILL_MINER)
+                    took = lem_mine_start(&A->lem[k]);     /* image 0x03598 */
                 else if (A->skill == SKILL_BLOCKER)
                     took = lem_block_start(&A->lem[k]);    /* image 0x03336 */
                 else if (A->skill == SKILL_BOMBER)
@@ -777,7 +779,11 @@ static int level_run(struct level_frame *A, const canvas *c,
             }
         }
         if (statef) {
-            fprintf(statef, "{\"frame\":%ld,\"lem\":[", frame_no);
+            fprintf(statef, "{\"frame\":%ld,\"released\":%u,\"live\":%u,"
+                    "\"saved\":%u,\"over\":%u,\"lem\":[", frame_no,
+                    (unsigned)A->released,
+                    (unsigned)lemmings_live(A->lem, A->released),
+                    (unsigned)level_saved, (unsigned)A->over);
             for (uint8_t k = 0; k < A->released && k < LEMMING_MAX; k++) {
                 const lemming *a = &A->lem[k];
                 fprintf(statef,

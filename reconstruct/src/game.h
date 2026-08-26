@@ -299,7 +299,19 @@ void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * Keeping the original's numbers means the transcribed rules read as they do
  * in the disassembly, and the two offsets are applied in one place.
  * ==================================================================== */
-#define LEMMING_MAX      16
+/* EIGHTY, and the number is the original's own geometry rather than a guess.
+ * Image 0x030C9 puts the array at ds:0x88 and image 0x030EA indexes it by the
+ * release ordinal times 0x2D with NO upper bound but the level's own total
+ * at ds:0x47 - and 0x88 + 0x2D * 80 is 0xE98, exactly where image 0x030E2
+ * reads the entrance table. So the array is eighty records and ends where the
+ * next thing begins. The largest of the eighty levels asks for eighty.
+ *
+ * The port had 16, which is a number nothing in the original says. Every
+ * level wanting more than that released lemmings into a slot
+ * lemmings_release refused to fill, so they existed in the OUT count and
+ * nowhere else: a level of fifty showed all fifty released, none of them
+ * anywhere, and could only end by running its clock out. */
+#define LEMMING_MAX      80
 #define LEMMING_DX       16     /* prove.sh's own offset 16 */
 #define LEMMING_DY       16     /* image 0x5DC6: di = [si+2] - 0x10 */
 #define LEMMING_DEAD_Y   0xB4   /* image 0x2210 */
@@ -336,6 +348,8 @@ typedef struct {
  * read. `lvl` is the port's own TERRAIN canvas - the buffer the original
  * probes has no objects in it. */
 void lemmings_reset(lemming *lem);
+/* The four entrances a release cycles through - image 0x038A3. */
+void level_entrances(const level *lv, int16_t out[4][2]);
 void lemmings_release(lemming *lem, uint8_t n, const level *lv);
 /* Not const: a digger removes terrain, which is the buffer the others
  * probe - image 0x05EBA writes into the same planes image 0x05DC6 reads. */
@@ -380,6 +394,7 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x);
 #define SKILL_BASHER  7
 #define SKILL_BLOCKER 5
 #define SKILL_BUILDER 6
+#define SKILL_MINER  8
 #define SKILL_DIGGER 9
 
 /* Give this one a builder, image 0x032BD. Non-zero if it took. */
@@ -398,6 +413,7 @@ int lem_float_start(lemming *a);
 int lem_block_start(lemming *a);
 /* And a basher, image 0x034CE - which asks the trigger map what is ahead. */
 int lem_bash_start(lemming *a);
+int lem_mine_start(lemming *a);
 
 int lem_dig_start(lemming *a);
 uint8_t lemmings_live(const lemming *lem, uint8_t n);
