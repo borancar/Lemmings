@@ -1409,6 +1409,9 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
  * matching the pixels the way the cursor's shape was matched. Until then a
  * digging lemming is invisible, which is wrong in a way that is obvious
  * rather than wrong in a way that looks fine.
+ *
+ * Transcribed from image 0x0320D - the assignment itself, which is what the
+ * function below is; only the sprite it points the record at is missing.
  */
 
 int lem_dig_start(lemming *a)
