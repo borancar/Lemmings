@@ -4070,6 +4070,21 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
 #define FLOAT_SPR_BASE  14640   /* 16 rows, 3 planes - ink 356, 0 differ */
 #define BLAST_SPR_BASE  20080   /* 10 rows, 2 planes - ink 256, 0 differ */
 
+/* THE CLOUD'S SPRITE IS NOT FOUND, and the search says why rather than just
+ * failing. Every geometry tried - 32x32 in three planes and in two, 24x32,
+ * 20x32 - scores within a few per cent of its own ink, which is the noise
+ * floor: nothing matches anywhere.
+ *
+ * The reason is almost certainly the frame index. Every other sprite here is
+ * base + anim * frame, and the cloud's counter is NOT a frame number: image
+ * 0x02353 increments it without masking and image 0x02358 runs it to 0x34,
+ * fifty-two, where the lemming dies. Fifty-two frames of a 0x280-byte sprite
+ * would be 33k, which is more than this section holds. So the drawn frame
+ * comes from somewhere else - image 0x02D1F puts 8 in [si+0x0A], which no
+ * other skill sets to anything but 0, and that is the thing to read next.
+ *
+ * Searching for a sprite is only as good as the index you search with. */
+
 #define CLIMB_SPR_RIGHT 2064
 #define CLIMB_SPR_LEFT  2448
 #define CLIMB_SPR_H     12
