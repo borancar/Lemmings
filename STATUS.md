@@ -40,10 +40,13 @@ numbers, re-measured on the current build:
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
-| tests | `make test` 82 checks across two binaries, `make sanitize` clean under ASan + UBSan |
+| **the pointer's hit test** vs the original's own answer | **326 frames, 326 agreed** — the guest sets `ds:0x1A` when its scan finds a lemming, so that byte settles it (`tools/verify_hit.py`) |
+| **the digger** vs the original digging | state **138 frames agreed**; the shaft it cuts **1,056 pixels, 1,056 agreed** (`tools/verify_dig.py`) |
+| **pace** | the level 170 frames in 10.01s against 17/s; the menu 350 passes in 5.01s against 70 Hz (`tools/verify_pace.py`) |
+| tests | `make test` 112 checks across two binaries, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 33 of
-211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
+**Transcription is a different claim from any of the above, and it is 76
+routines with an address, 47 marked the port's own and 9 still owed** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
 geometry measured against the original — that is real evidence, and it is not
@@ -734,6 +737,35 @@ Each of these is stated as what was *checked*, not what was written.
   blink did not turn over during the dump; different means the capture is
   between two pictures and is not scored against either, which happens often
   enough to matter - one run needed two retries. Both scored **100.00%**.
+
+## The first skill: the digger
+
+Nothing in a recorded run ever assigns one, so none of the fourteen handlers
+the dispatch at image `0x01F5E` can reach had ever executed. `tools/probe_digger.py`
+drives the original into using one - it holds the panel's digger button, then
+clicks a lemming - so transcribing it was differential rather than a guess.
+
+- **the assignment**, image `0x0320D`: spends one from `ds:0x7F`, clears
+  `0xF57F` and sets bit `0x10`, parks the animation on `0x11`, drops the hot
+  spot two rows
+- **the behaviour**, image `0x023F3`: sixteen frames, digging on the two where
+  the counter comes round to 0 and to 8
+- **the first frame**, image `0x0250C`: cuts THREE rows - `y-2`, `y-1` and the
+  one it stands on - before the ordinary path takes over
+- **the span**, image `0x0242D`: nine pixels, `x-4` to `x+4`. `0x0FF8`'s value
+  bits 3..11 are PIXELS 4..12, because the leftmost pixel is the most
+  significant bit
+- **the sprite**, `main.dat` section 0 offset 720: 16 wide, 14 rows, three
+  colour planes, 84 bytes - immediately after the walker's eighteen frames of
+  forty
+
+**Three of its bugs were invisible to every picture comparison here**, and to
+a comparison of the lemming's own state as well: the span one column left, the
+first frame cutting one row instead of three, and the shaft starting a row
+low. None of them changes `y` or the animation while the digger is inside
+solid ground. What caught them was comparing the TERRAIN, where they differ by
+34, 2 and 14 pixels - and two of the three were found by a person playing
+before the check existed.
 
 ## Into a level
 
