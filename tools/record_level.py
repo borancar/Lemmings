@@ -45,6 +45,16 @@ MOUSE_X, MOUSE_Y = 0x10, 0x12   # ds: the pointer, image 0x0427E and 0x04293
 CUR_OFF, CUR_BASE, CUR_BIAS = 0x0C, 0x1F78, 0x1FE0   # image 0x071B1
 ARRAY, COUNT, REC = 0x88, 0x43, 0x2D   # the lemming array
 DIGGERS = 0x7F             # ds: how many diggers are left to give out
+# THE EIGHT SKILL COUNTS, ds:0x6A and every THREE bytes - each handler opens
+# by testing its own: image 0x0329B reads ds:0x6A, image 0x03557 ds:0x6D,
+# then 0x70, 0x73, 0x76, 0x79, 0x7C, and image 0x0320D ds:0x7F.
+#
+# "Just dig!" stocks nothing but diggers, so seven of the eight can never be
+# assigned by playing it - and a routine no run reaches is a routine the port
+# can have wrong for ever. LEM_REC_SKILLS stocks them all, which is a POKE
+# and says so: it changes what the level offers, not how any skill behaves,
+# and both sides get the same poke so the comparison stays a comparison.
+SKILLS = [0x6A, 0x6D, 0x70, 0x73, 0x76, 0x79, 0x7C, 0x7F]
 # The end condition, image 0x001E7: released == to-release AND active == 0.
 RELEASED, ACTIVE, TO_RELEASE = 0x43, 0x45, 0x47
 SAVED, OVER = 0x46, 0x4F   # ds:0x4F is what image 0x001C8 tests first
@@ -83,6 +93,7 @@ def install(m):
         script.sort(key=lambda a: a[0])
         print(f"  [rec] {len(script)} scripted actions from {sp}")
     all_lem = os.environ.get("LEM_REC_ARRAY") == "1"
+    stock = int(os.environ.get("LEM_REC_SKILLS", "0"))
     st["script_at"] = 0
     st["down"] = None
 
@@ -107,6 +118,14 @@ def install(m):
                 f.write(bytes(c))
             f.write(fb)
         lit = sum(1 for c in m.palette if any(c))
+        # Every skill stocked, if asked. Written each frame rather than once:
+        # the level's own set-up runs after the first frames are captured, so
+        # a single poke at the start is undone before anything can use it.
+        if stock:
+            for a in SKILLS:
+                if uc.mem_read(base + DGROUP + a, 1)[0] == 0:
+                    uc.mem_write(base + DGROUP + a, bytes([stock]))
+
         # Lemming 0 and the scroll, in THIS run's frame numbering.
         #
         # An input script has to name a screen position, and working one out
@@ -230,6 +249,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--frames", type=int, default=300)
     ap.add_argument("--out", default=os.path.join(ROOT, "out", "ref"))
+    ap.add_argument("--skills", type=int, default=0,
+                    help="stock every skill this many times - a POKE, so that "
+                         "the seven \"Just dig!\" never offers can be driven "
+                         "at all. The port gets the same one")
     ap.add_argument("--lemmings", action="store_true",
                     help="carry the whole lemming array in the manifest, so "
                          "a difference on the screen can be traced to a field")
@@ -269,6 +292,8 @@ def main():
         env["LEM_REC_SCRIPT"] = os.path.abspath(a.script)
     if a.lemmings:
         env["LEM_REC_ARRAY"] = "1"
+    if a.skills:
+        env["LEM_REC_SKILLS"] = str(a.skills)
     subprocess.run([sys.executable, os.path.join(HERE, "play.py"),
                     "--auto", "--start", "--start-delay", "5",
                     "--start-tries", "3", "--click-tries", "4",

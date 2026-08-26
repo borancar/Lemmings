@@ -1017,6 +1017,24 @@ const char *level_status_line(void) { return g_status; }
 void level_skills_reset(const level *lv)
 {
     for (uint8_t k = 0; k < 8; k++) g_skills[k] = (uint8_t)lv->skills[k];
+
+    /* THE SAME POKE tools/record_level.py --skills applies to the guest.
+     *
+     * "Just dig!" stocks nothing but diggers, so seven of the eight skills
+     * can never be assigned by playing it - and a routine no run reaches is
+     * one the port can have wrong for ever. This stocks them so both sides
+     * can be driven through the same assignment and compared.
+     *
+     * It is a POKE and belongs with the rest of the hardware's conveniences,
+     * not with the game: it changes what the level offers, never how a skill
+     * behaves. The game has no command line, so it is env-gated the way
+     * LEM_FRAMES and LEM_SCREEN_DIR are. */
+    const char *stock = getenv("LEM_SKILLS");
+    if (stock) {
+        uint8_t n = (uint8_t)atoi(stock);
+        for (uint8_t k = 0; k < 8; k++)
+            if (!g_skills[k]) g_skills[k] = n;
+    }
 }
 
 /* Image 0x0320D's own test, `cmp byte [0x7f], 0`, and the same opening in
@@ -1080,6 +1098,25 @@ enum { NM_CLIMBER, NM_FLOATER, NM_BOMBER, NM_BLOCKER, NM_BUILDER, NM_BASHER,
  * destination for a digit it actually emitted, so 7 comes out as "7  " and
  * not "007" - and the panel shows a bare number beside the name because of
  * it. */
+/* Transcribed from image 0x04BBE, which is two instructions: clear the
+ * digit-emitted flag and jump into image 0x04B91 - put_num3's TENS stage. So
+ * it is the same writer stopped one digit short: at most two, left aligned,
+ * with a leading zero coming out as a space. */
+static char *put_num2(char *dst, uint8_t v)
+{
+    dst[0] = dst[1] = ' ';                /* image 0x04B91 */
+    uint8_t d = 0;
+    while (v >= 10) { v = (uint8_t)(v - 10); d++; }   /* image 0x04B9A */
+    if (d) *dst++ = (char)('0' + d);      /* image 0x04BB0 */
+    *dst = (char)('0' + v);               /* image 0x04BB8 */
+    return dst + 1;
+}
+
+/* Transcribed from image 0x04B68: up to three decimal digits, LEFT aligned,
+ * with leading zeros dropped rather than printed. Not digits3 at image
+ * 0x04BC2, which pads with zeros and always fills three cells - this one
+ * writes three spaces first and only advances the destination for a digit it
+ * actually emitted, so 7 comes out as "7  " and not "007". */
 static char *put_num3(char *dst, uint8_t v)
 {
     dst[0] = dst[1] = dst[2] = ' ';       /* image 0x04B68 */
@@ -1706,7 +1743,6 @@ static const char *const S_MENU_PROMPT[3] = {
  * same right-aligned fill the briefing uses; that lives further down this
  * file, so it is declared here. */
 #define RESULT_NUM_BACK 3
-static void put_num(char *dst, size_t end, uint32_t n);
 
 const char *level_results_headline(int timed_out)
 {
@@ -3714,18 +3750,34 @@ void lem_mouse_move(int32_t x, int32_t y)
     lem_mouse_y = (uint16_t)y;
 }
 
-/*
- * NOT TRANSCRIBED. Draw it wherever the pointer is.
+/* THE CURSOR - transcribed from image 0x05827, and its POSITION from image
+ * 0x0715F.
  *
- * The original composes it through the EGA's write logic - image 0x07218,
- * masked through GC register 8, out of the pre-shifted store image 0x05827
- * indexes by the low three bits of ds:0x10 - and this writes indices into a
- * byte buffer instead, the same picture by a different route, which is what
- * the rest of the port does for every sprite.
+ * Where it goes. Image 0x0715F computes the blit's destination as
  *
- * The SHAPE is measured against the original rather than read out of a file:
- * where the unshifted sprite lives in MAIN.DAT has not been traced. See
- * CURSOR above for what the measurement was. */
+ *     ds:0x0C = ds:0x12 * 0x2C + ((ds:0x1FE0 + ds:0x10) >> 3) + ds:0x1F78
+ *
+ * - a video offset in a mode whose logical line is 0x2C bytes - so the
+ * sprite's top-left sits at (ds:0x10, ds:0x12) in the LINE's own
+ * coordinates, and the sub-byte part of ds:0x10 is the shift image 0x0583B
+ * picks a pre-shifted copy by. The store's shape carries a one-pixel border
+ * and the screen is the line offset by the sixteen this port applies
+ * everywhere, so the visible content lands at (mouse - 15) on both axes -
+ * which is CURSOR_ORIGIN plus CURSOR_HOT_X below, and was measured before it
+ * was read.
+ *
+ * Which shape. Image 0x05854 adds 0x480 to the store offset when ds:0x1A is
+ * set, replacing the address rather than adding a pass - see CURSOR_BOX.
+ *
+ * WHAT IS STILL THE PORT'S OWN is the route: image 0x07218 composes through
+ * the EGA's write logic, masked through GC register 8, and this writes
+ * indices into a byte buffer, which is what the rest of the port does for
+ * every sprite.
+ *
+ * And where the UNSHIFTED sprite lives is still not known. The store at
+ * ds:0x1FEA is built by the pre-shifter at image 0x09347, not loaded, and
+ * its bytes appear in no .dat - searched. The tables above are read out of
+ * that store rather than off a screen, which is why they carry their masks. */
 void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x)
 {
     int32_t sx = (int32_t)lem_mouse_x - CURSOR_ORIGIN - CURSOR_HOT_X;
@@ -4753,23 +4805,35 @@ static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
 #define BR_CONT_X      80
 #define BR_CONT_Y     304
 
-/*
- * NOT TRANSCRIBED, but its callers are now known. The briefing's own numbers
- * go through THREE different routines, and image 0x04566 names each: the
- * lemming count through image 0x04B68 (status_put_num, transcribed), the
- * percentage through image 0x04B5C, and the level number and release rate
- * through image 0x04BBE. This is one right-aligned fill standing in for all
- * three, which is why it is owed: the port gets the same characters into the
- * same columns by its own arithmetic, and image 0x04BBE has not been read.
+/* WHERE THE BRIEFING'S NUMBERS GO - transcribed from image 0x04580.
+ *
+ * Three different writers, each with its own column, and the port had one
+ * right-aligned fill standing in for all of them:
+ *
+ *   image 0x0458E  the lemming count through image 0x04B68, at ds:0x4B50 -
+ *                  index 19 of "Number of Lemmings    "
+ *   image 0x045A5  the percentage through image 0x04B5C, at ds:0x4B57 -
+ *                  index 0 of "     To Be Saved", which is what makes it
+ *                  read "10%  To Be Saved"
+ *   image 0x045AF  the release rate through image 0x04BBE, at ds:0x4B78 -
+ *                  index 13 of "Release Rate   "
+ *   image 0x045B5  the time limit as a SINGLE digit at ds:0x4B83, index 5
+ *
+ * All of them left-aligned. Right-aligning gives the same characters for a
+ * two-digit number and different ones for three: the original writes 100
+ * lemmings at 19..21 and the port's fill put them at 18..20. Fun 1 has ten,
+ * which is why the briefing verified exact with the wrong rule.
  */
-static void put_num(char *dst, size_t end, uint32_t n)
-{
-    size_t i = end;
-    do {
-        dst[i--] = (char)('0' + n % 10);
-        n /= 10;
-    } while (n && i != (size_t)-1);
-}
+#define BR_COUNT_AT   19      /* ds:0x4B50 */
+#define BR_SAVED_AT    0      /* ds:0x4B57 */
+#define BR_RATE_AT    13      /* ds:0x4B78 */
+#define BR_TIME_AT     5      /* ds:0x4B83 */
+#define BR_TIME_S_AT  13      /* ds:0x4B8B */
+
+/* put_num3 and put_num2 live further up, with the status line they were
+ * transcribed for - images 0x04B68 and 0x04BBE. */
+static char *put_num3(char *dst, uint8_t v);
+static char *put_num2(char *dst, uint8_t v);
 
 /* THE LEVEL PREVIEW, above the briefing's text.
  *
@@ -5099,34 +5163,34 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
     uint16_t y = BR_BODY_Y;
 
     snprintf(line, sizeof(line), "%s", T_COUNT);
-    put_num(line, strlen(T_COUNT) - 2, lv->num_lemmings);
+    put_num3(line + BR_COUNT_AT, (uint8_t)lv->num_lemmings);  /* 0x0458E */
     draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
     y += BR_BODY_STEP;
 
     /* The percentage, not the count: "10%  To Be Saved" for 1 of 10. */
     snprintf(line, sizeof(line), "%s", T_SAVED);
     {
-        uint32_t pct = lv->num_lemmings
-            ? (uint32_t)lv->num_to_rescue * 100u / lv->num_lemmings : 0;
-        char pc[16];
-        snprintf(pc, sizeof(pc), "%u%%", pct);
-        memcpy(line, pc, strlen(pc));
+        /* Image 0x04591's own arithmetic, and image 0x045A5's own writer. */
+        char *at = line + BR_SAVED_AT;
+        at[3] = ' ';                                   /* image 0x04B5C */
+        *put_num3(at, level_needed_percent(lv)) = '%'; /* image 0x04B63 */
     }
     draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
     y += BR_BODY_STEP;
 
     snprintf(line, sizeof(line), "%s", T_RATE);
-    put_num(line, strlen(T_RATE) - 1, lv->release_rate);
+    put_num2(line + BR_RATE_AT, (uint8_t)lv->release_rate);   /* 0x045AF */
     draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
     y += BR_BODY_STEP;
 
     snprintf(line, sizeof(line), "%s", T_TIME);
-    put_num(line, 5, lv->time_limit);
+    /* Image 0x045B5 adds '0' to one byte - a single digit, no writer. */
+    line[BR_TIME_AT] = (char)('0' + (lv->time_limit % 10u));
     /* "1 Minute", not "1 Minutes". Image 0x045B2 puts the digit at ds:0x4B83
      * and the 's' at ds:0x4B8B - eight characters apart, which is indices 5
      * and 13 of this template - and swaps the 's' for a SPACE when the digit
      * is '1', so the line keeps its length either way. */
-    if (line[5] == '1')
+    if (line[BR_TIME_AT] == '1')
         line[13] = ' ';
     draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
     y += BR_BODY_STEP;
