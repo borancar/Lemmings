@@ -533,6 +533,63 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* THE EXIT, against where the original actually saved lemmings.
+     *
+     * tools/probe_exit.py drove the original into digging down and watched
+     * for the frame a state became 0x2000. Six lemmings reached it, every
+     * one at record (888, 147), with the exit object of "Just dig!" at
+     * (848, 116). These are those numbers, not a reading of the format -
+     * which is the point, because the trigger rectangle's units are what
+     * the format leaves ambiguous. */
+    {
+        enum { EW = 64, EH = 64 };
+        static uint8_t soil[EW * EH];
+        char p6[1024], p7[1024];
+        dat_file lv6;
+        ground g6;
+        level L6;
+        const char *e6 = "unknown error";
+        snprintf(p6, sizeof p6, "%s/level009.dat", dir);
+        snprintf(p7, sizeof p7, "%s/ground0o.dat", dir);
+        if (dat_load(p6, &lv6, &e6) == 0 && lv6.count > 1
+                && level_parse(lv6.sections[1].data, lv6.sections[1].size,
+                               &L6, &e6) == 0
+                && ground_load(p7, &g6, &e6) == 0) {
+            level_triggers_set(&L6, &g6);
+            lemming e;
+            memset(&e, 0, sizeof e);
+            e.x = 888; e.y = 147; e.hot_x = -8; e.hot_y = -10; e.dir = 1;
+
+            ck("a lemming at (888,147) is at the exit",
+               level_at_exit(&e, &L6, &g6) == 1,
+               "the trigger box is not where the original's is");
+
+            e.x = 888 - 8;
+            ck("and eight pixels short of it is not",
+               level_at_exit(&e, &L6, &g6) == 0,
+               "the box is wider than four pixels");
+
+            e.x = 888; e.flags = 4;          /* falling */
+            ck("nor is one falling past it",
+               level_at_exit(&e, &L6, &g6) == 0,
+               "image 0x02F3B's `test [si+8], 4` is missing");
+
+            /* And what happens next: eight frames, then saved. */
+            e.flags = 0;
+            lem_exit_start(&e);
+            ck("entering sets the state word to 0x2000",
+               e.flags == 0x2000 && e.anim == 0, "image 0x02F42");
+            level_saved_reset();
+            for (uint8_t i = 0; i < 8; i++)
+                lemmings_step(&e, 1, soil, EW, EH);
+            ck("and eight frames later it is counted and gone",
+               level_saved == 1 && e.alive == 0xFF,
+               "image 0x02326 did not hand it to the count");
+            level_triggers_set(NULL, NULL);
+            dat_free(&lv6);
+        }
+    }
+
     /* The digger's SPRITE, against the bytes the original was reading.
      *
      * tools/probe_digger.py caught the guest mid-dig and followed image
