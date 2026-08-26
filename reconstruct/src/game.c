@@ -1821,12 +1821,30 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * record's 112/84 ratio gave. The mask landing on [+0x12] to the byte is the
  * part that makes this a derivation rather than another fit.
  *
- * WHERE the bytes are is still open. They are not in section 0 - decoding it
- * at every offset with this layout finds nothing - and the store's segment
- * is not the one DS holds at the addressing (0x19B9 there, 0x5772 at the
- * blit), so the caller reloads it in between. Reading DS at image 0x07218
- * for a digger's own blit is the next thing, and this port draws no digger
- * until it is done.
+ * AND THE BYTES ARE FOUND. Image 0x07112 is the piece that was missing:
+ * `cx = [0x1FE6] + bp`, so ds:0x1FE6 holds the store's SEGMENT and BP is a
+ * paragraph offset into it. That is what the `>> 4` produces, and it is why
+ * reading DS:BP*16 gave nonsense - the DS at the addressing is not the
+ * store's.
+ *
+ * At ([0x1FE6] + BP) : SI the digger's frames decode cleanly with the
+ * geometry above, and three things agree at once:
+ *
+ *   - plane 3 is EXACTLY the ink of planes 0..2, everywhere - which is what
+ *     a mask is, and confirms the fourth plane's role
+ *   - consecutive frames sit at 0x03C2A0 and 0x03C310, 0x70 = 112 apart,
+ *     which is the stride BP's step of seven paragraphs predicted
+ *   - the ink is in colours 1..3, which is what the screen showed
+ *
+ * The picture itself is not yet interpreted: each row holds two clusters
+ * about twenty pixels apart, and seven rows is short for a lemming. Rendering
+ * a run of consecutive frames and watching the animation is what settles
+ * whether that is the digger throwing earth to both sides or two shifts
+ * stored side by side - and only then is it safe to draw. The port still
+ * draws no digger.
+ *
+ * They are not in main.dat section 0 in this layout, which is consistent:
+ * the store is built at load time, not copied out of a file verbatim.
  *
  * One of the two candidates was ruled out earlier, by looking. probe_digger.py dumps
  * the original's own framebuffer while a lemming digs, printing anything

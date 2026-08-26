@@ -224,16 +224,32 @@ def install(m):
                               f"DS={dseg:#06x} SI={bl['si']:#06x} "
                               f"BX={bl['bx']:#06x} BP={bl['bp']:#06x} "
                               f"flags={fl:#06x}\n")
-                    # BP counts SIXTEEN-BYTE PARAGRAPHS - the walker's steps
-                    # by 45 a frame (8 shifts x 90 bytes) and the digger's by
-                    # 7 (112 bytes, unshifted). So the frame is at DS:BP*16.
-                    where = dseg * 16 + bl["bp"] * 16
+                    # Image 0x07112: cx = [0x1FE6] + bp. So ds:0x1FE6 is the
+                    # store's SEGMENT and BP a paragraph offset into it -
+                    # which is what the `>> 4` at image 0x070C6 produces.
+                    # The addressing's own DS is not the store's, which is
+                    # why reading DS:BP*16 gave nonsense.
+                    seg = int.from_bytes(uc.mem_read(ds + 0x1FE6, 2), "little")
+                    where = (seg + bl["bp"]) * 16 + bl["si"]
+                    out.write(f"    store segment ds:0x1FE6 = {seg:#06x}, "
+                              f"+ BP {bl['bp']:#06x}\n")
                     raw = bytes(uc.mem_read(where, 112))
-                    out.write(f"    frame at {where:#08x}:\n")
-                    for r in range(0, 112, 16):
-                        out.write("      " + " ".join(f"{v:02x}"
-                                                      for v in raw[r:r+16])
-                                  + "\n")
+                    out.write(f"    frame at {where:#08x}, decoded as "
+                              f"4 bytes x 7 rows x 4 planes:\n")
+                    ROWS, BPR = 7, 4
+
+                    def bit(pl, rr, cc):
+                        b = raw[pl * ROWS * BPR + rr * BPR + (cc >> 3)]
+                        return (b >> (7 - (cc & 7))) & 1
+
+                    for rr in range(ROWS):
+                        ink = "".join(
+                            ".1234567"[sum(bit(pl, rr, cc) << pl
+                                           for pl in range(3))]
+                            for cc in range(32))
+                        msk = "".join("#" if bit(3, rr, cc) else "."
+                                      for cc in range(32))
+                        out.write(f"      {ink}   {msk}\n")
                     out.flush()
                     bl["done"] += 1
             return
