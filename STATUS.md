@@ -922,6 +922,33 @@ Each of these is stated as what was *checked*, not what was written.
   briefing's `put_num`, which is still unread and right-aligns, and not
   `digits3` at 0x04BC2 either; the game has three.
 
+- **The skill buttons' numbers - a font nobody had found.** Image 0x0765F
+  draws them from ten digits of 16 bytes at **offset 0** of the loaded panel
+  font, which is `main.dat` section 2 offsets **6400..6559** - the 160 bytes
+  immediately before `PANEL_HEAD`, and the reason 0xA0 is where the big font
+  starts.
+
+  Each digit is **four pixels wide** and stored twice, pre-shifted: bytes
+  0..7 hold it in the low nibble and 8..15 in the high, so a two-digit number
+  is the tens through Bit Mask 0x0F into one byte and the units through 0xF0
+  into the next. That lands the pair at pixels 4..11 of the button's sixteen
+  - exactly where a recorded frame has them.
+
+  Two things about it would not have been guessed:
+
+  - a count of **zero is SOLID, not blank**. Image 0x076DB writes 0xFF for
+    both nibbles, which is why a level offering only diggers still has ink in
+    all ten button positions.
+  - the colours: a set font bit is index **3** and a clear one index **0**,
+    measured by counting - "50" has 40 set bits between its glyphs and the
+    original shows 40 pixels of index 3 and 24 of index 0 there, and a zero
+    count shows 64 of index 3.
+
+  Finding it needed the page base resolved: watching video writes and
+  filtering to the exact rows and byte columns named image 0x076A7 and
+  0x076D2 straight away, where a rank by volume had buried them under the
+  background repaints.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
   game frame):
@@ -929,7 +956,11 @@ Each of these is stated as what was *checked*, not what was written.
   | frames | play area | panel |
   | --- | --- | --- |
   | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
-  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 90.43 / **90.86** / 90.92% |
+  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 95.43 / **95.86** / 95.92% |
+
+  What is left in the panel is the selected button's highlight box (16 x 24 at
+  x 32..47), the IN percentage's one digit, and the minimap's contents at
+  x 241..271 - and the minimap needs the lemmings.
 
   Over 700 frames the play area falls from 99.86% to about 99.34% and then
   **flattens** - that is the ten lemmings coming out one by one and then

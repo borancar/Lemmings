@@ -259,6 +259,14 @@ void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 #define PANEL_LINE_W  (PANEL_COLS * 8)      /* 352 */
 #define PANEL_ART_X   32
 
+/* The numbers on the skill buttons - a four-pixel-wide font of ten digits at
+ * the very start of the loaded panel font. Transcribed from image 0x0765F. */
+void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                      const uint8_t *sec, uint32_t sec_len,
+                      uint8_t value, uint16_t x0, uint16_t y0);
+void panel_buttons(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                   const uint8_t *sec, uint32_t sec_len, const level *lv);
+
 /* The status line the panel draws, and the level clock inside it. The time is
  * ASCII in the line itself; there is no binary countdown behind it.
  * Transcribed from image 0x0213, seventeen frames to a second. */

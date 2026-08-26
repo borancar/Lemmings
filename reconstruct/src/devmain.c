@@ -283,6 +283,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
                             PANEL_ART_X, 0);
                 panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
                              level_status_line(), 0, 0);
+                panel_buttons(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, &lv);
                 /* The status line is NOT drawn. It belongs sixteen rows down
                  * - screen row 176, which is PANEL_BASE / PANEL_STRIDE - but
                  * what writes the counts into the template has not been read,

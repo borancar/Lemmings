@@ -621,6 +621,95 @@ static uint32_t panel_glyph(uint8_t ch)
     return PANEL_FONT_LEN;          /* space, and everything unmapped */
 }
 
+#define PANEL_NUM_OFF   0        /* image 0x07695: add ax, 0 */
+#define PANEL_NUM_H     8        /* image 0x0769F: cx = 8 */
+#define PANEL_NUM_STEP  16       /* image 0x0768D: ax *= 16 */
+#define PANEL_NUM_X     4        /* pixels into the button */
+#define PANEL_NUM_Y     17       /* rows into the panel: screen 177 */
+#define PANEL_BUTTON_W  16
+#define PANEL_BUTTONS   10
+#define PANEL_NUM_INK   3
+#define PANEL_NUM_BG    0
+
+/* ======================================================================
+ * THE NUMBERS ON THE SKILL BUTTONS - image 0x0765F.
+ *
+ * A different font from the status line's, and one nobody had found: ten
+ * digits of 16 bytes at offset 0 of the loaded panel font, which is
+ * main.dat section 2 offsets 6400..6559 - the 160 bytes immediately before
+ * PANEL_HEAD, which is why 0xA0 is where the big font starts.
+ *
+ * Each digit is FOUR pixels wide and stored twice, pre-shifted: bytes 0..7
+ * hold it in the low nibble and 8..15 in the high nibble, so a two-digit
+ * number is the tens from `d*16` through Bit Mask 0x0F (image 0x0766F) into
+ * one byte and the units from `d*16+8` through 0xF0 (image 0x076C2) into the
+ * next. That puts the pair at pixels 4..11 of the button's sixteen, which is
+ * exactly where a recorded frame has them.
+ *
+ *     and ah,ah / je 0x76db      a count of zero is not blank
+ *     inc al / sub ah,0x0a / jae al = tens, ah = units
+ *     ax *= 16 / add ax,0        the glyph, from font offset 0
+ *     cx = 8 / lodsb / stosb / add di,0x2b    eight rows, stepping 44
+ *
+ * A count of zero takes image 0x076DB, which writes 0xFF for both nibbles -
+ * so an unavailable skill is a SOLID block, not an empty one. That is why a
+ * recorded frame has ink in all ten button positions when the level offers
+ * only diggers.
+ *
+ * The colours are measured, not read out of the EGA state: a set font bit is
+ * index 3 and a clear one index 0. Counting says so exactly - "50" has 40
+ * set bits between its two glyphs and the original shows 40 pixels of index
+ * 3 and 24 of index 0, and a zero count shows 64 of index 3.
+ * ====================================================================== */
+/* One button's number, at (x0, y0) in the panel's own 352-wide line.
+ * Transcribed from image 0x0765F - see the note above for every constant. */
+void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                      const uint8_t *sec, uint32_t sec_len,
+                      uint8_t value, uint16_t x0, uint16_t y0)
+{
+    uint32_t font = PANEL_FONT_OFF + PANEL_NUM_OFF;
+    uint8_t tens = (uint8_t)(value / 10u), units = (uint8_t)(value % 10u);
+
+    if (font + 10u * PANEL_NUM_STEP > sec_len) return;
+
+    for (uint8_t r = 0; r < PANEL_NUM_H; r++) {
+        uint16_t py = (uint16_t)(y0 + r);
+        if (py >= dst_h) break;
+        /* image 0x076DB: no count at all, so both nibbles get 0xFF */
+        uint8_t lo = value ? sec[font + tens * PANEL_NUM_STEP + r]
+                           : 0xFFu;
+        uint8_t hi = value ? sec[font + units * PANEL_NUM_STEP + 8 + r]
+                           : 0xFFu;
+        for (uint8_t c = 0; c < 4; c++) {
+            uint16_t px = (uint16_t)(x0 + c);
+            if (px < dst_w)
+                dst[(size_t)py * dst_w + px] =
+                    (lo >> (3 - c)) & 1u ? PANEL_NUM_INK : PANEL_NUM_BG;
+            px = (uint16_t)(x0 + 4 + c);
+            if (px < dst_w)
+                dst[(size_t)py * dst_w + px] =
+                    (hi >> (7 - c)) & 1u ? PANEL_NUM_INK : PANEL_NUM_BG;
+        }
+    }
+}
+
+/* All ten: the release rate twice - image 0x0765F is called for the minimum
+ * and the current, which a level that does not let you change it shows the
+ * same - then the eight skills in the order the header stores them. */
+void panel_buttons(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                   const uint8_t *sec, uint32_t sec_len, const level *lv)
+{
+    uint8_t v[PANEL_BUTTONS];
+    v[0] = v[1] = (uint8_t)lv->release_rate;
+    for (uint8_t k = 0; k < 8; k++)
+        v[2 + k] = (uint8_t)lv->skills[k];
+    for (uint8_t k = 0; k < PANEL_BUTTONS; k++)
+        panel_button_num(dst, dst_w, dst_h, sec, sec_len, v[k],
+                         (uint16_t)(PANEL_ART_X + k * PANEL_BUTTON_W
+                                    + PANEL_NUM_X),
+                         PANEL_NUM_Y);
+}
+
 /* Which video plane each of a glyph's three stored planes goes to - image
  * 0x077A8, 0x077CC and 0x077E5, read off their Map Mask writes. */
 static const uint8_t PANEL_PLANE_BIT[3] = { 0, 1, 3 };

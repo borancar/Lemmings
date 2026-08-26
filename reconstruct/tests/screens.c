@@ -385,6 +385,57 @@ int main(int argc, char **argv)
         ck("zero still prints its units digit", !strcmp(c, "0  "), c);
     }
 
+    /* THE SKILL BUTTONS' NUMBERS, image 0x0765F.
+     *
+     * A four-pixel font of ten digits at the very START of the loaded panel
+     * font - main.dat section 2 offsets 6400..6559, the 160 bytes before
+     * PANEL_HEAD. Drawn and read back, because that is the point of having
+     * found it: "50" must put ink where the original does, and a count of
+     * ZERO must come out SOLID, not blank - image 0x076DB writes 0xFF for
+     * both nibbles, which is why a level offering only diggers still has ink
+     * in all ten button positions.
+     *
+     * The two colours are measured against a recorded frame: a set font bit
+     * is index 3 and a clear one index 0. "50" has 40 set bits between its
+     * glyphs and the original shows exactly 40 pixels of index 3 there. */
+    {
+        const char *e = NULL;
+        dat_file d2;
+        char p4[512];
+        snprintf(p4, sizeof(p4), "%s/main.dat", dir);
+        if (dat_load(p4, &d2, &e) == 0 && d2.count > PANEL_FONT_SECTION) {
+            const uint8_t *sec = d2.sections[PANEL_FONT_SECTION].data;
+            uint32_t len = d2.sections[PANEL_FONT_SECTION].size;
+            static uint8_t cell[8 * 8];
+            uint16_t ink, bg;
+
+            memset(cell, 0xAA, sizeof(cell));
+            panel_button_num(cell, 8, 8, sec, len, 50, 0, 0);
+            ink = bg = 0;
+            for (uint16_t i = 0; i < 64; i++)
+                (cell[i] == 3) ? ink++ : (cell[i] == 0 ? bg++ : (uint16_t)0);
+            ck("50 puts 40 pixels of ink on a button",
+               ink == 40 && bg == 24, "the digit font is not where it should be");
+
+            memset(cell, 0xAA, sizeof(cell));
+            panel_button_num(cell, 8, 8, sec, len, 0, 0, 0);
+            ink = 0;
+            for (uint16_t i = 0; i < 64; i++)
+                if (cell[i] == 3) ink++;
+            ck("a count of zero is SOLID, not blank",
+               ink == 64, "image 0x076DB writes 0xFF; this did not");
+
+            memset(cell, 0xAA, sizeof(cell));
+            panel_button_num(cell, 8, 8, sec, len, 10, 0, 0);
+            ink = 0;
+            for (uint16_t i = 0; i < 64; i++)
+                if (cell[i] == 3) ink++;
+            ck("and ten is neither of those",
+               ink != 64 && ink != 40, "10 drew the wrong glyphs");
+            dat_free(&d2);
+        }
+    }
+
     /* THE PANEL'S FONT, at the tail of main.dat section 2.
      *
      * Checked by drawing and reading back, because the point of finding it was
