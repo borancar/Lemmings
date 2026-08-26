@@ -644,6 +644,44 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Into a level
 
+- **BLOCKER: the original does not play under the emulator.** It reaches the
+  first level, draws it correctly, begins to fade in, and then stops. Nothing
+  further can be matched frame by frame until this is fixed, so it is the top
+  of this list.
+
+  What is measured, not guessed:
+
+  | observation | value |
+  | --- | --- |
+  | screen, twice in ONE run 10s apart | **0 of 64,000 pixels differ** |
+  | screen, three separate runs at delays 62s, 78s, 105s | all **byte-identical** |
+  | DAC entries lit, at both moments | **0 of 256** |
+  | `out3c9` (DAC data writes) | climbing continuously — 37k → 52k over 25s |
+  | `in3da` (retrace polls) | 10.4 million |
+  | CS:IP, six samples 5s apart | **every one** inside `0x17C7..0x1812` |
+  | CRTC start address | constant at `0x2C2` |
+  | framebuffer non-zero bytes | constant at 6,016 |
+
+  `0x17C7` is the **vertical-retrace interrupt handler** - a full register
+  push, then `out 0x0C`/`0x0D` setting the CRTC start from
+  `[0x1F78] + [0x1F7A] + 2`. So the guest is executing, and spending all of
+  its sampled time in that ISR, writing the DAC over and over while the
+  picture never changes and the page never flips.
+
+  It reads as a fade that never completes. The handler's first test is
+  `cmp byte [0x200E], 0xFF` - one of the machine-type flags in
+  docs/machine-types.md, the one shared by "PC compatible" and "Amstrad" - and
+  reading that byte is the obvious next move. `tools/lemmings.py` answers the
+  start-up menus with keys `1` and `2`, so the guest is on **High Performance
+  PCs**, and whether that path needs something the emulator does not provide
+  has never been checked. The deferred note in this file - *"we'll want to keep
+  disassembling all 3 options"* - is no longer a nicety.
+
+  One thing did fall out of it: the status line reports `crtc_off=22`, which
+  is 22 **words** = **44 bytes**, independently confirming the logical line
+  width derived from `0x1E40 = 176 x 44`.
+
+
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte
   stride, ranks four writers at 601 bytes apiece — images `0x07F7B`,
