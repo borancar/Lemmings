@@ -3402,6 +3402,29 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
 #define BUILD_SPR_FRAME (BUILD_SPR_PLANE * BUILD_SPR_PLANES)   /* 78 */
 #define BUILD_SPR_FRAMES 16
 
+/* THE SHRUG'S SPRITE - the eight frames a builder animates through when it
+ * runs out of bricks. Measured the same way, and it is the WALKER's
+ * geometry: 16 wide, ten rows, two planes, 40 bytes a frame, at 19440.
+ *
+ * The guest's own fields do NOT give it. Image 0x027B4 sets [si+0x10] to
+ * 0x5A and image 0x027B9 sets [si+0x12] to 0x3C, and for the digger, the
+ * exit and the builder the second of those IS the file's frame size - 84,
+ * 52 and 78, all three confirmed. Here it would say 60, and the file's frame
+ * is 40. Sixty is ten rows of THREE bytes in two planes, which is the
+ * PRE-SHIFTED store's stride rather than the file's two; the mask makes up
+ * the other thirty and the ninety is the store's whole frame. So those two
+ * fields describe the store, and the file's geometry has to be measured -
+ * which is what scoring every offset against the original's own pixels,
+ * over all eight frames at once, does. Nought to eight pixels a frame
+ * disagree and every one of them is another lemming walking past. */
+#define SHRUG_SPR_BASE  19440
+#define SHRUG_SPR_H     10
+#define SHRUG_SPR_PLANES 2
+#define SHRUG_SPR_ROW   2
+#define SHRUG_SPR_PLANE (SHRUG_SPR_ROW * SHRUG_SPR_H)            /* 20 */
+#define SHRUG_SPR_FRAME (SHRUG_SPR_PLANE * SHRUG_SPR_PLANES)     /* 40 */
+#define SHRUG_SPR_FRAMES 8
+
 #define EXIT_SPR_BASE   16816
 #define EXIT_SPR_W      16
 #define EXIT_SPR_H      13
@@ -3439,6 +3462,33 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                 for (uint8_t p = 0; p < EXIT_SPR_PLANES; p++) {
                     uint8_t byte = sec[base + p * EXIT_SPR_PLANE
                                        + r * EXIT_SPR_ROW + (c >> 3)];
+                    v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                }
+                if (v) dst[(size_t)py * dst_w + px] = v;
+            }
+        }
+        return;
+    }
+
+    /* A builder out of bricks shrugs, and image 0x01F54 dispatches that from
+     * the loop head - so it is the byte at +0x24 that picks the sprite here,
+     * not the flag word, which reads zero throughout. */
+    if (a->extra & 0x80) {
+        if (a->anim >= SHRUG_SPR_FRAMES) return;
+        base = SHRUG_SPR_BASE + (uint32_t)a->anim * SHRUG_SPR_FRAME;
+        if (base + SHRUG_SPR_FRAME > sec_len) return;
+        x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+        y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+        for (uint8_t r = 0; r < SHRUG_SPR_H; r++) {
+            int32_t py = y0 + r;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            for (uint8_t c = 0; c < 16; c++) {
+                int32_t px = x0 + c;
+                uint8_t v = 0;
+                if (px < 0 || px >= (int32_t)dst_w) continue;
+                for (uint8_t p = 0; p < SHRUG_SPR_PLANES; p++) {
+                    uint8_t byte = sec[base + p * SHRUG_SPR_PLANE
+                                       + r * SHRUG_SPR_ROW + (c >> 3)];
                     v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
                 }
                 if (v) dst[(size_t)py * dst_w + px] = v;

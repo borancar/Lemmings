@@ -823,6 +823,36 @@ being something a comparison has to excuse. **A cursor that is scored rather
 than subtracted is worth having**; it is 28 pixels of the port that nothing
 else checks.
 
+### The builder, and the harness that reached it
+
+"Just dig!" stocks nothing but diggers, so seven of the eight skills cannot be
+assigned by playing it - and a routine no run reaches is one the port can have
+wrong for ever. `tools/record_level.py --skills` stocks all eight in the guest
+(`ds:0x6A`, and every THREE bytes) and `LEM_SKILLS` does the same in the port;
+`tools/make_skill_script.py` writes the input for one of them. Both sides get
+the same poke, so the comparison stays a comparison.
+
+| the builder, 400 driven frames | |
+| --- | --- |
+| every lemming's record | **0 differ** |
+| the play area | **399 of 400 exact** |
+
+The one frame is 31, where a stray `MOUSEMOTION` from the dummy video driver
+moves the pointer for a single frame - the instrument, not the port.
+
+What it took, beyond the assignment at image `0x032BD` and the handler at
+image `0x02693`:
+
+- **the walker's guard.** The port ran image `0x2047` only when the state
+  byte read 9; image `0x01F61` looks at the flag word and nothing else.
+- **the shrug**, image `0x02DB5`, which is dispatched from the LOOP HEAD -
+  image `0x01F54` tests bit 7 of `[si+0x24]` before the flag word is read at
+  all. Eight frames animating in place with the flags reading zero.
+- **the brick**, image `0x05F0F`: six pixels wide into plane 3 alone, so it
+  adds solidity and leaves the other three planes as they were.
+- **two sprites**, both measured against the original's own pixels - the
+  builder's 16x13x3 at 4240 and the shrug's 16x10x2 at 19440.
+
 ### The results screen, read at last
 
 Its LAYOUT was the long-standing gap and it is now readable end to end.
