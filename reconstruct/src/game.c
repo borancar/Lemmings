@@ -1798,12 +1798,35 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * - which is one more reason the walker's layout was never going to explain
  * the digger's numbers.
  *
- * Decoding section 0 at every byte offset as a 24x7 sprite in three planes
- * finds 87 plausible-looking places and not one is a lemming, which is
- * consistent with all of the above: the frames are not laid out the way the
- * walker's are. The next move is to hook image 0x07218's blit while a
- * digger draws and record the bytes it actually reads, rather than to work
- * out where they ought to be.
+ * Hooking the addressing while a digger draws settles the SHAPE, and the
+ * measurement checks itself. BP comes out as
+ *
+ *     walker   ... 0x0a6f 0x0a9c 0x0ac9 ...   +45 an animation frame
+ *     digger   0x032a 0x0331 0x0338 0x033f    + 7 an animation frame
+ *
+ * and BP counts SIXTEEN-BYTE PARAGRAPHS, which is what the `>> 4` is for.
+ * So the walker's frames are 45 * 16 = 720 bytes apart - eight pre-shifts of
+ * 90 - and the digger's are 7 * 16 = 112, which is [+0x10] exactly. The
+ * walker gets the extra `* 8` at image 0x070B6 because its eight shifts sit
+ * together; the digger's [+0x2A] is 0xFF so it skips that, and the reason is
+ * plain once seen: A DIGGER DOES NOT MOVE HORIZONTALLY, so it never needs a
+ * sub-byte shift.
+ *
+ * That fixes the geometry, and every number lands:
+ *
+ *     4 bytes a row (32 pixels) x 7 rows x 4 planes            = 112 = [+0x10]
+ *     3 of those planes are colour, so the mask is at 3 x 4 x 7 =  84 = [+0x12]
+ *
+ * Seven rows is what the screen showed. Three colour planes is what the
+ * record's 112/84 ratio gave. The mask landing on [+0x12] to the byte is the
+ * part that makes this a derivation rather than another fit.
+ *
+ * WHERE the bytes are is still open. They are not in section 0 - decoding it
+ * at every offset with this layout finds nothing - and the store's segment
+ * is not the one DS holds at the addressing (0x19B9 there, 0x5772 at the
+ * blit), so the caller reloads it in between. Reading DS at image 0x07218
+ * for a digger's own blit is the next thing, and this port draws no digger
+ * until it is done.
  *
  * One of the two candidates was ruled out earlier, by looking. probe_digger.py dumps
  * the original's own framebuffer while a lemming digs, printing anything

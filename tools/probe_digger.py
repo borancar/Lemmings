@@ -190,5 +190,83 @@ def install(m):
             out.close()
             raise SystemExit(0)
 
+    # WHAT THE BLIT ACTUALLY READS.
+    #
+    # Three rounds of factoring the record's 112 into a width and a height
+    # got nowhere, and image 0x070BF says why: it multiplies the frame index
+    # by [di+0x10], splits the product into a byte offset and a four-bit
+    # remainder, and hands the blitter registers that are not pointers of the
+    # shape this port uses. So stop deducing where the bytes ought to be and
+    # record the ones it reads.
+    #
+    # 0x070E7 is inside the addressing, with DI still on the lemming's
+    # record; 0x07218 is the blit itself. Catching the pair says which
+    # lemming the next blit belongs to.
+    ADDR, BLIT = 0x070E7, 0x07218
+    from unicorn.x86_const import (UC_X86_REG_SI, UC_X86_REG_BX,
+                                   UC_X86_REG_DI, UC_X86_REG_BP,
+                                   UC_X86_REG_DX, UC_X86_REG_CX)
+    bl = {"who": None, "done": 0}
+
+    def at_blit(uc, ad, size, _):
+        off = ad - base
+        if off == ADDR:
+            bl["who"] = uc.reg_read(UC_X86_REG_DI)
+            bl["si"] = uc.reg_read(UC_X86_REG_SI)
+            bl["bx"] = uc.reg_read(UC_X86_REG_BX)
+            bl["bp"] = uc.reg_read(UC_X86_REG_BP)
+            if bl["who"] == ARRAY and bl["done"] < 6:
+                ds = uc.reg_read(UC_X86_REG_DS) * 16
+                fl = int.from_bytes(uc.mem_read(ds + ARRAY + 8, 2), "little")
+                if fl & 0x10:
+                    dseg = uc.reg_read(UC_X86_REG_DS)
+                    out.write(f"  addressing reached for the DIGGER: "
+                              f"DS={dseg:#06x} SI={bl['si']:#06x} "
+                              f"BX={bl['bx']:#06x} BP={bl['bp']:#06x} "
+                              f"flags={fl:#06x}\n")
+                    # BP counts SIXTEEN-BYTE PARAGRAPHS - the walker's steps
+                    # by 45 a frame (8 shifts x 90 bytes) and the digger's by
+                    # 7 (112 bytes, unshifted). So the frame is at DS:BP*16.
+                    where = dseg * 16 + bl["bp"] * 16
+                    raw = bytes(uc.mem_read(where, 112))
+                    out.write(f"    frame at {where:#08x}:\n")
+                    for r in range(0, 112, 16):
+                        out.write("      " + " ".join(f"{v:02x}"
+                                                      for v in raw[r:r+16])
+                                  + "\n")
+                    out.flush()
+                    bl["done"] += 1
+            return
+        if off != BLIT or bl["who"] is None or bl["done"] >= 3:
+            return
+        # Only the record we gave a digger to, and only ONCE IT IS DIGGING.
+        # Without the second half this catches the walker's blits at frame 88
+        # and stops, which is what the first attempt did.
+        if bl["who"] != ARRAY:
+            bl["who"] = None
+            return
+        ds = uc.reg_read(UC_X86_REG_DS) * 16
+        flags = int.from_bytes(uc.mem_read(ds + ARRAY + 8, 2), "little")
+        if not (flags & 0x10):
+            bl["who"] = None
+            return
+        si = uc.reg_read(UC_X86_REG_SI)
+        bx = uc.reg_read(UC_X86_REG_BX)
+        out.write(f"\n  blit for the digger: DS={ds >> 4:#06x} "
+                  f"SI={si:#06x} BX={bx:#06x} "
+                  f"DX={uc.reg_read(UC_X86_REG_DX):#06x} "
+                  f"CX={uc.reg_read(UC_X86_REG_CX):#06x} "
+                  f"BP={uc.reg_read(UC_X86_REG_BP):#06x}\n")
+        out.write(f"    at the addressing: SI={bl['si']:#06x} "
+                  f"BX={bl['bx']:#06x} BP={bl['bp']:#06x}\n")
+        for name, ptr in (("ink  DS:SI", ds + si), ("mask DS:BX", ds + bx)):
+            raw = bytes(uc.mem_read(ptr, 48))
+            out.write(f"    {name} {ptr:#08x}: "
+                      + " ".join(f"{v:02x}" for v in raw) + "\n")
+        bl["done"] += 1
+        bl["who"] = None
+        out.flush()
+
+    m.uc.hook_add(UC_HOOK_CODE, at_blit)
     m.uc.hook_add(UC_HOOK_CODE, at)
     print("  [probe_digger] will select the digger and click a lemming")
