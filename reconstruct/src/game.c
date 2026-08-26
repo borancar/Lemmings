@@ -1775,12 +1775,35 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * rows * (bpr + 1) = 28 that fixes bpr = 3 - a 24-pixel frame with margins,
  * in three planes, 63 bytes of source.
  *
- * What is still not found is WHERE. Decoding section 0 at every byte offset
- * as a 24x7 sprite in three planes, laid out plane-major the way the walker
- * is, finds 87 places with a plausible ink count and not one of them is a
- * lemming - they are noise. So the digger's frames are not in section 0 in
- * the walker's layout, and the next place to look is the other sections, or
- * the store itself at the ink base the record carries.
+ * What is still not found is WHERE - and reading the draw's own addressing
+ * says the question was not even the right shape. Image 0x070BF onwards:
+ *
+ *     mul cx          cx = [di+0x10]   the anim frame times it, 32 bits wide
+ *     bp = (dx:ax) >> 4                the high part, a BYTE offset
+ *     bp += [di+0x0C]                  plus the mask base
+ *     ax &= 0x0F                       and the low NIBBLE is kept
+ *     si  = ax + [di+0x0A]             plus the ink base
+ *     bx  = si + [di+0x12]             plus the mask delta
+ *
+ * So [+0x10] is not "bytes a frame". It feeds a product that gets split into
+ * a byte offset and a four-bit remainder, and `si` and `bx` come out small -
+ * they are not pointers into a sprite the way this port's are. Whatever the
+ * store's addressing is, it is not "frame index times frame size", and every
+ * attempt here to divide 112 into a width and a height was answering a
+ * question the original does not ask.
+ *
+ * Image 0x070B0 also gates on [+0x2A]: when it is not 0xFF the frame index
+ * is shifted left three and offset by BX first. The digger's record has 0xFF
+ * there and the walker's has 0, so the two take different paths through this
+ * - which is one more reason the walker's layout was never going to explain
+ * the digger's numbers.
+ *
+ * Decoding section 0 at every byte offset as a 24x7 sprite in three planes
+ * finds 87 plausible-looking places and not one is a lemming, which is
+ * consistent with all of the above: the frames are not laid out the way the
+ * walker's are. The next move is to hook image 0x07218's blit while a
+ * digger draws and record the bytes it actually reads, rather than to work
+ * out where they ought to be.
  *
  * One of the two candidates was ruled out earlier, by looking. probe_digger.py dumps
  * the original's own framebuffer while a lemming digs, printing anything
