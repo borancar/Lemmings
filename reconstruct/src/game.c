@@ -1800,6 +1800,61 @@ void level_frame_step(level_anim *st, const level *lv)
     level_status_in(0);          /* nothing is counted saved yet */
 }
 
+/* WHAT THE POINTER IS OVER - transcribed from image 0x03EF9.
+ *
+ * The original's own hit test, and it is three comparisons:
+ *
+ *     [0x12] + 8 >= 0xC0   the panel, not the play area. The coordinates are
+ *                          the screen's plus eight, so this is screen row 176
+ *                          - which is where the panel's artwork starts.
+ *     [0x10] - 8 <  0xD0   a button: the index is that >> 4, sixteen pixels
+ *                          each (image 0x03F1F). 0 and 1 are the release rate
+ *                          (image 0x03F27 sends anything below 2 elsewhere),
+ *                          2..9 the skills, and image 0x03F3D picks 10, 11
+ *                          and 12 out by name.
+ *     otherwise            the minimap.
+ *
+ * The minimap, image 0x03F92: it takes the screen x, subtracts 0xDA, clamps
+ * to 0..0x4F and that is the new scroll in SIXTEENTHS - image 0x03FAA builds
+ * the viewport box's left edge as `(scroll >> 4) + 0xD0`, the same units. In
+ * this port's pixels that is a scroll of 0..1264, which is exactly the range
+ * a 1584-wide level leaves for a 320-wide window; the two agreeing is the
+ * check on this reading.
+ *
+ * The 0xDA is ten past the minimap's left edge, so a click lands about the
+ * middle of the 24-wide box rather than at its corner.
+ */
+#define HIT_PANEL_Y   0xC0     /* image 0x03EFF */
+#define HIT_MINIMAP_X 0xD0     /* image 0x03F0D */
+#define HIT_MAP_BIAS  0xDA     /* image 0x03FBE */
+#define HIT_MAP_MAX   0x4F     /* image 0x03FC5 */
+
+level_hit level_pointer_hit(void)
+{
+    level_hit h;
+    h.what = LEVEL_HIT_PLAY;
+    h.button = 0;
+    h.scroll = 0;
+
+    if ((int32_t)lem_mouse_y + 8 < HIT_PANEL_Y)
+        return h;                       /* image 0x03F04: the play area */
+
+    int32_t x = (int32_t)lem_mouse_x - 8;
+    if (x < HIT_MINIMAP_X) {
+        h.what = LEVEL_HIT_BUTTON;
+        h.button = (uint8_t)(x >> 4);   /* image 0x03F1F */
+        return h;
+    }
+
+    /* image 0x03FBE..0x03FCA */
+    int32_t v = x - HIT_MAP_BIAS;
+    if (v < 0) v = 0;
+    if (v > HIT_MAP_MAX) v = HIT_MAP_MAX;
+    h.what = LEVEL_HIT_MINIMAP;
+    h.scroll = (uint16_t)(v * 16);
+    return h;
+}
+
 /* THE PALETTE FADE - transcribed from image 0x0570C and image 0x056E2.
  *
  * Image 0x055B7 is the whole of it: it takes a source and a destination
@@ -2665,6 +2720,26 @@ static void draw_text(uint8_t *dst, const uint8_t *font, uint32_t font_len,
  * the addresses they were read from. They are not in any data file. */
 static const char S_ENTER_CODE[]  = "Enter Code";          /* image 0x0E874 */
 static const char S_CODE_DOTS[]   = "..........";          /* image 0x0E882 */
+/* Image 0x04C92 keeps the pair in CX: cl is '.' and ch is '_'. */
+#define CODE_CARET  '_'
+/* Image 0x04C95 and image 0x04CB3: twenty retraces each way. */
+#define CODE_BLINK  0x14
+
+/* Is the caret showing, and which of the ten cells is it on? The game's own
+ * state - ds:0x4DF2's contents and the cursor image 0x04C8C keeps in DI - so
+ * it is here rather than in sdl_io, and the accessors are not. */
+uint8_t menu_caret;
+uint8_t menu_caret_cell;
+static uint8_t caret_ticks = CODE_BLINK;
+
+/* One retrace of image 0x04C7E's loop: image 0x04CAD counts down and image
+ * 0x04CB8 flips the cell when it reaches zero. */
+void menu_caret_step(void)
+{
+    if (--caret_ticks) return;
+    caret_ticks = CODE_BLINK;
+    menu_caret = (uint8_t)!menu_caret;
+}
 static const char S_INPUT_TYPE[]  = "Choose Input Type";   /* image 0x0E8CD */
 static const char S_INPUT_1[]     = "1. Microsoft Mouse";  /* image 0x0E901 */
 static const char S_INPUT_2[]     = "2. Joystick";         /* image 0x0E8E2 */
@@ -2756,6 +2831,14 @@ static void draw_at(uint8_t *dst, const uint8_t *font, uint32_t font_len,
  *
  * Transcribed from image 0x04967. Its ten dots are the original's own:
  * 0x0497D stores 0x2E ten times into ds:0x4DF2.
+ *
+ * The CARET is one of those ten cells, not a sprite. Image 0x04C7E is the
+ * entry loop, and image 0x04CB8 is the whole of the blink: every 0x14
+ * retraces - the counter at ds:0x491E, reloaded at image 0x04CB3 - it looks
+ * at the cell the cursor is on and swaps it between '.' (0x2E) and '_'
+ * (0x5F). This file used to describe it as "a bar over the first code slot",
+ * which is what an underscore looks like when you have only seen it in a
+ * capture.
  */
 int menu_code_screen(const char *dir, menu_screen *m, const char **err)
 {
@@ -2776,7 +2859,15 @@ int menu_code_screen(const char *dir, menu_screen *m, const char **err)
              x < CODE_DOTS_X + (uint16_t)(strlen(S_CODE_DOTS) * FONT_W); x++)
             if (y < MENU_H && x < BG_DRAWN_W)
                 m->pix[(size_t)y * MENU_W + x] = 0;
-    draw_at(m->pix, font, fontlen, S_CODE_DOTS, CODE_DOTS_X, CODE_DOTS_Y);
+    {
+        /* The cell under the cursor, with the caret in whatever phase it is
+         * in - see the blink above. Everything else stays a dot. */
+        char cells[sizeof S_CODE_DOTS];
+        memcpy(cells, S_CODE_DOTS, sizeof cells);
+        if (menu_caret && menu_caret_cell < sizeof S_CODE_DOTS - 1)
+            cells[menu_caret_cell] = CODE_CARET;
+        draw_at(m->pix, font, fontlen, cells, CODE_DOTS_X, CODE_DOTS_Y);
+    }
     dat_free(&d);
     return 0;
 }

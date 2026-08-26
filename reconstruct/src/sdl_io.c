@@ -369,6 +369,7 @@ struct level_frame {
     lemming      lem[LEMMING_MAX];
     uint8_t      released;   /* how many have come out of the trapdoor */
     uint16_t     view_x;     /* where the play area has scrolled to */
+    uint8_t      selected;   /* which button's box is drawn */
     int          stepped;    /* the first frame is the state before a step */
 };
 
@@ -481,10 +482,24 @@ static int level_run(struct level_frame *A, const canvas *c,
                             (int32_t)(e.motion.y * LEVEL_SCREEN_H / (float)oh) + 8);
                 }
             }
-            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && !grabbed) {
-                /* Click to take it back, the way every DOS front end does. */
-                grabbed = 1;
-                SDL_SetWindowRelativeMouseMode(g_win, true);
+            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                if (!grabbed) {
+                    /* Click to take it back, the way every DOS front end
+                     * does. That click is for the window, not the game. */
+                    grabbed = 1;
+                    SDL_SetWindowRelativeMouseMode(g_win, true);
+                } else {
+                    /* Image 0x03EF9 decides what was clicked. */
+                    level_hit h = level_pointer_hit();
+                    if (h.what == LEVEL_HIT_MINIMAP)
+                        scroll_x = h.scroll;
+                    else if (h.what == LEVEL_HIT_BUTTON)
+                        /* The highlight sits one slot on from the number it
+                         * belongs to - PANEL_SEL_X0 is 16 where the numbers
+                         * start at PANEL_ART_X, 32 - so the box for button k
+                         * is drawn at k + 1. */
+                        A->selected = (uint8_t)(h.button + 1);
+                }
             }
             else if (e.type == SDL_EVENT_KEY_DOWN) {
                 /* Ctrl+Alt gives the pointer back, which is the gesture
@@ -507,27 +522,21 @@ static int level_run(struct level_frame *A, const canvas *c,
                 }
             }
         }
-        /* The pointer at either edge scrolls, which is what the original
-         * does even though its rate has not been read.
+        /* The GAME's cursor at either edge scrolls - not the host pointer.
          *
-         * Only while the pointer is actually over this window. Without that
-         * test it scrolls whenever the pointer happens to sit at the screen
-         * origin - which is exactly where it sits under the dummy video
-         * driver, so a headless run walked the view off the left of the
-         * level at 8 pixels a frame and reached black by frame 78. That
-         * looked like the play area not being drawn at all. */
-        if (seen_motion && SDL_GetMouseFocus() == g_win) {
-            float mx = 0, my = 0;
-            SDL_GetMouseState(&mx, &my);
-            float w = 0, h = 0;
-            SDL_GetRenderOutputSize(ren, (int *)&w, (int *)&h);
-            if (w > 0) {
-                float px = mx * (float)LEVEL_SCREEN_W / w;
-                if (px >= 0 && px < LEVEL_EDGE)                  scroll_x -= LEVEL_SCROLL;
-                else if (px > LEVEL_SCREEN_W - LEVEL_EDGE
-                         && px < LEVEL_SCREEN_W)                 scroll_x += LEVEL_SCROLL;
-            }
-            (void)my; (void)h;
+         * This used to read SDL's pointer position, which cannot work once
+         * the window holds the mouse: the host pointer then never moves, so
+         * the edge test could not fire and scrolling by mouse simply did
+         * nothing. The game's own cursor is the thing that is at an edge,
+         * and its coordinates are the screen's plus eight - see
+         * level_pointer_hit.
+         *
+         * The RATE is still the port's own; the original's has not been
+         * read. */
+        if (seen_motion) {
+            int32_t cx = (int32_t)lem_mouse_x - 8;
+            if (cx < LEVEL_EDGE)                        scroll_x -= LEVEL_SCROLL;
+            else if (cx > LEVEL_SCREEN_W - LEVEL_EDGE)  scroll_x += LEVEL_SCROLL;
         }
         if (scroll_x < 0) scroll_x = 0;
         if (scroll_x > max_x) scroll_x = max_x;
@@ -540,7 +549,7 @@ static int level_run(struct level_frame *A, const canvas *c,
             level_panel_build(A->panel, A->pan_sec, A->pan_len, &A->lv,
                               A->from->pix, A->from->w, A->from->h,
                               A->lem, A->released, A->view_x,
-                              PANEL_SEL_BUTTON);
+                              A->selected);
         }
 
         for (uint16_t y = 0; y < LEVEL_PLAY_H; y++)
@@ -1204,6 +1213,7 @@ int level_show(const char *dir, const char *file, uint32_t which,
         A.pan_sec = NULL; A.pan_len = 0;
         A.view_x = lv->start_x;
         A.stepped = 0;
+        A.selected = PANEL_SEL_BUTTON;
         A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
 
         /* The lemming sprites live in main.dat, not in the level's own

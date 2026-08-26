@@ -478,6 +478,16 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
+        else if (!strcmp(argv[i], "--caret") && i + 1 < argc) {
+            /* Whether the code screen's caret is showing, and on which of
+             * the ten cells - the phase a capture happens to have caught.
+             * See menu_caret in game.h. */
+            int on = 0, cell = 0;
+            const char *v = argv[++i];
+            if (sscanf(v, "%d,%d", &on, &cell) < 1) on = 0;
+            menu_caret = (uint8_t)(on != 0);
+            menu_caret_cell = (uint8_t)cell;
+        }
         else if (!strcmp(argv[i], "--mouse") && i + 1 < argc) {
             /* Where the pointer is, in the ORIGINAL's coordinates - ds:0x10
              * and ds:0x12, eight more than the screen's. A recorded run has

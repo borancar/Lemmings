@@ -100,6 +100,13 @@ BAR_SCROLL_INIT = 4
 # comparable against a port that took the same branch. Image 0x01312 sets it
 # to 4 for 'v'; 'o', '2', '4' and 'x' give 2, 8 and 0.
 ADAPTER_VAR = 0x0BA0C
+# The code screen's ten cells, ds:0x4DF2 - image 0x0E882. The caret is one of
+# them: image 0x04CB8 swaps the cell the cursor is on between '.' (0x2E) and
+# '_' (0x5F) every twenty retraces, so reading the cells back says which phase
+# a capture caught. Same idea as the banner and the walkers.
+CODE_CELLS_VAR = 0x0E882
+CODE_CELLS_N = 10
+
 ANIM_VAR = 0x0E3F0
 ANIM_N = 10
 ANIM_REC = 11
@@ -146,6 +153,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
     last = rating
     last_scroll = 0
     last_anim = None
+    last_cells = None
     for attempt in range(tries):
         if os.path.exists(path):
             os.unlink(path)
@@ -162,6 +170,8 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
             cmd += ["--cmd", "sleep 1.5"]      # let the plate redraw
         cmd += ["--cmd", f"read i+{RATING_VAR:#x} 1"]
         cmd += ["--cmd", f"read i+{ADAPTER_VAR:#x} 2"]
+        if screen == "code":
+            cmd += ["--cmd", f"read i+{CODE_CELLS_VAR:#x} {CODE_CELLS_N}"]
         key = KEY_FOR.get(screen)
         control = os.path.abspath(path) + ".menu"
         if screen == "briefing":
@@ -271,6 +281,8 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                 "this capture shows is unknown. That is a failure, not a pass.")
 
         scroll = None
+        cells = None
+        cpend = False
         adapter = None
         apend2 = False
         anim = None
@@ -297,6 +309,17 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                         for i in range(ANIM_N)])
                     abytes = []
                     apend = 0
+                continue
+            if f"read i+{CODE_CELLS_VAR:#x}" in line:
+                cpend = True
+                continue
+            if cpend and line.strip():
+                by = [int(t, 16) for t in line.replace(":", " ").split()
+                      if len(t) == 2 and all(c in "0123456789abcdefABCDEF"
+                                             for c in t)]
+                if len(by) >= CODE_CELLS_N:
+                    cells = by[:CODE_CELLS_N]
+                cpend = False
                 continue
             if f"read i+{ADAPTER_VAR:#x}" in line:
                 apend2 = True
@@ -362,7 +385,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
         if got > 3:
             raise SystemExit(f"ds:0x1F6E reads {got}, which is not a rating")
         if got == rating and anim is not None:
-            return path, got, scroll, anim
+            return path, got, scroll, anim, cells
         if got == rating:
             # The rating is right and only the walkers' phase is ambiguous.
             # That is worth another run, not a score against a guess.
@@ -371,6 +394,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
             last = got
             last_scroll = scroll
             last_anim = anim
+            last_cells = cells
             continue
         print(f"  asked for rating {rating}, the guest reached {got} - "
               f"presses were dropped or doubled"
@@ -378,9 +402,10 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
         last = got
         last_scroll = scroll
         last_anim = anim
+        last_cells = cells
     print(f"  gave up after {tries} tries; scoring against rating {last}, "
           f"which is what is actually on the screen.")
-    return path, last, last_scroll, last_anim
+    return path, last, last_scroll, last_anim, last_cells
 
 
 def main():
@@ -404,13 +429,22 @@ def main():
     a = ap.parse_args()
 
     if a.capture:
-        cap, shown, scroll, anim = a.capture, a.rating, None, None
+        cap, shown, scroll, anim, cells = a.capture, a.rating, None, None, None
     else:
-        cap, shown, scroll, anim = capture(
+        cap, shown, scroll, anim, cells = capture(
             os.path.join(ROOT, "out",
                          f"{a.screen}{a.rating or ''}.scrn"),
             a.seconds, a.delay, a.rating, screen=a.screen)
     w, h, pal, theirs = read_scrn(cap)
+
+    # The code screen's caret, from the guest's own cells. Image 0x04CB8
+    # swaps the cell the cursor is on between '.' and '_' every twenty
+    # retraces; whichever one the capture caught, the port is told.
+    if cells:
+        txt = "".join(chr(c) if 32 <= c < 127 else "?" for c in cells)
+        cell = txt.find("_")
+        print(f"  the caret: ds:0x4DF2 reads {txt!r}, so it is "
+              + (f"UP on cell {cell}" if cell >= 0 else "down"))
 
     port_raw = os.path.join(ROOT, "out", "menu_port.raw")
     subprocess.run(["make", "-C", os.path.join(ROOT, "reconstruct")],
@@ -466,6 +500,10 @@ def main():
             on = [i for i, v in enumerate(anim) if -16 <= v < 0]
             print(f"  the walkers: ds:0x4960 reads {anim}"
                   f"{f', so {len(on)} on screen (entries {on})' if on else ', none on screen'}.")
+    if cells:
+        _c = "".join(chr(c) if 32 <= c < 127 else "?" for c in cells).find("_")
+        if _c >= 0:
+            port_cmd += ["--caret", f"1,{_c}"]
     subprocess.run(port_cmd, check=True, stdout=subprocess.DEVNULL)
     pw, ph, ppal, ours = read_raw(port_raw)
     if (pw, ph) != (w, h):

@@ -533,6 +533,43 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* What the pointer is over, image 0x03EF9. The coordinates are the
+     * screen's plus eight throughout, which is the thing easiest to get
+     * wrong here. */
+    {
+        level_hit h;
+        lem_mouse_move(160, 100);            /* screen (152, 92) */
+        h = level_pointer_hit();
+        ck("the play area is not the panel", h.what == LEVEL_HIT_PLAY,
+           "a pointer in the level hit the panel");
+
+        lem_mouse_move(160, 184);            /* screen row 176, the panel */
+        h = level_pointer_hit();
+        ck("row 176 is where the panel starts", h.what == LEVEL_HIT_BUTTON,
+           "the panel's first row read as play area");
+        ck("and the button is the screen x over sixteen", h.button == 9,
+           "the button index is not (x - 8) >> 4");
+
+        lem_mouse_move(8 + 0xD0, 190);       /* the minimap's first column */
+        h = level_pointer_hit();
+        ck("past 0xD0 is the minimap", h.what == LEVEL_HIT_MINIMAP,
+           "the minimap read as a button");
+        ck("and its left end asks for scroll 0", h.scroll == 0,
+           "the low clamp at image 0x03FC1 is missing");
+
+        lem_mouse_move(8 + 0xDA + 0x4F, 190);
+        h = level_pointer_hit();
+        ck("its right end asks for the last column", h.scroll == 0x4F * 16,
+           "the high clamp at image 0x03FC5 is missing");
+        ck("which is exactly a 1584-wide level's last view",
+           h.scroll == 1584 - 320, "0x4F * 16 is not 1264");
+
+        lem_mouse_move(8 + 0xDA + 0x80, 190);
+        h = level_pointer_hit();
+        ck("and it does not run past that", h.scroll == 0x4F * 16,
+           "a click past the minimap scrolled beyond the level");
+    }
+
     /* "1 Minute", not "1 Minutes" - image 0x045B2 swaps the 's' for a space
      * when the digit is '1', which is why the line keeps its length. Nothing
      * in level009.dat is a one-minute level, so no capture of the briefing

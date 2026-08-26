@@ -443,6 +443,18 @@ void level_panel_palette(lem_rgb *out);
  * offset by eight; see level_cursor_draw in game.c. */
 /* One step of the original's palette fade - image 0x056E2, two notches a
  * component - and non-zero while anything is still moving. */
+/* What the pointer is over, image 0x03EF9 - the play area, one of the
+ * panel's sixteen-pixel buttons, or the minimap (whose click carries the
+ * scroll it asks for). */
+typedef enum { LEVEL_HIT_PLAY = 0, LEVEL_HIT_BUTTON, LEVEL_HIT_MINIMAP }
+    level_hit_what;
+typedef struct {
+    level_hit_what what;
+    uint8_t        button;   /* 0,1 the rate; 2..9 the skills; 10.. special */
+    uint16_t       scroll;   /* LEVEL_HIT_MINIMAP: where it wants the view */
+} level_hit;
+level_hit level_pointer_hit(void);
+
 int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n);
 
 extern uint16_t lem_mouse_x, lem_mouse_y;
@@ -694,6 +706,13 @@ void menu_hotspots(view_hotspot *spots);
  * they live in sdl_io.c. */
 extern uint32_t menu_scroll;
 extern uint8_t  menu_lem_frame;
+/* The code screen's caret: which of the ten cells it is on, and whether it
+ * is showing this instant. Image 0x04CB8 swaps that cell between '.' and '_'
+ * every twenty retraces, so a capture shows one phase of it and the port has
+ * to be told which - the same job --scroll does for the banner. */
+extern uint8_t menu_caret, menu_caret_cell;
+void menu_caret_step(void);
+
 void     menu_set_scroll(uint32_t pixels);
 uint32_t menu_get_scroll(void);
 
