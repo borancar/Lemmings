@@ -320,8 +320,32 @@ void lemmings_step(lemming *lem, uint8_t n,
 
 /* Give this one a digger, image 0x0320D. Non-zero if it took - the original
  * refuses when the lemming is already in a state that forbids it. */
-/* Which lemming the pointer is over, or -1 - image 0x03D0A. */
+/* WHICH lemming the pointer is over, and how many are under it.
+ *
+ * Image 0x03CE9 keeps two candidates, not one - a lemming already doing a
+ * job (ds:0x60) and a plain one (ds:0x5F) - and image 0x03DB4 picks between
+ * them by the mouse buttons. `count` is ds:0x63, the number the panel prints
+ * beside the name. */
+typedef struct {
+    int16_t chosen;      /* ds:0x5E, or -1 */
+    int16_t busy;        /* ds:0x60 - one already doing a job */
+    int16_t plain;       /* ds:0x5F */
+    uint8_t count;       /* ds:0x63 */
+} level_scan;
+
+void level_pointer_scan(const lemming *lem, uint8_t n, uint16_t view_x,
+                        level_scan *out);
+/* The chosen one, or -1 - image 0x03D0A, through the scan above. */
 int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x);
+
+/* ds:0x14, the mouse buttons. Bit 1 makes image 0x03DB7 prefer the plain
+ * lemming to the busy one; nothing sets it in this port yet. */
+extern uint8_t lem_buttons;
+extern uint8_t lem_under_count;      /* ds:0x63 */
+
+/* What the pointer is over, written into the panel's status line - image
+ * 0x03CE9 blanks eleven cells and the ladder at image 0x03DFA fills them. */
+void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x);
 
 /* Image 0x03180 dispatches the selected skill by BUTTON index: 0 and 1 are
  * the release rate and 2..9 the eight skills, of which 9 - the digger - is
@@ -397,6 +421,13 @@ void    level_release_step(void);
 uint8_t level_released(void);
 
 void        level_status_reset(const level *lv);
+
+/* The skill counts as they are spent - ds:0x6A, three bytes apart, one per
+ * button 2..9. The panel draws these and not the level header's, which never
+ * change. level_status_reset stocks them from the header. */
+void        level_skills_reset(const level *lv);
+uint8_t     level_skill_left(uint8_t button);
+void        level_skill_spend(uint8_t button);
 void        level_timer_step(void);
 /* How many got out, and whether the level is over - see level_over in
  * game.c. ds:0x46 counts them and image 0x02335 is what increments it; the
@@ -418,7 +449,7 @@ void lem_exit_start(lemming *a);
  * original - see the note in game.c. `out` needs CODE_LEN + 1 bytes. */
 char level_code_checksum(const char *first_nine);
 int level_code_ok(const char *code);
-void level_code_generate(uint8_t level, uint8_t other, uint8_t percent,
+void level_code_generate(uint8_t level_no, uint8_t other, uint8_t percent,
                          char *out);
 
 const char *level_results_headline(int timed_out);

@@ -225,6 +225,28 @@ routine.** The clue that this is the situation is a residue that is
 where the original shows 2". A structured residue is a rule you have not
 found, not noise to be whittled down.
 
+## A round trip only checks the round trip
+
+The access code has two routines in the original: image 0x05042 makes one and
+image 0x051A2 takes one back. That looks like a free oracle - generate a code
+with the port, feed it to the validator, and if it is accepted the generator
+is right.
+
+It is not. The validator checks a **checksum the generator computed**, so it
+accepts whatever the generator produced. Three deliberate faults were put into
+the port's generator - a bit moved to the wrong character, the rotation run
+backwards, the level's two nibbles swapped - and all three produced codes the
+validator was perfectly happy with. Every one of them would have shipped.
+
+What settled it was driving the original's own routine and comparing its ten
+characters with the port's: `tools/verify_code.py`. The round trip is still
+worth having, but as the weak claim it is, which is why the tool prints it on
+its own line and says beside it that a wrong table passes too.
+
+The general form: **a check whose reference is derived from the thing under
+test is not a check.** Two routines in the original agreeing is evidence; one
+routine agreeing with itself through another is not.
+
 ## A check at one value of a parameter says nothing about the parameter
 
 The rating plate cost a day twice over, and both halves are general.
@@ -252,6 +274,42 @@ result is only evidence if the positive control fired in the same run. The
 sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
+
+## A verifier that never reached the positive case has verified nothing
+
+`verify_hit.py` compared 326 frames against the original's own `ds:0x1A` and
+agreed on all 326. It looked like the strongest kind of check this project
+has - driven by the original, frame by frame, with the guest's own answer as
+the reference. What it actually established was that both sides say "nothing"
+when the pointer is in open sky, because **in none of those 326 frames was
+the pointer over a lemming**. The one case the sixteen-pixel bug lived in was
+never reached, and the tool did not say so.
+
+Two things fixed it, and both generalise:
+
+- **Report the directions separately.** A single agreed/differed count hides
+  which way the frames went. It now prints `over a lemming : n/m` beside
+  `over nothing : n/m` and says outright when the first is zero.
+- **Drive the input rather than ride along.** The hook now sweeps the pointer
+  over a 21x21 block around a lemming - bigger than the hit box, so it
+  straddles the edges - aimed with nothing but the lemming's raw x and y. A
+  sweep aimed by the arithmetic under test would only confirm it.
+
+The result went from 326 frames of nothing to 600 frames with 256 real hits,
+still agreeing.
+
+Getting there caught an off-by-one in the INSTRUMENT, which is worth its own
+line: the array was being sampled at the end of the frame while the guest had
+scanned it mid-frame, and a walker moves a pixel in between. One frame in 545
+disagreed, at a box edge, and it read exactly like a port bug. Capturing at
+image `0x03DAF` - the instruction that clears `ds:0x1A`, immediately before
+the scan - is the one moment the inputs and the answer belong together.
+
+**And note what a driven check still cannot see.** Both sides here are handed
+the guest's `ds:0x10` and `ds:0x12`, so this scores the relation from those
+two words onward and nothing before it. The trip from a SCREEN position to
+`ds:0x12` is the port's own, and it can be wrong while every frame agrees.
+That is `tools/compare_play.py`'s claim, not this one.
 
 ## A run that reaches the exit takes longer than a command may run
 
@@ -562,6 +620,9 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/decrypt_image.py` | builds `image/vgalemmi.decrypted.img` - records each instruction's plaintext as it executes and writes it back. Merges per-run records, so coverage only grows |
 | `tools/disasm.py` | disassemble the decrypted image at an image offset |
 | `tools/dat.py` | Lemmings DAT decompression, the Python oracle the C port was checked against |
+| **`tools/verify_code.py`** | the access-code generator at image 0x05042, driven rather than read. Its ten mask-and-shift blocks are the sort of thing this port has twice mis-read by eye, so the bit table in `game.c` was **measured** - one input bit at a time - and this checks that measurement against 400 further many-bit inputs covering every rotation count, because a single-bit sweep determines a permutation only if the contributions never interact. It also prints how many codes pass the validator's checksum **and says that a wrong table passes it too**: all three deliberate faults tried here round-tripped happily |
+| **`tools/compare_play.py`** | **the port and the original PLAYING the same level**, frame by frame, from one input script both sides read. Every other frame-by-frame number here came from a level nobody touches, which exercises only the part of the game that needs no player - the skills, the panel's behaviour, the cursor's box and the level's ending are all behind a click and none of them was ever scored. It also makes the CURSOR part of the comparison rather than an excused 28 pixels, because with both pointers driven from one script they are in the same place. Refuses to report a happy figure for a run where the digger was never assigned |
+| **`tools/probe_cursor.py`** | the cursor's two shapes, **read out of the original's sprite store** rather than measured off a frame. Image 0x05827 puts them at 144 bytes a shift in segment `ds:0x1FEA`, and image 0x05854 adds 0x480 for the box it wears over a lemming |
 | `tools/snapshot.py` | capture memory at a chosen point in a run |
 | `tools/probe_protected.py` | record the protected instruction stream as it runs |
 | `tools/probe_desync.py` | find a single-step desynchronisation, if the decryptor ever loses step |

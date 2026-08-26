@@ -40,7 +40,7 @@ numbers, re-measured on the current build:
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
-| **the pointer's hit test** vs the original's own answer | **326 frames, 326 agreed** — the guest sets `ds:0x1A` when its scan finds a lemming, so that byte settles it (`tools/verify_hit.py`) |
+| **the pointer's hit test** vs the original's own answer | **600 frames, 600 agreed — 256 of them with the pointer actually ON a lemming**. The guest sets `ds:0x1A` when its scan finds one, so that byte settles it (`tools/verify_hit.py`). The earlier figure here, 326 of 326, was a SHALLOW PASS: not one of those frames had the pointer over a lemming, so what it checked was that both sides say “nothing” when pointing at sky |
 | **the digger** vs the original digging | state **138 frames agreed**; the shaft it cuts **1,056 pixels, 1,056 agreed** (`tools/verify_dig.py`) |
 | **pace** | the level 170 frames in 10.01s against 17/s; the menu 350 passes in 5.01s against 70 Hz (`tools/verify_pace.py`) |
 | tests | `make test` 134 checks across two binaries, `make sanitize` clean under ASan + UBSan |
@@ -761,12 +761,50 @@ Thirty a rating and a hundred and twenty in all is the same thirty the
 briefing's level number subtracts at image `0x04566`, reached from the other
 end - which is the kind of agreement worth more than either reading alone.
 
+### The access code, driven rather than read
+
+Image `0x05042` scatters the bits of three bytes - the level index at
+`ds:0x1F6B`, `ds:0x491D` and the rescued percentage at `ds:0x40` - across ten
+characters, each added to a base letter, and image `0x0516B` then rotates the
+first seven. **The port generates it, and it is checked against the
+original's own output on 428 calls** - `tools/verify_code.py`.
+
+Three parts of it are *read*: the base letters `"AJHLDHBBCJ"` at `ds:0x4913`,
+the level's two nibbles into characters 7 and 8 at image `0x05135`, and the
+rotate-right of characters 0..6, `8 - (level & 7)` times, at image `0x0516B`.
+The checksum in character 9 is read twice over - image `0x05147` builds it and
+image `0x051D4` checks it, two routines written apart agreeing on one rule.
+
+The **bit table for characters 0..6 is measured, not read**, and says so in
+`game.c`. Ten near-identical mask-and-shift blocks are exactly what this port
+has twice mis-read by eye, and an automatic walk over the disassembly produced
+a plausible table whose last four rows were stale register state.
+`tools/probe_code.py` drives the original's own routine instead, one input bit
+at a time, which determines a bit permutation completely.
+
+| | |
+| --- | --- |
+| one bit at a time | 25 / 25 agree |
+| many bits set, every rotation count | 403 / 403 agree |
+
+The second row is the one that earns the first. A single-bit sweep pins a
+permutation only if the contributions never interact, and that was believed
+rather than measured until those 400 inputs were driven. A control that
+short-circuits the rotation at `level & 7 == 5` - a value no single-bit case
+reaches - produces 51 differences, all of them in the many-bit set.
+
+What the measurement says that reading would not have made obvious: **bits
+4..7 of `ds:0x491D` and bit 7 of the percentage reach no character at all.**
+The code carries four bits of the one and seven of the other.
+
+And the round trip through the validator is **not** what settles this; see
+"A round trip only checks the round trip" in `CLAUDE.md`. All three deliberate
+faults tried against the port - a bit in the wrong character, the rotation
+backwards, the nibbles swapped - produced codes image `0x051D4` accepted.
+
 **Still not written**: the results screen's LAYOUT. Its text assembly is
 transcribed (image `0x048BD`) and its composer found (image `0x046F4`), but
-what draws the screen around the record at `ds:0x4C4E` has not been read. Nor
-has the access code at image `0x05042` - a ten-character bit-shuffle of the
-level index, `ds:0x491D` and the rescued percentage, which the code screen's
-validator at image `0x051A2` would round-trip against.
+what draws the screen around the record at `ds:0x4C4E` has not been read.
 
 ## The results screen, mapped but not written
 

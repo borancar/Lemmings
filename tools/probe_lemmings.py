@@ -75,7 +75,12 @@ def install(m):
         for k in range(n):
             b = bytes(uc.mem_read(base + DGROUP + ARRAY + k * REC, REC))
             recs.append(list(b))
-        st["rows"].append({"f": st["f"], "n": n, "recs": recs})
+        # The scroll too, so a caller can put a lemming on the SCREEN -
+        # tools/compare_play.py aims an input script with it.
+        scroll = int.from_bytes(uc.mem_read(base + DGROUP + 0x00, 2),
+                                "little", signed=True)
+        st["rows"].append({"f": st["f"], "n": n, "scroll": scroll,
+                           "recs": recs})
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame, None, base + 0x01A3, base + 0x01A3)
     atexit.register(lambda: open(out_path, "w").write(json.dumps(st)))

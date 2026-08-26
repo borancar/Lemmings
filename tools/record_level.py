@@ -20,6 +20,9 @@ then one index per pixel.
   uv run python tools/record_level.py --frames 300
   uv run python tools/record_level.py --frames 4200 --out out/ref   # 5 minutes
 
+  # the same input the port gets, at the same frames
+  uv run python tools/record_level.py --frames 3000 --script out/dig.txt
+
 The level is the SECOND time the guest enters mode 0x0D - the first is the
 start-up screen, which is why a driver that waits for "mode 0x0D" alone
 captures the loading message and reports it as a level.
@@ -37,6 +40,9 @@ ROOT = os.path.dirname(HERE)
 DGROUP = 0x9A90            # image offset of DS
 FRAME_DONE = 0x018F        # the game's own end-of-frame
 FRAME_COUNTER = 0x1FD3     # ds: the counter it bumps there
+SCROLL = 0x00              # ds: the view's left edge, in level pixels
+ARRAY, COUNT, REC = 0x88, 0x43, 0x2D   # the lemming array
+DIGGERS = 0x7F             # ds: how many diggers are left to give out
 
 
 def install(m):
@@ -48,6 +54,31 @@ def install(m):
     want = int(os.environ["LEM_REC_FRAMES"])
     os.makedirs(out_dir, exist_ok=True)
     st = {"n": 0, "manifest": []}
+
+    # THE PLAYER'S INPUT, from the same file the port reads.
+    #
+    # A level nobody touches compares only the parts of the game that need no
+    # player - every skill, the panel, and the level's own ending are behind a
+    # click. Both sides take the script from one file so the comparison stays
+    # a comparison and not two different games.
+    #
+    # An action for frame N is applied at the END of frame N-1, because that
+    # is when this hook runs: by the time image 0x018F is reached the frame
+    # has already been composed with whatever the mouse said earlier. The port
+    # applies the same action at the top of the loop pass that composes frame
+    # N. Same frame, both sides.
+    script = []
+    sp = os.environ.get("LEM_REC_SCRIPT")
+    if sp:
+        for line in open(sp):
+            f = line.split("#")[0].split()
+            if len(f) >= 2:
+                script.append((int(f[0]), f[1],
+                               [int(v) for v in f[2:]]))
+        script.sort(key=lambda a: a[0])
+        print(f"  [rec] {len(script)} scripted actions from {sp}")
+    st["script_at"] = 0
+    st["down"] = None
 
     def on_frame(uc, address, size, user):
         # The emulator keeps every mode the guest has set, in order, so the
@@ -70,14 +101,72 @@ def install(m):
                 f.write(bytes(c))
             f.write(fb)
         lit = sum(1 for c in m.palette if any(c))
+        # Lemming 0 and the scroll, in THIS run's frame numbering.
+        #
+        # An input script has to name a screen position, and working one out
+        # from a different tool's frame count is how a click lands on empty
+        # sky: tools/probe_lemmings.py hooks image 0x01A3 from the start of
+        # the level and this hooks image 0x018F from the second mode 0x0D, so
+        # their frame numbers are not the same number. Carrying the position
+        # HERE means the script and the comparison are counting the same
+        # frames by construction.
+        def w(o):
+            return int.from_bytes(uc.mem_read(base + DGROUP + o, 2),
+                                  "little", signed=True)
+        n_lem = uc.mem_read(base + DGROUP + COUNT, 1)[0]
+        lem0 = None
+        if n_lem:
+            lem0 = {"x": w(ARRAY), "y": w(ARRAY + 2),
+                    "hot_x": w(ARRAY + 4), "hot_y": w(ARRAY + 6)}
         st["manifest"].append({
             "frame": i,
+            "scroll": w(SCROLL),
+            "lemmings": n_lem,
+            "diggers": uc.mem_read(base + DGROUP + DIGGERS, 1)[0],
+            "lem0": lem0,
             "game_frame": uc.mem_read(base + DGROUP + FRAME_COUNTER, 1)[0],
             "lit_dac": lit,
             "crtc_start": getattr(m, "crtc", {}).get(0x0C, 0) * 256
                           + getattr(m, "crtc", {}).get(0x0D, 0),
         })
         st["n"] = i + 1
+
+        # Then the input for the frame about to be composed.
+        while (st["script_at"] < len(script)
+               and script[st["script_at"]][0] <= st["n"]):
+            _, verb, arg = script[st["script_at"]]
+            st["script_at"] += 1
+            if verb == "move" and len(arg) == 2:
+                st["down"] = None
+                # THE SCRIPT IS IN SCREEN PIXELS, AND THE GUEST IS NOT.
+                #
+                # Image 0x0426D stores what INT 33h hands back, clamped to
+                # 8..0x148 across and 8..0xC8 down - it adds nothing. The
+                # game set that range itself, and it is the screen shifted by
+                # eight, which is why image 0x05827 draws the cross-hair with
+                # the same eight taken back off. So a script coordinate has
+                # to have the eight PUT ON here, exactly as the port's window
+                # path does in level_run.
+                #
+                # Without it the two sides read one file and mean different
+                # places by it, which is not a comparison at all - it is two
+                # different games scored against each other. The first run
+                # here aimed eight pixels apart and the original assigned a
+                # digger the port had no way to.
+                at = (arg[0] + 8, arg[1] + 8)
+                m.click_mouse(0, at[0], at[1], False)
+                st["at"] = at
+            elif verb == "down" and st.get("at"):
+                st["down"] = st["at"]
+                m.click_mouse(0, st["at"][0], st["at"][1], True)
+            elif verb == "up" and st.get("at"):
+                st["down"] = None
+                m.click_mouse(0, st["at"][0], st["at"][1], False)
+        # The game samples the button through its own handler rather than on
+        # an edge, so a press has to be HELD across frames to be seen - a
+        # tapped one is missed as often as not. See tools/probe_digger.py.
+        if st["down"]:
+            m.click_mouse(0, st["down"][0], st["down"][1], True)
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame,
                   None, base + FRAME_DONE, base + FRAME_DONE)
@@ -96,6 +185,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--frames", type=int, default=300)
     ap.add_argument("--out", default=os.path.join(ROOT, "out", "ref"))
+    ap.add_argument("--script", default=None,
+                    help="an input script, the same file the port reads "
+                         "through LEM_INPUT_SCRIPT - see level_run in "
+                         "reconstruct/src/sdl_io.c for the format")
     ap.add_argument("--seconds", type=int, default=0,
                     help="how long to let the guest run; 0 picks a length "
                          "from --frames at the rate this actually manages")
@@ -113,6 +206,8 @@ def main():
 
     env = dict(os.environ, LEM_HOOK=os.path.abspath(__file__),
                LEM_REC_DIR=out_dir, LEM_REC_FRAMES=str(a.frames))
+    if a.script:
+        env["LEM_REC_SCRIPT"] = os.path.abspath(a.script)
     subprocess.run([sys.executable, os.path.join(HERE, "play.py"),
                     "--auto", "--start", "--start-delay", "5",
                     "--start-tries", "3", "--click-tries", "4",
@@ -128,6 +223,20 @@ def main():
     if not man:
         print("\n  The run never reached the level. Nothing to compare.")
         return 1
+    # A scripted run that never assigned anything has not tested what the
+    # script was for, and must say so rather than report a happy 100% of a
+    # level where nothing happened.
+    if a.script:
+        dig = [m["diggers"] for m in man]
+        if dig and dig[0] == dig[-1]:
+            print(f"\n  THE SCRIPT NEVER ASSIGNED A DIGGER - the count stayed"
+                  f" at {dig[0]} for all {len(man)} frames. Whatever this"
+                  f" sequence compares, it is not a level being played.")
+        elif dig:
+            first = next(i for i, v in enumerate(dig) if v != dig[0])
+            print(f"\n  diggers {dig[0]} -> {dig[-1]}, first spent at frame"
+                  f" {first}")
+
     lit = [m["lit_dac"] for m in man]
     print(f"\n  {len(man)} frames in {out_dir}")
     print(f"    game frame counter : {man[0]['game_frame']} .. "

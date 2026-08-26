@@ -815,13 +815,30 @@ void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 /* All ten: the release rate twice - image 0x0765F is called for the minimum
  * and the current, which a level that does not let you change it shows the
  * same - then the eight skills in the order the header stores them. */
+/* THE SKILL COUNTS AS THEY ARE SPENT - ds:0x6A, and the stride is THREE.
+ *
+ * Image 0x03180 dispatches a button to its handler and each one opens by
+ * testing its own count: image 0x0329B reads ds:0x6A, image 0x03557 ds:0x6D,
+ * then 0x70, 0x73, 0x76, 0x79, 0x7C and image 0x0320D ds:0x7F for the
+ * digger. Three bytes apart, not one - there are two more bytes a skill that
+ * this port has not needed to name.
+ *
+ * The panel used to draw the LEVEL HEADER's numbers, which never change, so
+ * a digger could be spent and the button went on saying ten. Nothing could
+ * see it: a level nobody plays never spends one, and the recorded runs every
+ * frame-by-frame figure came from were exactly that. tools/compare_play.py
+ * drove one click and it showed up as the wrong glyph on button nine. */
+static uint8_t g_skills[8];        /* buttons 2..9 */
+
 void panel_buttons(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                    const uint8_t *sec, uint32_t sec_len, const level *lv)
 {
     uint8_t v[PANEL_BUTTONS];
     v[0] = v[1] = (uint8_t)lv->release_rate;
+    /* What is LEFT, not what the header stocked - see g_skills. */
     for (uint8_t k = 0; k < 8; k++)
-        v[2 + k] = (uint8_t)lv->skills[k];
+        v[2 + k] = g_skills[k];
+    (void)lv;
     for (uint8_t k = 0; k < PANEL_BUTTONS; k++)
         panel_button_num(dst, dst_w, dst_h, sec, sec_len, v[k],
                          (uint16_t)(PANEL_ART_X + k * PANEL_BUTTON_W
@@ -979,6 +996,7 @@ void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 #define ST_SEC_TENS   42      /* ds:0x20A9 - image 0x0222 reads this as bl */
 #define ST_SEC_UNITS  43      /* ds:0x20AA - and this as bh */
 
+
 static char    g_status[PANEL_COLS + 1];
 static uint8_t g_tick;        /* ds:0x85 */
 static uint8_t g_tick_load;   /* ds:0x86 */
@@ -993,8 +1011,33 @@ const char *level_status_line(void) { return g_status; }
  * to a second - and image 0x040E and 0x0413 put '0' in both seconds cells.
  * Confirmed against the running game: the line goes from TIME 4:52 at frame
  * 151 to TIME 4:21 at frame 676, which is 525 frames for 31 seconds. */
+/* Image 0x0320D and its seven siblings read these; the level header stocks
+ * them. Reset here because this already runs once when a level starts, and
+ * two places that both have to be remembered is one place too many. */
+void level_skills_reset(const level *lv)
+{
+    for (uint8_t k = 0; k < 8; k++) g_skills[k] = (uint8_t)lv->skills[k];
+}
+
+/* Image 0x0320D's own test, `cmp byte [0x7f], 0`, and the same opening in
+ * each of the seven siblings. */
+uint8_t level_skill_left(uint8_t button)
+{
+    return (button >= 2 && button < 10) ? g_skills[button - 2] : 0;
+}
+
+/* Image 0x03224: `dec byte [0x7f]`, and the same in each sibling. */
+void level_skill_spend(uint8_t button)
+{
+    if (button >= 2 && button < 10 && g_skills[button - 2])
+        g_skills[button - 2]--;
+}
+
+/* Image 0x0418 and image 0x041D set the tick and its reload; image 0x040E
+ * and image 0x0413 put '0' in both seconds cells. */
 void level_status_reset(const level *lv)
 {
+    level_skills_reset(lv);
     for (uint16_t i = 0; i < PANEL_COLS; i++)
         g_status[i] = PANEL_TEMPLATE[i];
     g_status[PANEL_COLS] = 0;
@@ -1012,6 +1055,94 @@ void level_status_reset(const level *lv)
      * port and the original disagree on exactly one frame in every
      * seventeen - 850, 867, 884 - and agree on every frame either side. */
     g_tick      = LEVEL_FRAMES_PER_SECOND + 1;
+}
+
+/* THE NAMES, transcribed from image 0x0E34F (ds:0x48BF): twelve of seven
+ * characters, padded with spaces, in the order the ladder at image 0x03DFA
+ * indexes them. */
+#define ST_NAME_LEN   7
+static const char STATUS_NAME[12][ST_NAME_LEN + 1] = {
+    "CLIMBER", "FLOATER", "BOMBER ", "BLOCKER", "BUILDER", "BASHER ",
+    "MINER  ", "DIGGER ", "WALKER ", "FALLER ", "SPLATTR", "ATHLETE",
+};
+enum { NM_CLIMBER, NM_FLOATER, NM_BOMBER, NM_BLOCKER, NM_BUILDER, NM_BASHER,
+       NM_MINER, NM_DIGGER, NM_WALKER, NM_FALLER, NM_SPLATTR, NM_ATHLETE };
+
+#define ST_NAME   4       /* ds:0x2083, the line's base being ds:0x207F */
+#define ST_NUM    12      /* ds:0x208B */
+#define ST_BLANK  11      /* image 0x03CEC: eleven cells, ah = 0x0B */
+
+/* Transcribed from image 0x04B68: up to three decimal digits, LEFT aligned,
+ * with leading zeros dropped rather than printed.
+ *
+ * It is not digits3 at image 0x04BC2, which pads with zeros and always fills
+ * three cells. This one writes three spaces first and then only advances the
+ * destination for a digit it actually emitted, so 7 comes out as "7  " and
+ * not "007" - and the panel shows a bare number beside the name because of
+ * it. */
+static void put_num3(char *dst, uint8_t v)
+{
+    dst[0] = dst[1] = dst[2] = ' ';       /* image 0x04B68 */
+    uint8_t any = 0;                      /* bl */
+    uint8_t d = 0;
+
+    while (v >= 100) { v = (uint8_t)(v - 100); d++; }   /* image 0x04B77 */
+    if (d) { *dst++ = (char)('0' + d); any = 1; }       /* image 0x04B89 */
+
+    dst[0] = dst[1] = ' ';                /* image 0x04B91 */
+    d = 0;
+    while (v >= 10) { v = (uint8_t)(v - 10); d++; }     /* image 0x04B9A */
+    if (d || any) { *dst++ = (char)('0' + d); }         /* image 0x04BB0 */
+
+    *dst = (char)('0' + v);               /* image 0x04BB8 */
+}
+
+/* WHAT THE POINTER IS OVER, in the panel's own line - image 0x03CE9.
+ *
+ * Every frame the game blanks eleven cells from ds:0x2083 (image 0x03CEC),
+ * runs the scan, and if it chose a lemming writes that lemming's NAME at the
+ * same place and how many are under the pointer at ds:0x208B. That is the
+ * "DIGGER 2" the original shows and this port showed nothing for.
+ *
+ * Nothing in the frame-by-frame comparison could ever have caught it. The
+ * recorded runs it scores against were made with the pointer parked in open
+ * sky, so the original wrote spaces there too and the two agreed on every
+ * frame of five minutes. It took driving BOTH sides from one input script -
+ * tools/compare_play.py - and it showed up immediately as 342 differing
+ * pixels in panel rows 164..174.
+ *
+ * TWO BRANCHES OF THE LADDER ARE NOT REACHABLE HERE and say so rather than
+ * being guessed: image 0x03DFD and image 0x03E0E read record bytes 0x24 and
+ * 0x25, which are the climber and floater abilities, and this port's lemming
+ * struct does not carry them. A lemming with either would be named WALKER by
+ * the code below. Neither is obtainable in the levels the port reaches, since
+ * "Just dig!" hands out nothing but diggers.
+ */
+void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x)
+{
+    /* Image 0x03CE9: eleven spaces, every frame, before anything else. */
+    for (uint8_t i = 0; i < ST_BLANK; i++) g_status[ST_NAME + i] = ' ';
+
+    level_scan sc;
+    level_pointer_scan(lem, n, view_x, &sc);
+    if (sc.chosen < 0) return;                       /* image 0x03DE5 */
+
+    /* Image 0x03DED: the count first, then the name over the top of the
+     * cells the blanking just cleared. */
+    put_num3(&g_status[ST_NUM], sc.count);
+
+    const lemming *a = &lem[sc.chosen];
+    uint8_t nm;
+    if      (a->flags & 0x0100) nm = NM_BLOCKER;     /* image 0x03E17 */
+    else if (a->flags & 0x0080) nm = NM_BUILDER;     /* image 0x03E21 */
+    else if (a->flags & 0x0200) nm = NM_BASHER;      /* image 0x03E2B */
+    else if (a->flags & 0x0800) nm = NM_MINER;       /* image 0x03E35 */
+    else if (a->flags & 0x0010) nm = NM_DIGGER;      /* image 0x03E3F */
+    else if (a->flags & 0x0400) nm = NM_FALLER;      /* image 0x03E49 */
+    else                        nm = NM_WALKER;      /* image 0x03E50 */
+
+    for (uint8_t i = 0; i < ST_NAME_LEN; i++)        /* image 0x03E53 */
+        g_status[ST_NAME + i] = STATUS_NAME[nm][i];
 }
 
 /* Transcribed from image 0x0213. The time is kept as ASCII in the line
@@ -1436,14 +1567,14 @@ static const struct { uint8_t chr, add; } CODE_PERCENT_BIT[8] = {
 
 /* Image 0x05042: build the ten character access code for a level. `other` is
  * ds:0x491D and `percent` is ds:0x40, the rescued percentage. */
-void level_code_generate(uint8_t level, uint8_t other, uint8_t percent,
+void level_code_generate(uint8_t level_no, uint8_t other, uint8_t percent,
                          char *out)
 {
     for (uint8_t i = 0; i < CODE_LEN; i++)
         out[i] = CODE_BASE[i];
 
     for (uint8_t b = 0; b < 8; b++) {
-        if ((level >> b) & 1)
+        if ((level_no >> b) & 1)
             out[CODE_LEVEL_BIT[b].chr] = (char)(out[CODE_LEVEL_BIT[b].chr]
                                                 + CODE_LEVEL_BIT[b].add);
         if (((other >> b) & 1) && CODE_OTHER_BIT[b].chr != 0xFF)
@@ -1455,13 +1586,13 @@ void level_code_generate(uint8_t level, uint8_t other, uint8_t percent,
     }
 
     /* Image 0x05135: the level's two nibbles, unrotated. */
-    out[7] = (char)(CODE_BASE[7] + (level & 0x0F));
-    out[8] = (char)(CODE_BASE[8] + (level >> 4));
+    out[7] = (char)(CODE_BASE[7] + (level_no & 0x0F));
+    out[8] = (char)(CODE_BASE[8] + (level_no >> 4));
 
-    /* Image 0x0516B: rotate characters 0..6 right, 8 - (level & 7) times.
+    /* Image 0x0516B: rotate characters 0..6 right, 8 - (level_no & 7) times.
      * Image 0x05175 reads character 6, shifts 0..5 up one and drops it in
      * at 0 - so it is a rotate right by one, run that many times. */
-    for (uint8_t n = (uint8_t)(8 - (level & 7)); n; n--) {
+    for (uint8_t n = (uint8_t)(8 - (level_no & 7)); n; n--) {
         char last = out[6];
         for (uint8_t i = 6; i; i--) out[i] = out[i - 1];
         out[0] = last;
@@ -1778,9 +1909,49 @@ static void lem_settle(lemming *a, int16_t bp)
 #define HIT_BOX      12          /* image 0x03D4C and image 0x03D5B */
 #define HIT_BACK_X   4           /* image 0x03D2C */
 #define HIT_BACK_Y   1           /* image 0x03D39 */
+#define HIT_X_CAP    0x680       /* image 0x03D4F */
+#define HIT_X_PINNED 0xD0        /* image 0x03D58 - and yes, 0xD0 */
+#define HIT_Y_CAP    0xB0        /* image 0x03D5E and image 0x03D67 */
 
-int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
+/* Image 0x03D7F: a lemming already doing a job. The bits are 0x8000, and
+ * MINER 0x800, BASHER 0x200, BLOCKER 0x100, BUILDER 0x80 and DIGGER 0x10. */
+#define HIT_BUSY     0x8B90
+
+/* ds:0x14, the mouse buttons as image 0x04269 stores them. Bit 1 is what
+ * image 0x03DB7 tests, and it PICKS THE PLAIN LEMMING over the busy one -
+ * which is how the original lets you point past a worker at the walker
+ * beside it. The port has no second button wired to this yet, so it reads
+ * zero and always takes the busy one, exactly as the original does with the
+ * button up. */
+uint8_t lem_buttons;
+
+/* ds:0x63 - HOW MANY lemmings are under the pointer, which is the number the
+ * panel prints beside the name. Image 0x03DA1 counts them. */
+uint8_t lem_under_count;
+
+/* THE POINTER'S SCAN - transcribed from image 0x03CE9.
+ *
+ * The original does not simply take the first hit. It walks the whole array
+ * keeping TWO candidates - image 0x03D8E remembers one that is already doing
+ * a job and image 0x03D9C one that is not - and image 0x03DB4 then chooses
+ * between them by the mouse buttons. It also counts every lemming it passed
+ * through, at image 0x03DA1, because that count is what the panel shows.
+ *
+ * The port used to return the first hit and nothing else. tools/verify_hit.py
+ * could not see the difference: it compares ds:0x1A, which says only WHETHER
+ * something was found, so picking the wrong lemming out of an overlapping
+ * pair scored as a perfect match. The scan now returns what the original's
+ * own ds:0x5E, ds:0x5F, ds:0x60 and ds:0x63 hold, and the verifier compares
+ * the chosen INDEX.
+ */
+void level_pointer_scan(const lemming *lem, uint8_t n, uint16_t view_x,
+                        level_scan *out)
 {
+    /* Image 0x03CF6 and image 0x03CFB: the count and both candidates start
+     * empty, every frame. */
+    out->count = 0;
+    out->busy = out->plain = out->chosen = -1;
+
     /* Image 0x03D0A reads `[0] - 0x10 + [0x10]`, and ds:0 is the GUEST's
      * scroll - which is sixteen more than this port's `view_x`: the guest
      * reads 640 where tools/compare_run.py fits 624, the same sixteen
@@ -1788,24 +1959,50 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
      * the pointer's record x is simply `view_x + mouse_x`.
      *
      * Subtracting sixteen here as well put every hit test sixteen pixels
-     * left of the lemming. The test below passed anyway, because it was
+     * left of the lemming. The unit test passed anyway, because it was
      * written with the GUEST's 640 in it rather than the port's 624 - a
-     * test that agrees with the code because both were derived from the same
-     * misreading. */
+     * test that agrees with the code because both came from one misreading. */
     int32_t px = (int32_t)view_x + (int32_t)lem_mouse_x;
-    int32_t py = (int32_t)lem_mouse_y + 8;
+    int32_t py = (int32_t)lem_mouse_y + 8;        /* image 0x03D18 */
 
     for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
         const lemming *a = &lem[k];
         if (a->alive == 0xFF) continue;          /* image 0x03D1E */
-        int32_t bx = (int32_t)a->x + a->hot_x - HIT_BACK_X;
-        int32_t by = (int32_t)a->y + a->hot_y - HIT_BACK_Y;
-        if (bx < 0) bx = 0;
-        if (by < 0) by = 0;
-        if (px >= bx && px <= bx + HIT_BOX && py >= by && py <= by + HIT_BOX)
-            return (int16_t)k;
+
+        int32_t bx = (int32_t)a->x + a->hot_x - HIT_BACK_X;   /* 0x03D27 */
+        int32_t by = (int32_t)a->y + a->hot_y - HIT_BACK_Y;   /* 0x03D33 */
+        if (bx < 0) bx = 0;                      /* image 0x03D31 */
+        if (by < 0) by = 0;                      /* image 0x03D3C */
+        if (px < bx || py < by) continue;        /* 0x03D3E, 0x03D45 */
+
+        bx += HIT_BOX;                           /* image 0x03D4C */
+        if (bx >= HIT_X_CAP) bx = HIT_X_PINNED;  /* image 0x03D4F */
+        by += HIT_BOX;                           /* image 0x03D5B */
+        if (by >= HIT_Y_CAP) by = HIT_Y_CAP;     /* image 0x03D5E */
+        if (px > bx || py > by) continue;        /* 0x03D6A, 0x03D71 */
+
+        /* Image 0x03D79. The first test reads record byte 0x24, which this
+         * port does not carry - see level_status_pointer for the same gap -
+         * so only the flag word is asked. */
+        if (a->flags & HIT_BUSY) out->busy = (int16_t)k;    /* image 0x03D8E */
+        else                     out->plain = (int16_t)k;   /* image 0x03D9C */
+        out->count++;                                       /* image 0x03DA1 */
     }
-    return -1;
+
+    /* Image 0x03DB4: the button decides, and the busy one wins by default. */
+    if (lem_buttons & 2) out->chosen = out->plain;           /* image 0x03DBC */
+    else out->chosen = (out->busy >= 0) ? out->busy : out->plain;
+    lem_under_count = out->count;
+    /* Image 0x03DAF clears ds:0x1A and image 0x03DE8 sets it. */
+    lem_cursor_box = (out->chosen >= 0) ? 0xFF : 0;
+}
+
+/* Image 0x03DDE reading ds:0x5E: the chosen one, through the scan above. */
+int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
+{
+    level_scan sc;
+    level_pointer_scan(lem, n, view_x, &sc);
+    return sc.chosen;
 }
 
 #define DIG_BIT        0x0010
@@ -3127,6 +3324,14 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
                        const lemming *lem, uint8_t nlem,
                        uint16_t view_x, uint8_t sel)
 {
+    /* What the pointer is over goes into the line BEFORE the line is drawn -
+     * image 0x03CE9 runs in the play loop ahead of the panel. It lives here
+     * rather than in the callers because the order is the game's, and a
+     * sequence written out twice is a sequence that will differ: that is
+     * exactly how the window path came to have no panel at all while every
+     * measurement of the panel passed. */
+    level_status_pointer(lem, nlem, view_x);
+
     panel_frame(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, PANEL_ART_X, 0);
     panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
                  level_status_line(), 0, 0);

@@ -391,7 +391,6 @@ struct level_frame {
     uint8_t      selected;   /* which button's box is drawn */
     uint8_t      skill;      /* ds:0x82 - the one a click would hand out */
     uint8_t      over;       /* image 0x001C8 said the level has finished */
-    uint8_t      diggers;    /* ds:0x7F - how many are left */
     int          stepped;    /* the first frame is the state before a step */
 };
 
@@ -414,6 +413,95 @@ struct level_frame {
 #define LEVEL_PLAY_H   160
 #define LEVEL_EDGE     8       /* how near the edge the pointer must be */
 #define LEVEL_SCROLL   8       /* pixels a step */
+
+
+/* WHAT THE PLAYER USED TO DO - a recorded input script.
+ *
+ * This belongs here with the rest of the hardware's work, and it is the same
+ * kind of thing: the level's loop asks SDL where the mouse is and whether a
+ * button is down, exactly as the original asks INT 33h, and this answers
+ * those two questions from a file instead of from a person.
+ *
+ * It exists because a frame-by-frame comparison of a level nobody touches
+ * compares only the parts of the game that need no player. Every skill, the
+ * whole of the panel's behaviour and the level's ending are behind an input,
+ * and the way to score them against the original is to give BOTH sides the
+ * same one at the same frame. tools/record_level.py --script feeds the same
+ * file to the guest through the emulator's own mouse.
+ *
+ * The format is one action a line, frame first:
+ *
+ *     12 move 160 100      put the pointer at this SCREEN position
+ *     14 down              press the left button
+ *     20 up                release it
+ *
+ * Frames are this loop's own count, which is the index the frame sink uses,
+ * so a script and a captured sequence line up by construction. */
+#define SCRIPT_MAX 256
+typedef struct { long frame; uint8_t what; int32_t x, y; } script_act;
+enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2 };
+
+static script_act g_script[SCRIPT_MAX];
+static uint16_t g_script_n;
+
+static void script_load(const char *path)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        fprintf(stderr, "input script %s: cannot open it\n", path);
+        return;
+    }
+    char line[128];
+    while (g_script_n < SCRIPT_MAX && fgets(line, sizeof line, f)) {
+        char verb[16];
+        long fr;
+        int32_t x = 0, y = 0;
+        if (line[0] == '#' || line[0] == '\n') continue;
+        int got = sscanf(line, "%ld %15s %d %d", &fr, verb, &x, &y);
+        if (got < 2) continue;
+        script_act *a = &g_script[g_script_n];
+        a->frame = fr; a->x = x; a->y = y;
+        if (!strcmp(verb, "move") && got == 4) a->what = SCRIPT_MOVE;
+        else if (!strcmp(verb, "down")) a->what = SCRIPT_DOWN;
+        else if (!strcmp(verb, "up")) a->what = SCRIPT_UP;
+        else continue;
+        g_script_n++;
+    }
+    fclose(f);
+    fprintf(stderr, "  [script] %u actions from %s\n", g_script_n, path);
+}
+
+/* One press of the left button, wherever the pointer is. A scripted click
+ * and a real one go through this same function - written out twice, the two
+ * would differ, which is the fault that had the window path showing an empty
+ * cave while every harness frame matched. */
+static void level_click(struct level_frame *A, int32_t *scroll_x)
+{
+    /* Image 0x03EF9 decides what was clicked. */
+    level_hit h = level_pointer_hit();
+    if (h.what == LEVEL_HIT_MINIMAP)
+        *scroll_x = h.scroll;
+    else if (h.what == LEVEL_HIT_PLAY) {
+        /* Image 0x03170: a skill is selected, so find what is under the
+         * pointer and give it one. */
+        /* Image 0x0320D opens by testing the count and image 0x03224
+         * spends it. The count lives in game.c now, because the PANEL has
+         * to draw the same number the assignment reads - it was drawing the
+         * level header's instead, which never moves. */
+        if (A->skill == SKILL_DIGGER && level_skill_left(SKILL_DIGGER)) {
+            int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
+            if (k >= 0 && lem_dig_start(&A->lem[k]))
+                level_skill_spend(SKILL_DIGGER);
+        }
+    }
+    else if (h.what == LEVEL_HIT_BUTTON) {
+        /* The highlight sits one slot on from the number it belongs to -
+         * PANEL_SEL_X0 is 16 where the numbers start at PANEL_ART_X, 32 -
+         * so the box for button k is drawn at k + 1. */
+        A->selected = (uint8_t)(h.button + 1);
+        A->skill = h.button;              /* image 0x03F66: ds:0x82 */
+    }
+}
 
 static int level_run(struct level_frame *A, const canvas *c,
                      const lem_rgb *palette, const char *title, uint8_t scale)
@@ -461,6 +549,11 @@ static int level_run(struct level_frame *A, const canvas *c,
      * and writes no files. Setting LEM_SCREEN_DIR is a developer asking for
      * one, the way LEM_FRAMES already asks for a frame budget. */
     const char *sink = SDL_getenv("LEM_SCREEN_DIR");
+    /* A recorded input, so a comparison can cover the parts of the game that
+     * need a player - see script_load. */
+    const char *script = SDL_getenv("LEM_INPUT_SCRIPT");
+    if (script) script_load(script);
+    uint16_t script_at = 0;
     long frame_no = 0;
     /* Edge scrolling waits for a pointer that has actually MOVED. A polled
      * position cannot tell "at the left edge" from "no pointer here": under
@@ -497,6 +590,21 @@ static int level_run(struct level_frame *A, const canvas *c,
 
     int running = 1;
     while (running) {
+        /* The script speaks first, so a scripted frame behaves the same
+         * whether or not the host had an event waiting. */
+        while (script_at < g_script_n && g_script[script_at].frame <= frame_no) {
+            const script_act *act = &g_script[script_at++];
+            if (act->what == SCRIPT_MOVE) {
+                /* The script is in SCREEN pixels; the game's own pointer sits
+                 * eight further on, which is where image 0x0426D clamps. */
+                lem_mouse_move(act->x + 8, act->y + 8);
+                seen_motion = 1;
+            } else if (act->what == SCRIPT_DOWN) {
+                level_click(A, &scroll_x);
+            }
+            /* SCRIPT_UP: the port acts on the press, as image 0x03EF9 does. */
+        }
+
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = 0;
@@ -527,29 +635,7 @@ static int level_run(struct level_frame *A, const canvas *c,
                     grabbed = 1;
                     SDL_SetWindowRelativeMouseMode(g_win, true);
                 } else {
-                    /* Image 0x03EF9 decides what was clicked. */
-                    level_hit h = level_pointer_hit();
-                    if (h.what == LEVEL_HIT_MINIMAP)
-                        scroll_x = h.scroll;
-                    else if (h.what == LEVEL_HIT_PLAY) {
-                        /* Image 0x03170: a skill is selected, so find what
-                         * is under the pointer and give it one. */
-                        if (A->skill == SKILL_DIGGER && A->diggers) {
-                            int16_t k = level_lemming_at(A->lem, A->released,
-                                                         A->view_x);
-                            if (k >= 0 && lem_dig_start(&A->lem[k]))
-                                A->diggers--;
-                        }
-                    }
-                    else if (h.what == LEVEL_HIT_BUTTON)
-                        /* The highlight sits one slot on from the number it
-                         * belongs to - PANEL_SEL_X0 is 16 where the numbers
-                         * start at PANEL_ART_X, 32 - so the box for button k
-                         * is drawn at k + 1. */
-                    {
-                        A->selected = (uint8_t)(h.button + 1);
-                        A->skill = h.button;      /* image 0x03F66: ds:0x82 */
-                    }
+                    level_click(A, &scroll_x);
                 }
             }
             else if (e.type == SDL_EVENT_KEY_DOWN) {
@@ -1299,7 +1385,6 @@ int level_show(const char *dir, const char *file, uint32_t which,
         A.over = 0;
         level_saved_reset();
         level_triggers_set(&A.lv, &g);
-        A.diggers = (uint8_t)lv->skills[7];   /* the digger's slot */
         A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
 
         /* The lemming sprites live in main.dat, not in the level's own
