@@ -498,6 +498,8 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
                     took = lem_dig_start(&A->lem[k]);      /* image 0x0320D */
                 else if (A->skill == SKILL_BUILDER)
                     took = lem_build_start(&A->lem[k]);    /* image 0x032BD */
+                else if (A->skill == SKILL_BASHER)
+                    took = lem_bash_start(&A->lem[k]);     /* image 0x034CE */
                 else if (A->skill == SKILL_BLOCKER)
                     took = lem_block_start(&A->lem[k]);    /* image 0x03336 */
                 else if (A->skill == SKILL_BOMBER)

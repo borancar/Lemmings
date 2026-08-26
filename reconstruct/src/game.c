@@ -3034,6 +3034,220 @@ static void lem_hoist(lemming *a)
     a->y = (int16_t)(a->y - 2);                     /* image 0x0264A */
 }
 
+/* THE BASHER - transcribed from image 0x034CE (assigning), image 0x0287D
+ * (doing it) and image 0x05FAC (taking the wall away).
+ *
+ * Assigning refuses on 0xF76F, and then asks something no other skill asks:
+ * image 0x034DC reads [si+0x2B] - the trigger cell two rows up and two along
+ * the way it faces, which image 0x02EFC stores on every lookup - and refuses
+ * when it is 7 facing right or 8 facing left. Image 0x034EF diverts 9, which
+ * is steel, somewhere else entirely.
+ *
+ * The counter is THIRTY-TWO, image 0x02880's `and [si+0x28], 0x1F`, and its
+ * low nibble splits the work:
+ *
+ *     2..5        image 0x028A1 takes a slice of wall away, index al - 2
+ *     0x0B..0x1F  image 0x0293A walks it forward one and drops it if there
+ *                 is nothing underneath
+ *     otherwise   nothing happens
+ *
+ * The masks are in the same resource as the crater's, at offset 0: image
+ * 0x06025 adds slice * 240 and shift * 30, and image 0x0600B adds 0x3C0 for
+ * a basher facing left. Two directions of four slices of eight shifts of ten
+ * rows of three bytes. Only shift 0 is kept, for the reason the crater's is.
+ */
+static const uint32_t BASH_MASK[2][4][10] = {
+  { /* facing right */
+    {   /* right, slice 0 */
+        0x000000,  /* ........................ */
+        0x00FC00,  /* ........######.......... */
+        0x00FE00,  /* ........#######......... */
+        0x00F800,  /* ........#####........... */
+        0x00E000,  /* ........###............. */
+        0x00E000,  /* ........###............. */
+        0x00E000,  /* ........###............. */
+        0x00E000,  /* ........###............. */
+        0x00E000,  /* ........###............. */
+        0x00C000,  /* ........##.............. */
+    },
+    {   /* right, slice 1 */
+        0x000000,  /* ........................ */
+        0x007C00,  /* .........#####.......... */
+        0x003E00,  /* ..........#####......... */
+        0x001E00,  /* ...........####......... */
+        0x001C00,  /* ...........###.......... */
+        0x001C00,  /* ...........###.......... */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+    },
+    {   /* right, slice 2 */
+        0x000000,  /* ........................ */
+        0x007C00,  /* .........#####.......... */
+        0x003E00,  /* ..........#####......... */
+        0x001F00,  /* ...........#####........ */
+        0x001F00,  /* ...........#####........ */
+        0x001E00,  /* ...........####......... */
+        0x001C00,  /* ...........###.......... */
+        0x000C00,  /* ............##.......... */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+    },
+    {   /* right, slice 3 */
+        0x000000,  /* ........................ */
+        0x007C00,  /* .........#####.......... */
+        0x003E00,  /* ..........#####......... */
+        0x001F00,  /* ...........#####........ */
+        0x001F00,  /* ...........#####........ */
+        0x001F00,  /* ...........#####........ */
+        0x001F00,  /* ...........#####........ */
+        0x001F00,  /* ...........#####........ */
+        0x001F00,  /* ...........#####........ */
+        0x003E00,  /* ..........#####......... */
+    },
+  },
+  { /* facing left */
+    {   /* left, slice 0 */
+        0x000000,  /* ........................ */
+        0x1F8000,  /* ...######............... */
+        0x3F8000,  /* ..#######............... */
+        0x0F8000,  /* ....#####............... */
+        0x038000,  /* ......###............... */
+        0x038000,  /* ......###............... */
+        0x038000,  /* ......###............... */
+        0x038000,  /* ......###............... */
+        0x038000,  /* ......###............... */
+        0x018000,  /* .......##............... */
+    },
+    {   /* left, slice 1 */
+        0x000000,  /* ........................ */
+        0x1F0000,  /* ...#####................ */
+        0x3E0000,  /* ..#####................. */
+        0x3C0000,  /* ..####.................. */
+        0x1C0000,  /* ...###.................. */
+        0x1C0000,  /* ...###.................. */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+    },
+    {   /* left, slice 2 */
+        0x000000,  /* ........................ */
+        0x1F0000,  /* ...#####................ */
+        0x3E0000,  /* ..#####................. */
+        0x7C0000,  /* .#####.................. */
+        0x7C0000,  /* .#####.................. */
+        0x3C0000,  /* ..####.................. */
+        0x1C0000,  /* ...###.................. */
+        0x180000,  /* ...##................... */
+        0x000000,  /* ........................ */
+        0x000000,  /* ........................ */
+    },
+    {   /* left, slice 3 */
+        0x000000,  /* ........................ */
+        0x1F0000,  /* ...#####................ */
+        0x3E0000,  /* ..#####................. */
+        0x7C0000,  /* .#####.................. */
+        0x7C0000,  /* .#####.................. */
+        0x7C0000,  /* .#####.................. */
+        0x7C0000,  /* .#####.................. */
+        0x7C0000,  /* .#####.................. */
+        0x7C0000,  /* .#####.................. */
+        0x3E0000,  /* ..#####................. */
+    },
+  },
+};
+
+#define BASH_BIT     0x0200
+#define BASH_KEEP    0xF76F     /* image 0x034D5 */
+#define BASH_MASKOFF 0xF56F     /* image 0x034FF */
+#define BASH_ROWS    10         /* image 0x0602C: cx = 0x0A */
+#define BASH_STATE   0x20       /* image 0x0352B */
+
+int lem_bash_start(lemming *a)
+{
+    if (a->flags & BASH_KEEP) return 0;             /* image 0x034D5 */
+    uint8_t ahead = (uint8_t)(a->tahead & 0x0F);    /* image 0x034DC */
+    uint8_t wall = (a->dir == 1) ? 7 : 8;           /* image 0x034E3 */
+    if (ahead == wall) return 0;                    /* image 0x034ED */
+    if (ahead == 9) return 0;                       /* image 0x034EF: steel */
+    a->flags = (uint16_t)((a->flags & BASH_MASKOFF) | BASH_BIT);
+    a->hot_x = -8;                                  /* image 0x03509 */
+    a->hot_y = -10;                                 /* image 0x0350E */
+    a->anim  = 0;                                   /* image 0x03513 */
+    a->state = BASH_STATE;                          /* image 0x0352B */
+    a->extra &= 1;                                  /* image 0x03539 */
+    return 1;
+}
+
+/* Image 0x05FAC: ten rows from y + hot_y - 0x10, the span starting at
+ * x + hot_x, cleared through the Set/Reset path so all four planes go. */
+static void lem_bash_slice(lemming *a, uint8_t slice, uint8_t *lvl,
+                           uint16_t cw, uint16_t chh)
+{
+    const uint32_t *m = BASH_MASK[a->dir < 0 ? 1 : 0][slice & 3];
+    int32_t x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;   /* image 0x05FF4 */
+    int32_t y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;   /* image 0x05FE6 */
+    for (uint8_t r = 0; r < BASH_ROWS; r++) {
+        int32_t y = y0 + r;
+        if (y < 0 || y >= (int32_t)chh) continue;
+        for (uint8_t c = 0; c < 24; c++) {
+            if (!((m[r] >> (23 - c)) & 1u)) continue;
+            int32_t x = x0 + c;
+            if (x < 0 || x >= (int32_t)cw) continue;
+            lvl[(size_t)y * cw + x] = 0;            /* image 0x06041 */
+        }
+    }
+}
+
+static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 0x1F);      /* image 0x02880 */
+    uint8_t al = (uint8_t)(a->anim & 0x0F);         /* image 0x02887 */
+
+    if (al >= 0x0B) {                               /* image 0x02889 */
+        /* Image 0x0293A: forward one, and down if there is nothing there. */
+        a->x = (int16_t)(a->x + a->dir);
+        if (a->x <= 0x10 || a->x >= 0x680) {        /* 0x02940, 0x02945 */
+            a->dir = (int8_t)-a->dir;
+            return;
+        }
+        for (uint8_t k = 0; k < 3; k++) {
+            if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y + k)))
+                return;                             /* image 0x02953 */
+            a->y = (int16_t)(a->y + 1);             /* image 0x02958 */
+        }
+        return;
+    }
+    if (al < 2 || al > 5) return;                   /* 0x02890, 0x02897 */
+    lem_bash_slice(a, (uint8_t)(al - 2), lvl, cw, chh);   /* image 0x028A1 */
+
+    if (a->anim != 5) return;                       /* image 0x028A7 */
+
+    /* IS THERE ANYTHING LEFT TO BASH - image 0x028AE, and without it a
+     * basher never stops. The original bashed for FOUR frames on this level
+     * and the port for 288, which is what said this test was missing rather
+     * than mis-transcribed.
+     *
+     * Four columns, starting EIGHT ahead - image 0x028BC multiplies the
+     * direction by eight - and each one row-tested at y - 6 (image
+     * 0x028B3). Anything solid in any of them and it carries on; nothing in
+     * all four and image 0x028FE puts it back to walking. */
+    int32_t probe_y = (int32_t)a->y - 6;            /* image 0x028B3 */
+    for (uint8_t k = 0; k < 4; k++) {
+        int32_t px = (int32_t)a->x + a->dir * (8 + k);
+        if (lem_solid(lvl, cw, chh, (int16_t)px, (int16_t)probe_y))
+            return;                                 /* image 0x028CC */
+    }
+    a->flags = 0;                                   /* image 0x028FE */
+    a->hot_x = -8;
+    a->hot_y = -10;
+    a->anim  = 0;
+    a->state = 9;
+    a->extra &= 1;
+}
+
 /* THE CRATER - transcribed from image 0x05DF8, its shape MEASURED out of the
  * original's own memory.
  *
@@ -3670,6 +3884,8 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_climb(a, lvl, cw, chh);              /* image 0x254F */
         else if (f & 0x0040)
             lem_hoist(a);                            /* image 0x2637 */
+        else if (f & 0x0200)
+            lem_bash(a, lvl, cw, chh);               /* image 0x287D */
         else if (f & 0x0100)
             lem_block(a, lvl, cw, chh);              /* image 0x27E8 */
         else if (f & 0x0080)
@@ -3682,8 +3898,7 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_splat(a);                            /* image 0x22DF */
         else if (f & 0x0008)
             lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
-        /* 0x0200 0x287D, 0x0800 0x2B35, 0x1000 0x22F5, 0x4000 0x2340 -
-         * none read. */
+        /* 0x0800 0x2B35, 0x1000 0x22F5, 0x4000 0x2340 - none read. */
 
         /* THE TRIGGER IS TESTED AFTER THE MOVE, NOT BEFORE IT.
          *

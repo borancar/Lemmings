@@ -108,6 +108,12 @@ def install(m):
         mseg = int.from_bytes(uc.mem_read(ds + 0x1FE8, 2), "little")
         open(os.path.join(out_dir, "crater.bin"), "wb").write(
             bytes(uc.mem_read(mseg * 16 + 0xC60, 528)))
+        # THE BASHER'S, in the same resource at offset 0. Image 0x06025 adds
+        # nothing but slice * 240 and shift * 30, and image 0x0600B adds
+        # 0x3C0 for a basher facing left - so two directions of four slices
+        # of eight shifts of ten rows of three bytes, 1,920 in all.
+        open(os.path.join(out_dir, "bash.bin"), "wb").write(
+            bytes(uc.mem_read(mseg * 16, 0x780)))
 
         cseg = int.from_bytes(uc.mem_read(ds + 0x1FEA, 2), "little")
         open(os.path.join(out_dir, "cursor_store.bin"), "wb").write(

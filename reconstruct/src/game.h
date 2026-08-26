@@ -377,6 +377,7 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x);
 #define SKILL_BOMBER  4
 #define SKILL_CLIMBER 2
 #define SKILL_FLOATER 3
+#define SKILL_BASHER  7
 #define SKILL_BLOCKER 5
 #define SKILL_BUILDER 6
 #define SKILL_DIGGER 9
@@ -395,6 +396,8 @@ int lem_float_start(lemming *a);
 /* And a blocker, image 0x03336 - which refuses if another is already
  * standing within a cell of it. */
 int lem_block_start(lemming *a);
+/* And a basher, image 0x034CE - which asks the trigger map what is ahead. */
+int lem_bash_start(lemming *a);
 
 int lem_dig_start(lemming *a);
 uint8_t lemmings_live(const lemming *lem, uint8_t n);

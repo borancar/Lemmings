@@ -861,10 +861,10 @@ The record now carries the two trigger bytes the original keeps at `[si+0x2B]`
 and `[si+0x2C]`, because the basher's guard at image `0x034DC` reads one of
 them. A lookup that only returned its answer left the basher no way to ask.
 
-### The basher, read but not written
+### The basher
 
-Everything below is read and none of it is transcribed, so the next session
-starts here rather than at the disassembler.
+Transcribed and exact - **0 of 400 frames differ**. What follows is the
+reading it came from.
 
 **Assigning**, image `0x034CE`: refuse if `[si+8] & 0xF76F`; then take
 `[si+0x2B] & 0x0F` - the trigger cell two rows up and two along the way it
@@ -885,10 +885,18 @@ Its low nibble decides:
 
 **The masks**, image `0x05FAC`: the slice index is multiplied by 240 (image
 `0x05FB4`'s two shifts and a subtract), image `0x0600B` adds `0x3C0` when the
-direction is `0xFF`, and the shift comes from `(x + hot_x) & 7`. So it is two
+direction is `0xFF`, and the shift comes from `(x + hot_x) & 7`. Two
 directions of four slices of eight shifts of ten rows of three bytes - 1,920
-bytes - and like the crater's it will be a runtime store rather than anything
-in a `.dat`.
+bytes at offset 0 of the same resource the crater's masks sit at 0xC60 of,
+and like them built at run time rather than read from a `.dat`.
+
+**And what stops it**, image `0x028AE` - without which a basher never stops.
+On the frame the counter reads 5 it probes FOUR columns starting eight ahead
+(image `0x028BC` multiplies the direction by eight), each at `y - 6`; solid
+in any of them and it carries on, nothing in all four and image `0x028FE`
+puts it back to walking. The original bashed for FOUR frames on "Just dig!"
+where the port bashed for 288, which is what said the test was missing
+rather than mis-read.
 
 ### Level 2, where lemmings fall and die
 
