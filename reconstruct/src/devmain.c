@@ -478,6 +478,15 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
+        else if (!strcmp(argv[i], "--mouse") && i + 1 < argc) {
+            /* Where the pointer is, in the ORIGINAL's coordinates - ds:0x10
+             * and ds:0x12, eight more than the screen's. A recorded run has
+             * the mouse wherever it was left, so a comparison has to be able
+             * to put the port's there. */
+            int mx = 150, my = 100;
+            if (sscanf(argv[++i], "%d,%d", &mx, &my) == 2)
+                lem_mouse_move(mx, my);
+        }
         else if (!strcmp(argv[i], "--pc") && i + 1 < argc) {
             /* The same switch the game takes - see main.c. High performance
              * swaps the panel's eight colours in part-way down the screen. */

@@ -428,13 +428,57 @@ static int level_run(struct level_frame *A, const canvas *c,
      * frame and every headless frame after 78 was black. */
     int seen_motion = 0;
 
+    /* The pointer is HELD by the window, and Ctrl+Alt gives it back.
+     *
+     * The original owns the mouse completely - it hides the driver's pointer
+     * at image 0x00F43, sets its own range at images 0x00F2B and 0x00F36 and
+     * draws its own cross-hair - and a window that lets the host pointer walk
+     * out of it while the game still thinks it is moving does not reproduce
+     * that. Held, the two agree; released, the game keeps the last position. */
+    int grabbed = 1;
+    SDL_SetWindowRelativeMouseMode(g_win, true);
+
     int running = 1;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = 0;
-            else if (e.type == SDL_EVENT_MOUSE_MOTION) seen_motion = 1;
+            else if (e.type == SDL_EVENT_MOUSE_MOTION) {
+                seen_motion = 1;
+                if (grabbed) {
+                    /* RELATIVE motion while the pointer is held, which is
+                     * what the original works in: it asks the driver for
+                     * mickeys and sets the mickey-to-pixel ratio itself at
+                     * image 0x00F20. An absolute position would also stop at
+                     * the edge of the desktop rather than at the edge of the
+                     * game's own range. */
+                    lem_mouse_move((int32_t)lem_mouse_x + (int32_t)e.motion.xrel,
+                                   (int32_t)lem_mouse_y + (int32_t)e.motion.yrel);
+                } else {
+                    int ow = 0, oh = 0;
+                    SDL_GetRenderOutputSize(ren, &ow, &oh);
+                    if (ow > 0 && oh > 0)
+                        lem_mouse_move(
+                            (int32_t)(e.motion.x * LEVEL_SCREEN_W / (float)ow) + 8,
+                            (int32_t)(e.motion.y * LEVEL_SCREEN_H / (float)oh) + 8);
+                }
+            }
+            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && !grabbed) {
+                /* Click to take it back, the way every DOS front end does. */
+                grabbed = 1;
+                SDL_SetWindowRelativeMouseMode(g_win, true);
+            }
             else if (e.type == SDL_EVENT_KEY_DOWN) {
+                /* Ctrl+Alt gives the pointer back, which is the gesture
+                 * DOSBox trained everyone to reach for. Without a release
+                 * the window owns the mouse and the only way out is to kill
+                 * the process - so a grab without one is a bug, not a
+                 * feature. */
+                if ((e.key.mod & SDL_KMOD_CTRL) && (e.key.mod & SDL_KMOD_ALT)) {
+                    grabbed = 0;
+                    SDL_SetWindowRelativeMouseMode(g_win, false);
+                    break;
+                }
                 switch (e.key.key) {
                 case SDLK_ESCAPE: case SDLK_Q: running = 0;               break;
                 case SDLK_LEFT:  scroll_x -= LEVEL_SCROLL * 2;            break;
@@ -493,6 +537,12 @@ static int level_run(struct level_frame *A, const canvas *c,
                 memset(dst, 0, LEVEL_SCREEN_W);
         }
 
+        /* The cursor goes on LAST, over the play area and the panel both -
+         * the original saves the bytes underneath it (image 0x0719C) and puts
+         * them back before the next frame, which is the same thing as drawing
+         * it after everything else into a buffer that is rebuilt each frame. */
+        level_cursor_draw(screen, LEVEL_SCREEN_W, LEVEL_SCREEN_H, A->view_x);
+
         void *pixels = NULL;
         int pitch = 0;
         if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
@@ -536,6 +586,8 @@ static int level_run(struct level_frame *A, const canvas *c,
         SDL_Delay(16);
         if (budget && --budget == 0) running = 0;
     }
+    /* Never leave the pointer captured by a window that is going away. */
+    SDL_SetWindowRelativeMouseMode(g_win, false);
     free(screen);
     return 0;
 }

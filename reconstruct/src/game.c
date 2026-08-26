@@ -1800,6 +1800,105 @@ void level_frame_step(level_anim *st, const level *lv)
     level_status_in(0);          /* nothing is counted saved yet */
 }
 
+/* THE MOUSE CURSOR - the game's own dithered cross-hair.
+ *
+ * The original hides the DOS pointer (INT 33h AX=2 at image 0x00F43) and
+ * draws this itself. Its handler at image 0x04255 asks INT 33h function 3
+ * and stores the position at ds:0x10 and ds:0x12, clamped to 8..0x148 and
+ * 8..0xC8 - so the coordinates are the screen's OFFSET BY EIGHT, and a
+ * pointer at (160, 100) is at (152, 92) on a 320x200 screen.
+ *
+ * Image 0x07218 draws it, masked through GC register 8, from a pre-shifted
+ * store: image 0x05827 takes the low three bits of ds:0x10 as the phase and
+ * multiplies by 144, the ink three bytes a row for sixteen rows in two
+ * planes, and the mask at +0x60. Images 0x0719C and 0x071CA save and restore
+ * the 3x16 bytes underneath it, at the 44-byte stride of a 352-pixel line.
+ *
+ * THE SHAPE HERE IS MEASURED, not read out of a file: it is the pixels of
+ * the original's own recorded frames that the port did not draw, and it is
+ * the same 28 pixels, the same three colour indices and the same place in
+ * every one of 5,100 frames. Where the unshifted sprite lives in MAIN.DAT
+ * has not been traced, so this is not a transcription and does not claim to
+ * be one - see level_cursor_draw.
+ *
+ * Zero is transparent; the original's mask says which pixels it touches.
+ */
+#define CURSOR_W 14
+#define CURSOR_H 14
+/* The cross-hair's centre, and the point the pointer is actually at. */
+#define CURSOR_HOT_X 7
+#define CURSOR_HOT_Y 7
+/* The eight the coordinates are offset by - image 0x0426D and image 0x04282
+ * clamp to 8 at the low end. */
+#define CURSOR_ORIGIN 8
+
+static const uint8_t CURSOR[CURSOR_H][CURSOR_W] = {
+    { 0,0,0,0,0,0,3,2,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,3,2,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,3,2,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 2,0,2,0,2,0,1,1,0,3,0,3,0,3 },
+    { 3,0,3,0,3,0,1,1,0,2,0,2,0,2 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,2,3,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,2,3,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,2,3,0,0,0,0,0,0 },
+};
+
+/* Where the pointer is, in the ORIGINAL's coordinates - ds:0x10 and ds:0x12,
+ * so eight more than the screen position and clamped the way image 0x0426D
+ * clamps them. Image 0x00F41 starts it at (150, 100), which is where the
+ * game puts it before anyone touches the mouse. */
+uint16_t lem_mouse_x = 150;
+uint16_t lem_mouse_y = 100;
+
+/* Transcribed from image 0x0426D: the original's own handler clamps the
+ * position it got from INT 33h function 3 to 8..0x148 across and 8..0xC8
+ * down (image 0x04282) before storing it, so the game never sees a pointer
+ * outside its own range. */
+void lem_mouse_move(int32_t x, int32_t y)
+{
+    if (x < 8) x = 8;
+    if (x > 0x148) x = 0x148;
+    if (y < 8) y = 8;
+    if (y > 0xC8) y = 0xC8;
+    lem_mouse_x = (uint16_t)x;
+    lem_mouse_y = (uint16_t)y;
+}
+
+/*
+ * NOT TRANSCRIBED. Draw it wherever the pointer is.
+ *
+ * The original composes it through the EGA's write logic - image 0x07218,
+ * masked through GC register 8, out of the pre-shifted store image 0x05827
+ * indexes by the low three bits of ds:0x10 - and this writes indices into a
+ * byte buffer instead, the same picture by a different route, which is what
+ * the rest of the port does for every sprite.
+ *
+ * The SHAPE is measured against the original rather than read out of a file:
+ * where the unshifted sprite lives in MAIN.DAT has not been traced. See
+ * CURSOR above for what the measurement was. */
+void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x)
+{
+    int32_t sx = (int32_t)lem_mouse_x - CURSOR_ORIGIN - CURSOR_HOT_X;
+    int32_t sy = (int32_t)lem_mouse_y - CURSOR_ORIGIN - CURSOR_HOT_Y;
+    (void)view_x;                 /* the cursor is on the SCREEN, not the level */
+    for (uint16_t r = 0; r < CURSOR_H; r++) {
+        int32_t y = sy + r;
+        if (y < 0 || y >= (int32_t)h) continue;
+        for (uint16_t c = 0; c < CURSOR_W; c++) {
+            int32_t x = sx + c;
+            uint8_t v = CURSOR[r][c];
+            if (!v || x < 0 || x >= (int32_t)w) continue;
+            pix[(size_t)y * w + (size_t)x] = v;
+        }
+    }
+}
+
 /* THE PANEL'S OWN UPPER EIGHT COLOURS - transcribed data, image 0x0C080.
  *
  * Which is ds:0x25F0, and it is reached through the branch at image 0x055B7:

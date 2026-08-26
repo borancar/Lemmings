@@ -438,6 +438,13 @@ void level_frame_step(level_anim *st, const level *lv);
  * show. `out` takes eight entries. */
 void level_panel_palette(lem_rgb *out);
 
+/* The mouse cursor - the game's own cross-hair, and where it is. The
+ * coordinates are the original's ds:0x10 and ds:0x12, which are the screen's
+ * offset by eight; see level_cursor_draw in game.c. */
+extern uint16_t lem_mouse_x, lem_mouse_y;
+void lem_mouse_move(int32_t x, int32_t y);
+void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x);
+
 /* Which PC the port is pretending to be. The original asks at start-up -
  * "1 - For PC compatibles" against "2 - For High Performance PCs" - and only
  * the high-performance build changes the palette part-way down the screen;
