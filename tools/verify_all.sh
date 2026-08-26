@@ -121,6 +121,30 @@ else
     fail=1
 fi
 
+
+# THE RESULTS SCREEN, driven rather than played to. Image 0x046EB is a plain
+# routine and the screen is a pure function of six bytes, so this costs ninety
+# seconds where reaching it by playing costs fifteen minutes - and it covers
+# BOTH endings, which a playthrough of one level cannot.
+say ""
+say "  the results screen (tools/verify_results.py, driven):"
+for case in "won 100 10 0" "timeup 30 10 1"; do
+    set -- $case
+    name=$1 saved=$2 needed=$3 timed=$4
+    rm -rf "out/vr_$name"
+    LEM_HOOK=tools/verify_results.py LEM_RESULTS_OUT="out/vr_$name" \
+        LEM_RES_SAVED=$saved LEM_RES_NEEDED=$needed LEM_RES_LEVEL=1 \
+        ${timed:+LEM_RES_TIMEUP=$timed} \
+        uv run python tools/play.py --auto -- --run-seconds 90 \
+        >/dev/null 2>&1 || true
+    if [ -f "out/vr_$name/results.scrn" ]; then
+        say "    $name: captured"
+    else
+        say "    $name: NOTHING CAPTURED - that is a failure, not a pass"
+        fail=1
+    fi
+done
+
 say ""
 if [ $fail = 0 ]; then
     say "  everything above ran. Read the numbers, not this line."
