@@ -621,9 +621,28 @@ static uint32_t panel_glyph(uint8_t ch)
     return PANEL_FONT_LEN;          /* space, and everything unmapped */
 }
 
-/* One panel character at (x, y) in pixels. Three planes, so the colours it
- * can produce are 0..7. A space clears its cell, which is image 0x077FE
- * writing sixteen rows of zero rather than skipping. */
+/* Which video plane each of a glyph's three stored planes goes to - image
+ * 0x077A8, 0x077CC and 0x077E5, read off their Map Mask writes. */
+static const uint8_t PANEL_PLANE_BIT[3] = { 0, 1, 3 };
+
+/* One panel character at (x, y) in pixels.
+ *
+ * Three stored planes, but NOT video planes 0, 1, 2. Image 0x077A8 makes
+ * three passes and each names its own plane through the Map Mask:
+ *
+ *     pass 1  Map Mask 0x0F, Enable Set/Reset 0x0E   plane 0 from the CPU,
+ *                                                    planes 1..3 cleared
+ *     pass 2  Map Mask 0x02  (image 0x077CC)         plane 1
+ *     pass 3  Map Mask 0x08  (image 0x077E5)         plane 3
+ *
+ * so the values a glyph can take are 0..3 and 8..11, never 4..7. Reading the
+ * third plane into bit 2 instead of bit 3 is wrong in a way that still draws
+ * legible text, which is how it survived: against a recorded frame the port
+ * was writing 5 where the original had video 9, 177 pixels of it, and every
+ * character looked right.
+ *
+ * A space clears its cell, which is image 0x077FE writing sixteen rows of
+ * zero rather than skipping. */
 void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                 const uint8_t *sec, uint32_t sec_len,
                 uint8_t ch, uint16_t x, uint16_t y)
@@ -643,7 +662,8 @@ void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
             if (!blank)
                 for (uint8_t p = 0; p < 3; p++)
                     v = (uint8_t)(v | (((sec[base + p * PANEL_PLANE + r]
-                                         >> (7 - c)) & 1u) << p));
+                                         >> (7 - c)) & 1u)
+                                       << PANEL_PLANE_BIT[p]));
             dst[(size_t)py * dst_w + px] = v;
         }
     }
@@ -704,7 +724,8 @@ void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * the card place the bits; here the four planes are assembled per pixel, which
  * is what planar() is for and why it lives in sdl_io.c. */
 void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
-                 const uint8_t *sec, uint32_t sec_len, uint16_t y0)
+                 const uint8_t *sec, uint32_t sec_len,
+                 uint16_t x0, uint16_t y0)
 {
     uint32_t stride = PANEL_ART_W / 8;
     uint32_t plane  = stride * PANEL_ART_H;
@@ -713,11 +734,106 @@ void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     for (uint16_t r = 0; r < PANEL_ART_H; r++) {
         uint16_t py = (uint16_t)(y0 + r);
         if (py >= dst_h) break;
-        for (uint16_t x = 0; x < PANEL_ART_W && x < dst_w; x++)
-            dst[(size_t)py * dst_w + x] =
+        for (uint16_t x = 0; x < PANEL_ART_W; x++) {
+            uint16_t px = (uint16_t)(x0 + x);
+            if (px >= dst_w) break;
+            dst[(size_t)py * dst_w + px] =
                 planar(sec, PANEL_ART_OFF + (uint32_t)r * stride,
                        plane, 0, PANEL_ART_PL, x, 0);
+        }
     }
+}
+
+/* ======================================================================
+ * THE STATUS LINE'S CONTENTS - the 44 cells at ds:0x207F.
+ *
+ * Where the line sits was measured against a recorded frame rather than
+ * assumed, and it is not where a 320-pixel screen would suggest. The line is
+ * 44 cells of eight pixels - 352, the mode's logical line - and the panel's
+ * artwork occupies its last forty, cells 4..43. So the screen's 320 pixels
+ * ARE cells 4..43, and the line's own cell 0 is 32 pixels off the left edge.
+ * Every character lands where that predicts: the template's 'O' of OUT at
+ * col 18 draws at screen cell 14, its ':' at col 41 at screen cell 37, and
+ * the four TIME characters at cols 40..43 at screen cells 36..39.
+ *
+ * The glyphs are sixteen rows starting at screen row 160, the panel's own
+ * top - their ink lands in rows 164..174, which is what a recorded frame
+ * shows.
+ *
+ * The base is ds:0x207F and not ds:0x2080, which the comment on
+ * PANEL_TEMPLATE above had wrong. Dumping the live buffer settles it: the
+ * "230." the template starts with is at 0x207F..0x2082, and the timer the
+ * game writes at ds:0x20A7 and ds:0x20A9 is then cols 40 and 42, which is
+ * where the recorded frames put the minutes and the seconds.
+ * ====================================================================== */
+#define ST_MIN        40      /* ds:0x20A7 */
+#define ST_COLON      41      /* ds:0x20A8 */
+#define ST_SEC_TENS   42      /* ds:0x20A9 - image 0x0222 reads this as bl */
+#define ST_SEC_UNITS  43      /* ds:0x20AA - and this as bh */
+
+static char    g_status[PANEL_COLS + 1];
+static uint8_t g_tick;        /* ds:0x85 */
+static uint8_t g_tick_load;   /* ds:0x86 */
+
+const char *level_status_line(void) { return g_status; }
+
+/* Image 0x0418 and 0x041D: ds:0x85 and ds:0x86 both start at 0x11. */
+#define LEVEL_FRAMES_PER_SECOND 0x11
+
+/* Image 0x0418 and 0x041D set ds:0x85 and ds:0x86 to 0x11 - seventeen frames
+ * to a second - and image 0x040E and 0x0413 put '0' in both seconds cells.
+ * Confirmed against the running game: the line goes from TIME 4:52 at frame
+ * 151 to TIME 4:21 at frame 676, which is 525 frames for 31 seconds. */
+void level_status_reset(const level *lv)
+{
+    for (uint16_t i = 0; i < PANEL_COLS; i++)
+        g_status[i] = PANEL_TEMPLATE[i];
+    g_status[PANEL_COLS] = 0;
+    /* The level header's time limit, in minutes; one digit is all the line
+     * has room for and all any shipped level needs. */
+    g_status[ST_MIN]       = (char)('0' + (lv->time_limit % 10u));
+    g_status[ST_COLON]     = ':';
+    g_status[ST_SEC_TENS]  = '0';
+    g_status[ST_SEC_UNITS] = '0';
+    g_tick_load = LEVEL_FRAMES_PER_SECOND;
+    g_tick      = LEVEL_FRAMES_PER_SECOND;
+}
+
+/* Transcribed from image 0x0213. The time is kept as ASCII in the line
+ * itself - there is no binary countdown behind it - so this borrows the way
+ * a hand-written decimal decrement does, digit by digit:
+ *
+ *     dec byte [0x85] / jne          not a second yet
+ *     al = [0x86] / [0x85] = al      reload
+ *     al = [0x20a7]  bx = [0x20a9]   minutes, and the two seconds cells
+ *     dec bh / cmp bh,'/' / jne      units, wrapping below '0'
+ *     bh = '9' / dec bl / cmp bl,'/' tens
+ *     bl = '5' / dec al / cmp al,'/' minutes; tens wraps to 5, not 9
+ *     al = '0' / bx = 0x3030         out of time: stop at 0:00
+ */
+void level_timer_step(void)
+{
+    if (--g_tick) return;
+    g_tick = g_tick_load;
+
+    char al = g_status[ST_MIN];
+    char bl = g_status[ST_SEC_TENS];
+    char bh = g_status[ST_SEC_UNITS];
+
+    if (--bh < '0') {
+        bh = '9';
+        if (--bl < '0') {
+            bl = '5';
+            if (--al < '0') {
+                al = '0';
+                bl = '0';
+                bh = '0';
+            }
+        }
+    }
+    g_status[ST_MIN]       = al;
+    g_status[ST_SEC_TENS]  = bl;
+    g_status[ST_SEC_UNITS] = bh;
 }
 
 /* ======================================================================

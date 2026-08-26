@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from compare_frame import (read_capture, read_raw, play_diff, panel_dac,
-                           PLAY_H, PANEL_TOP)
+                           PLAY_H, PANEL_TOP, PANEL_ART_X)
 
 
 def score_frame(cap, cw, ch, lev, lw, lh, scroll, pan, pw, ph):
@@ -43,13 +43,14 @@ def score_frame(cap, cw, ch, lev, lw, lh, scroll, pan, pw, ph):
     play_tot = cw * PLAY_H
     pan_bad = pan_tot = 0
     if pan is not None:
+        x0 = PANEL_ART_X if pw >= cw + PANEL_ART_X else 0
         for y in range(ph):
             cy = PANEL_TOP + y
             if cy >= ch:
                 break
-            for x in range(min(pw, cw)):
+            for x in range(min(pw - x0, cw)):
                 pan_tot += 1
-                if panel_dac(pan[y * pw + x]) != cap[cy * cw + x]:
+                if panel_dac(pan[y * pw + x0 + x]) != cap[cy * cw + x]:
                     pan_bad += 1
     return play_bad, play_tot, pan_bad, pan_tot
 
@@ -62,6 +63,9 @@ def main():
     ap.add_argument("--raw", default="")
     ap.add_argument("--port-dir", default="")
     ap.add_argument("--panel", default="")
+    ap.add_argument("--panel-dir", default="",
+                    help="one panel per frame, named like the reference "
+                         "frames - for when the clock in it is running")
     ap.add_argument("--scroll", type=int, default=-1,
                     help="fixed scroll; the default fits one on the first "
                          "frame and holds it, so a drift shows up as a score "
@@ -103,6 +107,10 @@ def main():
                 print(f"  {n}: no port frame at {p} - not scored")
                 continue
             lw, lh, lev = read_raw(p)
+        if a.panel_dir:
+            q = os.path.join(a.panel_dir, n.replace(".scrn", ".raw"))
+            if os.path.exists(q):
+                pw, ph, pan = read_raw(q)
         if scroll < 0:
             best = None
             for s in range(0, max(1, lw - cw), 8):

@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 PLAY_H  = 160
 PANEL_Y = 176
 PANEL_TOP = 160
+PANEL_ART_X = 32
 
 
 def dac(v):
@@ -175,14 +176,19 @@ def main():
 
     if a.panel:
         pw, ph, pan = read_raw(a.panel)
+        # The port writes the panel at its logical width. The screen is the
+        # window from PANEL_ART_X on - measured: the status line's own cell 0
+        # is 32 pixels off the left edge, which is why the artwork lines up at
+        # x=0 while the text does not.
+        x0 = PANEL_ART_X if pw >= cw + PANEL_ART_X else 0
         n = bad_p = 0
         for y in range(ph):
             cy = PANEL_TOP + y
             if cy >= ch:
                 break
-            for x in range(min(pw, cw)):
+            for x in range(min(pw - x0, cw)):
                 n += 1
-                if panel_dac(pan[y * pw + x]) != cap[cy * cw + x]:
+                if panel_dac(pan[y * pw + x0 + x]) != cap[cy * cw + x]:
                     bad_p += 1
         print(f"  panel, rows {PANEL_TOP}..{PANEL_TOP + ph - 1} : "
               f"{100.0 * (1 - bad_p / n):.2f}%  ({bad_p} of {n} differ)")

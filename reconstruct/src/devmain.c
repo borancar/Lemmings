@@ -268,11 +268,22 @@ static int render_level(const char *data, const char *file, uint32_t which,
         } else {
             const uint8_t *sec = mainf.sections[PANEL_FONT_SECTION].data;
             uint32_t seclen = mainf.sections[PANEL_FONT_SECTION].size;
-            uint8_t *pp = calloc((size_t)PANEL_ART_W * PANEL_ART_H, 1);
+            /* The panel is written out at its LOGICAL width, 352, not the
+             * 320 the screen shows - the artwork sits 32 pixels into that
+             * line and the status text starts at its very first cell. A
+             * checker windows it from PANEL_ART_X. */
+            uint8_t *pp = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
             if (!pp) {
                 fprintf(stderr, "out of memory\n");
             } else {
-                panel_frame(pp, PANEL_ART_W, PANEL_ART_H, sec, seclen, 0);
+                panel_frame(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
+                            PANEL_ART_X, 0);
+                /* The clock runs on the same frames the animations do. */
+                level_status_reset(&lv);
+                for (uint8_t k = 0; k < g_obj_frame; k++)
+                    level_timer_step();
+                panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
+                             level_status_line(), 0, 0);
                 /* The status line is NOT drawn. It belongs sixteen rows down
                  * - screen row 176, which is PANEL_BASE / PANEL_STRIDE - but
                  * what writes the counts into the template has not been read,
@@ -286,7 +297,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
                 if (!pf) {
                     fprintf(stderr, "%s: cannot open for writing\n", panel_out);
                 } else {
-                    uint16_t wh[2] = { PANEL_ART_W, PANEL_ART_H };
+                    uint16_t wh[2] = { PANEL_LINE_W, PANEL_ART_H };
                     fwrite("LEMRW2", 1, 6, pf);
                     fwrite(wh, sizeof(uint16_t), 2, pf);
                     for (uint8_t i = 0; i < 16; i++) {
@@ -294,7 +305,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
                         fputc(g.palette[i].g, pf);
                         fputc(g.palette[i].b, pf);
                     }
-                    fwrite(pp, 1, (size_t)PANEL_ART_W * PANEL_ART_H, pf);
+                    fwrite(pp, 1, (size_t)PANEL_LINE_W * PANEL_ART_H, pf);
                     fclose(pf);
                     printf("wrote %s (panel, raw indices)\n", panel_out);
                 }

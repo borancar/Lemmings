@@ -853,24 +853,54 @@ Each of these is stated as what was *checked*, not what was written.
   0x019C..0x01C5 - fourteen calls with `inc byte [0x52]` as its frame
   counter. That is the spine of everything still to be done.
 
+- **The status line, the level clock, and where the panel really sits.**
+  Watching every write into the line settled all of it:
+
+  | | |
+  | --- | --- |
+  | the line's base | **`ds:0x207F`**, not `0x2080` - the comment on `PANEL_TEMPLATE` had it one byte out |
+  | its width | 44 cells of 8 = **352**, the mode's logical line |
+  | the artwork inside it | cells 4..43, so the line's cell 0 is **32 px off the left edge** |
+  | the glyph rows | 16 rows from screen row 160; ink lands in 164..174 |
+  | OUT count | cols 22..24 (image 0x04B68..0x04BBA) |
+  | IN percentage | cols 29..31 (image 0x03B1C) |
+  | TIME | minutes col 40, `:` col 41, seconds cols 42..43 (image 0x0243) |
+  | the clock | **17 frames to a second** - `ds:0x85`/`ds:0x86`, both 0x11 at image 0x0418 |
+
+  Every character lands where that predicts: the template's `O` of OUT at col
+  18 draws at screen cell 14, its `:` at col 41 at cell 37. The port's
+  `PANEL_TEMPLATE` turned out to be character-for-character right; only the
+  values and the origin were missing.
+
+  So **five minutes is 5,100 frames** - 300 seconds at 17 apiece - and a
+  play-loop pass is a display frame one for one (`0x01A3` and `0x018F` were
+  counted together: 151 and 151, 676 and 676).
+
+- **The panel font writes planes 0, 1 and 3 - not 0, 1, 2.** Image 0x077A8
+  makes three passes and each names its plane through the Map Mask: 0x0F with
+  Enable Set/Reset 0x0E for plane 0, then **0x02**, then **0x08**. So a glyph
+  takes values 0..3 and 8..11 and never 4..7.
+
+  The port had the third plane in bit 2. That is wrong in a way that still
+  draws perfectly legible text, which is how it survived: against a recorded
+  frame it was writing 5 where the original had video 9 - **177 pixels**, and
+  every character looked correct. The residue was one clean relation, which
+  is the signal this file already records for the menu's plates: a structured
+  residue is a rule not yet found, not noise.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
-  port stepping the opening sequence and the animations once per game frame):
+  port stepping the opening sequence, the animations and the clock once per
+  game frame):
 
   | | play area | panel |
   | --- | --- | --- |
-  | worst / mean / best | 99.70 / **99.81** / 99.86% | 86.04 / 86.14 / 86.41% |
+  | worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
 
-  How it got there this session, each step measured:
-
-  | change | play-area mean |
-  | --- | --- |
-  | objects baked in, one static render | 98.96% |
-  | objects drawn as the original draws them, stepped | 99.11% |
-  | one attribute map instead of two (**the checker was wrong, not the port**) | 99.50% |
-  | the opening sequence transcribed - the trapdoor waits 35 frames | **99.81%** |
-
-  Frame 0 is 72 differing pixels, which is the mouse cursor. `tools/prove.sh`
-  is unchanged at **100.00%** throughout.
+  The panel this session: 86.41% for the artwork alone, 89.34% once the status
+  line was placed at its real origin with the clock running, **90.73%** once
+  the glyphs went to the right planes. What is left is the OUT and IN counts,
+  the minimap contents and the selected button - all of which need the lemming
+  simulation. `tools/prove.sh` is unchanged at **100.00%**.
 
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte

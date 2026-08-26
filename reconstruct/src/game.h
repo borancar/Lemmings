@@ -249,7 +249,22 @@ void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 #define PANEL_ART_PL 4
 #define PANEL_TOP 160
 void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
-                 const uint8_t *sec, uint32_t sec_len, uint16_t y0);
+                 const uint8_t *sec, uint32_t sec_len,
+                 uint16_t x0, uint16_t y0);
+
+/* The panel's logical line is 44 cells of eight pixels - 352, not the 320 the
+ * screen shows - and the artwork sits in its last forty. So the status line's
+ * cell 0 is 32 pixels off the left edge; PANEL_ART_X is where the artwork
+ * goes in that line, and the screen is the window from there on. */
+#define PANEL_LINE_W  (PANEL_COLS * 8)      /* 352 */
+#define PANEL_ART_X   32
+
+/* The status line the panel draws, and the level clock inside it. The time is
+ * ASCII in the line itself; there is no binary countdown behind it.
+ * Transcribed from image 0x0213, seventeen frames to a second. */
+void        level_status_reset(const level *lv);
+void        level_timer_step(void);
+const char *level_status_line(void);
 
 void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                   const uint8_t *sec, uint32_t sec_len,
