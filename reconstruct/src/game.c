@@ -1564,17 +1564,30 @@ void level_triggers_build(const level *lv, const ground *g)
 }
 
 /* Image 0x02EC0: the lookup, now that there is a map to look in. */
-uint8_t level_trigger_at(const lemming *a, const level *lv, const ground *g)
+/* Image 0x02EC0: the lookup, now that there is a map to look in - and it
+ * keeps TWO bytes in the record on the way past.
+ *
+ * Image 0x02EEA stores the cell under the lemming at [si+0x2C], and image
+ * 0x02EFC stores the one two rows up and two cells along the way it faces at
+ * [si+0x2B]. Nothing in the trigger dispatch reads either; the BASHER does,
+ * at image 0x034DC, to decide whether there is anything worth bashing. A
+ * lookup that only returned its answer would have left the basher no way to
+ * ask. */
+uint8_t level_trigger_at(lemming *a, const level *lv, const ground *g)
 {
     (void)lv; (void)g;
     if (a->y >= TRIG_Y_LIMIT) return 0;             /* image 0x02EC5 */
     /* Image 0x02ECE and image 0x02ECB. */
-    return level_trigger_cell((int32_t)a->x / TRIG_CELL,
-                              ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL);
+    int32_t col = (int32_t)a->x / TRIG_CELL;
+    int32_t row = ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL;
+    uint8_t here = level_trigger_cell(col, row);
+    a->tcell  = here;                               /* image 0x02EEA */
+    a->tahead = level_trigger_cell(col + 2 * a->dir, row - 2); /* 0x02EFC */
+    return here;
 }
 
 /* Image 0x02F15: effect 1, and image 0x02F3B is where it lands. */
-int level_at_exit(const lemming *a, const level *lv, const ground *g)
+int level_at_exit(lemming *a, const level *lv, const ground *g)
 {
     if (a->flags & 4) return 0;            /* image 0x02F3B: not while falling */
     return level_trigger_at(a, lv, g) == TRIGGER_EXIT;

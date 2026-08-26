@@ -840,6 +840,27 @@ the same poke, so the comparison stays a comparison.
 | the climber (button 2) | **0 differ** | 390 of 400 |
 | the floater (button 3) | **0 differ** | 400 of 400 — but see below |
 
+### What is left of the eight
+
+| | state machine | sprites |
+| --- | --- | --- |
+| digger, builder, blocker, climber | **exact** | found |
+| floater | **exact** (level 2, umbrella open) | not searched |
+| bomber | fuse, blast and cloud **exact** | the CRATER is not written |
+| basher, miner | not started | |
+
+Three data locations are open and all three are the same kind of problem -
+a table or a sprite whose bytes are somewhere in a `.dat` and whose address
+is not in the image: the bomber's crater masks (22 rows of eight pre-shifted
+three-byte spans, image `0x05DF8`), the basher's equivalent at image
+`0x05FAC`, and the bomber's own sprites. The method that found the others -
+score every offset against the original's own pixels, and check the scorer on
+something already known - applies to all of them.
+
+The record now carries the two trigger bytes the original keeps at `[si+0x2B]`
+and `[si+0x2C]`, because the basher's guard at image `0x034DC` reads one of
+them. A lookup that only returned its answer left the basher no way to ask.
+
 ### Level 2, where lemmings fall and die
 
 `tools/record_level.py --level N` pokes `ds:0x1F6B` before the briefing reads

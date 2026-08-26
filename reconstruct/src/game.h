@@ -322,6 +322,9 @@ typedef struct {
                            * 0x02A70 has got */
     uint8_t  fuse;        /* +0x20 - image 0x031E1 sets it to 0x4F and the
                            * LOOP HEAD counts it down at image 0x01F45 */
+    uint8_t  tahead;      /* +0x2B - the trigger cell two rows up and two
+                           * along the way it faces, image 0x02EFC */
+    uint8_t  tcell;       /* +0x2C - the one under it, image 0x02EEA */
     uint8_t  floater;     /* +0x25 - image 0x0356B sets it to 0xFF, and image
                            * 0x03E0E reads it to call one a FLOATER */
     uint8_t  extra;       /* +0x24 - image 0x027DE sets bit 7 when a builder
@@ -479,13 +482,13 @@ void        level_timer_step(void);
 void level_triggers_set(const level *lv, const ground *g);
 /* The trigger byte under a lemming, image 0x02EC0 - a lookup into the map
  * image 0x037CB stamps, in four-pixel cells. Zero is nothing. */
-uint8_t level_trigger_at(const lemming *a, const level *lv, const ground *g);
+uint8_t level_trigger_at(lemming *a, const level *lv, const ground *g);
 /* The map image 0x037CB builds and image 0x03348 writes into. Four pixels a
  * cell both ways. */
 void    level_triggers_build(const level *lv, const ground *g);
 uint8_t level_trigger_cell(int32_t col, int32_t row);
 void    level_trigger_put(int32_t col, int32_t row, uint8_t v);
-int level_at_exit(const lemming *a, const level *lv, const ground *g);
+int level_at_exit(lemming *a, const level *lv, const ground *g);
 void lem_exit_start(lemming *a);
 
 /* Win or lose, and which of the nine things the game says about it -
