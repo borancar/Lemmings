@@ -275,23 +275,36 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
-## When a change moves nothing, the routine is not where you think
+## A frame diff of a level does not measure terrain
 
-The bomber's crater cleared 29 pixels where the original clears 343. The
-obvious reading was that it was in the wrong place horizontally, so the start
-was moved a byte left, then two, then to zero - and the count did not change.
-**Not by one pixel, at any offset.**
+Two rounds went into "the bomber's crater clears 29 pixels where the original
+clears 343". The 343 was never terrain. It was the explosion's CLOUD - a
+sprite of 0x280 bytes a frame, far bigger than a lemming - appearing over the
+ground between the two frames being differenced. The crater underneath it was
+correct the whole time.
 
-That is the finding, not the failure. A routine that is landing in the wrong
-place still clears a DIFFERENT wrong set of pixels when you move it; one that
-does not respond to being moved is landing where there is nothing to clear.
-Replacing the mask with a deliberate 40x40 block confirmed it from the other
-side: 47 pixels, so the routine IS called and the region really is empty.
+What settled it was comparing the two TERRAINS once the cloud had gone, at
+frame 270 rather than 207: every row from 62 to 90 identical, and the record
+comparison at 0 of 400.
 
-Two rounds went into the horizontal offset before that control was run, and
-the control took one minute. **When a parameter has no effect, stop tuning it
-and ask whether the code runs at all** - and prove the answer with something
-too big to miss.
+So: **when measuring what a routine did to the LEVEL, difference two frames
+in which nothing is drawn over it.** A frame is terrain, sprites, cursor and
+cloud, and a diff cannot tell them apart. This file already says a percentage
+cannot tell you what is wrong; this is the same rule one level down, about
+what a pixel even IS.
+
+Two other things went wrong on the way and both are worth keeping:
+
+- **`make ... >/dev/null 2>&1` hides a compile error**, and every
+  "measurement" after it reads the previous binary. A `sed` had mangled
+  `#define CRATER_UP 0x1E` into `30x1E`; four offsets were swept and all four
+  reported the same number, from a build that had never happened. Check the
+  build succeeded before believing what the binary says.
+
+- **When a parameter has no effect, stop tuning it.** A routine landing in
+  the wrong place still clears a DIFFERENT wrong set when you move it. No
+  response to being moved means it is not doing what you think - and a
+  deliberate 40x40 block, too big to miss, answers that in one run.
 
 ## Finding a sprite: score it, and check the scorer on one you know
 

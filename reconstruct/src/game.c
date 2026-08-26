@@ -3037,31 +3037,13 @@ static void lem_hoist(lemming *a)
  * (image 0x05DFD and image 0x05E05), so it removes terrain outright, the way
  * image 0x05EBA does for the digger.
  *
- * IT IS NOT PLACED RIGHT, and four measurements say so without saying where
- * it should go. Recorded against the original's own frames:
+ * THE ROW OFFSET DOES NOT TAKE LEMMING_DY. Image 0x05DC6 builds a row as
+ * y - 0x10 and everything that probes terrain goes through it, so the port's
+ * canvas row is y - 16 and its helpers say so. Image 0x05DF8 does its OWN
+ * arithmetic - y - 0x1E - and that thirty already includes the sixteen.
  *
- *   the original clears 343 pixels over screen rows 55..79, about 24 columns
- *   wide and centred on the lemming, its bottom one row above the feet
- *
- *   the port clears 29, and moving the start sideways by a byte in either
- *   direction changes NOTHING - which is what says the routine is landing on
- *   empty sky rather than in the wrong place horizontally
- *
- *   replacing the mask with a deliberate 40x40 block clears 47, so the
- *   routine IS being called and the region really is mostly empty
- *
- *   the literal reading, y - 0x1E, puts the top at screen 66 where the
- *   original's clearing starts at 55 - and the mask's top rows are five
- *   pixels wide, so the true top could be higher than the first row that
- *   happens to meet ground
- *
- * Two things are still unaccounted for: the original's crater looks 24 wide
- * where this mask is 16, and 25 rows deep where it is 22. Either the shape
- * spans all three bytes at other shifts and shift 0 is not representative,
- * or what a frame diff shows includes the cloud SPRITE being drawn over the
- * ground. Both are testable and neither has been tested, so the code stays
- * as the literal reading and says it is wrong.
- */
+ * Checked against the original's own terrain once the cloud has cleared, at
+ * frame 270: every row from 62 to 90 is IDENTICAL. */
 #define CRATER_ROWS  22         /* image 0x05E17: cx = 0x16 */
 #define CRATER_UP    0x1E       /* image 0x05E1F */
 #define CRATER_BACK  8          /* image 0x05E41 */
