@@ -591,7 +591,6 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
  * 0x1900 of the loaded section. 6400 + 1984 is main.dat section 2's length to
  * the byte, so the font is the tail of section 2.
  * ====================================================================== */
-#define PANEL_FONT_SECTION 2
 #define PANEL_FONT_OFF  6400        /* image 0x0592C: mov si, 0x1900 */
 #define PANEL_FONT_LEN  1984        /* image 0x0593C: cx = 0x3E0 words */
 #define PANEL_GLYPH     48          /* image 0x0778C: three planes of 16 */
@@ -670,6 +669,55 @@ void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     for (uint16_t i = 0; i < PANEL_COLS && text[i]; i++)
         panel_char(dst, dst_w, dst_h, sec, sec_len, (uint8_t)text[i],
                    (uint16_t)(x + i * 8), y);
+}
+
+/* ======================================================================
+ * THE PANEL'S ARTWORK - image 0x057D1, set up at image 0x05914.
+ *
+ * The call site fixes every dimension:
+ *
+ *     si = 0        main.dat section 2, from its start
+ *     di = 0xF91F   into video memory, near the top of the 64K plane: the
+ *                   panel is stashed off-screen once and blitted per frame
+ *     cx = 0x28     40 rows
+ *     ax = 0x2C     44, the destination stride - the logical line is 352
+ *                   pixels of which 320 are displayed
+ *     bx = 0x428    bl = 40 bytes a row (320 pixels), bh = 4 planes
+ *
+ * and the loop settles the source layout. Each pass sets the Map Mask to one
+ * plane, copies cx rows of bl bytes stepping the destination by ax, then pops
+ * di and shifts the mask - but does NOT restore si, which runs on. So the
+ * source is plane-major: all forty rows of plane 0, then all forty of plane 1.
+ * That is 40 * 40 * 4 = 6,400 bytes, which is exactly where the status font
+ * begins - see PANEL_FONT_OFF above. The two together are section 2's length.
+ *
+ * Where it lands, and in what colours, is measured rather than read: against a
+ * frame recorded by tools/record_level.py the artwork sits at screen row 160,
+ * and the attribute controller maps its values 0..7 to themselves and 8..15 to
+ * 16..23. On that map 89.31% of the panel's pixels agree. The rest is what the
+ * game draws ON the artwork - the status line, the skill counts, the minimap,
+ * the selected button - by routines that have not been read yet.
+ * ====================================================================== */
+#define PANEL_ART_OFF   0    /* image 0x05914: si = 0 */
+
+/* Transcribed from image 0x057D1. The original programs the Map Mask and lets
+ * the card place the bits; here the four planes are assembled per pixel, which
+ * is what planar() is for and why it lives in sdl_io.c. */
+void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                 const uint8_t *sec, uint32_t sec_len, uint16_t y0)
+{
+    uint32_t stride = PANEL_ART_W / 8;
+    uint32_t plane  = stride * PANEL_ART_H;
+    if ((uint32_t)PANEL_ART_OFF + plane * PANEL_ART_PL > sec_len) return;
+
+    for (uint16_t r = 0; r < PANEL_ART_H; r++) {
+        uint16_t py = (uint16_t)(y0 + r);
+        if (py >= dst_h) break;
+        for (uint16_t x = 0; x < PANEL_ART_W && x < dst_w; x++)
+            dst[(size_t)py * dst_w + x] =
+                planar(sec, PANEL_ART_OFF + (uint32_t)r * stride,
+                       plane, 0, PANEL_ART_PL, x, 0);
+    }
 }
 
 /* ======================================================================

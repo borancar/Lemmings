@@ -32,6 +32,20 @@ PLAY_H  = 160
 PANEL_Y = 176
 DAC_BIAS = 8            # the mode's attribute -> DAC map for terrain
 
+# The panel is drawn at screen row 160 and does NOT share the terrain's map.
+# Measured, not assumed: taking every pixel of the artwork (main.dat section
+# 2, 320x40, four plane-major planes) against a recorded frame and asking
+# what the original shows at each of the sixteen values, 0..6 come back as
+# themselves at 96-100% and 10, 11, 12, 14, 15 come back as 18, 19, 20, 22,
+# 23 - so 0..7 map to themselves and 8..15 to 16..23. 7, 8, 9 and 13 never
+# occur in the artwork at all, so that half of the rule is inference from the
+# five values that do.
+PANEL_TOP = 160
+
+
+def panel_dac(v):
+    return v if v < 8 else v + 8
+
 
 def read_capture(path):
     with open(path, "rb") as f:
@@ -93,6 +107,9 @@ def main():
     ap.add_argument("--capture", required=True)
     ap.add_argument("--raw", required=True)
     ap.add_argument("--scroll", type=int, default=-1)
+    ap.add_argument("--panel", default="",
+                    help="the port's 320x40 panel, from"
+                         " lemdev --panel")
     ap.add_argument("--png", default="", help="write three images to PREFIX")
     a = ap.parse_args()
 
@@ -145,11 +162,28 @@ def main():
         ys = [p[1] for p in bad]
         print(f"    differing box x {min(xs)}..{max(xs)}  y {min(ys)}..{max(ys)}")
 
-    panel = sum(1 for y in range(PANEL_Y, ch) for x in range(cw)
-                if cap[y * cw + x])
-    print(f"  panel, rows {PANEL_Y}..{ch-1}   : "
-          f"{panel} pixels of ink in the original, and the port draws NONE "
-          f"of it yet")
+    if a.panel:
+        pw, ph, pan = read_raw(a.panel)
+        n = bad_p = 0
+        for y in range(ph):
+            cy = PANEL_TOP + y
+            if cy >= ch:
+                break
+            for x in range(min(pw, cw)):
+                n += 1
+                if panel_dac(pan[y * pw + x]) != cap[cy * cw + x]:
+                    bad_p += 1
+        print(f"  panel, rows {PANEL_TOP}..{PANEL_TOP + ph - 1} : "
+              f"{100.0 * (1 - bad_p / n):.2f}%  ({bad_p} of {n} differ)")
+        print("    what is left is drawn ON the artwork - the status counts,"
+              " the minimap,\n    the selected button - by routines not read"
+              " yet, not by the artwork.")
+    else:
+        panel = sum(1 for y in range(PANEL_Y, ch) for x in range(cw)
+                    if cap[y * cw + x])
+        print(f"  panel, rows {PANEL_Y}..{ch-1}   : "
+              f"{panel} pixels of ink in the original, and the port was not"
+              f" asked for one (--panel FILE)")
 
     if a.png:
         from diff_png import write_png     # noqa: E402

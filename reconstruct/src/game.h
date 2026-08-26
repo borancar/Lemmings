@@ -238,6 +238,19 @@ extern const char PANEL_TEMPLATE[PANEL_COLS + 1];
 void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                 const uint8_t *sec, uint32_t sec_len,
                 uint8_t ch, uint16_t x, uint16_t y);
+/* The panel's artwork - main.dat section 2 from its start, 320 by 40 in four
+ * plane-major planes, drawn with its top-left at (0, y0). Transcribed from
+ * image 0x057D1, whose set-up at image 0x05914 fixes every one of these:
+ * bl = 0x28 bytes a row, cx = 0x28 rows, bh = 4 planes. PANEL_TOP is the
+ * screen row it goes at, measured against a recorded frame. */
+#define PANEL_FONT_SECTION 2
+#define PANEL_ART_W 320
+#define PANEL_ART_H 40
+#define PANEL_ART_PL 4
+#define PANEL_TOP 160
+void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                 const uint8_t *sec, uint32_t sec_len, uint16_t y0);
+
 void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                   const uint8_t *sec, uint32_t sec_len,
                   const char *text, uint16_t x, uint16_t y);

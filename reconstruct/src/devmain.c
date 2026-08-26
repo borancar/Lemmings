@@ -63,6 +63,7 @@ static void usage(void)
           "  --bitorder B  leftmost pixel is the byte's msb or lsb\n"
           "  --reverse     draw the terrain list back to front\n"
           "  --no-objects  terrain only, as the original composes it first\n"
+          "  --panel FILE  write the 320x40 control panel on its own\n"
           "  --raw FILE    also write the raw indices and palette, for\n"
           "                checking against the original: 'LEMRW2', width\n"
           "                and height as u16, 16 RGB triples, then w*h bytes\n",
@@ -110,7 +111,7 @@ static int load_level(const char *data, const char *file, uint32_t which,
 static uint8_t g_obj_frame;
 
 static int render_level(const char *data, const char *file, uint32_t which,
-                        int objects, const char *raw,
+                        int objects, const char *raw, const char *panel_out,
                         uint8_t scale, int show)
 {
     char path[1024];
@@ -219,6 +220,58 @@ static int render_level(const char *data, const char *file, uint32_t which,
         }
     }
 
+    /* The control panel is a separate 320x40 image, drawn at screen row 160
+     * over the play area rather than inside the 1584-wide canvas, so it is
+     * written as its own file rather than being pasted into one corner of
+     * the level. Its artwork is main.dat section 2 - see panel_frame. */
+    if (panel_out) {
+        char mpath[1024];
+        dat_file mainf;
+        snprintf(mpath, sizeof(mpath), "%s/main.dat", data);
+        if (dat_load(mpath, &mainf, &err) != 0) {
+            fprintf(stderr, "%s: %s\n", mpath, err);
+        } else if (mainf.count <= PANEL_FONT_SECTION) {
+            fprintf(stderr, "%s: no section %d\n", mpath, PANEL_FONT_SECTION);
+            dat_free(&mainf);
+        } else {
+            const uint8_t *sec = mainf.sections[PANEL_FONT_SECTION].data;
+            uint32_t seclen = mainf.sections[PANEL_FONT_SECTION].size;
+            uint8_t *pp = calloc((size_t)PANEL_ART_W * PANEL_ART_H, 1);
+            if (!pp) {
+                fprintf(stderr, "out of memory\n");
+            } else {
+                panel_frame(pp, PANEL_ART_W, PANEL_ART_H, sec, seclen, 0);
+                /* The status line is NOT drawn. It belongs sixteen rows down
+                 * - screen row 176, which is PANEL_BASE / PANEL_STRIDE - but
+                 * what writes the counts into the template has not been read,
+                 * and panel_status blanks the cells it is given, so drawing
+                 * the bare template puts "230." where the original has real
+                 * counts and erases the artwork under the rest. Measured: the
+                 * artwork alone scores 89.31% of the panel, the artwork plus
+                 * the bare template 65.65%. Drawing a placeholder is worse
+                 * than drawing nothing, and it would flatter nobody. */
+                FILE *pf = fopen(panel_out, "wb");
+                if (!pf) {
+                    fprintf(stderr, "%s: cannot open for writing\n", panel_out);
+                } else {
+                    uint16_t wh[2] = { PANEL_ART_W, PANEL_ART_H };
+                    fwrite("LEMRW2", 1, 6, pf);
+                    fwrite(wh, sizeof(uint16_t), 2, pf);
+                    for (uint8_t i = 0; i < 16; i++) {
+                        fputc(g.palette[i].r, pf);
+                        fputc(g.palette[i].g, pf);
+                        fputc(g.palette[i].b, pf);
+                    }
+                    fwrite(pp, 1, (size_t)PANEL_ART_W * PANEL_ART_H, pf);
+                    fclose(pf);
+                    printf("wrote %s (panel, raw indices)\n", panel_out);
+                }
+                free(pp);
+            }
+            dat_free(&mainf);
+        }
+    }
+
     /* Show it unless a file was the whole point of the run. */
     if (show || !raw) {
         char title[128];
@@ -244,6 +297,7 @@ int main(int argc, char **argv)
     uint32_t number = 1;            /* the GAME's level number, 1..30 */
     uint32_t game_number = 0;       /* what the briefing prints; 0 = unknown */
     const char *raw  = NULL;
+    const char *panel_out = NULL;
     uint32_t which = 2;
     uint8_t scale = 3;
     int show = 0;
@@ -302,6 +356,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--show")) show = 1;
         else if (!strcmp(argv[i], "--no-objects")) objects = 0;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--panel") && i + 1 < argc) { panel_out = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;
         else if (!strcmp(argv[i], "--bitorder") && i + 1 < argc) {
             const char *o = argv[++i];
@@ -425,7 +480,7 @@ int main(int argc, char **argv)
                         menu_free(&br);
                     }
                 }
-                render_level(data, file, which, objects, NULL, scale, 1);
+                render_level(data, file, which, objects, NULL, NULL, scale, 1);
                 continue;
             }
             /* F2 and F4 reach real screens in the original - a level-code
@@ -499,5 +554,5 @@ int main(int argc, char **argv)
         return rc;
     }
 
-    return render_level(data, file, which, objects, raw, scale, show);
+    return render_level(data, file, which, objects, raw, panel_out, scale, show);
 }
