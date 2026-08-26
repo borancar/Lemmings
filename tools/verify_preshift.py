@@ -53,12 +53,18 @@ def install(m):
             ds = uc.reg_read(RDS) * 16
             es = uc.reg_read(RES) * 16
             dx = uc.reg_read(RDX)
-            cols, rows = dx & 0xFF, (dx >> 8) & 0xFF
-            if not (1 <= cols <= 64 and 1 <= rows <= 200):
+            # NAMED BACKWARDS, and it cost a day: DL is the ROW COUNT and
+            # DH is the BYTES PER ROW. The only shape a level builds is
+            # DL=10, DH=2 - ten rows of two bytes, which is the walker's
+            # 16x10 - and the source it reads is rows * bpr * 2 planes = 40,
+            # exactly the frame size the port draws it with.
+            rows, bpr = dx & 0xFF, (dx >> 8) & 0xFF
+            cols = rows            # the old name, kept for the JSON below
+            if not (1 <= rows <= 64 and 1 <= bpr <= 200):
                 return
-            pend.update(cols=cols, rows=rows, dest=es + uc.reg_read(RDI),
+            pend.update(cols=rows, rows=bpr, dest=es + uc.reg_read(RDI),
                         src=bytes(uc.mem_read(ds + uc.reg_read(RSI),
-                                              cols * rows * 2)).hex())
+                                              rows * bpr * 2)).hex())
         elif off == RET and pend and len(cases) < 400:
             need = 8 * 3 * pend["cols"] * (pend["rows"] + 1)
             pend["after"] = bytes(uc.mem_read(pend["dest"], need)).hex()

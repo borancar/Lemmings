@@ -1735,7 +1735,32 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * its file frames to be 40 bytes either. Finding it means locating the
  * animation, not dividing a number.
  *
- * One of the two candidates IS ruled out, by looking. probe_digger.py dumps
+ * THE STORE'S SHAPE IS NOW KNOWN, which narrows this a great deal.
+ *
+ * Logging every call to the pre-shift builder at image 0x05B11 through a
+ * level shows it is called with exactly ONE shape, 106 times: DL = 10 and
+ * DH = 2. Those are the ROW COUNT and the BYTES PER ROW - the names in
+ * tools/verify_preshift.py had them the other way round - so it is ten rows
+ * of two bytes, the walker's 16x10, and the source it reads is
+ * rows * bpr * 2 planes = 40, exactly the frame the port draws.
+ *
+ * From that the layout falls out, and it matches the record on every count:
+ *
+ *     per shift = rows * (planes + 1) * (bpr + 1)   10 * 3 * 3 = 90 = [+0x10]
+ *     mask at   = rows *  planes      * (bpr + 1)   10 * 2 * 3 = 60 = [+0x12]
+ *
+ * The `+ 1`s are the pre-shift: a row needs one more byte to hold what the
+ * shift pushes into it, and one more plane to hold the mask.
+ *
+ * Applied to the digger's 112 and 84, the ratio 112/84 gives PLANES = 3, and
+ * the mask's 28 bytes give rows * (bpr + 1) = 28. That leaves five shapes,
+ * of which only 7 rows of 3 bytes is anywhere near what the screen shows.
+ * Decoding section 0 at every offset as a 24x7 sprite in three planes finds
+ * 87 places with a plausible ink count and none of them is a lemming - they
+ * are noise. So that is tested and failed, and the sprite is somewhere or
+ * something other than a 63-byte frame in section 0.
+ *
+ * One of the two candidates was ruled out earlier, by looking. probe_digger.py dumps
  * the original's own framebuffer while a lemming digs, printing anything
  * below attribute 8 as itself and the terrain as dots - the sprite is drawn
  * in 1..7 and the level in 8..15, so that separates them. What comes out is
