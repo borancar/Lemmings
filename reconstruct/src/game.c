@@ -2895,6 +2895,107 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         lem_build_stop(a, 9, 0);                   /* image 0x02760: no turn */
 }
 
+/* CLIMBING - transcribed from image 0x02179 (starting), image 0x0254F (doing
+ * it) and image 0x02637 (getting over the top).
+ *
+ * It starts in the WALKER, not from a click. Image 0x0213C tests bit 0 of
+ * [si+0x24] at the point a plain lemming would turn at a wall, and a climber
+ * goes to image 0x02179 instead - which ORs 0x20 in rather than assigning,
+ * so a climber keeps whatever else it was.
+ *
+ * The handler is eight frames split in two, image 0x02559:
+ *
+ *   0..3  image 0x025E1 probes at y - 7 - anim, one row higher each frame.
+ *         Wall there means keep climbing. Nothing there means the top has
+ *         been reached: image 0x025FD nudges y and image 0x0260D swaps 0x20
+ *         for 0x40, the HOIST.
+ *   4..7  image 0x02560 drops y by one and probes eight rows up at x - dir.
+ *         Something there and image 0x02591 turns it into a fall - 0x20 out,
+ *         4 in, the fall counter set to 3.
+ *
+ * The hoist at image 0x02637 is eight more: the first four lift y by two,
+ * image 0x02643 leaves the rest to animate, and image 0x02654 puts it back
+ * to walking. Image 0x0262D and image 0x02689 both keep bit 0 of [si+0x24] -
+ * a climber stays a climber.
+ */
+#define CLIMB_BIT   0x0020
+#define HOIST_BIT   0x0040
+
+static void lem_climb_begin(lemming *a)
+{
+    a->anim   = 0;                                  /* image 0x02179 */
+    a->flags |= CLIMB_BIT;                          /* image 0x02187: OR */
+    a->hot_x  = -8;                                 /* image 0x02195 */
+    a->hot_y  = -12;                                /* image 0x0219A: fff4 */
+    a->state  = 8;                                  /* image 0x021A9 */
+}
+
+/* Image 0x02591: a climber that runs into something falls off - and it does
+ * not simply drop. Image 0x025D4 TURNS it and image 0x025DA adds the new
+ * direction to x twice, so it comes away from the wall. Two pixels, and
+ * without them the record diverges the moment it happens: 862 against the
+ * original's 860. */
+static void lem_climb_fall(lemming *a)
+{
+    a->flags = (uint16_t)((a->flags & ~(uint16_t)CLIMB_BIT) | 4); /* 0x02591 */
+    a->hot_x = -8;
+    a->hot_y = -10;                                 /* image 0x025BA */
+    a->anim  = 0;                                   /* image 0x025AD */
+    a->fall  = 3;                                   /* image 0x025B1 */
+    a->state = 4;                                   /* image 0x025BF */
+    a->extra &= 1;                                  /* image 0x025CD */
+    a->dir   = (int8_t)-a->dir;                     /* image 0x025D4 */
+    a->x     = (int16_t)(a->x + a->dir + a->dir);   /* image 0x025DA, twice */
+}
+
+static void lem_climb(lemming *a, const uint8_t *lvl, uint16_t cw,
+                      uint16_t chh)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 7);         /* image 0x02552 */
+
+    if (a->anim <= 3) {                             /* image 0x02559 */
+        /* Image 0x025E4: seven rows up, and one more each frame. */
+        int16_t probe = (int16_t)(a->y - 7 - a->anim);
+        if (lem_solid(lvl, cw, chh, a->x, probe)) return;  /* 0x025F8 */
+
+        /* The top. Image 0x025FD adds two and image 0x02606 takes the
+         * animation counter off again. */
+        a->y = (int16_t)(a->y + 2 - a->anim);
+        a->flags = (uint16_t)((a->flags & ~(uint16_t)CLIMB_BIT) | HOIST_BIT);
+        a->anim  = 0;                               /* image 0x02625 */
+        a->state = 8;                               /* image 0x02629 */
+        a->extra &= 1;                              /* image 0x0262D */
+        return;
+    }
+
+    a->y = (int16_t)(a->y - 1);                     /* image 0x02560 */
+    if ((int32_t)a->y + a->hot_y <= BUILD_TOP) {    /* image 0x02569 */
+        lem_climb_fall(a);
+        return;
+    }
+    /* Image 0x02574 probes at x - dir, and image 0x0257F takes eight rows
+     * off the address - so eight above. */
+    if (lem_solid(lvl, cw, chh, (int16_t)(a->x - a->dir),
+                  (int16_t)(a->y - 8)))             /* image 0x0258A */
+        lem_climb_fall(a);
+}
+
+/* Image 0x02637: over the top and onto the ledge. */
+static void lem_hoist(lemming *a)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 7);         /* image 0x0263A */
+    if (a->anim == 0) {                             /* image 0x02641 */
+        a->flags = 0;                               /* image 0x02654 */
+        a->hot_x = -8;
+        a->hot_y = -10;                             /* image 0x02676 */
+        a->state = 9;                               /* image 0x0267B */
+        a->extra &= 1;                              /* image 0x02689 */
+        return;
+    }
+    if (a->anim >= 5) return;                       /* image 0x02643 */
+    a->y = (int16_t)(a->y - 2);                     /* image 0x0264A */
+}
+
 /* THE TWO PERMANENT ABILITIES - image 0x0329B and image 0x03557.
  *
  * Neither is a state. A climber and a floater go on doing whatever they were
@@ -3067,7 +3168,9 @@ static void lem_walk(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
                 return;
             }
         }
-        a->dir = (int8_t)-a->dir;                  /* image 0x2142 */
+        /* Image 0x0213C: a CLIMBER goes up the wall instead of turning. */
+        if (a->extra & 1) lem_climb_begin(a);       /* image 0x02179 */
+        else a->dir = (int8_t)-a->dir;              /* image 0x02142 */
         return;
     }
     for (int8_t k = 1; k < 4; k++)                 /* image 0x20D6 */
@@ -3244,6 +3347,10 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
         else if (f & 0x2000)
             lem_exiting(a);                          /* image 0x2326 */
+        else if (f & 0x0020)
+            lem_climb(a, lvl, cw, chh);              /* image 0x254F */
+        else if (f & 0x0040)
+            lem_hoist(a);                            /* image 0x2637 */
         else if (f & 0x0100)
             lem_block(a, lvl, cw, chh);              /* image 0x27E8 */
         else if (f & 0x0080)
@@ -3254,9 +3361,8 @@ void lemmings_step(lemming *lem, uint8_t n,
         else if (f & 0x0001) { /* image 0x22DF, not read */ }
         else if (f & 0x0008)
             lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
-        /* 0x0020 0x254F, 0x0040 0x2637, 0x0080 0x2693,
-         * 0x0100 0x27E8, 0x0200 0x287D, 0x0800 0x2B35, 0x1000 0x22F5,
-         * 0x2000 0x2326, 0x4000 0x2340 - none read. */
+        /* 0x0200 0x287D, 0x0800 0x2B35, 0x1000 0x22F5, 0x4000 0x2340 -
+         * none read. */
 
         /* THE TRIGGER IS TESTED AFTER THE MOVE, NOT BEFORE IT.
          *
@@ -3609,6 +3715,27 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * begin - so the two are adjacent in the file, and each was found without
  * reference to the other. Two independent measurements meeting at a boundary
  * is worth more than either alone. */
+/* THE HOIST'S SPRITE - the eight frames a climber spends pulling itself over
+ * the top. 16 wide, twelve rows, two planes, 48 bytes a frame, at 3472:
+ * ZERO pixels disagree across all eight frames, of 180 of ink.
+ *
+ * THE CLIMB'S OWN SPRITE IS NOT FOUND, and the likeliest reason is worth
+ * writing down rather than guessing past. Scoring every offset over the
+ * climbing frames gives nothing better than 65 disagreements at any
+ * geometry, where every sprite found this way so far has come in at 0 to 2.
+ * A score that bad usually means the frames being compared do not share one
+ * base - and a climber can be going either way up a wall. The reference for
+ * this run was recorded before the manifest carried the DIRECTION, so the
+ * frames cannot be split by it; re-record button 2 and try each direction on
+ * its own. Until then a climber is drawn as a walker. */
+#define HOIST_SPR_BASE  3472
+#define HOIST_SPR_H     12
+#define HOIST_SPR_PLANES 2
+#define HOIST_SPR_ROW   2
+#define HOIST_SPR_PLANE (HOIST_SPR_ROW * HOIST_SPR_H)           /* 24 */
+#define HOIST_SPR_FRAME (HOIST_SPR_PLANE * HOIST_SPR_PLANES)    /* 48 */
+#define HOIST_SPR_FRAMES 8
+
 #define BLOCK_SPR_BASE  18800
 #define BLOCK_SPR_H     10
 #define BLOCK_SPR_PLANES 2
@@ -3662,6 +3789,31 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                 for (uint8_t p = 0; p < EXIT_SPR_PLANES; p++) {
                     uint8_t byte = sec[base + p * EXIT_SPR_PLANE
                                        + r * EXIT_SPR_ROW + (c >> 3)];
+                    v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                }
+                if (v) dst[(size_t)py * dst_w + px] = v;
+            }
+        }
+        return;
+    }
+
+    /* A climber hoisting itself over the top - see HOIST_SPR_BASE. */
+    if (a->flags & 0x0040) {
+        if (a->anim >= HOIST_SPR_FRAMES) return;
+        base = HOIST_SPR_BASE + (uint32_t)a->anim * HOIST_SPR_FRAME;
+        if (base + HOIST_SPR_FRAME > sec_len) return;
+        x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+        y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+        for (uint8_t r = 0; r < HOIST_SPR_H; r++) {
+            int32_t py = y0 + r;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            for (uint8_t c = 0; c < 16; c++) {
+                int32_t px = x0 + c;
+                uint8_t v = 0;
+                if (px < 0 || px >= (int32_t)dst_w) continue;
+                for (uint8_t p = 0; p < HOIST_SPR_PLANES; p++) {
+                    uint8_t byte = sec[base + p * HOIST_SPR_PLANE
+                                       + r * HOIST_SPR_ROW + (c >> 3)];
                     v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
                 }
                 if (v) dst[(size_t)py * dst_w + px] = v;

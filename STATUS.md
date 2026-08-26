@@ -837,6 +837,14 @@ the same poke, so the comparison stays a comparison.
 | the digger (button 9) | 0 differ | — the level's own |
 | the builder (button 6) | **0 differ** | **399 of 400 exact** |
 | the blocker (button 5) | **0 differ** | **398 of 400 exact** |
+| the climber (button 2) | **0 differ** | 390 of 400 |
+| the floater (button 3) | **0 differ** | 400 of 400 — but see below |
+
+The floater's number is weaker than it looks: image `0x021BA` wants the fall
+counter past `0x10` before image `0x021C0` even asks whether `ds:0x25` is set,
+and nothing on this level falls that far. What is verified is that ASSIGNING
+it changes nothing else. The climber's ten are its own sprite, which is not
+found - see `HOIST_SPR_BASE` in game.c.
 
 The frames that are not exact are all 28 pixels of CURSOR, where a stray
 `MOUSEMOTION` from the dummy video driver moves the pointer for a single
