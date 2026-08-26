@@ -1,9 +1,15 @@
 /* main.c - the game's entry point, and only that.
  *
- * The original has no command line. It starts, shows its menu, and plays; so
- * does this. Everything a developer needs - rendering one screen to a file,
- * forcing a rating or a scroll position, comparing against the emulator -
- * lives in devmain.c and builds as a separate binary.
+ * The original DOES take a command line, which this file used to say it did
+ * not. LEMMINGS.BAT never runs VGALEMMI.EXE directly: it runs `lemvga.com /v`
+ * for VGA and `lemvga.com /e` for EGA, and the parser at image 0x012E0 reads
+ * those letters - 'v' stores 4 in ds:0x1F7C at image 0x01312, which is what
+ * picks the VGA palette path at image 0x055B7. So a switch that selects
+ * between the machines the original itself asks about is not foreign to it.
+ *
+ * It stays to ONE switch. Everything a developer needs - rendering a screen
+ * to a file, forcing a rating or a scroll position, comparing against the
+ * emulator - still lives in devmain.c and builds as a separate binary.
  *
  * That separation is worth keeping. When the flags lived here, the file a
  * reader would open expecting "the game's entry point" was four hundred lines
@@ -37,10 +43,48 @@
  * decision of the original's undone. */
 #define DEFAULT_SCALE 3
 
+/* The start-up menu's second question, as a switch.
+ *
+ *   --pc high   the palette changes part-way down the screen, so the panel
+ *               gets its own eight colours - image 0x0C080
+ *   --pc compat one palette for the whole frame, which is what a slow PC
+ *               got: the panel makes do with the level's colours
+ *
+ * High by default: it is the one the original's own menu highlights, the one
+ * this port is checked against, and the one whose panel is not full of the
+ * terrain's browns. */
+static int parse_pc(const char *v)
+{
+    if (!strcmp(v, "high") || !strcmp(v, "hi")) { lem_machine = LEM_PC_HIGH;
+                                                  return 0; }
+    if (!strcmp(v, "compat") || !strcmp(v, "lo")) {
+        lem_machine = LEM_PC_COMPATIBLE;
+        return 0;
+    }
+    return -1;
+}
+
 int main(int argc, char **argv)
 {
-    const char *data = (argc > 1) ? argv[1] : DATA_DIR;
+    const char *data = DATA_DIR;
     const char *err = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--pc") && i + 1 < argc) {
+            if (parse_pc(argv[++i]) != 0) {
+                fprintf(stderr, "PC Lemmings: --pc takes high or compat\n");
+                return 2;
+            }
+        } else if (argv[i][0] != '-') {
+            data = argv[i];
+        } else {
+            fprintf(stderr, "PC Lemmings: unknown option %s\n"
+                            "usage: lemmings [--pc high|compat] [DATA_DIR]\n",
+                    argv[i]);
+            return 2;
+        }
+    }
+
     uint8_t rating = 0;             /* 0 Fun, 1 Tricky, 2 Taxing, 3 Mayhem */
     uint32_t number = 1;            /* the GAME's level number, 1..30 */
 

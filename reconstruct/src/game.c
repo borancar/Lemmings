@@ -1800,6 +1800,61 @@ void level_frame_step(level_anim *st, const level *lv)
     level_status_in(0);          /* nothing is counted saved yet */
 }
 
+/* THE PANEL'S OWN UPPER EIGHT COLOURS - transcribed data, image 0x0C080.
+ *
+ * Which is ds:0x25F0, and it is reached through the branch at image 0x055B7:
+ * that compares ds:0x1F7C against 4 and takes the pointer table at cs:0x52E4
+ * on a match, cs:0x52D4 otherwise. The adapter letter sets the variable -
+ * image 0x01312 stores 4 for 'v', which is what LEMMINGS.BAT passes as
+ * `lemvga.com /v`.
+ *
+ * The screen is EGA mode 0x0D in sixteen colours and the game SWAPS the upper
+ * eight of them part-way down it, so the play area can be the terrain's
+ * browns while the status line and the icons below are greens and greys. The
+ * lower eight never change.
+ *
+ * Measured, not inferred: tools/probe_dac.py samples the emulator's palette
+ * every 512 instructions between two of the game's own end-of-frame points at
+ * image 0x018F, and every settled frame holds exactly TWO palettes, entries
+ * 16..23 alternating between
+ *
+ *     d38220 c35110 922010 610010 414151 616171 719200 206120   the terrain
+ *     00aa00 55ff55 555555 aa0000 aa5500 00aaaa ff55ff aa00aa   this table
+ *
+ * and ending on the terrain's, which is the one the next frame starts with.
+ * The second is byte-identical to the eight triples here.
+ *
+ * A capture cannot see this. tools/record_level.py dumps the DAC once a
+ * frame, so the reference holds whichever palette was current - and the port
+ * was rendering the whole 320x200 from it, which is why the status line came
+ * out with the terrain's oranges through it while every INDEX matched.
+ */
+static const uint8_t PANEL_PAL6[8 * 3] = {
+    0x00, 0x2A, 0x00,   /* 8  green      */
+    0x15, 0x3F, 0x15,   /* 9  bright green */
+    0x15, 0x15, 0x15,   /* 10 dark grey  */
+    0x2A, 0x00, 0x00,   /* 11 red        */
+    0x2A, 0x15, 0x00,   /* 12 brown      */
+    0x00, 0x2A, 0x2A,   /* 13 cyan       */
+    0x3F, 0x15, 0x3F,   /* 14 magenta    */
+    0x2A, 0x00, 0x2A,   /* 15 dark magenta */
+};
+
+/* Fill `out` with those eight, widened - the table at image 0x0C080 above.
+ *
+ * They are attributes 8..15: the
+ * attribute controller maps those onto DAC 16..23 - read off the hardware as
+ * `attr_pal = 00 01 02 03 04 05 06 07 10 11 12 13 14 15 16 17`, which is the
+ * `v < 8 ? v : v + 8` that tools/compare_frame.py has always used. */
+void level_panel_palette(lem_rgb *out)
+{
+    for (uint8_t i = 0; i < 8; i++) {
+        out[i].r = widen6(PANEL_PAL6[i * 3 + 0]);
+        out[i].g = widen6(PANEL_PAL6[i * 3 + 1]);
+        out[i].b = widen6(PANEL_PAL6[i * 3 + 2]);
+    }
+}
+
 /* ONE FRAME OF A LEVEL, the simulation half - image 0x019C's order.
  *
  * The play loop at image 0x019C..0x01C5 runs the frame counter (image
@@ -3335,6 +3390,11 @@ static const char SCROLL_TEXT[] =
  * drawing invents: two captures of the original taken seconds apart disagree
  * about it, and a fixed value is right only by luck. menu_set_scroll moves
  * it; the animation lives in whoever calls that. */
+/* Which PC this is pretending to be - see lem_pc in game.h. High performance
+ * by default, because that is the build the palette work above describes and
+ * the one the start-up menu's second entry selects. */
+lem_pc lem_machine = LEM_PC_HIGH;
+
 uint32_t menu_scroll;
 /* Which frame the two lemmings holding the banner are on. Separate from the
  * scroll because it is separate in the original - see draw_end_lemming. */

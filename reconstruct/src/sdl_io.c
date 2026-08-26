@@ -386,6 +386,18 @@ static int level_run(struct level_frame *A, const canvas *c,
     uint8_t *screen = calloc(LEVEL_SCREEN_W * LEVEL_SCREEN_H, 1);
     if (!screen) return -1;
 
+    /* Two palettes, and which one a row gets depends on where it is.
+     *
+     * The game swaps attributes 8..15 part-way down the screen - see
+     * level_panel_palette - so the play area keeps the terrain's browns and
+     * the panel below gets greens and greys. On a plain PC it does not, and
+     * the panel makes do with the level's palette; that is what lem_machine
+     * selects. The lower eight entries are the same either way. */
+    lem_rgb top[16], bottom[16];
+    for (uint8_t i = 0; i < 16; i++) top[i] = bottom[i] = palette[i];
+    if (lem_machine == LEM_PC_HIGH)
+        level_panel_palette(&bottom[8]);
+
     /* A frame sink, for checking THIS path rather than a second arrangement
      * of the same calls. Every measurement of the level goes through lemdev,
      * which composes the canvas and the panel separately; this writes the
@@ -476,8 +488,9 @@ static int level_run(struct level_frame *A, const canvas *c,
             for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
                 uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
                 const uint8_t *src = screen + (size_t)y * LEVEL_SCREEN_W;
+                const lem_rgb *pal = (y < LEVEL_PLAY_H) ? top : bottom;
                 for (uint16_t x = 0; x < LEVEL_SCREEN_W; x++) {
-                    lem_rgb q = palette[src[x]];
+                    lem_rgb q = pal[src[x]];
                     row[x] = ((uint32_t)q.r << 16) |
                              ((uint32_t)q.g << 8) | q.b;
                 }
@@ -492,10 +505,13 @@ static int level_run(struct level_frame *A, const canvas *c,
                 uint16_t wh[2] = { LEVEL_SCREEN_W, LEVEL_SCREEN_H };
                 fwrite("LEMRW2", 1, 6, f);
                 fwrite(wh, sizeof(uint16_t), 2, f);
+                /* The TOP palette: the container holds one, and the play
+                 * area is what gets scored against the original's own
+                 * frames. The split is in the comment above, not in here. */
                 for (uint8_t i = 0; i < 16; i++) {
-                    fputc(palette[i].r, f);
-                    fputc(palette[i].g, f);
-                    fputc(palette[i].b, f);
+                    fputc(top[i].r, f);
+                    fputc(top[i].g, f);
+                    fputc(top[i].b, f);
                 }
                 fwrite(screen, 1, LEVEL_SCREEN_W * LEVEL_SCREEN_H, f);
                 fclose(f);

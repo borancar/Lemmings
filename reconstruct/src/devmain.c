@@ -478,6 +478,13 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
+        else if (!strcmp(argv[i], "--pc") && i + 1 < argc) {
+            /* The same switch the game takes - see main.c. High performance
+             * swaps the panel's eight colours in part-way down the screen. */
+            const char *v = argv[++i];
+            lem_machine = (!strcmp(v, "compat") || !strcmp(v, "lo"))
+                        ? LEM_PC_COMPATIBLE : LEM_PC_HIGH;
+        }
         else if (!strcmp(argv[i], "--no-objects")) objects = 0;
         else if (!strcmp(argv[i], "--baked")) g_baked_objects = 1;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }

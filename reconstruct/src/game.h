@@ -432,6 +432,19 @@ void level_frame_step(level_anim *st, const level *lv);
 /* One frame of a level, split where image 0x019C splits it: everything up to
  * the drawing, then the drawing. Both the game and the harness call these,
  * which is the point - see level_play_step in game.c. */
+/* The eight colours the panel's half of the screen uses for attributes 8..15
+ * - image 0x0C080. See level_panel_palette in game.c: the game swaps these in
+ * part-way down the screen, which is a thing no single-palette capture can
+ * show. `out` takes eight entries. */
+void level_panel_palette(lem_rgb *out);
+
+/* Which PC the port is pretending to be. The original asks at start-up -
+ * "1 - For PC compatibles" against "2 - For High Performance PCs" - and only
+ * the high-performance build changes the palette part-way down the screen;
+ * the other has to make do with one palette for the whole frame. */
+typedef enum { LEM_PC_COMPATIBLE = 0, LEM_PC_HIGH = 1 } lem_pc;
+extern lem_pc lem_machine;
+
 void level_play_step(level_anim *st, const level *lv, lemming *lem,
                      uint8_t *released, const uint8_t *terrain,
                      uint16_t w, uint16_t h);
