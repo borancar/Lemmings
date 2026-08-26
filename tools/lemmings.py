@@ -95,6 +95,35 @@ class LemmingsVga(VgaDos):
         kw.setdefault("vsync_hz", 70.0)
         kw.setdefault("hsync_hz", 31469.0)
         super().__init__(*a, **kw)
+        self._seed_config()
+
+    # The game's config file starts every run from the SHIPPED copy.
+    #
+    # RUSSELL.DAT is a working file the game rewrites, and its state decides
+    # what happens at start-up. The packaging knows this: LEMMI.BAT is three
+    # lines, and two of them are `attrib -h russell.dat` and `copy
+    # russell.var russell.dat`. RUSSELL.VAR is the pristine one.
+    #
+    # It matters because a drifted RUSSELL.DAT makes the game take its floppy
+    # path and quit with "Lemmings Disk 1 Not found, Insert into drive A or B
+    # and retry" - the branch at image 0x0062B - before it ever reaches a
+    # screen. That is exactly what happened here: something ran the game
+    # outside this emulator, which does NOT intercept the write, and every
+    # run afterwards failed at the title with no capture. Restoring the file
+    # by hand fixed it, which is not a fix anyone will remember next time.
+    #
+    # Seeding the overlay does what LEMMI.BAT does without touching the host
+    # directory: the guest's first open of RUSSELL.DAT is served from memory
+    # with RUSSELL.VAR's bytes, and its writes stay in the overlay as before.
+    # So the read-only guarantee is not weakened - it is what makes this the
+    # right place for it.
+    def _seed_config(self):
+        var = os.path.join(GAME_DIR, "russell.var")
+        try:
+            with open(var, "rb") as f:
+                self.overlay["RUSSELL.DAT"] = bytearray(f.read())
+        except OSError:
+            pass          # no pristine copy: leave the host file to be read
 
 
 REC_MAGIC = b"LEMREC01"
