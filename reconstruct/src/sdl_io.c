@@ -618,6 +618,10 @@ static int level_run(struct level_frame *A, const canvas *c,
          * the original saves the bytes underneath it (image 0x0719C) and puts
          * them back before the next frame, which is the same thing as drawing
          * it after everything else into a buffer that is rebuilt each frame. */
+        /* Image 0x03DAF clears ds:0x1A and image 0x03DE8 sets it, every
+         * pass - so the box follows the pointer rather than a click. */
+        lem_cursor_box =
+            level_lemming_at(A->lem, A->released, A->view_x) >= 0;
         level_cursor_draw(screen, LEVEL_SCREEN_W, LEVEL_SCREEN_H, A->view_x);
 
         void *pixels = NULL;

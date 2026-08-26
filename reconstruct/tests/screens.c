@@ -640,18 +640,28 @@ int main(int argc, char **argv)
          * `view - 16 + mouse_x` and `mouse_y + 8`, so with the view at 640
          * the middle of that box is mouse (154, 79) - which is exactly where
          * tools/probe_digger.py's click landed on the original. */
+        /* The PORT's view_x, 624, not the guest's 640 - they differ by the
+         * sixteen prove.sh prints as its offset, and writing the guest's
+         * number here is what let an off-by-sixteen in the hit test pass. */
         lem_mouse_move(154, 79);
         ck("the pointer finds the lemming under it",
-           level_lemming_at(l, 2, 640) == 0, "the 12x12 box missed");
+           level_lemming_at(l, 2, 624) == 0, "the 12x12 box missed");
 
         lem_mouse_move(154, 79 + 16);
         ck("and sixteen rows lower finds nothing",
-           level_lemming_at(l, 2, 640) < 0,
+           level_lemming_at(l, 2, 624) < 0,
            "the box is not where image 0x03D27 puts it");
 
         lem_mouse_move(154 + (900 - 784), 79);
         ck("the second lemming is found at its own x",
-           level_lemming_at(l, 2, 640) == 1, "the scan stopped at the first");
+           level_lemming_at(l, 2, 624) == 1, "the scan stopped at the first");
+
+        /* And it must MISS when the pointer is sixteen off, which is the
+         * error the old formula made on every click. */
+        lem_mouse_move(154 - 16, 79);
+        ck("sixteen pixels left of it is a miss",
+           level_lemming_at(l, 2, 624) < 0,
+           "the box is sixteen pixels wide of where it belongs");
     }
 
     /* What the pointer is over, image 0x03EF9. The coordinates are the

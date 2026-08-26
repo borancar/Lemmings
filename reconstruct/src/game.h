@@ -472,6 +472,9 @@ level_hit level_pointer_hit(void);
 int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n);
 
 extern uint16_t lem_mouse_x, lem_mouse_y;
+/* Is the pointer over a lemming - the original's ds:0x1A, which is what
+ * makes the cursor a box (image 0x05854). */
+extern uint8_t lem_cursor_box;
 void lem_mouse_move(int32_t x, int32_t y);
 void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x);
 

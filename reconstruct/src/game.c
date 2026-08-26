@@ -1351,7 +1351,18 @@ static void lem_settle(lemming *a, int16_t bp)
 
 int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
 {
-    int32_t px = (int32_t)view_x - 16 + (int32_t)lem_mouse_x;
+    /* Image 0x03D0A reads `[0] - 0x10 + [0x10]`, and ds:0 is the GUEST's
+     * scroll - which is sixteen more than this port's `view_x`: the guest
+     * reads 640 where tools/compare_run.py fits 624, the same sixteen
+     * tools/prove.sh prints as its offset. So the two sixteens cancel and
+     * the pointer's record x is simply `view_x + mouse_x`.
+     *
+     * Subtracting sixteen here as well put every hit test sixteen pixels
+     * left of the lemming. The test below passed anyway, because it was
+     * written with the GUEST's 640 in it rather than the port's 624 - a
+     * test that agrees with the code because both were derived from the same
+     * misreading. */
+    int32_t px = (int32_t)view_x + (int32_t)lem_mouse_x;
     int32_t py = (int32_t)lem_mouse_y + 8;
 
     for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
@@ -1447,20 +1458,26 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         return;
     }
 
-    /* Clear the span, and see whether anything solid is left under it. */
-    int solid = 0;
+    /* Clear the span - and the test is on what WAS THERE, not on what is
+     * below it. Image 0x02446 and image 0x0244A test the bits the clear at
+     * image 0x05EBA just tried to remove: if none of them were set, the row
+     * it dug was already empty and image 0x0244E turns it into a fall.
+     *
+     * Checking the row BELOW instead is not the same rule and got this
+     * wrong at the moment it matters - digging through the last row of a
+     * ledge, where the row dug is the last solid one and the row below is
+     * already open. */
+    int had = 0;
     int32_t cy = (int32_t)a->y - LEMMING_DY;
     for (uint8_t i = 0; i < DIG_WIDTH; i++) {
         int32_t cx = (int32_t)a->x + DIG_FROM + i - LEMMING_DX;
         if (cx < 0 || cx >= (int32_t)cw || cy < 0 || cy >= (int32_t)chh)
             continue;
+        if (lvl[(size_t)cy * cw + cx] & 8) had = 1;
         lvl[(size_t)cy * cw + cx] = 0;        /* image 0x05EBA */
-        if (lem_solid(lvl, cw, chh, (int16_t)(a->x + DIG_FROM + i),
-                      (int16_t)(a->y + 1)))
-            solid = 1;
     }
-    if (!solid) {
-        /* image 0x0244E: nothing left to stand on, so fall. */
+    if (!had) {
+        /* image 0x0244E: it dug nothing, so there is nothing to stand on. */
         a->flags = (uint16_t)((a->flags & ~(uint16_t)DIG_BIT) | 4);
         a->state = 4;
     }
@@ -2360,12 +2377,34 @@ static const uint8_t CURSOR[CURSOR_H][CURSOR_W] = {
     { 0,0,0,0,0,0,2,3,0,0,0,0,0,0 },
 };
 
+/* THE BOX the cursor becomes over a lemming.
+ *
+ * Image 0x05854 adds 0x480 to the cursor's store offset when ds:0x1A is
+ * 0xFF - a second shape, eight shifts of 144 bytes further on - and image
+ * 0x03DE8 sets that flag when the scan at image 0x03D1E finds a lemming
+ * under the pointer. So the pointer tells you what it is over, which is
+ * what makes a skill landable at all.
+ *
+ * The border is measured off the original's own framebuffer while the flag
+ * was up: a 14x14 dashed outline in the sequence 2 2 3 3 . . 1 1 . . 3 3 2 2
+ * along each edge, with the cross-hair still showing inside it. One capture,
+ * so the sequence is what that frame held rather than something read out of
+ * the store - the cross-hair itself was pinned the same way and then held
+ * for 5,100 frames. */
+#define CURSOR_BOX_EDGE_N 14
+static const uint8_t CURSOR_BOX_EDGE[CURSOR_BOX_EDGE_N] = {
+    2, 2, 3, 3, 0, 0, 1, 1, 0, 0, 3, 3, 2, 2,
+};
+
 /* Where the pointer is, in the ORIGINAL's coordinates - ds:0x10 and ds:0x12,
  * so eight more than the screen position and clamped the way image 0x0426D
  * clamps them. Image 0x00F41 starts it at (150, 100), which is where the
  * game puts it before anyone touches the mouse. */
 uint16_t lem_mouse_x = 150;
 uint16_t lem_mouse_y = 100;
+/* ds:0x1A - is the pointer over a lemming? Image 0x03DE8 sets it, image
+ * 0x03DAF clears it, and image 0x05854 is what it changes. */
+uint8_t lem_cursor_box;
 
 /* Transcribed from image 0x0426D: the original's own handler clamps the
  * position it got from INT 33h function 3 to 8..0x148 across and 8..0xC8
@@ -2398,6 +2437,26 @@ void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x)
     int32_t sx = (int32_t)lem_mouse_x - CURSOR_ORIGIN - CURSOR_HOT_X;
     int32_t sy = (int32_t)lem_mouse_y - CURSOR_ORIGIN - CURSOR_HOT_Y;
     (void)view_x;                 /* the cursor is on the SCREEN, not the level */
+
+    /* Over a lemming it wears a box - see CURSOR_BOX_EDGE. */
+    if (lem_cursor_box) {
+        for (uint8_t i = 0; i < CURSOR_BOX_EDGE_N; i++) {
+            uint8_t v = CURSOR_BOX_EDGE[i];
+            if (!v) continue;
+            const int32_t e[4][2] = {
+                { sx + i, sy },                              /* top    */
+                { sx + i, sy + CURSOR_H - 1 },               /* bottom */
+                { sx,     sy + i },                          /* left   */
+                { sx + CURSOR_W - 1, sy + i },               /* right  */
+            };
+            for (uint8_t k = 0; k < 4; k++) {
+                int32_t x = e[k][0], y = e[k][1];
+                if (x < 0 || x >= (int32_t)w || y < 0 || y >= (int32_t)h)
+                    continue;
+                pix[(size_t)y * w + (size_t)x] = v;
+            }
+        }
+    }
     for (uint16_t r = 0; r < CURSOR_H; r++) {
         int32_t y = sy + r;
         if (y < 0 || y >= (int32_t)h) continue;

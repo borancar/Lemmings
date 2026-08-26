@@ -118,6 +118,26 @@ def install(m):
                 out.write(f"      +{off:#04x} {name:12s} = "
                           f"{w(ARRAY + off) & 0xffff:#06x}\n")
 
+        # THE BOX CURSOR. Image 0x05854 picks a cursor 0x480 further into
+        # the store when ds:0x1A is 0xFF, and image 0x03DE8 sets that when
+        # the scan finds a lemming under the pointer. So the shape is
+        # whatever is on screen at the pointer while that flag is up.
+        if st.get("boxshot") is None and n:
+            flag = b(0x1A)
+            if flag == 0xFF:
+                fb = m.framebuffer()
+                mx = w(0x10) - 8       # the pointer, in screen pixels
+                my = w(0x12) - 8
+                out.write(f"\n  the BOX cursor (ds:0x1A={flag:#04x}), "
+                          f"pointer at screen ({mx}, {my}):\n")
+                for yy in range(max(0, my - 12), min(160, my + 12)):
+                    out.write("    " + "".join(
+                        ("%x" % fb[yy * 320 + xx] if fb[yy * 320 + xx] < 8
+                         else ".") if 0 <= xx < 320 else " "
+                        for xx in range(mx - 14, mx + 14)) + "\n")
+                st["boxshot"] = 1
+                out.flush()
+
         # THE SPRITE, separated from the terrain by holding still.
         #
         # Image 0x023F3 digs only on the two animation frames where the
