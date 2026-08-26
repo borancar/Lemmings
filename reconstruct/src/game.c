@@ -1872,6 +1872,36 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * need. */
 #define LEM_SPR_FALL    358
 
+/* THE DIGGER'S SPRITE - main.dat section 0, offset 720, and every part of
+ * that was measured rather than guessed. See tools/probe_digger.py.
+ *
+ * Image 0x07112 gave the store's address - `cx = [0x1FE6] + bp`, a segment
+ * and a paragraph offset - and reading the frames there settled the shape:
+ * 16 wide in two bytes, FOURTEEN rows, three colour planes, 84 bytes. The
+ * store's frame is 112 because the loader adds a fourth plane as a mask; the
+ * FILE holds the 84 bytes of colour alone, which is why this port's "any
+ * plane set" rule already draws it correctly.
+ *
+ * 720 is the eighteen walker frames of forty bytes, so the digger sits
+ * immediately after the walker - and the frame was found by searching the
+ * file for the exact bytes the guest was reading, not by dividing 21,104 by
+ * anything.
+ *
+ * The wrong turning is worth recording: 112 with the mask at 84 is satisfied
+ * by 4 bytes x 7 rows AND by 2 bytes x 14 rows, both in four planes, and the
+ * screen appeared to show seven rows because only seven of them CHANGE
+ * across the frames that do not dig. Rendering both and looking is what
+ * separated them - at 32x7 each frame holds two clusters that are one
+ * lemming cut in half. */
+#define DIG_SPR_BASE    720
+#define DIG_SPR_W       16
+#define DIG_SPR_H       14
+#define DIG_SPR_PLANES  3
+#define DIG_SPR_ROW     2
+#define DIG_SPR_PLANE   (DIG_SPR_ROW * DIG_SPR_H)            /* 28 */
+#define DIG_SPR_FRAME   (DIG_SPR_PLANE * DIG_SPR_PLANES)     /* 84 */
+#define DIG_SPR_FRAMES  16
+
 /* One lemming, at its own coordinates - image 0x070F9 puts the top row at
  * `y + hot_y`, and the canvas sits 16 along and 16 down from those. */
 void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
@@ -1882,6 +1912,32 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     int32_t x0, y0;
 
     if (a->alive == 0xFF) return;
+
+    /* A digger has its own sprite, its own size and its own place in the
+     * file - see DIG_SPR_BASE. */
+    if (a->flags & 0x0010) {
+        if (a->anim >= DIG_SPR_FRAMES) return;
+        base = DIG_SPR_BASE + (uint32_t)a->anim * DIG_SPR_FRAME;
+        if (base + DIG_SPR_FRAME > sec_len) return;
+        x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+        y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+        for (uint8_t r = 0; r < DIG_SPR_H; r++) {
+            int32_t py = y0 + r;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            for (uint8_t c = 0; c < DIG_SPR_W; c++) {
+                int32_t px = x0 + c;
+                uint8_t v = 0;
+                if (px < 0 || px >= (int32_t)dst_w) continue;
+                for (uint8_t p = 0; p < DIG_SPR_PLANES; p++) {
+                    uint8_t byte = sec[base + p * DIG_SPR_PLANE
+                                       + r * DIG_SPR_ROW + (c >> 3)];
+                    v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                }
+                if (v) dst[(size_t)py * dst_w + px] = v;
+            }
+        }
+        return;
+    }
     if (a->dir != 1) frame = (uint16_t)(frame + a->state);  /* image 0x070AB */
     /* Which group, from the state - the store base the original carries in
      * [si+0x0c] is a group, and the port indexes the same groups in the file. */

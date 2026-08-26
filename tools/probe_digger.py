@@ -250,6 +250,41 @@ def install(m):
                         msk = "".join("#" if bit(3, rr, cc) else "."
                                       for cc in range(32))
                         out.write(f"      {ink}   {msk}\n")
+
+                    # THE WHOLE ANIMATION, once. BP steps seven paragraphs a
+                    # frame, so the sixteen frames are BP, BP+7, BP+14 ... -
+                    # and watching them in a row is what says whether the two
+                    # clusters in each are one figure or two.
+                    if bl["done"] == 0:
+                        out.write("\n    the sixteen frames in a row:\n")
+                        # The bytes themselves, so they can be looked for
+                        # in the data files.
+                        out.write("\n      RAW frame 0: "
+                                  + bytes(uc.mem_read(
+                                      (seg + bl["bp"]) * 16, 112)).hex()
+                                  + "\n")
+                        # TWO layouts give 112 with the mask at 84:
+                        # 4 bytes x 7 rows and 2 bytes x 14 rows, both in
+                        # four planes. The screen showed seven rows of
+                        # CHANGING pixels, which a 14-row sprite with a
+                        # static top half also produces - so try both and
+                        # let the picture decide.
+                        for R2, B2 in ((7, 4), (14, 2)):
+                            out.write(f"\n      as {B2*8}x{R2}:\n")
+                            for fr in range(4):
+                                w2 = (seg + bl["bp"] + fr * 7) * 16
+                                fb = bytes(uc.mem_read(w2, 112))
+
+                                def bt(pl, rr, cc, d=fb, R=R2, B=B2):
+                                    v = d[pl * R * B + rr * B + (cc >> 3)]
+                                    return (v >> (7 - (cc & 7))) & 1
+
+                                out.write(f"        frame {fr}:\n")
+                                for rr in range(R2):
+                                    out.write("          " + "".join(
+                                        ".1234567"[sum(bt(pl, rr, cc) << pl
+                                                       for pl in range(3))]
+                                        for cc in range(B2 * 8)) + "\n")
                     out.flush()
                     bl["done"] += 1
             return

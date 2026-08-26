@@ -533,6 +533,39 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* The digger's SPRITE, against the bytes the original was reading.
+     *
+     * tools/probe_digger.py caught the guest mid-dig and followed image
+     * 0x07112's `[0x1FE6] + bp` to the store; the frame there begins
+     * 00 20 00 0a, and searching main.dat for those 84 bytes of colour
+     * planes puts them at section 0 offset 720 - immediately after the
+     * eighteen walker frames of forty bytes. So this checks the file the
+     * port reads against the memory the original read. */
+    {
+        char p5[1024];
+        dat_file d5;
+        const char *e5 = "unknown error";
+        snprintf(p5, sizeof p5, "%s/main.dat", dir);
+        if (dat_load(p5, &d5, &e5) == 0 && d5.count > 0
+                && d5.sections[0].size >= 720 + 84) {
+            const uint8_t *g = d5.sections[0].data + 720;
+            ck("the digger's frame is where the guest read it",
+               g[0] == 0x00 && g[1] == 0x20 && g[2] == 0x00 && g[3] == 0x0A,
+               "main.dat section 0 + 720 is not the digger");
+
+            /* Row 8 of frame 0 reads ......32223..... - decoded from three
+             * planes two bytes wide over fourteen rows. */
+            uint8_t v = 0;
+            for (uint8_t p = 0; p < 3; p++) {
+                uint8_t byte = g[p * 28 + 8 * 2 + (6 >> 3)];
+                v = (uint8_t)(v | (((byte >> (7 - (6 & 7))) & 1u) << p));
+            }
+            ck("and it decodes as 16x14 in three planes", v == 3,
+               "row 8 column 6 is not the 3 the store showed");
+            dat_free(&d5);
+        }
+    }
+
     /* THE DIGGER, against what the original actually did.
      *
      * tools/probe_digger.py drove the original into assigning one and
