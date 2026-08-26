@@ -1709,6 +1709,31 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
 #define LEM_SPR_PLANE   (LEM_SPR_ROW * LEM_SPR_H)          /* 20 */
 #define LEM_SPR_FRAME   (LEM_SPR_PLANE * LEM_SPR_PLANES)   /* 40 */
 #define LEM_SPR_FRAMES  0x12    /* image 0x059C8: cx = 0x12 - the WALKER's */
+/* AND THE FRAME SIZE IS NOT UNIFORM ACROSS THIS SECTION.
+ *
+ * The port indexes main.dat section 0 as a flat array of 40-byte frames -
+ * 16 wide, 10 rows, two planes - which is right for the walker at 0 and the
+ * faller at LEM_SPR_FALL, and both match the original to the pixel. It is
+ * not right in general, and that is measured rather than suspected: render
+ * every frame on the 40-byte grid and count the ink in its top five rows
+ * against its bottom five, and
+ *
+ *     walker 0..9      balanced, every frame a whole figure
+ *     faller 358..365  balanced, every frame a whole figure
+ *     290..301         ALTERNATING: 293, 295, 297, 299 have nothing at all
+ *                      in their top half, and their neighbours are crowded
+ *     330..341         the same alternation
+ *
+ * which is one sprite lying across two 40-byte slots: 80 bytes, twenty rows.
+ * So different animations in this section have different frame sizes, and
+ * the flat model only happens to suit the two the port draws.
+ *
+ * That is what makes the digger's sprite an open question rather than an
+ * arithmetic one. Its record says 112 bytes a frame with the mask at 84
+ * (tools/probe_digger.py measured both), 112 is not a multiple of three so
+ * it is not the walker's pre-shift shape, and there is no reason to expect
+ * its file frames to be 40 bytes either. Finding it means locating the
+ * animation, not dividing a number. */
 /* The faller is a different group. Image 0x030F1 gives a released lemming
  * `[si+0x0c] = 0xA42`, which is the paragraph its group starts at in the
  * pre-shift store - the walker's is 0 - and image 0x05A48 builds a group of
