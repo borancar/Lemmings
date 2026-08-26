@@ -644,13 +644,25 @@ uint32_t menu_get_scroll(void);
  * menu_anim_step is one pass of the routine. */
 void menu_anim_reset(void);
 void menu_anim_step(void);
+/* Ten of them - image 0x04FFC loads cx with 0xA - though only five are live. */
+#define MENU_ANIM_N 10
+/* Their counters, the original's ds:0x4960. Set them to score a capture: the
+ * five walk on and off, so a composed frame that starts them from the
+ * staggered reset shows a different moment from whatever the guest was at. */
+extern int16_t anim_ctr[MENU_ANIM_N];
+extern int     anim_started;
+void menu_set_anim(const int16_t *ctr, uint8_t n);
 /* How many of them are on screen right now. Exposed so the counter logic can
  * be checked without a window and without a capture - no capture of the
  * original shows one, so pixels cannot settle this. */
 uint8_t menu_anim_visible(void);
 
 /* Which frame the two lemmings holding the banner's ends are on. Sixteen of
- * them, and NOT tied to the scroll - see draw_end_lemming in game.c. */
+ * them, and image 0x07E2F takes the index from ds:0x21 - the SAME word the
+ * ribbon runs off - as `(c >> 2) & 15`. This used to say "NOT tied to the
+ * scroll", which was wrong and had been contradicted by game.c for as long as
+ * both comments existed; the port's table is offset two frames from the
+ * original's, which is what made them look independent. See LEM_FRAME_BIAS. */
 void     menu_set_lem_frame(uint8_t frame);
 uint8_t  menu_get_lem_frame(void);
 

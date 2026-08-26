@@ -21,7 +21,8 @@ Two things make the comparison honest rather than flattering:
     rather than quietly excluded - and when one of them gets built, it moves
     out of that list rather than staying there flattering the headline. Only
     the scrolling banner is left, and the menu also animates (the lemmings
-    blink), which a single composed frame cannot match.
+    blink). The banner and the five walkers are read back from the guest,
+    so those DO match; see BAR_SCROLL_INIT and ANIM_VAR.
 
 The capture is deleted before the run: a stale one reads as a successful run.
 """
@@ -71,10 +72,29 @@ RATING_VAR = 0x0B9FE      # image address of ds:0x1F6E, the current rating
 # one phase of it and the port has to be told which, or the banner's rows come
 # back as a difference that is really just a different moment.
 SCROLL_VAR = 0x0B9FE - 0x1F6E + 0x21
-# What to take off ds:0x21 to get the port's own --scroll. Measured, from two
-# captures minutes apart: 176 matched best at 36 and 168 at 28, both exactly
-# 140 apart. Where the 140 comes from has not been read.
-BAR_SCROLL_OFFSET = 140
+# What to take off ds:0x21 to get the port's own --scroll. Image 0x07CC6 starts
+# the counter at FOUR and image 0x07D23 adds four per step, so --scroll is
+# simply ds:0x21 - 4. There is no modulo: the port's --scroll is a position
+# along the whole ~261-character message (draw_banner indexes ribbon[] by
+# scroll/16 - 35), not a 0..63 offset within one tile.
+#
+# This used to say 140, and to wrap the result to 0..63. Both were fits, and
+# both were wrong for the same underlying reason: the `read` below asked for
+# ONE byte of a variable the game reads and writes as a WORD, so any counter
+# past 255 came back truncated. Sweeping the port's scroll across the whole
+# message against four captures puts the ribbon at exactly ZERO differing
+# pixels at c-4 every time - where c is 180, 244, 276 and 260, and it was the
+# last two, both over 255, that the byte read had been folding down to 20
+# and 4 and the 0..63 fit had then been papering over.
+BAR_SCROLL_INIT = 4
+
+# The menu's five walking lemmings, image 0x0E3F0 - ds:0x4960, ten entries of
+# eleven bytes with the signed counter at +0. Same idea as the scroll: the
+# capture shows one phase of them and the port has to be told which, or the
+# one that happens to be on screen scores as a difference.
+ANIM_VAR = 0x0E3F0
+ANIM_N = 10
+ANIM_REC = 11
 
 
 # Which key leaves the main menu for each screen, read off the plates the
@@ -117,6 +137,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
     """
     last = rating
     last_scroll = 0
+    last_anim = None
     for attempt in range(tries):
         if os.path.exists(path):
             os.unlink(path)
@@ -152,7 +173,8 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                     "--cmd", f"screen {control}",
                     "--cmd", f"key {key} 24", "--cmd", "sleep 4.0"]
         cmd += ["--cmd", f"screen {os.path.abspath(path)}",
-                "--cmd", f"read i+{SCROLL_VAR:#x} 1",
+                "--cmd", f"read i+{SCROLL_VAR:#x} 2",
+                "--cmd", f"read i+{ANIM_VAR:#x} {ANIM_N * ANIM_REC}",
                 "--", "--run-seconds", str(seconds)]
         print(f"driving the original to its main menu"
               f"{f', asking for rating {rating}' if rating else ''} ...")
@@ -232,20 +254,49 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                 "this capture shows is unknown. That is a failure, not a pass.")
 
         scroll = None
+        anim = None
         pend = False
+        apend = 0
+        abytes = []
         for line in out.splitlines():
+            if f"read i+{ANIM_VAR:#x}" in line:
+                apend = 1
+                continue
+            if apend:
+                toks = [t for t in line.replace(":", " ").split() if len(t) == 2]
+                for t in toks:
+                    try:
+                        abytes.append(int(t, 16))
+                    except ValueError:
+                        pass
+                if len(abytes) >= ANIM_N * ANIM_REC:
+                    anim = [
+                        int.from_bytes(bytes(abytes[i * ANIM_REC:
+                                                    i * ANIM_REC + 2]),
+                                       "little", signed=True)
+                        for i in range(ANIM_N)]
+                    apend = 0
+                continue
             if f"read i+{SCROLL_VAR:#x}" in line:
                 pend = True
                 continue
             if pend and line.strip():
+                # ds:0x21 is a WORD; take both bytes, little-endian.
+                by = []
                 for tok in line.replace(":", " ").split():
                     if len(tok) == 2:
                         try:
-                            scroll = int(tok, 16)
+                            by.append(int(tok, 16))
                         except ValueError:
                             continue
+                    if len(by) == 2:
                         break
-                break
+                if len(by) == 2:
+                    scroll = by[0] | (by[1] << 8)
+                # Not `break`: the walkers' read is emitted AFTER this one,
+                # and leaving the loop here is exactly why it came back None.
+                pend = False
+                continue
         if scroll is None:
             raise SystemExit(
                 "could not read ds:0x21 back, so which phase of the banner\n"
@@ -253,15 +304,16 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
         if got > 3:
             raise SystemExit(f"ds:0x1F6E reads {got}, which is not a rating")
         if got == rating:
-            return path, got, scroll
+            return path, got, scroll, anim
         print(f"  asked for rating {rating}, the guest reached {got} - "
               f"presses were dropped or doubled"
               f"{'; retrying' if attempt < tries - 1 else ''}.")
         last = got
         last_scroll = scroll
+        last_anim = anim
     print(f"  gave up after {tries} tries; scoring against rating {last}, "
           f"which is what is actually on the screen.")
-    return path, last, last_scroll
+    return path, last, last_scroll, last_anim
 
 
 def main():
@@ -285,9 +337,9 @@ def main():
     a = ap.parse_args()
 
     if a.capture:
-        cap, shown, scroll = a.capture, a.rating, None
+        cap, shown, scroll, anim = a.capture, a.rating, None, None
     else:
-        cap, shown, scroll = capture(
+        cap, shown, scroll, anim = capture(
             os.path.join(ROOT, "out",
                          f"{a.screen}{a.rating or ''}.scrn"),
             a.seconds, a.delay, a.rating, screen=a.screen)
@@ -322,23 +374,31 @@ def main():
                       if ATTR[o2[y * pw2 + x] & 15] != theirs[y * w + x])
             if best is None or bad < best[0]:
                 best = (bad, sc)
-        # ds:0x21 and the port's --scroll differ by a CONSTANT 140. Two
-        # captures taken minutes apart said so independently: 176 fitted best
-        # at 36, and 168 at 28. So the phase is derived from the guest's own
-        # variable, and the fit above is kept as its check rather than as the
-        # answer - if the two ever disagree, that is worth knowing.
+        # The fit above searches 0..63, which is one tile - it can pin the
+        # PHASE and cannot pin which characters are showing. The guest's own
+        # counter gives both, so it is the answer and the fit is its control:
+        # the two must agree modulo 64, and it is worth knowing if they stop.
         use = best[1]
         if scroll is not None:
-            derived = (scroll - BAR_SCROLL_OFFSET) % 64
-            note = "agrees" if derived == best[1] % 64 else "DISAGREES with"
+            derived = scroll - BAR_SCROLL_INIT
+            note = "agrees" if derived % 64 == best[1] % 64 else "DISAGREES with"
             print(f"  the banner: ds:0x21 reads {scroll}, so --scroll"
-                  f" {derived}, which {note} the best fit ({best[1]}).")
-            if derived == best[1] % 64:
+                  f" {derived}, whose phase {note} the best fit ({best[1]}).")
+            if derived % 64 == best[1] % 64:
                 use = derived
         else:
             print(f"  the banner: no ds:0x21 read, so --scroll {best[1]}"
                   f" by fitting ({best[0]} pixels differing in its rows).")
         port_cmd += ["--scroll", str(use)]
+        # The five walking lemmings, from the guest's own counters. Without
+        # them the port composes from the staggered reset, which is a
+        # different moment - and whichever of the five is on screen then
+        # scores as a difference that is really a different frame.
+        if anim:
+            port_cmd += ["--anim", ",".join(str(v) for v in anim)]
+            on = [i for i, v in enumerate(anim) if -16 <= v < 0]
+            print(f"  the walkers: ds:0x4960 reads {anim}"
+                  f"{f', so {len(on)} on screen (entries {on})' if on else ', none on screen'}.")
     subprocess.run(port_cmd, check=True, stdout=subprocess.DEVNULL)
     pw, ph, ppal, ours = read_raw(port_raw)
     if (pw, ph) != (w, h):
@@ -421,8 +481,11 @@ def main():
                 n += 1
                 o2 += theirs[y*w+x] == ATTR[ours[y*w+x] & 0x0F]
         print(f"    {name:24s} y {y0}..{y1}: {100*o2/n:.1f}% by accident")
-    print("\n  The remainder is the screen's own animation, which a single"
-          "\n  composed frame cannot match.")
+    print("\n  Any remainder is the screen's own animation caught between the"
+          "\n  screen dump and the reads above - the guest keeps running between"
+          "\n  socket commands, so the counters can be a step or two ahead of"
+          "\n  the picture they describe. It shows as one walker a frame out,"
+          "\n  and clears on a re-run.")
     return 0
 
 

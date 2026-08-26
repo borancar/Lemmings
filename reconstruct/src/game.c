@@ -2911,10 +2911,40 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * the scroll phase, and the fit is degenerate. The blitter's arguments are
  * not. */
 #define BAR_STRIP_X 48
-/* Image 0x07CC6 starts ds:0x21 at FOUR, not zero. This port counts its scroll
- * from zero, so the original's variable is `scroll + 4` - and that four is the
- * whole of what stood between a single-parameter model and the captures. */
+/* The phase between this port's scroll and the original's own counter.
+ *
+ * Image 0x07E2F takes the end lemmings' frame from `ds:0x21` - the same word
+ * the ribbon runs off - as `(c >> 2) & 15`: sixteen frames over a 64-pixel
+ * period, each 384 bytes, the right-hand one 0x1800 further on. The port's
+ * table has that same 0x1800 between its two bases, so the geometry is the
+ * original's; only the ORIGIN differs, the port indexing a loaded section
+ * where the original indexes ds.
+ *
+ * Four is measured, not reasoned. Forcing each of the sixteen frames against
+ * four captures and scoring the two lemming rectangles alone puts the winner
+ * at exactly ZERO differing pixels every time, with the runner-up about a
+ * hundred away - and the winner is the original's own `(c >> 2) & 15` less
+ * two at all four. The port's base therefore sits two frames into the
+ * original's table, and `scroll + 4` restores the index.
+ *
+ * A previous attempt to unify this with the 140 that tools/verify_menu.py
+ * uses for the ribbon made it worse; the two constants are not the same
+ * quantity, and the scoring above is what settled it.
+ */
 #define BAR_SCROLL_INIT 4
+
+/* The port's end-lemming table holds the original's sixteen frames, but its
+ * first entry is the original's frame TWO: forcing each frame against four
+ * captures and scoring the two lemming rectangles alone puts the winner at
+ * exactly zero differing pixels every time, and the winner is the original's
+ * own `(ds:0x21 >> 2) & 15` less two at all four ratings.
+ *
+ * It is a bias on the INDEX and not on the base. Dropping LEM_L_BASE by the
+ * same two frames looks equivalent and is not - the wrap is taken modulo
+ * sixteen against the base, so moving the base moves the wrap point with it.
+ * Three ratings went to zero that way and mayhem, the one whose index wraps,
+ * went to 1,218 differing pixels. */
+#define LEM_FRAME_BIAS 2
 #define BAR_Y0   334
 #define BAR_Y1   349
 #define BAR_TILE  23040       /* section 4: the bar's own 16x16 column */
@@ -2955,7 +2985,7 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
 #define ANIM_FRAME  (ANIM_PLANE * 4)          /* 192, and image 0x04FCB */
 #define ANIM_FRAMES 8
 #define ANIM_OFF    29200      /* table bp -> section 4 offset */
-#define ANIM_N      10
+#define ANIM_N      MENU_ANIM_N
 /* Image 0x04FA9 compares the counter against 0x8000. The counter is signed -
  * the routine's whole structure is "count down past zero" - so as an int16_t
  * that bit pattern is INT16_MIN, and writing it as 0x8000 overflows the
@@ -2983,10 +3013,15 @@ static const struct {
     { ANIM_IDLE,  42,   9, 38416 },
 };
 
-/* Their counters. Image 0x04FF8 starts entry i at 0x28 * (i + 1), so they do
- * not all walk on at once. */
-static int16_t anim_ctr[ANIM_N];
-static int     anim_started;
+/* Their counters - the original's own array, image 0x0E3F0, which is ds:0x4960
+ * with eleven bytes an entry and the counter at +0. Image 0x04FF8 starts entry
+ * i at 0x28 * (i + 1), so they do not all walk on at once.
+ *
+ * Not static, for the same reason menu_scroll is not: a capture of the
+ * original shows ONE phase of these, and the port has to be told which. The
+ * accessor is the port's own, so it lives in sdl_io.c. */
+int16_t anim_ctr[ANIM_N];
+int     anim_started;
 
 /*
  * Transcribed from image 0x04FF8 - counter i starts at 0x28 * (i + 1) unless
@@ -3041,8 +3076,29 @@ static void draw_anim(uint8_t *dst, const uint8_t *gfx, uint32_t len)
             for (uint16_t x2 = 0; x2 < ANIM_W; x2++) {
                 uint16_t x = (uint16_t)(ANIM[i].x + x2);
                 if (x >= MENU_W) break;
-                uint8_t v = planar(gfx, g, ANIM_PLANE, ANIM_STRIDE, 4, x2, r);
-                if (v) dst[(size_t)y * MENU_W + x] = v;
+                /* Four planes of colour, drawn OPAQUELY - the sprite's
+                 * own black included - exactly as the banner's end lemmings
+                 * next door are.
+                 *
+                 * This used to key on `v != 0`, which is not the same thing
+                 * and was never caught because no capture showed one of
+                 * these: game.h said so in as many words. Driving the
+                 * original to each rating puts entry 0 on screen at frames
+                 * 4, 5 and 6, and against those three captures the four
+                 * candidate rules score 14, 22, 22 and ZERO - opaque being
+                 * the zero. Keying on non-zero costs the pixels where the
+                 * sprite's own black should cover the logo.
+                 *
+                 * Image 0x04FE2 does load bp with 1 where image 0x07E65
+                 * clears it, so the blitter is in a different mode here and
+                 * image 0x04FDE hands it si+0x90 - three planes in - as
+                 * well. Reading that as a mask and taking colour from three
+                 * planes gets frame 1 to within 3 pixels and is still wrong:
+                 * the body of these sprites is index 12, which no 3-plane
+                 * colour can produce. What bp=1 and that pointer actually do
+                 * has not been read; the compositing is measured. */
+                dst[(size_t)y * MENU_W + x] =
+                    planar(gfx, g, ANIM_PLANE, ANIM_STRIDE, 4, x2, r);
             }
         }
     }
@@ -3442,8 +3498,8 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
      * so one frame can be forced when comparing a single capture. */
     draw_banner(m->pix, font, fontlen, menu_scroll,
                 menu_lem_frame ? menu_lem_frame
-                : (uint8_t)(((menu_scroll + BAR_SCROLL_INIT) >> 2)
-                            & (LEM_FRAMES - 1)));
+                : (uint8_t)(((((menu_scroll + BAR_SCROLL_INIT) >> 2)
+                              - LEM_FRAME_BIAS)) & (LEM_FRAMES - 1)));
 
     /* Keep section 4 so the banner can be redrawn as it scrolls; menu_build
      * composes one frame and the strip moves. Failing to copy it is not fatal
@@ -3621,8 +3677,8 @@ int menu_frame_step(void *ctx, uint8_t *pix)
     menu_anim_step();
     draw_anim(pix, m->gfx, m->gfx_len);
     draw_banner(pix, m->gfx, m->gfx_len, next,
-                (uint8_t)(((next + BAR_SCROLL_INIT) >> 2)
-                          & (LEM_FRAMES - 1)));
+                (uint8_t)(((((next + BAR_SCROLL_INIT) >> 2)
+                            - LEM_FRAME_BIAS)) & (LEM_FRAMES - 1)));
     return 1;
 }
 

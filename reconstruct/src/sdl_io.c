@@ -580,6 +580,17 @@ menu_action menu_run(menu_screen *m, uint8_t scale)
  */
 void menu_set_scroll(uint32_t pixels) { menu_scroll = pixels; }
 
+/* The port's own: the original never sets its animation counters from
+ * outside, it only steps them. This is here so a verifier can put the port at
+ * the phase a capture was taken at - the same job --scroll does for the
+ * banner, and needed for the same reason. */
+void menu_set_anim(const int16_t *ctr, uint8_t n)
+{
+    anim_started = 1;
+    for (uint8_t i = 0; i < n && i < MENU_ANIM_N; i++)
+        anim_ctr[i] = ctr[i];
+}
+
 uint32_t menu_get_scroll(void)        { return menu_scroll; }
 
 void menu_set_lem_frame(uint8_t f)    { menu_lem_frame = f; }

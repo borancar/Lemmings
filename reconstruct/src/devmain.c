@@ -444,6 +444,19 @@ int main(int argc, char **argv)
              * compared without saying where. */
             menu_set_scroll((uint32_t)atoi(argv[++i]));
         }
+        else if (!strcmp(argv[i], "--anim") && i + 1 < argc) {
+            /* The menu animation counters, comma separated, as read out of
+             * the guest's ds:0x4960. Same job as --scroll: five lemmings walk
+             * on and off the menu, so a capture shows one phase of them. */
+            int16_t c[MENU_ANIM_N];
+            uint8_t n = 0;
+            const char *q = argv[++i];
+            while (n < MENU_ANIM_N && *q) {
+                c[n++] = (int16_t)strtol(q, (char **)&q, 10);
+                if (*q == ',') q++;
+            }
+            menu_set_anim(c, n);
+        }
         else if (!strcmp(argv[i], "--obj-frame") && i + 1 < argc) {
             g_obj_frame = (uint16_t)atoi(argv[++i]);
         }
