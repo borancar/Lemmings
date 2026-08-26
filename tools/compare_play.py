@@ -117,6 +117,10 @@ def main():
     ap.add_argument("--ref", default=os.path.join(ROOT, "out", "refplay"))
     ap.add_argument("--dir", default=os.path.join(ROOT, "out", "playscreen"))
     ap.add_argument("--script", default=os.path.join(ROOT, "out", "dig.txt"))
+    ap.add_argument("--lemmings", action="store_true",
+                    help="carry both sides' lemming arrays as well as their "
+                         "screens - a screen says two lemmings differ, the "
+                         "records say which field did")
     ap.add_argument("--seconds", type=int, default=0,
                     help="how long to let the guest run; the default is "
                          "worked out from --frames at a deliberately "
@@ -146,7 +150,8 @@ def main():
         r = subprocess.run([sys.executable, os.path.join(HERE, "record_level.py"),
                         "--frames", str(a.frames), "--out", a.ref,
                         "--script", a.script]
-                       + (["--seconds", str(a.seconds)] if a.seconds else []),
+                       + (["--seconds", str(a.seconds)] if a.seconds else [])
+                       + (["--lemmings"] if a.lemmings else []),
                        cwd=ROOT)
     if r is not None and r.returncode != 0:
         return r.returncode
@@ -160,6 +165,8 @@ def main():
     env = dict(os.environ, LEM_SCREEN_DIR=a.dir, LEM_FRAMES=str(a.frames),
                LEM_INPUT_SCRIPT=os.path.abspath(a.script),
                SDL_VIDEODRIVER="dummy")
+    if a.lemmings:
+        env["LEM_STATE_FILE"] = os.path.join(ROOT, "out", "portstate.jsonl")
     # lemdev --show, not ./lemmings. Both go through level_show and then the
     # same level_run, so this is still the window path and not a second
     # arrangement of it - but ./lemmings opens on the MENU and would sit

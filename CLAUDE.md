@@ -399,6 +399,33 @@ which makes the game's speed a property of the machine rather than of the
 game; and falling behind must reset the deadline rather than build a debt the
 loop then sprints to repay.
 
+## Five thousand one hundred frames is the level NOT being played
+
+Every long comparison here has been 5,100 frames, because that is the level's
+expiration timer - 5 minutes at 17 a second - and with nobody touching the
+game that is exactly how long it lasts.
+
+Play it and it does not. Give one lemming a digger on "Just dig!" and the
+other nine follow it down the shaft and out of the exit; the level is over at
+about **708 frames**, forty-one seconds, and the game fades to its results
+screen. The timer is what happens when you FAIL.
+
+So a scripted run must be budgeted by what the level does, not by the timer,
+and a recorder waiting for 5,100 frames of a level that ended at 708 sits
+there producing nothing while looking exactly like a slow run. What settled
+it was the last captured frame: `lit DAC entries: 0`, the fade-out, which
+`record_level.py` already prints for every capture and which this file
+already warns about in another context.
+
+Two things follow:
+
+- **Score the level, not the timer.** The whole-level comparison is ~760
+  frames and finishes in minutes; 5,100 was measuring a level nobody plays
+  for four fifths of its length.
+- **A stalled recorder and a slow one look the same.** Check the frame count
+  against the clock, and look at the last frame before assuming the machine
+  is just busy.
+
 ## A capture holds one palette, and the screen has two
 
 The level is EGA mode 0x0D in sixteen colours and the game **swaps the upper

@@ -436,6 +436,9 @@ void        level_timer_step(void);
  * 0x02F3B and 0x02F42. The trigger rectangle's units are four pixels,
  * measured rather than assumed; see level_at_exit in game.c. */
 void level_triggers_set(const level *lv, const ground *g);
+/* The trigger byte under a lemming, image 0x02EC0 - a lookup into the map
+ * image 0x037CB stamps, in four-pixel cells. Zero is nothing. */
+uint8_t level_trigger_at(const lemming *a, const level *lv, const ground *g);
 int level_at_exit(const lemming *a, const level *lv, const ground *g);
 void lem_exit_start(lemming *a);
 

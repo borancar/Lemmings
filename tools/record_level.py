@@ -290,11 +290,29 @@ def main():
                   f" {first}")
 
     if len(man) < a.frames:
-        print(f"\n  ONLY {len(man)} OF THE {a.frames} FRAMES ASKED FOR were"
-              f" recorded - the run was cut off at its {seconds}s ceiling."
-              f" The frames that did arrive are good, but this is NOT a"
-              f" recording of {a.frames} frames and must not be scored as"
-              f" one. Give it --seconds.")
+        # A SHORT RECORDING HAS TWO CAUSES AND THEY LOOK IDENTICAL in a frame
+        # count: the run was cut off at its ceiling, or the LEVEL ENDED. The
+        # second is not a failure - play "Just dig!" properly and every
+        # lemming is out at about 708 frames, four fifths short of the 5,100
+        # of the expiration timer - and reporting it as truncation would send
+        # someone off to raise --seconds for a run that was already complete.
+        #
+        # The fade tells them apart. The game fades out on its way to the
+        # results screen, so a dead palette on the last frames is the level
+        # finishing; a live one is the recorder being stopped mid-play.
+        tail = [m["lit_dac"] for m in man[-3:]]
+        if tail and not any(tail):
+            print(f"\n  {len(man)} frames, and the last of them fade out -"
+                  f" THE LEVEL ENDED. That is the whole level, not a short"
+                  f" recording, and the {a.frames} asked for was simply more"
+                  f" than it lasts.")
+        else:
+            print(f"\n  ONLY {len(man)} OF THE {a.frames} FRAMES ASKED FOR"
+                  f" were recorded, and the last one is still lit - so the"
+                  f" run was cut off at its {seconds}s ceiling rather than"
+                  f" the level ending. The frames that did arrive are good,"
+                  f" but this is NOT a recording of {a.frames} frames and"
+                  f" must not be scored as one. Give it --seconds.")
 
     lit = [m["lit_dac"] for m in man]
     print(f"\n  {len(man)} frames in {out_dir}")

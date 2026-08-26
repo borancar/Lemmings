@@ -1427,28 +1427,75 @@ void level_triggers_set(const level *lv, const ground *g)
     trig_g = g;
 }
 
-/* Transcribed from image 0x02F3B - the trigger test, whose rectangle units
- * are measured; see the note above. */
-int level_at_exit(const lemming *a, const level *lv, const ground *g)
-{
-    if (a->flags & 4) return 0;            /* image 0x02F3B: not while falling */
-    int32_t lx = (int32_t)a->x - LEMMING_DX;
-    int32_t ly = (int32_t)a->y - LEMMING_DY;
+/* WHAT THE LEMMING IS STANDING ON - transcribed from image 0x02EC0, and it
+ * is a MAP LOOKUP rather than a rectangle test.
+ *
+ * The original builds a trigger map once, at image 0x037CB, straight after
+ * the terrain is composed, and every lemming then reads one byte out of it:
+ *
+ *     image 0x037E5   col = (object x >> 2) + trigger_left
+ *     image 0x037F2   row = (object y >> 2) + trigger_top, then DEC BX
+ *     image 0x0380E   the byte is (object index << 4) | trigger_effect
+ *     image 0x0381D   stamped trigger_width by trigger_height cells
+ *
+ *     image 0x02ECE   col = lemming x >> 2
+ *     image 0x02ECB   row = (lemming y - 0x10) >> 2
+ *     image 0x02EE6   ss:[row * 0x1A0 + col + 0x12]
+ *
+ * So the units are FOUR pixels both ways - 0x1A0 is 416, and 416 cells of
+ * four is the 1,664 a level is wide - and image 0x037F9's `dec bx` lifts
+ * every stamp a whole cell, not a pixel.
+ *
+ * The port had a rectangle test in pixels with `y0 - 1` fudged onto it. It
+ * was close, and close put lemmings through the exit one to two frames after
+ * the original did: 24 to 40 pixels a frame for the last quarter of the
+ * level, and the level ending at a different moment. A fudge that is nearly
+ * right is exactly the thing this project keeps finding out the hard way.
+ *
+ * The map is not held here. Stamping and then reading back is the same
+ * answer as testing each object's cell rectangle in order and keeping the
+ * LAST that matches - later objects overwrite earlier ones in the map - and
+ * a level has at most a handful.
+ */
+#define TRIG_CELL      4        /* image 0x02ECE and image 0x037E5 */
+#define TRIG_Y_BIAS    0x10     /* image 0x02ECB */
+#define TRIG_Y_LIMIT   0xB0     /* image 0x02EC5: below this, nothing */
+#define TRIG_ROW_UP    1        /* image 0x037F9's `dec bx` */
 
+uint8_t level_trigger_at(const lemming *a, const level *lv, const ground *g)
+{
+    if (a->y >= TRIG_Y_LIMIT) return 0;             /* image 0x02EC5 */
+
+    /* The port's object x is sixteen less than the file's - level_parse
+     * takes it off there - and the builder used the file's, so put it back
+     * rather than shifting the lemming, which is in the original's own
+     * coordinates already. */
+    int32_t col = (int32_t)a->x / TRIG_CELL;
+    int32_t row = ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL;
+
+    uint8_t effect = 0;
     for (uint16_t i = 0; i < lv->num_objects; i++) {
         const level_object *o = &lv->objects[i];
         if (o->id >= GROUND_OBJECTS) continue;
         const ground_object *go = &g->objects[o->id];
-        if (go->trigger_effect != TRIGGER_EXIT) continue;
+        if (!go->trigger_effect) continue;          /* image 0x037E3 */
 
-        int32_t x0 = (int32_t)o->x + (int32_t)go->trigger_left * TRIGGER_UNIT;
-        int32_t y0 = (int32_t)o->y + (int32_t)go->trigger_top * TRIGGER_UNIT;
-        int32_t w = (int32_t)go->trigger_width * TRIGGER_UNIT;
-        int32_t h = (int32_t)go->trigger_height * TRIGGER_UNIT;
-        if (lx >= x0 && lx < x0 + w && ly >= y0 - 1 && ly < y0 + h)
-            return 1;
+        int32_t c0 = ((int32_t)o->x + LEMMING_DX) / TRIG_CELL
+                     + (int32_t)go->trigger_left;
+        int32_t r0 = (int32_t)o->y / TRIG_CELL
+                     + (int32_t)go->trigger_top - TRIG_ROW_UP;
+        if (col >= c0 && col < c0 + (int32_t)go->trigger_width
+            && row >= r0 && row < r0 + (int32_t)go->trigger_height)
+            effect = go->trigger_effect;            /* the LAST one stamped */
     }
-    return 0;
+    return effect;
+}
+
+/* Image 0x02F15: effect 1, and image 0x02F3B is where it lands. */
+int level_at_exit(const lemming *a, const level *lv, const ground *g)
+{
+    if (a->flags & 4) return 0;            /* image 0x02F3B: not while falling */
+    return level_trigger_at(a, lv, g) == TRIGGER_EXIT;
 }
 
 /* Image 0x02F42: the whole state word becomes 0x2000 - assigned, not OR-ed -
@@ -2319,12 +2366,6 @@ void lemmings_step(lemming *lem, uint8_t n,
         lemming *a = &lem[k];
         if (a->alive == 0xFF) continue;            /* image 0x1F3C */
 
-        /* An exit underfoot beats whatever it was doing - image 0x02F3B is
-         * reached from the object scan, not from the state chain. */
-        if (trig_lv && trig_g && !(a->flags & EXIT_BIT)
-                && level_at_exit(a, trig_lv, trig_g))
-            lem_exit_start(a);
-
         /* THE STATE DISPATCH, image 0x01F5E - and it is a PRIORITY CHAIN,
          * not a jump table. It tests the bits of [si+8] one at a time, in an
          * order that is not the order of the bits, and takes the first that
@@ -2380,6 +2421,22 @@ void lemmings_step(lemming *lem, uint8_t n,
         /* 0x0020 0x254F, 0x0040 0x2637, 0x0080 0x2693,
          * 0x0100 0x27E8, 0x0200 0x287D, 0x0800 0x2B35, 0x1000 0x22F5,
          * 0x2000 0x2326, 0x4000 0x2340 - none read. */
+
+        /* THE TRIGGER IS TESTED AFTER THE MOVE, NOT BEFORE IT.
+         *
+         * The dispatch at image 0x01F5E does not fall through to the trigger
+         * lookup - every one of its handlers JUMPS BACK to image 0x01FE8
+         * when it is done, and that is where `call 0x2EC0` sits. Thirty-one
+         * jumps land there. So the question the original asks is "having
+         * moved, what is this lemming standing on now", and the port asked
+         * it of where the lemming had been.
+         *
+         * One frame, and it showed up as lemmings entering the exit a frame
+         * or two late, the level ending at a different moment, and 24 to 40
+         * differing pixels for the last quarter of the run. */
+        if (trig_lv && trig_g && !(a->flags & EXIT_BIT)
+                && level_at_exit(a, trig_lv, trig_g))
+            lem_exit_start(a);                       /* image 0x01FE8 */
     }
 }
 
