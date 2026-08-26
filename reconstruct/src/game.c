@@ -3111,23 +3111,91 @@ static const uint8_t CURSOR[CURSOR_H][CURSOR_W] = {
     { 0,0,0,0,0,0,2,3,0,0,0,0,0,0 },
 };
 
-/* THE BOX the cursor becomes over a lemming.
+/* And its MASK, image 0x0585A's `bx = si + 0x60`. For the cross-hair it
+ * is exactly "the ink is not zero", so skipping zeros would do - but the
+ * BOX's is not, and carrying both means this does what image 0x07218
+ * does rather than what happens to look the same. */
+static const uint8_t CURSOR_MASK[CURSOR_H][CURSOR_W] = {
+    { 0,0,0,0,0,0,1,1,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,1,1,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,1,1,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 1,0,1,0,1,0,1,1,0,1,0,1,0,1 },
+    { 1,0,1,0,1,0,1,1,0,1,0,1,0,1 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,1,1,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,1,1,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,1,1,0,0,0,0,0,0 },
+};
+
+/* THE BOX THE CURSOR BECOMES OVER A LEMMING - READ from the original's own
+ * sprite store, not measured off a frame.
  *
- * Image 0x05854 adds 0x480 to the cursor's store offset when ds:0x1A is
- * 0xFF - a second shape, eight shifts of 144 bytes further on - and image
- * 0x03DE8 sets that flag when the scan at image 0x03D1E finds a lemming
- * under the pointer. So the pointer tells you what it is over, which is
- * what makes a skill landable at all.
+ * Image 0x05827 works out the shift from the low three bits of ds:0x10 and
+ * indexes the store at 144 bytes each; image 0x05854 adds 0x480 - eight
+ * shifts further on - when ds:0x1A is 0xFF, and image 0x03DE8 sets that flag
+ * when the scan finds a lemming under the pointer. 144 bytes is 0x60 of ink
+ * and 0x30 of mask, and 0x30 is sixteen rows of three bytes: a sixteen-wide
+ * sprite pre-shifted into three, so the ink is those same 16x3 in two planes
+ * and the whole thing is 16x16 in four colours with a one-pixel border.
  *
- * The border is measured off the original's own framebuffer while the flag
- * was up: a 14x14 dashed outline in the sequence 2 2 3 3 . . 1 1 . . 3 3 2 2
- * along each edge, with the cross-hair still showing inside it. One capture,
- * so the sequence is what that frame held rather than something read out of
- * the store - the cross-hair itself was pinned the same way and then held
- * for 5,100 frames. */
-#define CURSOR_BOX_EDGE_N 14
-static const uint8_t CURSOR_BOX_EDGE[CURSOR_BOX_EDGE_N] = {
-    2, 2, 3, 3, 0, 0, 1, 1, 0, 0, 3, 3, 2, 2,
+ * tools/probe_cursor.py dumps it out of segment ds:0x1FEA and decodes it.
+ * Both tables below are the inner 14x14. The cross-hair had been measured off
+ * one captured frame and turns out to be right in all 196 cells - which is
+ * luck worth naming rather than a method to repeat.
+ *
+ * IT IS THE OTHER SPRITE, NOT AN EXTRA ONE. The store's box has no cross-hair
+ * inside it, and image 0x05854 REPLACES the sprite's address rather than
+ * drawing a second pass. The port used to draw the box and then the
+ * cross-hair on top of it, which is not what the original shows and is the
+ * thing that looked, playing it, like the cursor never switching. */
+#define CURSOR_BOX_H  14
+static const uint8_t CURSOR_BOX[CURSOR_BOX_H][CURSOR_W] = {
+    { 2,2,3,3,0,0,1,1,0,0,3,3,2,2 },
+    { 2,0,0,0,0,0,0,0,0,0,0,0,0,2 },
+    { 3,0,0,0,0,0,0,0,0,0,0,0,0,3 },
+    { 3,0,0,0,0,0,0,0,0,0,0,0,0,3 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 3,0,0,0,0,0,0,0,0,0,0,0,0,3 },
+    { 3,0,0,0,0,0,0,0,0,0,0,0,0,3 },
+    { 2,0,0,0,0,0,0,0,0,0,0,0,0,2 },
+    { 2,2,3,3,0,0,1,1,0,0,3,3,2,2 },
+};
+
+/* THE MASK IS NOT "THE INK IS NOT ZERO" HERE, and that is the whole
+ * reason it is carried.
+ *
+ * Store row 13 holds ink 2 at both ends and its mask is CLEAR, so the
+ * original does not draw those two pixels - the ink there is data the
+ * mask suppresses. Drawing them cost exactly two pixels a frame, at
+ * (146, 81) and (159, 81), and there is no rule anyone would have
+ * guessed that produces an outline missing one side row and not the
+ * other. Reading the mask out of the store settles it; fitting could
+ * not have. */
+static const uint8_t CURSOR_BOX_MASK[CURSOR_BOX_H][CURSOR_W] = {
+    { 1,1,1,1,0,0,1,1,0,0,1,1,1,1 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },
+    { 0,0,0,0,0,0,0,0,0,0,0,0,0,0 },
+    { 1,1,1,1,0,0,1,1,0,0,1,1,1,1 },
 };
 
 /* Where the pointer is, in the ORIGINAL's coordinates - ds:0x10 and ds:0x12,
@@ -3172,33 +3240,21 @@ void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x)
     int32_t sy = (int32_t)lem_mouse_y - CURSOR_ORIGIN - CURSOR_HOT_Y;
     (void)view_x;                 /* the cursor is on the SCREEN, not the level */
 
-    /* Over a lemming it wears a box - see CURSOR_BOX_EDGE. */
-    if (lem_cursor_box) {
-        for (uint8_t i = 0; i < CURSOR_BOX_EDGE_N; i++) {
-            uint8_t v = CURSOR_BOX_EDGE[i];
-            if (!v) continue;
-            const int32_t e[4][2] = {
-                { sx + i, sy },                              /* top    */
-                { sx + i, sy + CURSOR_H - 1 },               /* bottom */
-                { sx,     sy + i },                          /* left   */
-                { sx + CURSOR_W - 1, sy + i },               /* right  */
-            };
-            for (uint8_t k = 0; k < 4; k++) {
-                int32_t x = e[k][0], y = e[k][1];
-                if (x < 0 || x >= (int32_t)w || y < 0 || y >= (int32_t)h)
-                    continue;
-                pix[(size_t)y * w + (size_t)x] = v;
-            }
-        }
-    }
+    /* Image 0x05854: the SAME blit, from a different address. One shape or
+     * the other, never both. */
+    const uint8_t (*shape)[CURSOR_W] = lem_cursor_box ? CURSOR_BOX : CURSOR;
+    const uint8_t (*mask)[CURSOR_W] =
+        lem_cursor_box ? CURSOR_BOX_MASK : CURSOR_MASK;
+
     for (uint16_t r = 0; r < CURSOR_H; r++) {
         int32_t y = sy + r;
         if (y < 0 || y >= (int32_t)h) continue;
         for (uint16_t c = 0; c < CURSOR_W; c++) {
             int32_t x = sx + c;
-            uint8_t v = CURSOR[r][c];
-            if (!v || x < 0 || x >= (int32_t)w) continue;
-            pix[(size_t)y * w + (size_t)x] = v;
+            /* Image 0x07218 writes where the MASK says, not where the ink
+             * is non-zero. See CURSOR_BOX_MASK for where those differ. */
+            if (!mask[r][c] || x < 0 || x >= (int32_t)w) continue;
+            pix[(size_t)y * w + (size_t)x] = shape[r][c];
         }
     }
 }
