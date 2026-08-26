@@ -569,6 +569,79 @@ int main(int argc, char **argv)
            "ds:0x25A6 picks among images 0x04C77, 0x04C9D and 0x04CB9");
     }
 
+    /* THE GENERATOR, against the original's own. Every one of these was read
+     * out of the guest by tools/probe_code.py, which called image 0x05042
+     * with these three inputs and took the ten characters back from
+     * ds:0x4D68. This is the difference between a table fitted to my reading
+     * of the disassembly and a table the original produced. */
+    {
+        static const struct {
+            uint8_t level, other, percent;
+            const char *code;
+        } DRIVEN[] = {
+        {  0,   0,   0, "BAJHLDHBCL"},
+        {  1,   0,   0, "IJHLDHBCCU"},
+        {  2,   0,   0, "NHLDHBADCR"},
+        {  4,   0,   0, "LDHBAJLFCT"},
+        {  8,   0,   0, "BAJHMDHJCU"},
+        { 16,   0,   0, "BAJHLFHBDO"},
+        { 32,   0,   0, "BAJHLDIBEO"},
+        { 64,   0,   0, "FAJHLDHBGT"},
+        {128,   0,   0, "JAJHLDHBKL"},
+        {  0,   1,   0, "BCJHLDHBCN"},
+        {  0,   2,   0, "BAJILDHBCM"},
+        {  0,   4,   0, "BAJHLEHBCM"},
+        {  0,   8,   0, "BAJHLDJBCN"},
+        {  0,  16,   0, "BAJHLDHBCL"},
+        {  0,  32,   0, "BAJHLDHBCL"},
+        {  0,  64,   0, "BAJHLDHBCL"},
+        {  0, 128,   0, "BAJHLDHBCL"},
+        {  0,   0,   1, "BEJHLDHBCP"},
+        {  0,   0,   2, "BAKHLDHBCM"},
+        {  0,   0,   4, "BAJJLDHBCN"},
+        {  0,   0,   8, "BAJHNDHBCN"},
+        {  0,   0,  16, "BAJHLLHBCT"},
+        {  0,   0,  32, "BAJHLDLBCP"},
+        {  0,   0,  64, "CAJHLDHBCM"},
+        {  0,   0, 128, "BAJHLDHBCL"},
+        { 37,   5,  62, "MMBKKNNGET"},
+        {119,   3, 100, "GKNOLFMIJK"},
+        {  7,   7,   7, "BOOOLEHICN"},
+        };
+        uint16_t bad = 0;
+        char got[11], why[128] = "";
+        for (uint16_t i = 0; i < sizeof DRIVEN / sizeof DRIVEN[0]; i++) {
+            level_code_generate(DRIVEN[i].level, DRIVEN[i].other,
+                                DRIVEN[i].percent, got);
+            if (strcmp(got, DRIVEN[i].code) != 0) {
+                if (!bad)
+                    snprintf(why, sizeof why,
+                             "level %u other %u percent %u: the original "
+                             "made %s, the port makes %s",
+                             DRIVEN[i].level, DRIVEN[i].other,
+                             DRIVEN[i].percent, DRIVEN[i].code, got);
+                bad++;
+            }
+        }
+        ck("the generator matches the original on all 28 driven cases",
+           bad == 0, why);
+    }
+
+    /* And the round trip: what the generator makes, the validator takes.
+     * The two routines were written apart in the original, so this is a
+     * check and not a tautology. */
+    {
+        uint16_t bad = 0;
+        char got[11];
+        for (uint16_t lv = 0; lv < 256; lv++)
+            for (uint16_t pc = 0; pc <= 100; pc += 5) {
+                level_code_generate((uint8_t)lv, 0, (uint8_t)pc, got);
+                if (!level_code_ok(got)) bad++;
+            }
+        ck("every generated code passes the validator", bad == 0,
+           "image 0x05042 and image 0x051D4 disagree");
+    }
+
     /* WIN OR LOSE, image 0x048F6's ladder. The rungs are what the original
      * tests, in the order it tests them - and the order matters, because
      * each falls through to the next. Level 1 needs 10%. */

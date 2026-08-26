@@ -412,11 +412,14 @@ void lem_exit_start(lemming *a);
  * image 0x048F6's ladder. */
 /* The results screen's text - image 0x048BD. Its COMPOSITION is not read;
  * these are the lines it assembles. */
-/* The access code's checksum - image 0x05147 builds it, image 0x051D4
- * checks it. The bit shuffle that makes the other nine characters is NOT
- * transcribed; see game.c. */
+/* The access code. Image 0x05042 builds one, image 0x051A2 takes one back.
+ * The checksum is transcribed (0x05147 and 0x051D4 agree on it) and so is
+ * the rotation; the bit table for characters 0..6 is MEASURED by driving the
+ * original - see the note in game.c. `out` needs CODE_LEN + 1 bytes. */
 char level_code_checksum(const char *first_nine);
 int level_code_ok(const char *code);
+void level_code_generate(uint8_t level, uint8_t other, uint8_t percent,
+                         char *out);
 
 const char *level_results_headline(int timed_out);
 const char *level_results_prompt(uint8_t input_kind);

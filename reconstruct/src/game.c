@@ -1383,15 +1383,28 @@ static void lem_exiting(lemming *a)
  *   was typed and image 0x051E4 compares. Generator and validator, written
  *   separately, describing one rule.
  *
- * THE BIT SHUFFLE FOR CHARACTERS 0..8 IS NOT TRANSCRIBED. It is ten near
- * identical blocks of mask-and-shift, and reading them off by eye invites
- * exactly the sort of error this port has already made twice with bit
- * positions. An automatic pass over the disassembly produced a plausible
- * table whose last four rows were stale register state - plausible and
- * wrong, which is the worst kind. It wants driving the original over chosen
- * inputs, the way tools/verify_digits.py drives image 0x04BC2, and the
- * validator makes that a round trip: generate a code, feed it back, and the
- * original's own checksum either accepts it or does not.
+ * THE BIT SHUFFLE FOR CHARACTERS 0..8 is half read and half MEASURED, and
+ * the two halves are worth telling apart.
+ *
+ *   Read: image 0x05135 puts the level's low nibble in character 7 and its
+ *   high nibble in character 8, and image 0x0516B rotates characters 0..6
+ *   right, 8 - (level & 7) times, after they are built.
+ *
+ *   Measured: which of characters 0..6 each remaining input bit lands in,
+ *   and what it adds. Those are ten near identical blocks of mask-and-shift
+ *   and reading them off by eye invites exactly the sort of error this port
+ *   has already made twice with bit positions - an automatic pass over the
+ *   disassembly produced a plausible table whose last four rows were stale
+ *   register state, which is the worst kind of wrong. So the table below was
+ *   taken by DRIVING the original's own generator over chosen inputs, the
+ *   way tools/verify_digits.py drives image 0x04BC2: tools/probe_code.py
+ *   calls image 0x05042 with one bit set at a time and reads the ten
+ *   characters back out of ds:0x4D68. It reproduces all 28 driven cases.
+ *
+ * Note what the measurement says that no amount of reading would have made
+ * obvious: bits 4..7 of ds:0x491D and bit 7 of the percentage reach no
+ * character at all. The code carries four bits of the one and seven of the
+ * other, not eight of each.
  */
 #define CODE_LEN 10
 static const char CODE_BASE[CODE_LEN + 1] = "AJHLDHBBCJ";   /* ds:0x4913 */
@@ -1405,6 +1418,59 @@ char level_code_checksum(const char *first_nine)
         al = (uint8_t)(al + (uint8_t)first_nine[i]);
     al &= 0x0F;                                   /* image 0x05163 */
     return (char)(al + CODE_BASE[CODE_LEN - 1]);  /* image 0x05165 */
+}
+
+/* Where each input bit lands among characters 0..6, and what it adds.
+ * MEASURED by driving image 0x05042 - see the note above, and out/code.json.
+ * Index 0xFF means the bit reaches no character. */
+static const struct { uint8_t chr, add; } CODE_LEVEL_BIT[8] = {
+    {0, 8}, {1, 4}, {2, 4}, {3, 1}, {4, 2}, {5, 1}, {6, 4}, {6, 8}
+};
+static const struct { uint8_t chr, add; } CODE_OTHER_BIT[8] = {
+    {0, 2}, {2, 1}, {4, 1}, {5, 2},
+    {0xFF, 0}, {0xFF, 0}, {0xFF, 0}, {0xFF, 0}
+};
+static const struct { uint8_t chr, add; } CODE_PERCENT_BIT[8] = {
+    {0, 4}, {1, 1}, {2, 2}, {3, 2}, {4, 8}, {5, 4}, {6, 1}, {0xFF, 0}
+};
+
+/* Image 0x05042: build the ten character access code for a level. `other` is
+ * ds:0x491D and `percent` is ds:0x40, the rescued percentage. */
+void level_code_generate(uint8_t level, uint8_t other, uint8_t percent,
+                         char *out)
+{
+    for (uint8_t i = 0; i < CODE_LEN; i++)
+        out[i] = CODE_BASE[i];
+
+    for (uint8_t b = 0; b < 8; b++) {
+        if ((level >> b) & 1)
+            out[CODE_LEVEL_BIT[b].chr] = (char)(out[CODE_LEVEL_BIT[b].chr]
+                                                + CODE_LEVEL_BIT[b].add);
+        if (((other >> b) & 1) && CODE_OTHER_BIT[b].chr != 0xFF)
+            out[CODE_OTHER_BIT[b].chr] = (char)(out[CODE_OTHER_BIT[b].chr]
+                                                + CODE_OTHER_BIT[b].add);
+        if (((percent >> b) & 1) && CODE_PERCENT_BIT[b].chr != 0xFF)
+            out[CODE_PERCENT_BIT[b].chr] = (char)(out[CODE_PERCENT_BIT[b].chr]
+                                                 + CODE_PERCENT_BIT[b].add);
+    }
+
+    /* Image 0x05135: the level's two nibbles, unrotated. */
+    out[7] = (char)(CODE_BASE[7] + (level & 0x0F));
+    out[8] = (char)(CODE_BASE[8] + (level >> 4));
+
+    /* Image 0x0516B: rotate characters 0..6 right, 8 - (level & 7) times.
+     * Image 0x05175 reads character 6, shifts 0..5 up one and drops it in
+     * at 0 - so it is a rotate right by one, run that many times. */
+    for (uint8_t n = (uint8_t)(8 - (level & 7)); n; n--) {
+        char last = out[6];
+        for (uint8_t i = 6; i; i--) out[i] = out[i - 1];
+        out[0] = last;
+    }
+
+    /* Image 0x05147. The rotation is a permutation, so the sum is the same
+     * either side of it. */
+    out[9] = level_code_checksum(out);
+    out[CODE_LEN] = '\0';
 }
 
 /* Transcribed from image 0x051D4: the validator's half of the same rule. */
