@@ -644,9 +644,10 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Into a level
 
-- **The original was not frozen — it was running on a clock made of noise,
-  and that clock is now the hardware's.** The level looked static because the
-  game paces itself off numbers the emulator was inventing.
+- **BLOCKER CLEARED: the original plays.** It was never frozen. It was
+  running on a clock made of noise, and then starving itself in a spin the
+  emulator was executing rather than waiting out. Two faults, both in the
+  emulator, both measured before and after.
 
   **The game measures its own frame rate.** It does not assume one. At image
   `0x1602` it loads PIT channel 0 with `0xFFFF`, counts `bx` transitions of
@@ -704,15 +705,53 @@ Each of these is stated as what was *checked*, not what was written.
   **briefing** was not measured at this tooling and is withdrawn — those
   three are ~65%, ~64% and ~30% and were so before this change too.
 
-  **Still open, and the next thing to chase.** The level loop does not
-  sustain. With ranged hooks over a 106 s run: the ISR at `0x17C7` is entered
-  20.2/s and reaches its tail at `0x189E` 14.4/s, against the 97.2 Hz it
-  programs. And `0x00FB`'s `call 0x3E7` is entered **once and never
-  returns** — that is the program's real main loop, so `0x0105..0x0199`,
-  read here earlier as the frame loop that counts five ticks to a frame, is
-  **dead in this configuration**. It was not dead before the adapter
-  detection changed (it ran at exactly 5.00 ticks per frame then), so
-  `ds:0x2006`/`ds:0x2007` select more than the line count. Read `0x3E7`.
+  **Then the level still would not run, for a second reason.** With the clock
+  right, 29% of every instruction the game executed was the six-instruction
+  wait for the vertical retrace inside its own IRQ 0 handler at image
+  `0x17FE` — 919 passes an entry, each pass a port read and so a callback out
+  of the emulator. The handler could not finish often enough for the main
+  loop to get a frame, and the five-ticks-to-a-frame loop at `0x0164` was not
+  running at all.
+
+  That spin is idle by definition: the guest waits for a bit to change and
+  does nothing until it does, so the time passes whether or not the spin is
+  executed. `dos_emulator` 9cbca82 now skips to the edge after 64 unbroken
+  reads of the status register. Measured over 106 s, before and after:
+
+  | | before | after |
+  | --- | --- | --- |
+  | ISR entries at `0x17C7` | 20.2/s | **29.8/s** |
+  | ...reaching its tail at `0x189E` | 71% of them | **every one** |
+  | frame loop at `0x018F` | **never ran** | **5.9/s** |
+  | ticks per frame | — | **5.08** (the game asks 5) |
+
+  **The level plays.** The entrance opens, the lemmings drop, the panel and
+  minimap draw, and the timer counts down from 5-00. Two captures 36 s apart
+  show 5-00 with 0 out and 4-45 with 8 out.
+
+  One trap this sprang, worth keeping: time the guest has waited out belongs
+  in its clock but **not** in the harness's. With both on one number a run
+  told to last 60 s stopped after 20, and `tools/prove.sh` went from 100% to
+  a failed capture — which it reported honestly as a failed capture rather
+  than as a comparison, which is the only reason it was caught at once. The
+  emulator now separates `_elapsed` (what the guest sees) from `_wall` (run
+  length, screenshots, driver scripts).
+
+  Re-derived after both changes, with `tools/prove.sh` back at **100.00%**:
+
+  | screen | before | after |
+  | --- | --- | --- |
+  | menu | 99.45% (1242 px) | 99.34% (1468 px) |
+  | code | 65.43% | 65.45% |
+  | input | 64.44% | 64.44% |
+  | briefing | 29.90% | 29.92% |
+
+  The menu figure **wobbles between 186 and 1468 pixels from run to run**,
+  and `tools/menu_diff.py --map` says why in one look: every differing pixel
+  is in rows 336..349, the scrolling banner. It is the phase the capture
+  lands on, not the port. The 100% this file used to claim for **code**,
+  **input** and **briefing** was not measured at this tooling and is
+  withdrawn — they were at ~65%, ~64% and ~30% before any of this too.
 
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte
