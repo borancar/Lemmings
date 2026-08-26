@@ -66,6 +66,15 @@ def read_raw(path):
 
 
 RATING_VAR = 0x0B9FE      # image address of ds:0x1F6E, the current rating
+# The banner's scroll, ds:0x21 - image 0x07CC6 starts it at 4. Reading it back
+# is the same idea as reading the rating: the menu ANIMATES, so a capture shows
+# one phase of it and the port has to be told which, or the banner's rows come
+# back as a difference that is really just a different moment.
+SCROLL_VAR = 0x0B9FE - 0x1F6E + 0x21
+# What to take off ds:0x21 to get the port's own --scroll. Measured, from two
+# captures minutes apart: 176 matched best at 36 and 168 at 28, both exactly
+# 140 apart. Where the 140 comes from has not been read.
+BAR_SCROLL_OFFSET = 140
 
 
 # Which key leaves the main menu for each screen, read off the plates the
@@ -107,6 +116,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
     never reached costs coverage instead of producing a number.
     """
     last = rating
+    last_scroll = 0
     for attempt in range(tries):
         if os.path.exists(path):
             os.unlink(path)
@@ -142,6 +152,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                     "--cmd", f"screen {control}",
                     "--cmd", f"key {key} 24", "--cmd", "sleep 4.0"]
         cmd += ["--cmd", f"screen {os.path.abspath(path)}",
+                "--cmd", f"read i+{SCROLL_VAR:#x} 1",
                 "--", "--run-seconds", str(seconds)]
         print(f"driving the original to its main menu"
               f"{f', asking for rating {rating}' if rating else ''} ...")
@@ -219,17 +230,38 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
             raise SystemExit(
                 "could not read ds:0x1F6E back out of the run, so which rating\n"
                 "this capture shows is unknown. That is a failure, not a pass.")
+
+        scroll = None
+        pend = False
+        for line in out.splitlines():
+            if f"read i+{SCROLL_VAR:#x}" in line:
+                pend = True
+                continue
+            if pend and line.strip():
+                for tok in line.replace(":", " ").split():
+                    if len(tok) == 2:
+                        try:
+                            scroll = int(tok, 16)
+                        except ValueError:
+                            continue
+                        break
+                break
+        if scroll is None:
+            raise SystemExit(
+                "could not read ds:0x21 back, so which phase of the banner\n"
+                "this capture shows is unknown. That is a failure, not a pass.")
         if got > 3:
             raise SystemExit(f"ds:0x1F6E reads {got}, which is not a rating")
         if got == rating:
-            return path, got
+            return path, got, scroll
         print(f"  asked for rating {rating}, the guest reached {got} - "
               f"presses were dropped or doubled"
               f"{'; retrying' if attempt < tries - 1 else ''}.")
         last = got
+        last_scroll = scroll
     print(f"  gave up after {tries} tries; scoring against rating {last}, "
           f"which is what is actually on the screen.")
-    return path, last
+    return path, last, last_scroll
 
 
 def main():
@@ -253,9 +285,9 @@ def main():
     a = ap.parse_args()
 
     if a.capture:
-        cap, shown = a.capture, a.rating
+        cap, shown, scroll = a.capture, a.rating, None
     else:
-        cap, shown = capture(
+        cap, shown, scroll = capture(
             os.path.join(ROOT, "out",
                          f"{a.screen}{a.rating or ''}.scrn"),
             a.seconds, a.delay, a.rating, screen=a.screen)
@@ -264,12 +296,50 @@ def main():
     port_raw = os.path.join(ROOT, "out", "menu_port.raw")
     subprocess.run(["make", "-C", os.path.join(ROOT, "reconstruct")],
                    check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
-                    "--data", os.path.join(ROOT, a.data),
-                    "--screen", a.screen, "--rating",
-                    ("fun", "tricky", "taxing", "mayhem")[shown],
-                    "--raw", port_raw],
-                   check=True, stdout=subprocess.DEVNULL)
+    port_cmd = [os.path.join(ROOT, "reconstruct", "lemdev"),
+                "--data", os.path.join(ROOT, a.data),
+                "--screen", a.screen, "--rating",
+                ("fun", "tricky", "taxing", "mayhem")[shown],
+                "--raw", port_raw]
+    if a.screen == "menu":
+        # The banner scrolls, so a capture shows one phase of it and the port
+        # has to be rendered at the same one or its rows come back as a
+        # difference that is really a different moment.
+        #
+        # ds:0x21 is the game's own scroll and the run reads it back - 176 in
+        # the capture this was written against - but it is NOT the port's
+        # --scroll in the same units, and rendering at it scores worse than
+        # not. So the phase is FITTED here, the way tools/compare_frame.py
+        # fits the level's scroll, and the fitted value is printed beside the
+        # score. What the mapping from ds:0x21 is has not been read.
+        best = None
+        for sc in range(0, 64):
+            subprocess.run(port_cmd + ["--scroll", str(sc)],
+                           check=True, stdout=subprocess.DEVNULL)
+            pw2, ph2, _pp2, o2 = read_raw(port_raw)
+            bad = sum(1 for y in range(330, min(ph2, h))
+                      for x in range(min(pw2, w))
+                      if ATTR[o2[y * pw2 + x] & 15] != theirs[y * w + x])
+            if best is None or bad < best[0]:
+                best = (bad, sc)
+        # ds:0x21 and the port's --scroll differ by a CONSTANT 140. Two
+        # captures taken minutes apart said so independently: 176 fitted best
+        # at 36, and 168 at 28. So the phase is derived from the guest's own
+        # variable, and the fit above is kept as its check rather than as the
+        # answer - if the two ever disagree, that is worth knowing.
+        use = best[1]
+        if scroll is not None:
+            derived = (scroll - BAR_SCROLL_OFFSET) % 64
+            note = "agrees" if derived == best[1] % 64 else "DISAGREES with"
+            print(f"  the banner: ds:0x21 reads {scroll}, so --scroll"
+                  f" {derived}, which {note} the best fit ({best[1]}).")
+            if derived == best[1] % 64:
+                use = derived
+        else:
+            print(f"  the banner: no ds:0x21 read, so --scroll {best[1]}"
+                  f" by fitting ({best[0]} pixels differing in its rows).")
+        port_cmd += ["--scroll", str(use)]
+    subprocess.run(port_cmd, check=True, stdout=subprocess.DEVNULL)
     pw, ph, ppal, ours = read_raw(port_raw)
     if (pw, ph) != (w, h):
         raise SystemExit(f"size mismatch: original {w}x{h}, port {pw}x{ph}")

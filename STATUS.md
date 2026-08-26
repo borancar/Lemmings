@@ -660,10 +660,20 @@ Each of these is stated as what was *checked*, not what was written.
 
   | screen | reported before | actually |
   | --- | --- | --- |
-  | menu | 99.3-100% | **99.47%** (the banner's phase) |
+  | menu | 99.3-100% | **100.00%** |
   | code | 65.43% | **99.97%** |
   | input | 64.44% | **100.00%** |
   | briefing | 29.90% | **100.00%**, and its level preview **0 pixels** |
+
+  The menu needed the banner's phase. It scrolls, so a capture shows one
+  moment of it, and the port has to be rendered at the same one. `ds:0x21` is
+  the game's own scroll and the run reads it back - but it is not the port's
+  `--scroll` in the same units. Fitting the phase against two captures taken
+  minutes apart gave 176 -> 36 and 168 -> 28: **both exactly 140 apart**. So
+  the offset is derived, not fitted, and the fit is kept as its check - on a
+  third capture `ds:0x21` read 136, the derived 60 agreed with the fitted 60,
+  and the screen came out **0 of 224,000 differing**. Where the 140 comes from
+  has not been read, and the constant says so.
 
   Three controls had to be added before that number could be trusted, and each
   one caught a different way of reaching nothing:
