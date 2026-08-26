@@ -408,6 +408,12 @@ void level_triggers_set(const level *lv, const ground *g);
 int level_at_exit(const lemming *a, const level *lv, const ground *g);
 void lem_exit_start(lemming *a);
 
+/* Win or lose, and which of the nine things the game says about it -
+ * image 0x048F6's ladder. */
+uint8_t level_verdict(uint8_t saved, uint8_t needed);
+const char *level_verdict_text(uint8_t saved, uint8_t needed);
+int level_won(uint8_t saved, uint8_t needed);
+
 extern uint8_t level_saved;
 void level_saved_reset(void);
 void level_lemming_saved(void);

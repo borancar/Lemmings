@@ -1365,6 +1365,68 @@ static void lem_exiting(lemming *a)
     a->alive = 0xFF;                       /* image 0x02339 */
 }
 
+/* WIN OR LOSE - transcribed from image 0x048F6.
+ *
+ * The end conditions at image 0x001C8 do not decide it; this does, from the
+ * rescued percentage against the level's requirement. It is a ladder, and
+ * the order matters because each rung falls through to the next:
+ *
+ *     saved == 100          the best verdict, taken first
+ *     saved == 0            the worst
+ *     saved <  needed / 2
+ *     saved <  needed - 5
+ *     saved <  needed - 1
+ *     saved == needed - 1
+ *     saved == needed
+ *     saved <  needed + 20
+ *     otherwise             the second best
+ *
+ * Image 0x0494D then indexes a table of nine at cs:0x4955. Note there is no
+ * "you failed" branch: the verdicts BELOW `saved == needed` are the losses
+ * and the ones at or above it are the wins, and the game says so in prose
+ * rather than in a flag.
+ */
+#define VERDICTS 9
+
+/* Transcribed DATA, images 0x0E9C3 through 0x0EC0A - the nine messages the
+ * table points at, in the order the ladder produces. Each is two lines in
+ * the original, split by its own record markers. */
+static const char *const VERDICT[VERDICTS] = {
+    "ROCK BOTTOM! I hope for your sake|that you nuked that level.",
+    "Better rethink your strategy before|you try this level again!",
+    "A little more practice on this level|is definitely recommended.",
+    "You got pretty close that time.|Now try again for that few % extra.",
+    "OH NO, So near and yet so far (teehee)|Maybe this time.....",
+    "RIGHT ON. You can't get much closer|than that. Let's try the next...",
+    "That level seemed no problem to you on|that attempt. Onto the next..",
+    "You totally stormed that level!|Let's see if you can storm the next...",
+    "Superb! You rescued every lemming on|that level. Can you do it again....?",
+};
+
+/* Which of the nine, from image 0x048F6's ladder. `saved` and `needed` are
+ * percentages - ds:0x40 and ds:0x41. */
+uint8_t level_verdict(uint8_t saved, uint8_t needed)
+{
+    if (saved == 100) return 8;                       /* image 0x04904 */
+    if (saved == 0) return 0;                         /* image 0x0490B */
+    if (saved < needed / 2) return 1;                 /* image 0x04912 */
+    if (needed >= 5 && saved < (uint8_t)(needed - 5)) return 2;
+    if (needed >= 1 && saved < (uint8_t)(needed - 1)) return 3;
+    if (needed >= 1 && saved == (uint8_t)(needed - 1)) return 4;
+    if (saved == needed) return 5;                    /* image 0x0493A */
+    if (saved < (uint8_t)(needed + 20)) return 6;     /* image 0x04943 */
+    return 7;
+}
+
+/* And whether it was a win at all: the ladder has no flag for it, but the
+ * level is passed when the rescued percentage reaches what it asked for. */
+int level_won(uint8_t saved, uint8_t needed) { return saved >= needed; }
+
+const char *level_verdict_text(uint8_t saved, uint8_t needed)
+{
+    return VERDICT[level_verdict(saved, needed)];
+}
+
 /* HOW MANY GOT OUT, and whether the level is over.
  *
  * ds:0x46 is the saved count and ds:0x47 the total - image 0x03ACE divides

@@ -533,6 +533,38 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* WIN OR LOSE, image 0x048F6's ladder. The rungs are what the original
+     * tests, in the order it tests them - and the order matters, because
+     * each falls through to the next. Level 1 needs 10%. */
+    {
+        ck("rescuing none is the bottom", level_verdict(0, 10) == 0,
+           "image 0x0490B");
+        ck("under half of what was needed", level_verdict(4, 10) == 1,
+           "image 0x04912's needed/2");
+        ck("one short is its own message", level_verdict(9, 10) == 4,
+           "image 0x04933's needed-1");
+        ck("exactly what was needed is another", level_verdict(10, 10) == 5,
+           "image 0x0493A");
+        ck("comfortably over", level_verdict(29, 10) == 6,
+           "image 0x04943's needed+20");
+        ck("well over", level_verdict(31, 10) == 7, "the fall-through rung");
+        ck("and everyone is the best", level_verdict(100, 10) == 8,
+           "image 0x04904 is tested FIRST, before anything else");
+
+        /* 100 is checked before the ladder, so it wins even when the level
+         * asked for more than it could give. */
+        ck("100 outranks every other rung", level_verdict(100, 100) == 8,
+           "image 0x04904 must come first");
+
+        ck("won is simply reaching the requirement",
+           level_won(10, 10) && !level_won(9, 10), "level_won");
+
+        ck("and the text follows the rung",
+           strstr(level_verdict_text(100, 10), "Superb") != NULL
+           && strstr(level_verdict_text(0, 10), "ROCK BOTTOM") != NULL,
+           "the nine messages are out of order");
+    }
+
     /* THE EXIT, against where the original actually saved lemmings.
      *
      * tools/probe_exit.py drove the original into digging down and watched
