@@ -196,7 +196,19 @@ def install(m):
                 out.write(f"    y{y:3d} {line}\n")
             out.flush()
 
-        if WAIT - 2 <= st["n"] <= WAIT + 40 and n:
+        # A TRACE for tools/verify_dig.py: every frame from the moment the
+        # digger is assigned, so the port's own simulation can be run
+        # forward on the same start state and compared.
+        if n:
+            r0 = rec(0)
+            if r0["flags"] & 0x10 or st.get("trace"):
+                st.setdefault("trace", []).append(
+                    dict(f=st["n"], y=r0["y"], x=r0["x"], anim=r0["anim"],
+                         flags=r0["flags"], state=r0["state"],
+                         dir=r0["dirn"], hot_x=w(ARRAY + 4),
+                         hot_y=w(ARRAY + 6)))
+
+        if WAIT - 2 <= st["n"] <= WAIT + 45 and n:
             r = rec(0)
             out.write(f"  f{st['n']:4d} n={n} lem0 x={r['x']:5d} y={r['y']:4d} "
                       f"flags={r['flags']:#06x} anim={r['anim']:3d} "
@@ -206,9 +218,13 @@ def install(m):
                       f"under[0x58]={w(0x58) & 0xffff:#06x}\n")
             out.flush()
 
-        if st["n"] > WAIT + 40:
+        if st["n"] > WAIT + 150:
+            st["shaft"] = shaft(uc, ds)
             out.close()
             raise SystemExit(0)
+        if st.get("trace") and len(st["trace"]) % 40 == 0:
+            st["shaft"] = shaft(uc, ds)     # keep the latest, in case of a
+                                            # run that ends early
 
     # WHAT THE BLIT ACTUALLY READS.
     #
@@ -338,6 +354,50 @@ def install(m):
         bl["who"] = None
         out.flush()
 
+    # THE SHAFT ITSELF. Comparing only the lemming's y and animation is not
+    # enough: neither the row it clears nor the row it tests changes those
+    # while it is still inside solid ground, so a test on state alone agrees
+    # with a digger that is cutting the wrong rows. What separates them is
+    # the terrain.
+    #
+    # The guest probes solidity out of the EGA planes - image 0x05DC6 reads
+    # (y - 0x10) * 0xD0 + (x >> 3) and tests a bit - so plane 3 at that
+    # stride is the map, and this records it over the shaft.
+    def shaft(uc, ds):
+        r0 = None
+        try:
+            r0 = st["trace"][0]
+        except (KeyError, IndexError):
+            return None
+        cols = range(r0["x"] - 12, r0["x"] + 12)
+        rows = range(r0["y"] - 4, r0["y"] + 40)
+        out_map = []
+        for yy in rows:
+            line = []
+            for xx in cols:
+                off = (yy - 0x10) * 0xD0 + (xx >> 3)
+                if off < 0 or off >= 0x10000:
+                    line.append(0)
+                    continue
+                line.append([(m.planes[pl][off] >> (7 - (xx & 7))) & 1
+                             for pl in range(4)])
+            out_map.append(line)
+        return dict(x0=r0["x"] - 12, y0=r0["y"] - 4, map=out_map)
+
+    # Written on the way out, not at a frame count: a run that ends early -
+    # and one did - then still leaves what it managed to record.
+    import atexit
+
+    def dump():
+        tp = os.environ.get("LEM_DIG_TRACE")
+        if tp and st.get("trace"):
+            import json
+            with open(tp, "w") as f:
+                json.dump({"frames": st["trace"],
+                           "shaft": st.get("shaft")}, f)
+            print(f"  [probe_digger] traced {len(st['trace'])} digging frames")
+
+    atexit.register(dump)
     m.uc.hook_add(UC_HOOK_CODE, at_blit)
     m.uc.hook_add(UC_HOOK_CODE, at)
     print("  [probe_digger] will select the digger and click a lemming")
