@@ -1113,38 +1113,39 @@ Each of these is stated as what was *checked*, not what was written.
   It is the stale-artefact trap this file records for captures, applied to
   object files. Fixed.
 
-- **The lemming sprites: the format is settled, the base is not.**
+- **The lemming sprites: the store is confirmed, the addressing is not.**
 
-  Reading image 0x05B11, the pre-shift builder, settles the layout without any
-  fitting. For each of eight shifts it walks `dh` planes of `dl` rows, reads
-  two source bytes a row, shifts them right into **three** bytes - sixteen
-  pixels shifted by up to seven needs 23 bits - and then makes one more pass
-  OR-ing every plane together to produce the **mask**. So one shift costs
+  The loader at image 0x59BB places every creature into the store at
+  `ds:0x1FE6`, and its first group is the lemming: `cx = 0x12` frames,
+  `dx = 0x020A` - **two planes of ten rows** - through image 0x05B11, which is
+  the builder that adds a mask, with the source stepping `0x28` a frame, which
+  is 2 x 10 x 2 exactly. Destination `di` starts at **0**.
 
-      (dh + 1) * dl * 3 bytes
+  The builder settles the size with no fitting: eight shifts of
+  `(planes + 1) * rows * 3` bytes, which for two planes of ten rows is **90** -
+  the `frame_size` at `+0x10` - with the mask 60 bytes in, which is `+0x12`.
+  A frame is therefore 8 x 90 = **720** bytes.
 
-  and for a lemming, which is **10 rows of 2 planes**, that is exactly **90** -
-  which is the `frame_size` at `+0x10` in the record, and puts the mask 60
-  bytes in, which is `+0x12`. Two fields of the record explained by one
-  routine, neither of them guessed.
+  And the sprites really are there. Searching the store for a lemming lifted
+  out of a recorded frame - unconstrained, over the whole dump - every one of
+  twelve samples matches **fully**, 9 of 9 or 10 of 10 rows, at a definite
+  offset. So the store, the three-byte rows and the 24-bit pre-shifted
+  alignment are all right.
 
-  That also kills the "80 bytes an index" this file recorded last time. The 90
-  is derived; the 80 came from locating sprites in a memory dump, and that
-  measurement has slack in it because a sprite's blank rows let a match start
-  a row early. **The disagreement was the measurement's, not the routine's.**
+  What is *not* right is any formula from the recorded `anim` and `x` to those
+  offsets. They are consistent per sprite - anim 0 always lands at 867..870,
+  anim 4 at 1227..1233 - but they are not `(anim * 8 + shift) * 90`, and no
+  sweep of a base or a frame ordering gets past about 28%.
 
-  The masks *are* in the segment at `ds:0x1FE6` at three bytes a row - a
-  lemming's pixels lifted out of a recorded frame match there exactly. What is
-  still not known is where the walker's frames begin in that store and in what
-  order, and searching for it from outside converges to about 65%, which is
-  not an answer. It cannot be settled by more searching, because pixels
-  extracted from a frame are only the ones that *differ* from the background:
-  a sprite pixel that happens to match what is behind it is invisible to the
-  extraction, so a perfect match is not available to be found.
-
-  What settles it is reading the **caller** of image 0x05B11 - the loader that
-  decides where each creature's frames go - rather than measuring the store it
-  produced.
+  **There is a reason to suspect the recording rather than the formula.**
+  `tools/probe_lemmings.py` samples at image 0x01A3. The simulation runs at
+  image 0x01B3 and the draw at image 0x01BC - both *after* it. So the record a
+  frame is compared against is the state BEFORE that frame's update, while the
+  pixels are what was drawn AFTER it. The two are one step apart, and anim 0
+  landing where index 9 would put it (870 predicted, 867..870 measured) is
+  exactly what a one-step offset looks like. That did not hold for every
+  sample, so it is a lead and not an answer - but it means the next move is to
+  fix the probe's sampling point, not to sweep more parameters.
 
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
