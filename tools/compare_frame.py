@@ -90,15 +90,35 @@ CURSOR = [
 
 
 def cursor_at(bad):
-    """If `bad` is exactly the cursor, where its top-left is; else None."""
+    """Where the cursor is inside `bad`, or None.
+
+    This used to demand that `bad` be EXACTLY the cursor, which was true only
+    while the port drew nothing that moved. Once the lemmings matched, the
+    residue became cursor plus the exit's flames and the check silently
+    stopped firing - so a known artefact went back to being counted against
+    the reconstruction. It looks for the pattern as a SUBSET now, and the
+    caller subtracts it.
+    """
     if not bad:
         return None
-    x0 = min(p[0] for p in bad)
-    y0 = min(p[1] for p in bad)
-    want = {(x0 + c, y0 + r)
-            for r, row in enumerate(CURSOR)
+    pts = set(bad)
+    want0 = [(c, r) for r, row in enumerate(CURSOR)
+             for c, ch in enumerate(row) if ch == "#"]
+    # The pattern's own top-left corner is BLANK, so it is never one of the
+    # differing pixels and cannot be used as a candidate origin. Anchor on the
+    # first pixel the pattern actually sets instead.
+    ac, ar = want0[0]
+    for px, py in sorted(pts):
+        x0, y0 = px - ac, py - ar
+        if all((x0 + c, y0 + r) in pts for c, r in want0):
+            return (x0, y0)
+    return None
+
+
+def cursor_pixels(at):
+    x0, y0 = at
+    return {(x0 + c, y0 + r) for r, row in enumerate(CURSOR)
             for c, ch in enumerate(row) if ch == "#"}
-    return (x0, y0) if want == set(bad) else None
 
 
 def play_diff(cap, cw, lev, lw, lh, scroll):
@@ -163,16 +183,23 @@ def main():
     print(f"  play area, rows 0..{PLAY_H-1} : "
           f"{100*(1-len(bad)/tot):.2f}%  ({len(bad)} of {tot} differ)")
     cur = cursor_at(bad)
+    rest = bad
     if cur:
-        print(f"    ALL of them are the MOUSE CURSOR - the game's own 14x14"
-              f" dithered\n    cross-hair, here with its top-left at {cur}."
-              f" It lands wherever the\n    pointer is, so it says nothing"
-              f" about the reconstruction. Everything\n    else in the play"
-              f" area matches exactly.")
-    elif bad:
-        xs = [p[0] for p in bad]
-        ys = [p[1] for p in bad]
-        print(f"    differing box x {min(xs)}..{max(xs)}  y {min(ys)}..{max(ys)}")
+        pix = cursor_pixels(cur)
+        rest = [p for p in bad if p not in pix]
+        print(f"    {len(pix)} of them are the MOUSE CURSOR, the game's own"
+              f" 14x14 dithered\n    cross-hair, top-left {cur}. It lands"
+              f" wherever the pointer is, so it\n    says nothing about the"
+              f" reconstruction.")
+        print(f"    without it: {100*(1-len(rest)/tot):.2f}%"
+              f"  ({len(rest)} of {tot} differ)")
+    if rest:
+        xs = [p[0] for p in rest]
+        ys = [p[1] for p in rest]
+        print(f"    what is left: box x {min(xs)}..{max(xs)}"
+              f"  y {min(ys)}..{max(ys)}")
+    elif cur:
+        print("    Everything else in the play area matches exactly.")
 
     if a.panel:
         pw, ph, pan = read_raw(a.panel)
