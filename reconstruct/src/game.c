@@ -1080,7 +1080,7 @@ enum { NM_CLIMBER, NM_FLOATER, NM_BOMBER, NM_BLOCKER, NM_BUILDER, NM_BASHER,
  * destination for a digit it actually emitted, so 7 comes out as "7  " and
  * not "007" - and the panel shows a bare number beside the name because of
  * it. */
-static void put_num3(char *dst, uint8_t v)
+static char *put_num3(char *dst, uint8_t v)
 {
     dst[0] = dst[1] = dst[2] = ' ';       /* image 0x04B68 */
     uint8_t any = 0;                      /* bl */
@@ -1095,6 +1095,7 @@ static void put_num3(char *dst, uint8_t v)
     if (d || any) { *dst++ = (char)('0' + d); }         /* image 0x04BB0 */
 
     *dst = (char)('0' + v);               /* image 0x04BB8 */
+    return dst + 1;                       /* image 0x04BBC's `inc si` */
 }
 
 /* WHAT THE POINTER IS OVER, in the panel's own line - image 0x03CE9.
@@ -1717,15 +1718,31 @@ const char *level_results_prompt(uint8_t input_kind)
     return S_MENU_PROMPT[input_kind < 3 ? input_kind : 0];
 }
 
-/* Transcribed from image 0x048BD and image 0x048C7: "You rescued" and "You
- * needed", each with its percentage written three characters from the end
- * through the fill at image 0x04B5C. `line` takes at least 20 characters. */
+/* Transcribed from image 0x048BD and image 0x048C7, and the writer they use
+ * is image 0x04B5C - which is NOT the right-aligned fill the briefing uses:
+ *
+ *     [si+3] = ' '            image 0x04B5C
+ *     call image 0x04B68      up to three digits, LEFT aligned, and si is
+ *                             advanced only for a digit actually emitted
+ *     [si] = '%'              image 0x04B63, right after the last digit
+ *
+ * So the per cent sign moves with the number - "You rescued 100%" and "You
+ * needed  10%" - and the port, which wrote the number three from the end and
+ * no sign at all, produced "You rescued100". `line` takes at least 20
+ * characters.
+ *
+ * The number goes at ds:0x4C5D and ds:0x4C71, which are twelve characters
+ * into each of the two records at ds:0x4C4E. */
+#define RESULT_NUM_AT 12       /* ds:0x4C5D against the record's text */
 void level_results_line(char *line, int needed_line, uint8_t percent)
 {
     const char *t = needed_line ? S_NEEDED : S_RESCUED;
     size_t n = strlen(t);
     memcpy(line, t, n + 1);
-    put_num(line, n - RESULT_NUM_BACK, percent);   /* image 0x04B5C */
+    char *at = line + RESULT_NUM_AT;
+    at[3] = ' ';                                   /* image 0x04B5C */
+    char *end = put_num3(at, percent);             /* image 0x04B60 */
+    *end = '%';                                    /* image 0x04B63 */
 }
 
 /* THE RESULTS SCREEN'S LAYOUT - transcribed from image 0x04D4D.
@@ -1917,22 +1934,77 @@ static const results_line VERDICT_AT[VERDICTS][2] = {
 #define RES_CODE_ROW        14
 #define RES_CODE2_COL       12
 #define RES_CODE2_ROW       15
-#define RES_RETRY_ROW       18      /* ds:0x4CD3 */
-#define RES_MENU_ROW        19      /* ds:0x4BA0 */
+#define RES_ROW18           18      /* next level, or retry */
+#define RES_ROW19           19      /* the menu, always */
 
-/* Image 0x04CD3, 0x04CFE and 0x04D20 - the retry prompt by input kind, and
- * their columns differ because the wordings do. */
-static const results_line S_RETRY[3] = {
-    {  1, RES_RETRY_ROW, 0, "Press left mouse button to retry level" },
-    {  5, RES_RETRY_ROW, 0, "Press button 1 to retry level" },
-    {  7, RES_RETRY_ROW, 0, "Press Space to retry level" },
+/* TWO PROMPTS, NOT ONE, and that is what image 0x04797 draws:
+ *
+ *     0x04797  push bx        the row-18 record, chosen just above
+ *     0x04798  call 0x48F6    the verdict, which draws itself
+ *     0x0479B  pop si / call 0x4D4D        the row-18 prompt
+ *     0x0479F  si = ds:0x21 / call 0x4D4D  the row-19 one, which image
+ *                                          0x048EB stored
+ *
+ * The port drew one line saying "Press mouse button to continue", which is
+ * ds:0x4BA0 - a record this screen never uses. The original offers the next
+ * level on row 18 and the menu on row 19, or a retry and the menu when the
+ * level was lost. */
+static const results_line S_NEXT[3] = {      /* ds:0x4D75, 0x4DA0, 0x4DC2 */
+    {  1, RES_ROW18, 0, "Press left mouse button for next level" },
+    {  5, RES_ROW18, 0, "Press button 1 for next level" },
+    {  7, RES_ROW18, 0, "Press Space for next level" },
 };
-/* Image 0x04BA0, 0x04BC3 and 0x04BE5. */
-static const results_line S_CONTINUE[3] = {
-    {  5, RES_MENU_ROW, 0, "Press mouse button to continue" },
-    {  5, RES_MENU_ROW, 0, "Press Fire button to continue" },
-    {  8, RES_MENU_ROW, 0, "Press Space to continue" },
+static const results_line S_RETRY[3] = {     /* ds:0x4CD3, 0x4CFE, 0x4D20 */
+    {  1, RES_ROW18, 0, "Press left mouse button to retry level" },
+    {  5, RES_ROW18, 0, "Press button 1 to retry level" },
+    {  7, RES_ROW18, 0, "Press Space to retry level" },
 };
+static const results_line S_MENU[3] = {      /* ds:0x4C77, 0x4C9D, 0x4CB9 */
+    {  3, RES_ROW19, 0, "Press right mouse button for menu" },
+    {  6, RES_ROW19, 0, "Press button 2 for menu" },
+    {  9, RES_ROW19, 0, "Press Return for menu" },
+};
+
+/* THE RESULTS SCREEN'S SIXTEEN COLOURS - MEASURED from the original's own
+ * DAC while the screen was up, through tools/verify_results.py.
+ *
+ * Two steps, and only the second is read. Image 0x053FC picks entry 2 of the
+ * table at cs:0x52D4 - ds:0x4920, which is
+ *
+ *     00 14 20 00 08 21 31 07 10 10 02 02 3f 06 31 27
+ *
+ * - and image 0x05425 writes those sixteen bytes to the attribute controller
+ * at port 0x3C0, so they are attribute-to-DAC. What the DAC entries THEMSELVES
+ * hold is set elsewhere and has not been traced, which is why the RGB below
+ * is measured rather than transcribed. Driving image 0x046EB and reading the
+ * DAC back takes ninety seconds; playing to the screen took fifteen minutes.
+ *
+ * The port's buffer holds attributes 0..7 - three planes of font - so these
+ * are indexed by the attribute directly. */
+static const lem_rgb RESULTS_PAL[16] = {
+    {   0,   0,   0 },   /* attr  0 -> DAC 0x00 */
+    { 130,  65,  32 },   /* attr  1 -> DAC 0x01 */
+    {  97,  48,  32 },   /* attr  2 -> DAC 0x02 */
+    {  48,   0,  16 },   /* attr  3 -> DAC 0x03 */
+    {  32,   8, 125 },   /* attr  4 -> DAC 0x04 */
+    {  65,  44, 146 },   /* attr  5 -> DAC 0x05 */
+    { 105,  89, 166 },   /* attr  6 -> DAC 0x14 */
+    { 154, 142, 190 },   /* attr  7 -> DAC 0x07 */
+    {   0,  81,   0 },   /* attr  8 -> DAC 0x38 */
+    {   0,  97,  16 },   /* attr  9 -> DAC 0x39 */
+    {   0, 113,  32 },   /* attr 10 -> DAC 0x3a */
+    {   0, 130,  65 },   /* attr 11 -> DAC 0x3b */
+    { 211, 211, 211 },   /* attr 12 -> DAC 0x3c */
+    { 178, 178,   0 },   /* attr 13 -> DAC 0x3d */
+    {  65,  81, 178 },   /* attr 14 -> DAC 0x3e */
+    { 227, 130, 146 },   /* attr 15 -> DAC 0x3f */
+};
+
+/* Image 0x053FC, as far as it is read. */
+void level_results_palette(lem_rgb *out)
+{
+    for (uint8_t i = 0; i < 16; i++) out[i] = RESULTS_PAL[i];
+}
 
 /* Image 0x046EB, in its own order. */
 void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
@@ -1974,11 +2046,13 @@ void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
         snprintf(is, sizeof is, "is %s", code ? code : "");
         ln.col = RES_CODE2_COL; ln.row = RES_CODE2_ROW; ln.text = is;
         results_text(dst, dst_w, dst_h, sec, sec_len, &ln);
-        results_text(dst, dst_w, dst_h, sec, sec_len, &S_CONTINUE[kind]);
+        results_text(dst, dst_w, dst_h, sec, sec_len, &S_NEXT[kind]);
     } else {
-        /* Image 0x0477D: retry, not continue. */
+        /* Image 0x0477D: retry the same level. */
         results_text(dst, dst_w, dst_h, sec, sec_len, &S_RETRY[kind]);
     }
+    /* Image 0x0479F: the menu prompt goes on either way. */
+    results_text(dst, dst_w, dst_h, sec, sec_len, &S_MENU[kind]);
 }
 
 

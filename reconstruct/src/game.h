@@ -461,6 +461,10 @@ void level_code_generate(uint8_t level_no, uint8_t other, uint8_t percent,
 /* THE RESULTS SCREEN, image 0x046EB - mode 0x10 at 640x350, a 40 by 21 grid
  * of 16x16 cells. `sec` is MAIN.DAT section 4, which carries its font at
  * 0x69B0. The BACKGROUND is not drawn; the set-up calls have not been read. */
+/* The screen's sixteen colours, measured off the original's DAC - see
+ * RESULTS_PAL in game.c. */
+void level_results_palette(lem_rgb *out);
+
 /* The results screen in a window, and non-zero if the left button was
  * pressed - image 0x047B4, which is "on to the next level". */
 int level_show_results(const char *dir, uint8_t saved, uint8_t needed,

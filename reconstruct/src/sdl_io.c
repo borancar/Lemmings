@@ -1408,18 +1408,10 @@ int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
     any[0].w = MENU_W; any[0].h = MENU_H;
     any[0].id = 1; any[0].key = VIEW_KEY_NONE;
 
-    /* THE PALETTE IS NOT MEASURED YET, and this says so rather than picking
-     * something that looks plausible. It comes from image 0x046EB's set-up
-     * calls, which have not been read, so the sixteen entries here are the
-     * menu's - close enough to read the text by, and wrong in a way a
-     * comparison against the original will report as a colour difference
-     * rather than hide. */
+    /* Measured off the original's own DAC while the screen was up - see
+     * RESULTS_PAL in game.c. */
     lem_rgb pal[16];
-    for (uint8_t i = 0; i < 16; i++) {
-        pal[i].r = (uint8_t)(i * 17);
-        pal[i].g = (uint8_t)(i * 17);
-        pal[i].b = (uint8_t)(i * 17);
-    }
+    level_results_palette(pal);
     int32_t r = view_interact(pix, MENU_W, MENU_H, pal, "PC Lemmings",
                               scale, any, 1);
     free(pix);

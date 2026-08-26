@@ -311,6 +311,35 @@ two words onward and nothing before it. The trip from a SCREEN position to
 `ds:0x12` is the port's own, and it can be wrong while every frame agrees.
 That is `tools/compare_play.py`'s claim, not this one.
 
+## Drive the ending, do not play to it
+
+Reaching the results screen by playing costs fifteen minutes of emulator
+time: enter the level, assign a digger from a script, walk every lemming out
+of the exit. Three runs went that way and two produced nothing - one captured
+on a retrace the screen never waits for, one with a frame counter that had
+started before the level did. Neither said so; they just ran to their ceiling.
+
+None of it was necessary. Image `0x046EB` is a plain routine and the screen
+is a pure function of six bytes - the rescued percentage, the requirement,
+the level index, the two clock cells and the input kind. `tools/verify_results.py`
+sets them and CALLS it, stopping at image `0x047A9`, the screen's own wait
+loop, which is the moment everything is drawn and nothing has happened yet.
+Ninety seconds, and repeatable while you edit the port.
+
+That is `tools/verify_digits.py`'s trick applied to a screen instead of a
+routine, and the rule generalises: **if the state is a pure function of a few
+bytes, set them and call it.** Playing to a state is for things that are not.
+
+Stepping the calls is worth the same again. `LEM_RES_STEP=1` stops after each
+of image `0x046EB`'s seven set-up calls and prints the framebuffer's
+histogram, which answered "which of these draws the background" in one run
+where reading them one at a time had already taken three.
+
+**And check whether the background is the game's at all.** `LEM_RES_WIPE=1`
+zeroes video memory before the call. Driving a routine from the menu leaves
+the menu's pixels behind, and anything the routine does not clear shows
+through looking exactly like something it drew.
+
 ## A run that reaches the exit takes longer than a command may run
 
 Three attempts at `tools/probe_exit.py` reported **"0 lemmings reached it"**,
@@ -681,6 +710,7 @@ sweeps are the only thing that would catch a regression there. So:
 | **`tools/verify_code.py`** | the access-code generator at image 0x05042, driven rather than read. Its ten mask-and-shift blocks are the sort of thing this port has twice mis-read by eye, so the bit table in `game.c` was **measured** - one input bit at a time - and this checks that measurement against 400 further many-bit inputs covering every rotation count, because a single-bit sweep determines a permutation only if the contributions never interact. It also prints how many codes pass the validator's checksum **and says that a wrong table passes it too**: all three deliberate faults tried here round-tripped happily |
 | **`tools/compare_play.py`** | **the port and the original PLAYING the same level**, frame by frame, from one input script both sides read. Every other frame-by-frame number here came from a level nobody touches, which exercises only the part of the game that needs no player - the skills, the panel's behaviour, the cursor's box and the level's ending are all behind a click and none of them was ever scored. It also makes the CURSOR part of the comparison rather than an excused 28 pixels, because with both pointers driven from one script they are in the same place. Refuses to report a happy figure for a run where the digger was never assigned |
 | **`tools/probe_cursor.py`** | the cursor's two shapes, **read out of the original's sprite store** rather than measured off a frame. Image 0x05827 puts them at 144 bytes a shift in segment `ds:0x1FEA`, and image 0x05854 adds 0x480 for the box it wears over a lemming |
+| **`tools/verify_results.py`** | **the results screen, driven rather than played to**: it sets the six bytes image 0x046EB reads and calls it, stopping at the screen's own wait loop. Ninety seconds against the fifteen minutes a playthrough costs. `--step` reports the framebuffer after each set-up call, `--wipe` clears video memory first so a background that was only left over cannot pass for one the game drew |
 | `tools/snapshot.py` | capture memory at a chosen point in a run |
 | `tools/probe_protected.py` | record the protected instruction stream as it runs |
 | `tools/probe_desync.py` | find a single-step desynchronisation, if the decryptor ever loses step |
