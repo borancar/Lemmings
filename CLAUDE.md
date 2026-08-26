@@ -275,6 +275,32 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
+## A sprite that looks right is not a sprite that is right
+
+The builder's frames had to be found in MAIN.DAT the way the digger's and the
+exit's were. The sprites sit consecutively - the walker is 18 frames of 40
+from 0, so the digger starts at 720 and its 16 frames of 84 end at 2064 - and
+2064 decodes as a perfectly plausible lemming. It was the obvious answer and
+it was wrong: wiring it in changed the frame comparison by **nothing**, still
+200 of 400 exact.
+
+What settles a sprite is the original's own pixels. The record says where the
+builder is - frame 130, record (796, 94), hot spot (-8, -13) - which puts its
+16x13 at screen (148, 65), so the block can be lifted straight off the
+captured frame and every offset in the section tried against it. None matched,
+which is a real answer too: the layout is not the digger's, or the frames are
+not in that section.
+
+So: **decode a candidate and compare it with the original, never with your
+expectation of what a lemming looks like.** Every frame of every sprite in
+this file looks like a lemming.
+
+And a number that was guessed must not be left in wearing the word
+"measured". The port draws a builder as a walker until this is settled, which
+is visibly wrong and which the comparison reports - every record agreeing on
+400 frames while the screens agree on 200 is the two halves of the method
+saying different things, and that is exactly when to believe both.
+
 ## The dispatch is not the only thing that dispatches
 
 The builder's last eight frames could not be explained from its record. The

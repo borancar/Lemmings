@@ -3364,6 +3364,42 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * main.dat for them. Searching the file for the GEOMETRY instead had failed
  * repeatedly: eight coherent 52-byte frames match thousands of offsets, and
  * the best of them were not it. */
+/* THE BUILDER'S SPRITE IS NOT FOUND, and this says so rather than carry a
+ * number that looks measured.
+ *
+ * Image 0x032FB names the SHAPE and that much is certain: image 0x03300
+ * gives it 0x68 = 104 bytes a frame with image 0x03305 putting the mask
+ * 0x4E = 78 in, so the colour is 78 bytes - thirteen rows of two in three
+ * planes - the way the digger's is 84 and the exit's 52.
+ *
+ * WHERE those frames are is the open question. Two attempts failed and both
+ * are worth recording, because the second is the honest one:
+ *
+ *   The sprites are consecutive - the walker is 18 frames of 40 from 0, so
+ *   the digger starts at 720 and its 16 frames of 84 end at 2064 - and 2064
+ *   decodes as a perfectly plausible lemming. Wiring it in changed the
+ *   comparison by NOTHING: still 200 of 400 frames exact. A shape that looks
+ *   right is not evidence.
+ *
+ *   So the builder's actual pixels were lifted off the original's own frame
+ *   130, where the record puts it at (796, 94) with hot spot (-8, -13) - a
+ *   16x13 block at screen (148, 65) - and every offset in section 0 was
+ *   tried as a 16x13 frame in three planes. NONE is consistent with it. So
+ *   the layout is not what the digger's and the exit's are, or the frames
+ *   are not in section 0 at all.
+ *
+ * Until that is settled the port draws a builder as a walker, which is
+ * visibly wrong and which the comparison reports: every RECORD agrees on all
+ * 400 frames while the screens agree on 200. */
+#define BUILD_SPR_BASE  2064
+#define BUILD_SPR_W     16
+#define BUILD_SPR_H     13
+#define BUILD_SPR_PLANES 3
+#define BUILD_SPR_ROW   (BUILD_SPR_W / 8)
+#define BUILD_SPR_PLANE (BUILD_SPR_ROW * BUILD_SPR_H)          /* 26 */
+#define BUILD_SPR_FRAME (BUILD_SPR_PLANE * BUILD_SPR_PLANES)   /* 78 */
+#define BUILD_SPR_FRAMES 16
+
 #define EXIT_SPR_BASE   16816
 #define EXIT_SPR_W      16
 #define EXIT_SPR_H      13
