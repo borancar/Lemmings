@@ -45,6 +45,9 @@ MOUSE_X, MOUSE_Y = 0x10, 0x12   # ds: the pointer, image 0x0427E and 0x04293
 CUR_OFF, CUR_BASE, CUR_BIAS = 0x0C, 0x1F78, 0x1FE0   # image 0x071B1
 ARRAY, COUNT, REC = 0x88, 0x43, 0x2D   # the lemming array
 DIGGERS = 0x7F             # ds: how many diggers are left to give out
+# The end condition, image 0x001E7: released == to-release AND active == 0.
+RELEASED, ACTIVE, TO_RELEASE = 0x43, 0x45, 0x47
+SAVED, OVER = 0x46, 0x4F   # ds:0x4F is what image 0x001C8 tests first
 
 
 def install(m):
@@ -147,6 +150,12 @@ def install(m):
             "lemmings": n_lem,
             "lem": lem_all,
             "diggers": uc.mem_read(base + DGROUP + DIGGERS, 1)[0],
+            "released": uc.mem_read(base + DGROUP + RELEASED, 1)[0],
+            "active": uc.mem_read(base + DGROUP + ACTIVE, 1)[0],
+            "to_release": uc.mem_read(base + DGROUP + TO_RELEASE, 1)[0],
+            "saved": uc.mem_read(base + DGROUP + SAVED, 1)[0],
+            "over": uc.mem_read(base + DGROUP + OVER, 1)[0],
+            "mode": (getattr(m, "video_modes", []) or [0])[-1],
             "lem0": lem0,
             "game_frame": uc.mem_read(base + DGROUP + FRAME_COUNTER, 1)[0],
             "lit_dac": lit,

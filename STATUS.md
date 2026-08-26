@@ -802,9 +802,47 @@ And the round trip through the validator is **not** what settles this; see
 faults tried against the port - a bit in the wrong character, the rotation
 backwards, the nibbles swapped - produced codes image `0x051D4` accepted.
 
-**Still not written**: the results screen's LAYOUT. Its text assembly is
-transcribed (image `0x048BD`) and its composer found (image `0x046F4`), but
-what draws the screen around the record at `ds:0x4C4E` has not been read.
+### The results screen, read at last
+
+Its LAYOUT was the long-standing gap and it is now readable end to end.
+
+**It is mode 0x10, 640x350** - not the level's 0x0D, which is why a recorder
+hooked to the level's own end-of-frame at image `0x018F` never sees it and
+stops dead at the fade.
+
+**Every string carries its own position.** Image `0x04D4D` walks a chain of
+records: one byte of column plus one, one of row, one of style, then the text,
+with `0x0D` ending a line and a zero column ending the chain. So the layout is
+data, not code:
+
+| | |
+| --- | --- |
+| `ds:0x4C19` | col 12, row 1 - "Your time is up!" |
+| `ds:0x4C2E` | col 6, row 1 - "All lemmings accounted for." |
+| `ds:0x4C4E` | col 12, rows 3 and 4 - "You rescued" and "You needed" |
+| `ds:0x4D3F` | col 4 row 14 and col 12 row 15 - the access code's two lines |
+
+Image `0x04703` picks between the first two by whether `ds:0x20A7` and
+`ds:0x20A9` read "0:00" - the clock, not a flag.
+
+**The font is MAIN.DAT section 4 at offset 0x69B0**, 94 glyphs of 96 bytes -
+16x16 in three planes - and all 9,024 bytes match what the guest draws from.
+Image `0x04D78` puts a character at `(col * 16, row * 16)`, so the screen is a
+40 by 21 grid. It lives in a loaded resource rather than the image, which is
+why it was dumped from a run (`tools/probe_results.py`) rather than read out
+of DGROUP, where those bytes are still zero.
+
+**What the buttons do**, image `0x047A9` - and the loop polls `ds:0x14` with
+no retrace wait at all, which is its own trap for a probe:
+
+| | |
+| --- | --- |
+| left | `jmp 0x4551` - the NEXT level's briefing, the index having already advanced at image `0x0472E` |
+| right | `jmp 0x4401` - the main menu |
+
+**Still not written**: the screen's background. The set-up calls at image
+`0x046EB` - `0x4DEF`, `0x4BE7`, `0x53FC`, `0x531E`, `0x5028`, `0x5017` - have
+not been read.
 
 ## The results screen, mapped but not written
 
