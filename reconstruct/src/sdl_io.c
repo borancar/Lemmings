@@ -549,6 +549,18 @@ static int level_run(struct level_frame *A, const canvas *c,
      * and writes no files. Setting LEM_SCREEN_DIR is a developer asking for
      * one, the way LEM_FRAMES already asks for a frame budget. */
     const char *sink = SDL_getenv("LEM_SCREEN_DIR");
+    /* THE PORT'S OWN LEMMING ARRAY, frame by frame.
+     *
+     * A screen comparison says two lemmings look different; it does not say
+     * whether the x, the y, the flags or the animation counter is the one
+     * that moved. record_level.py --lemmings writes the ORIGINAL's array in
+     * the same shape, and the two together turn a puzzle into a field name.
+     *
+     * Env-gated and here with the rest of the hardware's work for the same
+     * reason as LEM_SCREEN_DIR: the game has no command line and writes no
+     * files, and a developer asking for one is not the game doing it. */
+    const char *state = SDL_getenv("LEM_STATE_FILE");
+    FILE *statef = state ? fopen(state, "w") : NULL;
     /* A recorded input, so a comparison can cover the parts of the game that
      * need a player - see script_load. */
     const char *script = SDL_getenv("LEM_INPUT_SCRIPT");
@@ -746,6 +758,19 @@ static int level_run(struct level_frame *A, const canvas *c,
                 fclose(f);
             }
         }
+        if (statef) {
+            fprintf(statef, "{\"frame\":%ld,\"lem\":[", frame_no);
+            for (uint8_t k = 0; k < A->released && k < LEMMING_MAX; k++) {
+                const lemming *a = &A->lem[k];
+                fprintf(statef,
+                        "%s{\"x\":%d,\"y\":%d,\"hot_x\":%d,\"hot_y\":%d,"
+                        "\"flags\":%u,\"anim\":%u,\"alive\":%u}",
+                        k ? "," : "", a->x, a->y, a->hot_x, a->hot_y,
+                        (unsigned)a->flags, (unsigned)a->anim,
+                        (unsigned)a->alive);
+            }
+            fprintf(statef, "]}\n");
+        }
         frame_no++;
 
         SDL_RenderClear(ren);
@@ -762,6 +787,7 @@ static int level_run(struct level_frame *A, const canvas *c,
     }
     /* Never leave the pointer captured by a window that is going away. */
     SDL_SetWindowRelativeMouseMode(g_win, false);
+    if (statef) fclose(statef);
     free(screen);
     return 0;
 }

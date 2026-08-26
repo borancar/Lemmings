@@ -117,6 +117,10 @@ def main():
     ap.add_argument("--ref", default=os.path.join(ROOT, "out", "refplay"))
     ap.add_argument("--dir", default=os.path.join(ROOT, "out", "playscreen"))
     ap.add_argument("--script", default=os.path.join(ROOT, "out", "dig.txt"))
+    ap.add_argument("--seconds", type=int, default=0,
+                    help="how long to let the guest run; the default is "
+                         "worked out from --frames at a deliberately "
+                         "pessimistic rate")
     ap.add_argument("--data", default="lemming1.pc")
     ap.add_argument("--rating", default="fun")
     ap.add_argument("--number", type=int, default=1,
@@ -141,7 +145,9 @@ def main():
         print("\n  pass 2: the ORIGINAL, with that script")
         r = subprocess.run([sys.executable, os.path.join(HERE, "record_level.py"),
                         "--frames", str(a.frames), "--out", a.ref,
-                        "--script", a.script], cwd=ROOT)
+                        "--script", a.script]
+                       + (["--seconds", str(a.seconds)] if a.seconds else []),
+                       cwd=ROOT)
     if r is not None and r.returncode != 0:
         return r.returncode
 

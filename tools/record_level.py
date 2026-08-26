@@ -79,6 +79,7 @@ def install(m):
                                [int(v) for v in f[2:]]))
         script.sort(key=lambda a: a[0])
         print(f"  [rec] {len(script)} scripted actions from {sp}")
+    all_lem = os.environ.get("LEM_REC_ARRAY") == "1"
     st["script_at"] = 0
     st["down"] = None
 
@@ -120,6 +121,21 @@ def install(m):
         if n_lem:
             lem0 = {"x": w(ARRAY), "y": w(ARRAY + 2),
                     "hot_x": w(ARRAY + 4), "hot_y": w(ARRAY + 6)}
+        # The WHOLE array, when asked for. A screen says two lemmings look
+        # different; the records say which field differs, which is the
+        # difference between a finding and a puzzle.
+        lem_all = None
+        if all_lem:
+            lem_all = []
+            for k in range(min(n_lem, 16)):
+                o = ARRAY + k * REC
+                lem_all.append({"x": w(o), "y": w(o + 2),
+                                "hot_x": w(o + 4), "hot_y": w(o + 6),
+                                "flags": w(o + 8) & 0xFFFF,
+                                "anim": uc.mem_read(base + DGROUP + o + 0x28,
+                                                    1)[0],
+                                "alive": uc.mem_read(base + DGROUP + o + 0x26,
+                                                     1)[0]})
         st["manifest"].append({
             "frame": i,
             "scroll": w(SCROLL),
@@ -129,6 +145,7 @@ def install(m):
             "cur_off": w(CUR_OFF), "cur_base": w(CUR_BASE),
             "cur_bias": uc.mem_read(base + DGROUP + CUR_BIAS, 1)[0],
             "lemmings": n_lem,
+            "lem": lem_all,
             "diggers": uc.mem_read(base + DGROUP + DIGGERS, 1)[0],
             "lem0": lem0,
             "game_frame": uc.mem_read(base + DGROUP + FRAME_COUNTER, 1)[0],
@@ -204,6 +221,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--frames", type=int, default=300)
     ap.add_argument("--out", default=os.path.join(ROOT, "out", "ref"))
+    ap.add_argument("--lemmings", action="store_true",
+                    help="carry the whole lemming array in the manifest, so "
+                         "a difference on the screen can be traced to a field")
     ap.add_argument("--script", default=None,
                     help="an input script, the same file the port reads "
                          "through LEM_INPUT_SCRIPT - see level_run in "
@@ -219,14 +239,27 @@ def main():
         for n in os.listdir(out_dir):
             if n.endswith(".scrn") or n == "manifest.json":
                 os.unlink(os.path.join(out_dir, n))
-    # Measured: ~5.9 frames a second once in the level, and about 55s of
-    # start-up and briefing before the first one.
-    seconds = a.seconds or int(60 + a.frames / 5.0)
+    # A RUN THAT IS CUT OFF MUST NOT LOOK LIKE A SHORT ONE.
+    #
+    # The guest manages somewhere between 1.5 and 6 frames a second depending
+    # on what else the machine is doing, so a budget worked out from an
+    # average is a coin toss at 5,100 frames - and the failure is silent: the
+    # run is killed at its ceiling, the frames it managed are all valid, and
+    # the comparison scores them and reports a figure. That is the same trap
+    # as tools/probe_exit.py's "0 lemmings reached it", which read as a fact
+    # about the game three times running.
+    #
+    # So the budget is deliberately generous, --seconds overrides it, and the
+    # check at the end says plainly when fewer frames arrived than were asked
+    # for.
+    seconds = a.seconds or int(90 + a.frames / 1.4)
 
     env = dict(os.environ, LEM_HOOK=os.path.abspath(__file__),
                LEM_REC_DIR=out_dir, LEM_REC_FRAMES=str(a.frames))
     if a.script:
         env["LEM_REC_SCRIPT"] = os.path.abspath(a.script)
+    if a.lemmings:
+        env["LEM_REC_ARRAY"] = "1"
     subprocess.run([sys.executable, os.path.join(HERE, "play.py"),
                     "--auto", "--start", "--start-delay", "5",
                     "--start-tries", "3", "--click-tries", "4",
@@ -255,6 +288,13 @@ def main():
             first = next(i for i, v in enumerate(dig) if v != dig[0])
             print(f"\n  diggers {dig[0]} -> {dig[-1]}, first spent at frame"
                   f" {first}")
+
+    if len(man) < a.frames:
+        print(f"\n  ONLY {len(man)} OF THE {a.frames} FRAMES ASKED FOR were"
+              f" recorded - the run was cut off at its {seconds}s ceiling."
+              f" The frames that did arrive are good, but this is NOT a"
+              f" recording of {a.frames} frames and must not be scored as"
+              f" one. Give it --seconds.")
 
     lit = [m["lit_dac"] for m in man]
     print(f"\n  {len(man)} frames in {out_dir}")

@@ -2016,6 +2016,10 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
 #define DIG_ANIM_START 0x11
 #define DIG_HOT_X      (-8)
 #define DIG_HOT_Y      (-12)
+/* Image 0x02472 and image 0x02477: 0xfff8 and 0xfff6, the hot spot a digger
+ * that has broken through takes on. */
+#define FALL_HOT_X     (-8)
+#define FALL_HOT_Y     (-10)
 /* Image 0x02424: past this row it has dug its way out of the level. */
 #define DIG_FLOOR      0xB4
 /* Image 0x0242D loads 0x0FF8 and image 0x02432 shifts it by the low three of
@@ -2154,9 +2158,23 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
      * already open. */
     int had = dig_row(a, lvl, cw, chh, dy_back);
     if (!had) {
-        /* image 0x0244E: it dug nothing, so there is nothing to stand on. */
+        /* Image 0x0244E: it dug nothing, so there is nothing to stand on.
+         *
+         * The whole record is re-stocked here, not just the flags. Image
+         * 0x0246A puts the animation counter back to zero and image 0x02477
+         * moves the hot spot from the digger's -12 to the faller's -10 - and
+         * leaving those two alone was worth 24 to 32 pixels a frame for a
+         * hundred frames, from the moment it broke through to the moment it
+         * reached the exit.
+         *
+         * Nothing in the state comparison could see it either: x and y
+         * agreed on all 600 frames. It is the HOT SPOT that moved, so the
+         * same lemming at the same place was drawn two rows out. */
         a->flags = (uint16_t)((a->flags & ~(uint16_t)DIG_BIT) | 4);
-        a->state = 4;
+        a->anim  = 0;                          /* image 0x0246A */
+        a->hot_x = FALL_HOT_X;                 /* image 0x02472 */
+        a->hot_y = FALL_HOT_Y;                 /* image 0x02477 */
+        a->state = 4;                          /* image 0x0247C */
     }
 }
 
