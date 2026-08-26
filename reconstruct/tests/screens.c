@@ -533,6 +533,46 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* The palette fade, image 0x0570C. Two notches a component, and it
+     * stops ON the target rather than stepping past it - which is what the
+     * `jg` after the first step is for. The ramp asserted here is the one
+     * tools/probe_dac.py recorded off the running original's DAC on the
+     * briefing: c3c300, cbcb00, d3d300, dbdb00, e3e300, ebeb00, f3f300. */
+    {
+        lem_rgb cur = { 0xc3, 0xc3, 0x00 };
+        lem_rgb tgt = { 0xf3, 0xf3, 0x00 };
+        static const uint8_t WANT[] = { 0xcb, 0xd3, 0xdb, 0xe3, 0xeb, 0xf3 };
+        int ok = 1;
+        for (uint8_t i = 0; i < sizeof WANT; i++) {
+            if (!palette_fade_step(&cur, &tgt, 1)) { ok = 0; break; }
+            if (cur.r != WANT[i] || cur.g != WANT[i] || cur.b != 0x00) {
+                ok = 0;
+                break;
+            }
+        }
+        ck("the fade walks the DAC the original walked it",
+           ok, "the ramp is not the one measured on the briefing");
+        ck("and reports itself finished once it arrives",
+           palette_fade_step(&cur, &tgt, 1) == 0, "it kept moving");
+    }
+    {
+        /* An ODD distance has to land exactly, not overshoot: one notch
+         * short, the second step is the one that must not be taken. */
+        lem_rgb cur = { 0x00, 0x00, 0x00 };
+        lem_rgb tgt = { 0x04, 0x00, 0x00 };   /* six-bit 1 */
+        palette_fade_step(&cur, &tgt, 1);
+        ck("an odd distance lands on the target", cur.r == 0x04,
+           "the fade stepped past it");
+    }
+    {
+        /* And downwards, which is the fade OUT. */
+        lem_rgb cur = { 0xf3, 0x00, 0x00 };
+        lem_rgb tgt = { 0x00, 0x00, 0x00 };
+        palette_fade_step(&cur, &tgt, 1);
+        ck("and it fades down as well as up", cur.r == 0xeb,
+           "downwards did not step by two");
+    }
+
     /* The disk check, image 0x0062B. A fixed disk passes because the
      * ORIGINAL passes it - image 0x0062E jumps clear of the protection - and
      * a floppy passes here only because LEM_DISK_CHECK is off. Both are

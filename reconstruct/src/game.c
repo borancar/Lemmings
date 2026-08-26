@@ -1800,6 +1800,58 @@ void level_frame_step(level_anim *st, const level *lv)
     level_status_in(0);          /* nothing is counted saved yet */
 }
 
+/* THE PALETTE FADE - transcribed from image 0x0570C and image 0x056E2.
+ *
+ * Image 0x055B7 is the whole of it: it takes a source and a destination
+ * palette out of the pointer table for whichever adapter ds:0x1F7C names,
+ * programs the DAC from the source (image 0x054C4), steps it one notch
+ * towards the destination (image 0x056E2), waits a retrace (image 0x01550)
+ * and goes round until nothing moved. The EGA path does the same through the
+ * attribute controller and waits THREE retraces a step; the VGA path waits
+ * one.
+ *
+ * One component, image 0x0570C, reads as:
+ *
+ *     cmp al,ah / je ret        already there
+ *     jg  down                  overshooting downwards
+ *     inc al                    one step up
+ *     mov bl,0xff               and something moved
+ *     cmp al,ah / je ret        arrived after one
+ *     jg  down-again / inc al   a SECOND step, whichever way
+ *
+ * so it moves by two, or by one if one gets there. tools/probe_dac.py sees
+ * exactly that on the briefing: the six-bit components climb by two a frame,
+ * which is c3c300, cbcb00, d3d300, dbdb00, e3e300, ebeb00 widened.
+ *
+ * The port keeps palettes widened to eight bits, so this works on `v >> 2`
+ * and widens back - which round-trips exactly, widen6 being the inverse.
+ */
+static int fade_component(uint8_t *cur8, uint8_t tgt8)
+{
+    uint8_t a = (uint8_t)(*cur8 >> 2);
+    uint8_t b = (uint8_t)(tgt8 >> 2);
+    if (a == b) return 0;
+    a = (a < b) ? (uint8_t)(a + 1) : (uint8_t)(a - 1);
+    if (a != b)
+        a = (a > b) ? (uint8_t)(a - 1) : (uint8_t)(a + 1);
+    *cur8 = widen6(a);
+    return 1;
+}
+
+/* One pass, image 0x056E2: three components of every entry, and a non-zero
+ * return while anything is still moving - the original's `bl` flag, which
+ * image 0x0562F tests to decide whether to go round again. */
+int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n)
+{
+    int moved = 0;
+    for (uint8_t i = 0; i < n; i++) {
+        moved |= fade_component(&cur[i].r, tgt[i].r);
+        moved |= fade_component(&cur[i].g, tgt[i].g);
+        moved |= fade_component(&cur[i].b, tgt[i].b);
+    }
+    return moved;
+}
+
 /* THE MOUSE CURSOR - the game's own dithered cross-hair.
  *
  * The original hides the DOS pointer (INT 33h AX=2 at image 0x00F43) and

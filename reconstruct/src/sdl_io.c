@@ -45,6 +45,24 @@ static SDL_Window   *g_win;
  * Zero means one palette for the whole screen, which is every other screen. */
 static uint16_t      g_split;
 static const lem_rgb *g_split_pal;
+
+/* The palette the screen is CURRENTLY showing while it fades, and the one it
+ * is heading for. The original does not cut to a screen - image 0x055B7
+ * walks the palette there a notch a retrace - so a port that cuts is missing
+ * something the original spends real time on. */
+static lem_rgb       g_fade_cur[16], g_fade_tgt[16];
+static lem_rgb       g_fade_low_cur[16], g_fade_low_tgt[16];
+
+static int fade_tick(void *ctx, uint8_t *pix)
+{
+    (void)ctx; (void)pix;
+    int moved = palette_fade_step(g_fade_cur, g_fade_tgt, 16);
+    if (g_split)
+        moved |= palette_fade_step(g_fade_low_cur, g_fade_low_tgt, 16);
+    /* Non-zero re-uploads the frame, which is what makes the fade visible;
+     * once nothing moves the screen is simply held. */
+    return moved;
+}
 static SDL_Renderer *g_ren;
 static SDL_Texture  *g_tex;
 static uint16_t      g_w, g_h;
@@ -706,6 +724,46 @@ void menu_free(menu_screen *m)
  * which is the port's addition and harmless - the original has no other way
  * off the briefing, but a window that only closes on a mouse click is a poor
  * thing on a machine with a keyboard. */
+/* Run the palette down to whatever g_fade_tgt now holds and stop. No input:
+ * it is a fade, not a screen - the only way out is for it to finish. */
+static void view_fade_out(const uint8_t *pix, uint16_t w, uint16_t h,
+                          const char *title, uint8_t scale)
+{
+    if (view_open(w, h, title, scale) != 0) return;
+    SDL_Renderer *ren = g_ren;
+    SDL_Texture  *tex = g_tex;
+    for (;;) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e))
+            if (e.type == SDL_EVENT_QUIT) return;
+        int moved = palette_fade_step(g_fade_cur, g_fade_tgt, 16);
+        if (g_split)
+            moved |= palette_fade_step(g_fade_low_cur, g_fade_low_tgt, 16);
+
+        void *pixels = NULL;
+        int pitch = 0;
+        if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
+            for (uint16_t y = 0; y < h; y++) {
+                uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+                const uint8_t *src = pix + (size_t)y * w;
+                const lem_rgb *pl = (g_split && y >= g_split)
+                                  ? g_fade_low_cur : g_fade_cur;
+                for (uint16_t x = 0; x < w; x++) {
+                    lem_rgb c = pl[src[x]];
+                    row[x] = ((uint32_t)c.r << 16)
+                           | ((uint32_t)c.g << 8) | c.b;
+                }
+            }
+            SDL_UnlockTexture(tex);
+        }
+        SDL_RenderClear(ren);
+        SDL_RenderTexture(ren, tex, NULL, NULL);
+        SDL_RenderPresent(ren);
+        if (!moved) return;
+        SDL_Delay(16);
+    }
+}
+
 void menu_show_until_dismissed(const menu_screen *m, const char *title,
                                uint8_t scale)
 {
@@ -723,8 +781,27 @@ void menu_show_until_dismissed(const menu_screen *m, const char *title,
     /* The briefing is two pictures stacked with different palettes - see
      * menu_screen.split. Every other screen leaves split at zero. */
     g_split = m->split;
-    g_split_pal = m->split ? m->palette_low : NULL;
-    view_interact(m->pix, MENU_W, MENU_H, m->palette, title, scale, any, 2);
+
+    /* Up from black, the way the original arrives at it. */
+    for (uint8_t i = 0; i < 16; i++) {
+        g_fade_tgt[i] = m->palette[i];
+        g_fade_low_tgt[i] = m->palette_low[i];
+        g_fade_cur[i].r = g_fade_cur[i].g = g_fade_cur[i].b = 0;
+        g_fade_low_cur[i].r = g_fade_low_cur[i].g = g_fade_low_cur[i].b = 0;
+    }
+    g_split_pal = m->split ? g_fade_low_cur : NULL;
+    view_interact_anim(m->pix, MENU_W, MENU_H, g_fade_cur, title, scale,
+                       any, 2, fade_tick, NULL);
+
+    /* And back down to black on the way out. The original fades the screen
+     * away before it draws the next one; cutting straight to the level is
+     * the thing that looks wrong even when every pixel is right. */
+    for (uint8_t i = 0; i < 16; i++) {
+        g_fade_tgt[i].r = g_fade_tgt[i].g = g_fade_tgt[i].b = 0;
+        g_fade_low_tgt[i].r = g_fade_low_tgt[i].g = g_fade_low_tgt[i].b = 0;
+    }
+    view_fade_out(m->pix, MENU_W, MENU_H, title, scale);
+
     g_split = 0;
     g_split_pal = NULL;
 }
