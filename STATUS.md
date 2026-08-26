@@ -1147,34 +1147,40 @@ Each of these is stated as what was *checked*, not what was written.
   is worth remembering. The score moved 0.5% when it was fixed; the picture
   moved from wrong to right.
 
-- **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
-  port stepping the opening sequence, the animations and the clock once per
-  game frame):
+- **FIVE MINUTES, FRAME BY FRAME.** The level's expiration timer is 300
+  seconds at seventeen frames a second, so the run is **5,100 frames**. All
+  5,100 are recorded (`tools/record_level.py`, 319 MB) and 102 of them -
+  every fiftieth - are scored against the port:
 
-  | frames | play area | panel |
+  | over 5,100 frames | play area | panel |
   | --- | --- | --- |
-  | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
-  | 700, worst / mean / best | 99.78 / **99.85** / 99.86% | 99.45 / **99.90** / **100.00** |
+  | worst / mean / best | 99.78 / **99.86** / 99.86% | 99.61 / **99.91** / **100.00** |
 
-  Both halves of the screen are now within a fifth of a per cent. What is left
-  in the play area is the **mouse cursor** - which lands wherever the pointer
-  is and says nothing about the reconstruction - and the exit's flames.
+  The important thing is not the mean but that it is **flat**. Frame 50 and
+  frame 5,000 score the same to two decimal places. Nothing drifts, nothing
+  accumulates, and the lemmings are still where the original's are after five
+  minutes of simulation.
 
-  Over 700 frames the play area falls from 99.86% to about 99.34% and then
-  **flattens** - that is the ten lemmings coming out one by one and then
-  walking, nothing else drifting.
+  **The clock is exact at every one of them** - the TIME field differs in 0
+  of 512 pixels at frames 0, 850, 867, 1700, 2550, 3400, 4250, 5000, 5050 and
+  5099.
 
-  **The clock is exact, not close.** Comparing only the TIME field - screen
-  x 288..320, rows 160..175 - against the original at frames 60, 150, 300,
-  450 and 690 gives **0 differing pixels of 512** every time. Forty seconds
-  of game time, forty ticks, no drift. `make test` now asserts the same
-  sequence against the two readings taken out of the running game.
+  Getting that took one more correction. With the countdown reloading at 17
+  and *starting* at 17, the port and the original disagreed on exactly one
+  frame in every seventeen - 850, 867, 884 - and agreed on both neighbours.
+  The original's timer is image 0x0213, which sits later in the play loop than
+  image 0x018F where a frame is finished and captured, so **a frame shows the
+  time from before its own pass's tick**. The port defers its first tick by
+  one frame to match. A whole-frame comparison would have called that 56
+  pixels of noise; sampling the one field it belongs to is what made it a
+  question with an answer.
 
-  The panel this session: 86.41% for the artwork alone, 89.34% once the status
-  line was placed at its real origin with the clock running, **90.73%** once
-  the glyphs went to the right planes. What is left is the OUT and IN counts,
-  the minimap contents and the selected button - all of which need the lemming
-  simulation. `tools/prove.sh` is unchanged at **100.00%**.
+- **What is left, and what it is not.** Of the play area's residue at a
+  typical frame, **28 pixels are the mouse cursor**, which lands wherever the
+  pointer is. The other **47 are around the exit**: its flames are drawn one
+  pixel to the left, and its bottom two rows fill where the original leaves
+  terrain showing. Both are the same object's placement, and neither has been
+  read yet.
 
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte

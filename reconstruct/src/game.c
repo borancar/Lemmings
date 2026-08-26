@@ -937,7 +937,13 @@ void level_status_reset(const level *lv)
     g_status[ST_SEC_TENS]  = '0';
     g_status[ST_SEC_UNITS] = '0';
     g_tick_load = LEVEL_FRAMES_PER_SECOND;
-    g_tick      = LEVEL_FRAMES_PER_SECOND;
+    /* One MORE than the reload, for the first second only. The original's
+     * timer is image 0x0213, which sits later in the play loop than image
+     * 0x018F, where a frame is finished and captured - so a frame shows the
+     * time from before its own pass's tick. Measured: with both at 17 the
+     * port and the original disagree on exactly one frame in every
+     * seventeen - 850, 867, 884 - and agree on every frame either side. */
+    g_tick      = LEVEL_FRAMES_PER_SECOND + 1;
 }
 
 /* Transcribed from image 0x0213. The time is kept as ASCII in the line
