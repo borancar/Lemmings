@@ -29,7 +29,7 @@ numbers, re-measured on the current build:
 
 | | |
 | --- | --- |
-| **the game's own screen**, all 5,100 frames of the expiration timer | play area **exactly 28 differing — the mouse cursor — on 5,100 of 5,100**; panel exact on 5,099 (frame 0 is the fade-in). This is the WINDOW path, what a player sees, not the harness (`tools/compare_screen.py`) |
+| **the game's own screen**, all 5,100 frames of the expiration timer | play area **exact — ZERO differing — on 5,059 of 5,100**, cursor included; panel exact on 5,099 (frame 0 is the fade-in). The other 41 are frames 0..40, where the recorded run's pointer had not yet moved off its start position. This is the WINDOW path, what a player sees, not the harness (`tools/compare_screen.py`) |
 | the original's composed **level terrain** vs the port | **100.00%** — 49,741 pixels, 0 differing (`tools/prove.sh`) |
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
