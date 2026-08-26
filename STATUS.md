@@ -861,6 +861,35 @@ The record now carries the two trigger bytes the original keeps at `[si+0x2B]`
 and `[si+0x2C]`, because the basher's guard at image `0x034DC` reads one of
 them. A lookup that only returned its answer left the basher no way to ask.
 
+### The basher, read but not written
+
+Everything below is read and none of it is transcribed, so the next session
+starts here rather than at the disassembler.
+
+**Assigning**, image `0x034CE`: refuse if `[si+8] & 0xF76F`; then take
+`[si+0x2B] & 0x0F` - the trigger cell two rows up and two along the way it
+faces, which image `0x02EFC` stored - and refuse if it equals 7 facing right
+or 8 facing left, and divert to image `0x03287` if it is 9 (steel). Then
+`flags = (flags & 0xF56F) | 0x200`, hot spot (-8, -10), state `0x20`, and
+the sprite is `0x50` = 80 bytes a frame with the mask `0x3C` in.
+
+**Doing it**, image `0x0287D`: a counter of THIRTY-TWO, `and [si+0x28], 0x1F`.
+Its low nibble decides:
+
+| | |
+| --- | --- |
+| 2..5 | image `0x028A1` calls the terrain removal with the slice index `al - 2` |
+| 5 | image `0x028AE` then looks at what is left ahead |
+| 0x0B..0x1F | image `0x0293A` walks it forward one and falls if nothing is under it |
+| otherwise | nothing |
+
+**The masks**, image `0x05FAC`: the slice index is multiplied by 240 (image
+`0x05FB4`'s two shifts and a subtract), image `0x0600B` adds `0x3C0` when the
+direction is `0xFF`, and the shift comes from `(x + hot_x) & 7`. So it is two
+directions of four slices of eight shifts of ten rows of three bytes - 1,920
+bytes - and like the crater's it will be a runtime store rather than anything
+in a `.dat`.
+
 ### Level 2, where lemmings fall and die
 
 `tools/record_level.py --level N` pokes `ds:0x1F6B` before the briefing reads
