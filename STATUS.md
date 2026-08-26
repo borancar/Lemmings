@@ -1154,7 +1154,7 @@ Each of these is stated as what was *checked*, not what was written.
 
   | over 5,100 frames | play area | panel |
   | --- | --- | --- |
-  | worst / mean / best | 99.78 / **99.86** / 99.86% | 99.61 / **99.91** / **100.00** |
+  | worst / mean / best | 99.83 / **99.90** / 99.90% | 99.61 / **99.91** / **100.00** |
 
   The important thing is not the mean but that it is **flat**. Frame 50 and
   frame 5,000 score the same to two decimal places. Nothing drifts, nothing
@@ -1175,12 +1175,24 @@ Each of these is stated as what was *checked*, not what was written.
   pixels of noise; sampling the one field it belongs to is what made it a
   question with an answer.
 
-- **What is left, and what it is not.** Of the play area's residue at a
-  typical frame, **28 pixels are the mouse cursor**, which lands wherever the
-  pointer is. The other **47 are around the exit**: its flames are drawn one
-  pixel to the left, and its bottom two rows fill where the original leaves
-  terrain showing. Both are the same object's placement, and neither has been
-  read yet.
+- **The exit's flames were an animation phase, not a position.** Two objects
+  sit at the same x=848 and only one of them was offset, which is not what a
+  misplaced sprite looks like. Comparing the port's frame 399, 400 and 401
+  against the original's 400 settles it: the exit region scores 51, 47 and
+  **23**, so the looping flame is exactly one animation step ahead of the
+  port's. One extra `level_anim_step` before the first frame matches it - the
+  entrance is unaffected because it is gated shut until frame 35.
+
+  The residue is now **identical at every frame - 51 pixels, of which 28 are
+  the cursor**. That it does not vary at all is the useful part: what is left
+  is static, so nothing about the simulation is still drifting.
+
+- **The last 23 pixels** are the exit object's bottom two rows, where the port
+  fills a solid run from its mask and the original shows terrain with only two
+  pairs of object pixels in it. The mask in `vgagr0.dat` really is dense
+  there, so the port is drawing what the data says; the original is doing
+  something else with it that has not been read. 23 pixels of 51,200 is
+  **0.045%**.
 
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte

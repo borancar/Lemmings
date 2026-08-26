@@ -231,6 +231,10 @@ static int render_level(const char *data, const char *file, uint32_t which,
              * around the entrance. */
             static level_anim st[LEVEL_ANIM_MAX];
             level_anim_init(st, &lv, &g);
+            /* One step before the first frame. Measured: without it the
+             * exit's flames are exactly one animation frame behind the
+             * original's at every frame checked. */
+            level_anim_step(st, &lv);
             level_start_reset();
             level_release_reset(&lv);
             level_status_reset(&lv);
