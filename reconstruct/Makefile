@@ -33,7 +33,14 @@ $(BIN): $(CORE:.c=.o) src/main.o
 $(DEV_BIN): $(CORE:.c=.o) src/devmain.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-src/%.o: src/%.c
+# The headers are dependencies too. Without this line a change to game.h
+# leaves every .o alone, the binary keeps the old constants, and the next
+# measurement is of a build that no longer exists in the source. That is the
+# stale-artefact trap CLAUDE.md records for capture files, and it applies just
+# as well to object files.
+HDRS := $(wildcard src/*.h)
+
+src/%.o: src/%.c $(HDRS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # The menu's input, checked rather than eyeballed: the test pushes synthetic

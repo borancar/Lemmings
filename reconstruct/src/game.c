@@ -1192,10 +1192,220 @@ void level_status_in(uint8_t percent)
     g_status[ST_IN_UNITS] = (char)(al + '0');
 }
 
+/* ======================================================================
+ * THE LEMMINGS - image 0x1F19, and the handler at image 0x2047 it reaches
+ * when [si+8] is zero.
+ *
+ * That word is a state bitmask and image 0x1F5E dispatches on it to sixteen
+ * handlers. With no player input it is zero on every lemming on every frame,
+ * so image 0x2047 - walking, and image 0x21B0 - falling, which it hands over
+ * to, are the whole of what a level does on its own. The other fourteen are
+ * the skills and are not read yet.
+ *
+ * Both are checked against the original's own array rather than against a
+ * screenshot: tools/probe_lemmings.py records it frame by frame and
+ * `--check` replays these rules over every step. 1,127 walker steps and 54
+ * faller steps, none wrong.
+ * ====================================================================== */
+#define LEM_X_MIN      0x10     /* image 0x2057 */
+#define LEM_X_MAX      0x680    /* image 0x205F */
+#define LEM_FALL_SPLAT 0x3C     /* image 0x2250 */
+#define LEM_SPAWN_DX   24       /* the entrance table at ds:0x0E98 holds */
+#define LEM_SPAWN_DY   14       /* 744,66 where the object is at 704,36 */
+/* The dot's colour, measured against a recorded frame the way the
+ * minimap's own index 7 was. */
+#define MINIMAP_DOT    2
+
+/* Image 0x5DC6: the row is `y - 0x10` and the byte `x >> 3`, and the plane it
+ * reads is the one terrain lives in - which is why GROUNDxO.DAT's fourth
+ * bitplane doubles as its mask, so the test is bit 3. */
+static int lem_solid(const uint8_t *lvl, uint16_t cw, uint16_t chh,
+                     int16_t x, int16_t y)
+{
+    int32_t cx = (int32_t)x - LEMMING_DX;
+    int32_t cy = (int32_t)y - LEMMING_DY;
+    if (cx < 0 || cx >= (int32_t)cw || cy < 0 || cy >= (int32_t)chh)
+        return 0;
+    return (lvl[(size_t)cy * cw + cx] & 8) != 0;
+}
+
+/* Image 0x2148, and image 0x214E which turns it round at the ceiling. */
+static void lem_settle(lemming *a, int16_t bp)
+{
+    a->y = bp;
+    if (bp + a->hot_y <= 10) {
+        a->y = (int16_t)(9 - a->hot_y);
+        a->dir = (int8_t)-a->dir;
+    }
+}
+
+/* Image 0x2047. */
+static void lem_walk(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 7);
+    a->x = (int16_t)(a->x + a->dir);
+    if (a->x < LEM_X_MIN || a->x >= LEM_X_MAX) {   /* image 0x2142 */
+        a->dir = (int8_t)-a->dir;
+        return;
+    }
+    if (lem_solid(lvl, cw, chh, a->x, a->y)) {
+        for (int8_t k = 1; k < 4; k++)             /* image 0x20E9 */
+            if (!lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y - k))) {
+                lem_settle(a, (int16_t)(a->y - (k - 1)));
+                return;
+            }
+        for (int8_t k = 4; k < 8; k++) {           /* image 0x2169 */
+            if (!lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y - k))) {
+                a->flags |= 8;
+                a->anim = 8;
+                lem_settle(a, (int16_t)(a->y - 2));
+                return;
+            }
+        }
+        a->dir = (int8_t)-a->dir;                  /* image 0x2142 */
+        return;
+    }
+    for (int8_t k = 1; k < 4; k++)                 /* image 0x20D6 */
+        if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y + k))) {
+            a->y = (int16_t)(a->y + k);
+            if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;
+            return;
+        }
+    /* image 0x209A: nothing under it, so it falls */
+    a->y = (int16_t)(a->y + 4);
+    a->flags |= 4;
+    a->anim = 0;
+    a->fall = 3;
+    a->state = 4;
+    if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;
+}
+
+/* Image 0x21B0 and image 0x2202. */
+static void lem_fall(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 3);
+    for (int8_t k = 0; k < 3; k++) {
+        if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y + k))) {
+            a->y = (int16_t)(a->y + k);            /* image 0x224D */
+            if (a->fall <= LEM_FALL_SPLAT) {       /* image 0x22A3 */
+                a->flags = 0;
+                a->anim  = 0;
+                a->state = 9;
+            } else {
+                a->flags = 1;                      /* image 0x2256: splat */
+                a->anim  = 0;
+                a->dir   = 0;
+                a->state = 0;
+            }
+            return;
+        }
+        if (a->y + k + 1 >= LEMMING_DEAD_Y) {      /* image 0x2210 */
+            a->y = (int16_t)(a->y + k + 1);
+            a->alive = 0xFF;
+            return;
+        }
+    }
+    a->fall = (uint8_t)(a->fall + 3);              /* image 0x223A */
+    a->y = (int16_t)(a->y + 3);
+    if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;
+}
+
+/* THE PORT'S OWN. The original clears the whole record when it releases one
+ * - image 0x030F1 - and never needs an array-wide reset, because the count at
+ * ds:0x43 is what says which entries mean anything. */
+void lemmings_reset(lemming *lem)
+{
+    for (uint8_t k = 0; k < LEMMING_MAX; k++) {
+        lem[k].alive = 0xFF;
+        lem[k].state = 0;
+    }
+}
+
+/* Image 0x030F1: the record is cleared, then filled from the entrance table
+ * at ds:0x0E98 - which for "Just dig!" holds 744, 66 against an entrance
+ * object at 704, 36. */
+void lemmings_release(lemming *lem, uint8_t n, const level *lv)
+{
+    lemming *a;
+    if (n >= LEMMING_MAX) return;
+    a = &lem[n];
+    a->x = a->y = 0;
+    for (uint16_t i = 0; i < lv->num_objects; i++)
+        if ((lv->objects[i].id & 0xFF) == 1) {
+            a->x = (int16_t)(lv->objects[i].x + LEMMING_DX + LEM_SPAWN_DX);
+            a->y = (int16_t)(lv->objects[i].y + LEMMING_DY + LEM_SPAWN_DY);
+            break;
+        }
+    a->hot_x = -8;                                 /* image 0x312F */
+    a->hot_y = -10;
+    a->flags = 4;                                  /* image 0x310F */
+    a->fall  = 3;                                  /* image 0x312B */
+    a->alive = 0;
+    a->dir   = 1;                                  /* image 0x3103 */
+    a->anim  = 0;
+    a->state = 4;                                  /* image 0x3139 */
+}
+
+/* One pass of image 0x1F19's walk over the array: image 0x1F3C skips the dead
+ * and image 0x1F5E dispatches on [si+8]. Only the zero case is read, so only
+ * that is stepped. */
+void lemmings_step(lemming *lem, uint8_t n,
+                   const uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
+        lemming *a = &lem[k];
+        if (a->alive == 0xFF) continue;            /* image 0x1F3C */
+        /* Anything set in flags dispatches to a handler that has not been
+         * read, so those are left alone rather than stepped wrongly. */
+        if (a->state == 9 && a->flags == 0)
+            lem_walk(a, lvl, cw, chh);
+        else if (a->state == 4 && a->flags == 4)
+            lem_fall(a, lvl, cw, chh);
+    }
+}
+
+/* Image 0x03647: the count image 0x03634 accumulates as it walks, and what
+ * image 0x3684 puts in the OUT field. */
+uint8_t lemmings_live(const lemming *lem, uint8_t n)
+{
+    uint8_t live = 0;
+    for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++)
+        if (lem[k].alive != 0xFF) live++;          /* image 0x03647 */
+    return live;
+}
+
+/* Image 0x06FE2: the row is `(y - 0x20) >> 3` and the pixel `x >> 4`, and a
+ * y of 0xB0 or more is off the map. */
+void panel_minimap_dots(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                        const lemming *lem, uint8_t n,
+                        uint16_t x0, uint16_t y0)
+{
+    for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
+        const lemming *a = &lem[k];
+        int16_t ay;
+        if (a->alive == 0xFF) continue;
+        if (a->y >= 0xB0) continue;                /* image 0x06FE5 */
+        ay = (int16_t)(a->y - 0x20);
+        if (ay < 0) continue;                      /* image 0x06FF0 */
+        {
+            uint16_t r = (uint16_t)(y0 + (ay >> 3));
+            uint16_t p = (uint16_t)(x0 + (a->x >> 4));
+            if (r < dst_h && p < dst_w)
+                dst[(size_t)r * dst_w + p] = MINIMAP_DOT;
+        }
+    }
+}
+
 #define MINIMAP_W      104      /* 13 bytes, image 0x0794E: cx = 0x0D */
 #define MINIMAP_H      20       /* image 0x079F1: cx = 0x14 */
 #define MINIMAP_XSTEP  16       /* image 0x07A2F: si += 2, two bytes */
 #define MINIMAP_YSTEP  8        /* image 0x079FB: si += 0x680, eight rows */
+/* Image 0x07992: si += 0xD00 before anything else, which at the canvas's
+ * 208-byte stride is SIXTEEN rows. Dropping it puts the whole map two rows
+ * out and - the tell - stops the lemming dots landing on the ground they are
+ * standing on, because image 0x06FE2's row is (y - 0x20) >> 3 and the two
+ * only agree when this is here. */
+#define MINIMAP_YFROM  16
 #define MINIMAP_VOTE   8        /* image 0x07A4E: cmp dh, 8 / jg */
 #define MINIMAP_INK    7
 #define MINIMAP_X      241      /* screen 209, in the panel's 352-wide line */
@@ -1299,7 +1509,7 @@ void panel_minimap(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                    uint16_t x0, uint16_t y0)
 {
     for (uint16_t r = 0; r < MINIMAP_H; r++) {
-        uint16_t y = (uint16_t)(r * MINIMAP_YSTEP);
+        uint16_t y = (uint16_t)(MINIMAP_YFROM + r * MINIMAP_YSTEP);
         uint16_t py = (uint16_t)(y0 + r);
         if (py >= dst_h) break;
         for (uint16_t p = 0; p < MINIMAP_W; p++) {

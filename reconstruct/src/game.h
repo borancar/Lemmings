@@ -264,11 +264,54 @@ void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                       const uint8_t *sec, uint32_t sec_len,
                       uint8_t value, uint16_t x0, uint16_t y0);
+/* ====================================================================
+ * THE LEMMINGS - the array at ds:0x88, ds:0x43 records of 0x2D bytes.
+ *
+ * The fields kept here are the ones that have been read; the record has more.
+ * x and y are the ORIGINAL's, not the canvas's: image 0x5DC6 probes the
+ * terrain at row `y - 0x10` and byte `x >> 3`, and the port's canvas sits 16
+ * pixels along from the original's - the "offset 16" tools/prove.sh prints.
+ * Keeping the original's numbers means the transcribed rules read as they do
+ * in the disassembly, and the two offsets are applied in one place.
+ * ==================================================================== */
+#define LEMMING_MAX      16
+#define LEMMING_DX       16     /* prove.sh's own offset 16 */
+#define LEMMING_DY       16     /* image 0x5DC6: di = [si+2] - 0x10 */
+#define LEMMING_DEAD_Y   0xB4   /* image 0x2210 */
+
+typedef struct {
+    int16_t  x, y;        /* +0x00, +0x02 */
+    int16_t  hot_x, hot_y;/* +0x04, +0x06 */
+    uint16_t flags;       /* +0x08 - the state bitmask image 0x1F5E dispatches on */
+    uint8_t  fall;        /* +0x23 - the fall counter, +3 a frame */
+    uint8_t  alive;       /* +0x26 - 0xFF is dead */
+    int8_t   dir;         /* +0x27 */
+    uint8_t  anim;        /* +0x28 */
+    uint8_t  state;       /* +0x29 - 4 falling, 9 walking */
+} lemming;
+
+/* One pass of image 0x1F19 over the array, for the states that have been
+ * read. `lvl` is the port's own TERRAIN canvas - the buffer the original
+ * probes has no objects in it. */
+void lemmings_reset(lemming *lem);
+void lemmings_release(lemming *lem, uint8_t n, const level *lv);
+void lemmings_step(lemming *lem, uint8_t n,
+                   const uint8_t *lvl, uint16_t cw, uint16_t chh);
+uint8_t lemmings_live(const lemming *lem, uint8_t n);
+
+/* Their dots on the minimap - image 0x06FE2. */
+void panel_minimap_dots(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                        const lemming *lem, uint8_t n,
+                        uint16_t x0, uint16_t y0);
+
 /* The minimap: 104 x 20, a pixel per 16 x 1 span of the level, set when more
  * than eight of those sixteen are terrain. Transcribed from images 0x0796F,
  * 0x07A25 and 0x07A39; where it sits is measured. */
 #define MINIMAP_AT_X 241
-#define MINIMAP_AT_Y 17
+/* 19 and not 17: the sampler starts sixteen canvas rows down (image 0x07992)
+ * so the picture rides two stash rows higher, and the origin comes down to
+ * meet it. Swept: 201, 98, 12, 93, 194 differing pixels at 17..21. */
+#define MINIMAP_AT_Y 19
 /* The minimap's viewport box - 24 minimap pixels wide at scroll >> 4.
  * Transcribed from image 0x07A5A. */
 #define VIEWPORT_AT_Y 18

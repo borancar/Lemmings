@@ -1081,6 +1081,38 @@ Each of these is stated as what was *checked*, not what was written.
   The dots on the minimap at image 0x06FE2 need only x and y, so they come
   free with the simulation.
 
+- **The simulation runs in the port.** The walker (image 0x2047), the faller
+  (image 0x21B0) and the release (image 0x030F1) are transcribed, and both
+  motions are checked against the original's own array rather than a
+  screenshot - `probe_lemmings.py --check` replays them over every recorded
+  step: **1,127 walker steps and 54 faller steps, none wrong**.
+
+  A released lemming comes from the entrance table at `ds:0x0E98`, four bytes
+  an entrance, cycling `count & 3`. For "Just dig!" it holds **744, 66**
+  against an entrance object at 704, 36 - so the entrance plus (24, 14) - and
+  it starts falling with the counter at 3.
+
+  The faller: probe y, y+1, y+2; land on the first solid one; else `y += 3`
+  and the counter `+= 3`. Landing under `0x3C` walks, over it splats.
+
+- **Two bugs the dots found, which the terrain alone could not.** Image
+  0x07992 begins the minimap sampler with `si += 0xD00`, which at the canvas's
+  208-byte stride is **sixteen rows** - and I had dropped it. The terrain
+  looked right without it because a fitted origin absorbed the error. What
+  gave it away is that the dots would not sit on the ground: image 0x06FE2's
+  row is `(y - 0x20) >> 3`, and the two only agree when the sampler starts at
+  16. Putting it back and sweeping the origin gives 201, 98, **12**, 93, 194
+  differing pixels at 17..21 - a peak so sharp it is not a fit.
+
+  The dot's colour is **2**, measured; the map's own ink is 7.
+
+- **The Makefile did not depend on the headers.** `src/%.o: src/%.c` alone
+  means a change to `game.h` leaves every object file alone and the binary
+  keeps the old constants - so the first origin sweep returned the *same*
+  number five times and I nearly read that as "the origin does not matter".
+  It is the stale-artefact trap this file records for captures, applied to
+  object files. Fixed.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
   game frame):
@@ -1088,13 +1120,11 @@ Each of these is stated as what was *checked*, not what was written.
   | frames | play area | panel |
   | --- | --- | --- |
   | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
-  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 98.91 / **99.58** / 99.70% |
+  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 99.46 / **99.91** / **100.00** |
 
-  **The panel's remaining 53 pixels are the lemming dots on the minimap.**
-  Everything still outstanding - those, and the play area's half a per cent -
-  is now the lemming simulation: the 45-byte records at `ds:0x88` walked by
-  image 0x03634, drawn by image 0x0706F and plotted on the map by image
-  0x06FE2.
+  The panel reaches **100.00%** on some frames. What is left in the play area
+  is the lemming *sprites* - image 0x0706F, and the sprite data behind it,
+  which is the last thing nobody has read.
 
   Over 700 frames the play area falls from 99.86% to about 99.34% and then
   **flattens** - that is the ten lemmings coming out one by one and then

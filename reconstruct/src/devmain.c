@@ -113,6 +113,7 @@ static int load_level(const char *data, const char *file, uint32_t which,
 /* The frame number within a level. A byte wraps at 256 and the
  * five-minute timer runs to 5,100 frames, so this is a word. */
 static uint16_t g_obj_frame;
+static lemming g_lem[LEMMING_MAX];
 /* Bake the objects into the terrain instead of drawing them as the
  * original does. Only for comparing the two - see render_objects. */
 static int g_baked_objects;
@@ -190,6 +191,18 @@ static int render_level(const char *data, const char *file, uint32_t which,
         dat_free(&gfx);
         return 1;
     }
+    /* The lemmings and the minimap both probe the TERRAIN, and the buffer the
+     * original probes has no objects in it - they are drawn at display time.
+     * So a copy is kept before they go on. */
+    uint8_t *terrain = malloc((size_t)c.w * c.h);
+    if (!terrain) {
+        fprintf(stderr, "out of memory\n");
+        canvas_free(&c);
+        dat_free(&gfx);
+        return 1;
+    }
+    memcpy(terrain, c.pix, (size_t)c.w * c.h);
+
     if (objects && gfx.count >= 2) {
         if (g_baked_objects) {
             /* render_objects bakes the objects into the terrain, which is
@@ -221,8 +234,21 @@ static int render_level(const char *data, const char *file, uint32_t which,
             level_start_reset();
             level_release_reset(&lv);
             level_status_reset(&lv);
-            for (uint16_t k = 0; k < g_obj_frame; k++)
-                level_frame_step(st, &lv);
+            lemmings_reset(g_lem);
+            {
+                /* The lemmings probe the TERRAIN, which is what the canvas
+                 * held before the objects went on it - so a copy is kept. */
+                uint8_t was = level_released();
+                for (uint16_t k = 0; k < g_obj_frame; k++) {
+                    level_frame_step(st, &lv);
+                    if (level_released() != was) {
+                        lemmings_release(g_lem, was, &lv);
+                        was = level_released();
+                    }
+                    lemmings_step(g_lem, was, terrain, c.w, c.h);
+                }
+                level_status_out(lemmings_live(g_lem, was));
+            }
             level_anim_draw(st, &lv, gfx.sections[1].data,
                             gfx.sections[1].size, c.pix, c.w, c.h, 0);
         }
@@ -287,11 +313,14 @@ static int render_level(const char *data, const char *file, uint32_t which,
                 panel_highlight(pp, PANEL_LINE_W, PANEL_ART_H,
                                 PANEL_SEL_BUTTON);
                 panel_minimap(pp, PANEL_LINE_W, PANEL_ART_H,
-                              c.pix, c.w, c.h, MINIMAP_AT_X, MINIMAP_AT_Y);
+                              terrain, c.w, c.h, MINIMAP_AT_X, MINIMAP_AT_Y);
                 /* The port does not scroll yet, so the view is where the
                  * level says it starts. */
                 panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, lv.start_x,
                                MINIMAP_AT_X, VIEWPORT_AT_Y);
+                panel_minimap_dots(pp, PANEL_LINE_W, PANEL_ART_H, g_lem,
+                                   level_released(), MINIMAP_AT_X,
+                                   MINIMAP_AT_Y);
                 /* The status line is NOT drawn. It belongs sixteen rows down
                  * - screen row 176, which is PANEL_BASE / PANEL_STRIDE - but
                  * what writes the counts into the template has not been read,
@@ -329,6 +358,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
         snprintf(title, sizeof(title), "PC Lemmings - %s", lv.name);
         view_run(&c, g.palette, title, lv.start_x, scale);
     }
+    free(terrain);
     canvas_free(&c);
     return 0;
 }
