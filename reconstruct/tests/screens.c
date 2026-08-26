@@ -598,13 +598,27 @@ int main(int argc, char **argv)
         lemmings_step(&a, 1, ground, W, H);
         ck("the frame after, it is on anim 0 and has dug",
            a.anim == 0 && a.y == y0 + 1, "the first dig did not happen");
-        /* And the row it cleared is the one it was STANDING on - image
-         * 0x02418 probes before image 0x0241D increments. Clearing the new
-         * row instead leaves a lip of terrain under its feet. */
-        ck("and the row it cleared is the one it stood on",
-           ground[(y0 - 16) * W + (a.x - 5 - 16)] == 0
-           && ground[(y0 + 1 - 16) * W + (a.x - 5 - 16)] == 8,
-           "the shaft starts a row low");
+        /* The FIRST frame cuts three rows - image 0x0250C does y-2 and y-1
+         * before falling into the ordinary dig at image 0x0240F for the row
+         * it is standing on - and the row below is left alone. The column
+         * is x-4: 0x0FF8's value bits 3..11 are PIXELS 4..12, because the
+         * leftmost pixel is the most significant bit. */
+        const int32_t col = a.x - 4 - 16;
+        ck("the first frame cuts three rows",
+           ground[(y0 - 2 - 16) * W + col] == 0
+           && ground[(y0 - 1 - 16) * W + col] == 0
+           && ground[(y0 - 16) * W + col] == 0,
+           "image 0x0250C's two extra rows are missing");
+        ck("and stops there",
+           ground[(y0 + 1 - 16) * W + col] == 8
+           && ground[(y0 - 3 - 16) * W + col] == 8,
+           "the shaft runs past what image 0x0250C cuts");
+        ck("the span is x-4 to x+4",
+           ground[(y0 - 16) * W + (a.x - 4 - 16)] == 0
+           && ground[(y0 - 16) * W + (a.x + 4 - 16)] == 0
+           && ground[(y0 - 16) * W + (a.x - 5 - 16)] == 8
+           && ground[(y0 - 16) * W + (a.x + 5 - 16)] == 8,
+           "the nine-pixel span is not where the mask puts it");
 
         int moved = 0;
         for (uint8_t i = 1; i <= 7; i++) {

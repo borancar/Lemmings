@@ -1470,6 +1470,9 @@ static int dig_row(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh,
     return had;
 }
 
+/* Transcribed from image 0x023F3, with its first frame at image 0x0250C.
+ * Sixteen animation frames, digging on the two where the counter comes round
+ * to 0 and to 8 - image 0x02406 and image 0x02408. */
 static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     if (a->anim == DIG_ANIM_START) {
