@@ -719,15 +719,21 @@ Each of these is stated as what was *checked*, not what was written.
   modifies it at run time, that has not been read, and it is left as the file
   has it rather than patched to match one capture.
 
-- **The code screen's last 57 pixels are the entry caret** - the original
-  draws a bar over the first code slot where the port draws the plain button.
-  An animated element, like the banner, and not yet drawn: the screen scores
-  **100.00%** on a capture taken while it is down and 99.97% while it is up,
-  which is the blink and not a difference in the drawing.
+- **The code screen's caret is drawn, and it was never a bar.** This section
+  described it as "a bar over the first code slot", which is what an
+  underscore looks like when you have only ever seen it in a capture.
 
-  This is now the only animated thing on these four screens the port cannot be
-  told the phase of. The banner's scroll comes from `ds:0x21` and the five
-  walkers from `ds:0x4960`; the caret's own variable has not been found.
+  Image `0x04C7E` is the entry loop and image `0x04CB8` is the whole of the
+  blink: every `0x14` retraces - the counter at `ds:0x491E`, reloaded at image
+  `0x04CB3` - it swaps the cell the cursor is on between `'.'` (0x2E) and
+  `'_'` (0x5F). Image 0x04C92 keeps the pair in CX.
+
+  So its phase is readable like every other animated thing here:
+  `verify_menu.py` reads the ten cells at `ds:0x4DF2` **both sides of the
+  screen dump** and hands the port `--caret`. Equal both sides means the
+  blink did not turn over during the dump; different means the capture is
+  between two pictures and is not scored against either, which happens often
+  enough to matter - one run needed two retries. Both scored **100.00%**.
 
 ## Into a level
 

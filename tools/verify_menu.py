@@ -201,7 +201,15 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
         cmd += ["--cmd", f"read i+{ANIM_VAR:#x} {ANIM_N * ANIM_REC}"]
         cmd += ["--cmd", f"screen {os.path.abspath(path)}",
                 "--cmd", f"read i+{SCROLL_VAR:#x} 2",
-                "--cmd", f"read i+{ANIM_VAR:#x} {ANIM_N * ANIM_REC}",
+                "--cmd", f"read i+{ANIM_VAR:#x} {ANIM_N * ANIM_REC}",]
+        if screen == "code":
+            # BOTH SIDES of the dump, like the walkers. The caret is up for
+            # twenty retraces and down for twenty, so a single read taken
+            # after the dump can easily describe the other half of the blink -
+            # and did: a run whose cells read all dots scored 57 pixels of
+            # caret the capture plainly had.
+            cmd += ["--cmd", f"read i+{CODE_CELLS_VAR:#x} {CODE_CELLS_N}"]
+        cmd += [
                 "--", "--run-seconds", str(seconds)]
         print(f"driving the original to its main menu"
               f"{f', asking for rating {rating}' if rating else ''} ...")
@@ -282,6 +290,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
 
         scroll = None
         cells = None
+        cell_reads = []
         cpend = False
         adapter = None
         apend2 = False
@@ -318,7 +327,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                       if len(t) == 2 and all(c in "0123456789abcdefABCDEF"
                                              for c in t)]
                 if len(by) >= CODE_CELLS_N:
-                    cells = by[:CODE_CELLS_N]
+                    cell_reads.append(by[:CODE_CELLS_N])
                 cpend = False
                 continue
             if f"read i+{ADAPTER_VAR:#x}" in line:
@@ -352,6 +361,21 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                 # and leaving the loop here is exactly why it came back None.
                 pend = False
                 continue
+        # Equal both sides means the blink did not turn over during the
+        # dump; different means the capture is between two pictures and is
+        # not scored against either.
+        if len(cell_reads) == 2 and cell_reads[0] == cell_reads[1]:
+            cells = cell_reads[0]
+        elif len(cell_reads) == 2:
+            a = "".join(chr(c) if 32 <= c < 127 else "?" for c in cell_reads[0])
+            b = "".join(chr(c) if 32 <= c < 127 else "?" for c in cell_reads[1])
+            print(f"  the caret blinked across the screen dump: {a!r} then "
+                  f"{b!r}. The capture is between two pictures, so it is not "
+                  f"scored against either.")
+            cells = None
+        elif cell_reads:
+            cells = cell_reads[0]
+
         if adapter is not None:
             print(f"  the palette path: ds:0x1F7C reads {adapter}, so the "
                   f"{'DAC (18-bit, ds:0x25F0)' if adapter == 4 else 'EGA ATTRIBUTE table (ds:0x25E8)'}"
@@ -384,7 +408,8 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                 "this capture shows is unknown. That is a failure, not a pass.")
         if got > 3:
             raise SystemExit(f"ds:0x1F6E reads {got}, which is not a rating")
-        if got == rating and anim is not None:
+        ambiguous = anim is None or (screen == "code" and cells is None)
+        if got == rating and not ambiguous:
             return path, got, scroll, anim, cells
         if got == rating:
             # The rating is right and only the walkers' phase is ambiguous.
