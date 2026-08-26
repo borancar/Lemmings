@@ -211,8 +211,15 @@ static int render_level(const char *data, const char *file, uint32_t which,
              * around the entrance. */
             static level_anim st[LEVEL_ANIM_MAX];
             level_anim_init(st, &lv, &g);
-            for (uint8_t k = 0; k < g_obj_frame; k++)
+            level_start_reset();
+            /* One pass of the level's frame: the opening sequence first -
+             * image 0x019D is the play loop's first line - then the
+             * animations. The entrance stays shut until frame 35 because
+             * level_start_step is what opens it. */
+            for (uint8_t k = 0; k < g_obj_frame; k++) {
+                level_start_step();
                 level_anim_step(st, &lv);
+            }
             level_anim_draw(st, &lv, gfx.sections[1].data,
                             gfx.sections[1].size, c.pix, c.w, c.h, 0);
         }

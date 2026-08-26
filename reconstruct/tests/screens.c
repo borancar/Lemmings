@@ -240,18 +240,39 @@ int main(int argc, char **argv)
                 if (ground_load(p2, &g, &e) == 0) {
                     level_anim st[LEVEL_ANIM_MAX];
                     level_anim_init(st, &lv, &g);
+                    level_start_reset();
+                    /* It does not start straight away. Image 0x0361 sets
+                     * ds:0x55 at play-loop frame 0x23, and image 0x07C1E
+                     * tests that byte before animating object id 1 - so the
+                     * trapdoor is held shut for the first 35 frames. Watching
+                     * the running game agrees: the 0xFF arrives from image
+                     * 0x394 at frame 35. Until then it sits on its start
+                     * frame, which is 1, so ink is 750. */
+                    int shut = 1;
+                    for (int k = 0; k < 35; k++) {
+                        level_start_step();
+                        level_anim_step(st, &lv);
+                        if (st[0].ink != 750) shut = 0;
+                    }
+                    ck("the entrance stays shut for 35 frames",
+                       shut, "it started animating early");
+
                     static const uint16_t WANT[10] = {
                         750, 1500, 2250, 3000, 3750, 4500, 5250, 6000, 6750, 0
                     };
-                    int ok = 1;
-                    for (int k = 0; k < 10; k++) {
-                        if (st[0].ink != WANT[k]) ok = 0;
+                    int ok = (st[0].ink == WANT[0]);
+                    for (int k = 1; k < 10; k++) {
+                        level_start_step();
                         level_anim_step(st, &lv);
+                        if (st[0].ink != WANT[k]) ok = 0;
                     }
-                    ck("the entrance runs the original's own frames",
+                    ck("then runs the original's own frames",
                        ok, "ink sequence differs from the emulator's blits");
                     /* One-shot: after the wrap it must STAY on frame 0. */
-                    for (int k = 0; k < 20; k++) level_anim_step(st, &lv);
+                    for (int k = 0; k < 20; k++) {
+                        level_start_step();
+                        level_anim_step(st, &lv);
+                    }
                     ck("and then rests on frame 0, as a one-shot",
                        st[0].ink == 0, "it kept animating");
                 }

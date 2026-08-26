@@ -753,6 +753,69 @@ void level_anim_init(level_anim *st, const level *lv, const ground *g)
     }
 }
 
+/* ======================================================================
+ * THE LEVEL'S OPENING SEQUENCE - image 0x0361, called from the play loop's
+ * first line at image 0x019D.
+ *
+ *     al = [0x4e]            the phase flags
+ *     test al,4 / je         bit 2 clear: the opening is over
+ *     dl = [0x52]            the play loop's own frame counter, bumped at
+ *                            image 0x01A3 once per pass
+ *     cmp dl,0x0f / je       frame 15: a sound, and nothing else
+ *     cmp dl,0x23 / je 0x394 frame 35: OPEN THE ENTRANCE - image 0x394 sets
+ *                            ds:0x55 to 0xFF and plays the trapdoor
+ *     cmp dl,0x37 / je       frame 55: image 0x3AD, the music
+ *     jb / and al,0xfb       past 55: clear bit 2, the opening is done
+ *     [0x4e] = al
+ *
+ * ds:0x55 is what image 0x07C1E tests before animating object id 1, and what
+ * image 0x30B0 tests before releasing a lemming - so this one byte holds back
+ * both the trapdoor and the lemmings. Nothing in the image appears to CALL
+ * 0x394: it is reached by falling through this chain, and the return address
+ * on the stack when it runs is 0x1A0, which is the play loop's next line.
+ *
+ * The frame number was confirmed against the running game before it was
+ * transcribed: watching writes to ds:0x55 shows 0xFF arriving from image
+ * 0x394 at play-loop frame 35, which is 0x23.
+ * ====================================================================== */
+static uint8_t g_level_frame;      /* ds:0x52 */
+static uint8_t g_level_phase;      /* ds:0x4E */
+static uint8_t g_entrance_open;    /* ds:0x55 */
+
+/* Image 0x0436..0x0447 clears these when a level starts; bit 2 of ds:0x4E is
+ * what makes the opening sequence run at all. */
+void level_start_reset(void)
+{
+    g_level_frame  = 0;
+    g_level_phase  = 4;
+    g_entrance_open = 0;
+}
+
+/* THE PORT'S OWN, and only because these two bytes are `ds:0x55` and
+ * `ds:0x52` in the original and anything can read a byte of the data segment.
+ * They exist so a test can assert the trapdoor is shut without a screenshot. */
+uint8_t level_entrance_open(void) { return g_entrance_open; }
+uint8_t level_frame_counter(void) { return g_level_frame; }
+
+/* Transcribed from image 0x0361, with the counter bumped where the play loop
+ * bumps it - image 0x01A3, AFTER this call, not before. */
+void level_start_step(void)
+{
+    uint8_t al = g_level_phase;
+    if (al & 4) {
+        uint8_t dl = g_level_frame;
+        if (dl == 0x23) {
+            g_entrance_open = 0xFF;         /* image 0x394 */
+        } else if (dl != 0x0F && dl != 0x37 && dl > 0x37) {
+            g_level_phase = (uint8_t)(al & 0xFB);
+        }
+        /* Frames 15 and 55 are a sound and the music. The port makes no
+         * sound, so they are deliberate no-ops rather than gaps - see the
+         * note on non-goals in CLAUDE.md. */
+    }
+    g_level_frame++;                        /* image 0x01A3 */
+}
+
 /* Image 0x07C0A, line for line.
  *
  *     bx = [si]              the flags word
@@ -773,8 +836,14 @@ void level_anim_step(level_anim *st, const level *lv)
     for (uint16_t i = 0; i < LEVEL_ANIM_MAX; i++) {
         level_anim *a = &st[i];
         if (!a->live) continue;
-        /* Image 0x07C1E: object id 1 is gated on ds:0x55, which is not
-         * established here, so it is left animating like the rest. */
+        /* Image 0x07C1E: `dl = [di+5]` is the low byte of the object's
+         * big-endian id, and id 1 - the entrance - only animates once
+         * ds:0x55 reads 0xFF. That byte is set at frame 35 by the opening
+         * sequence above, which is why the trapdoor stays shut at the start
+         * of a level. */
+        if (i < lv->num_objects && (lv->objects[i].id & 0xFF) == 1
+                && g_entrance_open != 0xFF)
+            continue;
         if (!(a->flags & 2)) continue;
         uint8_t f = (uint8_t)(a->frame + 1);
         if (f == a->end_frame) {
@@ -784,7 +853,6 @@ void level_anim_step(level_anim *st, const level *lv)
         a->frame = f;
         a->ink = (uint16_t)(a->base + (uint16_t)f * a->frame_size);
     }
-    (void)lv;
 }
 
 /* Image 0x07BB8.

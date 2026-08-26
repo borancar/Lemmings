@@ -285,6 +285,15 @@ typedef struct {
 void level_anim_init(level_anim *st, const level *lv, const ground *g);
 
 /* One pass of image 0x07C0A. */
+/* The level's opening sequence, image 0x0361: a frame counter, and the byte
+ * at ds:0x55 that holds the trapdoor shut - and the lemmings in it - until
+ * play-loop frame 35. Call level_start_step once per frame, before stepping
+ * the animations. */
+void    level_start_reset(void);
+void    level_start_step(void);
+uint8_t level_entrance_open(void);
+uint8_t level_frame_counter(void);
+
 void level_anim_step(level_anim *st, const level *lv);
 
 /* One pass of image 0x07BB8, onto a 320-wide viewport scrolled `scroll`

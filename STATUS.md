@@ -831,21 +831,46 @@ Each of these is stated as what was *checked*, not what was written.
   the port is decoding, it is not all of the sprite. That is the next thing to
   read, and it is worth more than the panel's remaining text.
 
-- **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames,
-  the port stepping its object animation once per game frame):
+- **The level's opening sequence is transcribed** - image 0x0361, called from
+  the play loop's first line at image 0x019D:
+
+  | play-loop frame (`ds:0x52`) | what happens |
+  | --- | --- |
+  | 15 (`0x0F`) | a sound |
+  | **35 (`0x23`)** | **image 0x394 sets `ds:0x55` to 0xFF - the trapdoor opens** |
+  | 55 (`0x37`) | image 0x3AD, the music |
+  | past 55 | bit 2 of `ds:0x4E` clears; the opening is over |
+
+  That one byte holds back both the trapdoor (image 0x07C1E tests it before
+  animating object id 1) and the lemmings (image 0x30B0 tests it before
+  releasing one). Nothing in the image *calls* 0x394 - no near call, no far
+  call, and the literal 0x0394 appears nowhere - it is fallen into from this
+  chain, which is why the return address on the stack when it runs is 0x1A0.
+  Watching the running game confirmed the frame before it was transcribed:
+  the 0xFF arrives from image 0x394 at frame **35**.
+
+  `tools/probe_blits.py` also gave up the play loop itself, at image
+  0x019C..0x01C5 - fourteen calls with `inc byte [0x52]` as its frame
+  counter. That is the spine of everything still to be done.
+
+- **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
+  port stepping the opening sequence and the animations once per game frame):
 
   | | play area | panel |
   | --- | --- | --- |
-  | frame 0, before any lemming drops | **99.86%** | 86.04% |
-  | frame 12, entrance still shut in the original | 98.76% | 86.04% |
-  | frame 108, eight lemmings out | **99.76%** | 86.10% |
-  | worst / mean / best | 98.76 / **99.50** / 99.86% | 86.04 / 86.12 / 86.41% |
+  | worst / mean / best | 99.70 / **99.81** / 99.86% | 86.04 / 86.14 / 86.41% |
 
-  Frame 0 is 72 differing pixels, which is the mouse cursor. The dip in the
-  middle is the one difference left that is the port's: **its entrance starts
-  opening at once, the original's stays shut for about 32 frames**. That has
-  been measured, not read, and reading it is the next thing worth doing - the
-  animation is otherwise at the right rate and ends in the right state.
+  How it got there this session, each step measured:
+
+  | change | play-area mean |
+  | --- | --- |
+  | objects baked in, one static render | 98.96% |
+  | objects drawn as the original draws them, stepped | 99.11% |
+  | one attribute map instead of two (**the checker was wrong, not the port**) | 99.50% |
+  | the opening sequence transcribed - the trapdoor waits 35 frames | **99.81%** |
+
+  Frame 0 is 72 differing pixels, which is the mouse cursor. `tools/prove.sh`
+  is unchanged at **100.00%** throughout.
 
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte
