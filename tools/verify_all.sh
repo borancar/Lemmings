@@ -126,6 +126,13 @@ fi
 # routine and the screen is a pure function of six bytes, so this costs ninety
 # seconds where reaching it by playing costs fifteen minutes - and it covers
 # BOTH endings, which a playthrough of one level cannot.
+# EVERY SKILL'S RECORD, which is a different claim from any screen. See
+# tools/verify_skills.py: it compares the lemming ARRAY, for every lemming
+# rather than only the one that was clicked.
+say ""
+say "  the skills (tools/verify_skills.py):"
+uv run python tools/verify_skills.py 2>/dev/null | sed -n 's/^    /    /p' || fail=1
+
 say ""
 say "  the results screen (tools/verify_results.py, driven):"
 # Three cases, because they take three different paths through the screen and
