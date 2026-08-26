@@ -765,6 +765,37 @@ Each of these is stated as what was *checked*, not what was written.
   The 716 are the lemmings, the cursor and the animated objects — everything
   that moves. The terrain underneath is right.
 
+- **The panel's artwork is transcribed** - image 0x057D1, set up at image
+  0x05914, which fixes every dimension the fitting could not: `si = 0` so
+  main.dat section 2 from its start, `cx = 0x28` rows, `bx = 0x428` for forty
+  bytes a row and four planes, `ax = 0x2C` for a 44-byte destination stride,
+  `di = 0xF91F` which stashes it near the top of the 64K plane. The loop pops
+  `di` per plane but lets `si` run on, so the source is plane-major - 40 x 40
+  x 4 = 6,400 bytes, exactly where the status font begins.
+
+  Screen row 160 and the attribute map are measured, not read: values 0..7 go
+  to themselves and 8..15 to 16..23, which is inference from the five high
+  values the artwork uses, since 7, 8, 9 and 13 never occur in it.
+
+  **Panel 86.41%.** The picture shows the rest is the status counts, the
+  minimap contents and the selected button. The status line is deliberately
+  not drawn: `panel_status` blanks the cells it is given and nothing has read
+  what fills its template, so the bare template scores **65.65%** against
+  86.41% for the artwork alone. A placeholder there is worse than a gap.
+
+- **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, one
+  static port render against every one):
+
+  | | play area | panel |
+  | --- | --- | --- |
+  | frame 0, before any lemming drops | **99.74%** | 86.04% |
+  | frame 114, eight lemmings out | 98.50% | 86.12% |
+  | worst / mean / best | 98.50 / 98.98 / 99.74% | 86.04 / 86.13 / 86.41% |
+
+  The curve is the point: the terrain is essentially exact and every tenth of
+  a percent lost is something that moved. That is the measurement to drive the
+  play loop against.
+
 - **The panel: what is settled and what is not.** `main.dat` section 2 is
   8,384 bytes and splits cleanly: the last 1,984 are the status font (already
   transcribed, image 0x0592C), and the first 6,400 are the panel artwork.
