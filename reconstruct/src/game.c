@@ -1320,7 +1320,31 @@ int level_at_exit(const lemming *a, const level *lv, const ground *g)
 #define EXIT_BIT 0x2000
 #define EXIT_FRAMES 8
 
-/* Transcribed from image 0x02F42. */
+/* THE ANIMATION IS NOT DRAWN, and here is what is known about it.
+ *
+ * The assignment writes the sprite's fields along with the state, so its
+ * shape is not in doubt: image 0x02F51 gives it 0x4E = 78 bytes a frame and
+ * image 0x02F56 puts the mask at 0x34 = 52. By the store's own formula -
+ * see the note on the digger - 78 with the mask at 52 is two colour planes
+ * over thirteen rows of two bytes: 16 wide, 13 tall, 52 bytes of colour in
+ * the FILE, eight frames. The hot spot is (-8, -13), image 0x02F5F.
+ *
+ * What is missing is WHERE those 52-byte frames are in main.dat. The method
+ * that found the digger's - capture the bytes the guest is reading and
+ * search the file for them - needs a run that digs a way down and then waits
+ * for a lemming to walk into the exit, and tools/probe_exit.py does that but
+ * unreliably: three runs in a row failed to assign the digger at all.
+ *
+ * Searching the file for the geometry instead does not discriminate. Eight
+ * consecutive 52-byte frames whose bounding boxes stay put match NINE
+ * THOUSAND offsets, including offset 0 - the walker, whose 40-byte frames
+ * decoded at 52 drift but stay in the window. So that is not a search, it is
+ * a coincidence detector.
+ *
+ * So a lemming that reaches the exit is counted and removed correctly and is
+ * invisible while it happens. That is the honest state of it.
+ *
+ * Transcribed from image 0x02F42. */
 void lem_exit_start(lemming *a)
 {
     a->flags = EXIT_BIT;
