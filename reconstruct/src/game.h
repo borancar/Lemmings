@@ -428,6 +428,18 @@ void level_anim_step(level_anim *st, const level *lv);
 /* One pass of the level's frame, in the order image 0x019C..0x01C5 runs the
  * parts of it that have been read. */
 void level_frame_step(level_anim *st, const level *lv);
+
+/* One frame of a level, split where image 0x019C splits it: everything up to
+ * the drawing, then the drawing. Both the game and the harness call these,
+ * which is the point - see level_play_step in game.c. */
+void level_play_step(level_anim *st, const level *lv, lemming *lem,
+                     uint8_t *released, const uint8_t *terrain,
+                     uint16_t w, uint16_t h);
+void level_play_draw(level_anim *st, const level *lv,
+                     const uint8_t *obj_sec, uint32_t obj_len,
+                     const uint8_t *lem_sec, uint32_t lem_len,
+                     const lemming *lem, uint8_t released,
+                     uint8_t *pix, uint16_t w, uint16_t h);
 void level_status_out(uint8_t live);
 
 /* One pass of image 0x07BB8, onto a 320-wide viewport scrolled `scroll`

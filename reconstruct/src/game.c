@@ -1800,6 +1800,52 @@ void level_frame_step(level_anim *st, const level *lv)
     level_status_in(0);          /* nothing is counted saved yet */
 }
 
+/* ONE FRAME OF A LEVEL, the simulation half - image 0x019C's order.
+ *
+ * The play loop at image 0x019C..0x01C5 runs the frame counter (image
+ * 0x01A3), the release (image 0x030A6 through image 0x01B0), the simulation
+ * (image 0x01F19 through image 0x01B3), then the drawing. This is everything
+ * up to the drawing, and level_play_draw is the rest.
+ *
+ * It is one routine because it was two: sdl_io.c stepped the objects and
+ * nothing else while devmain.c ran the whole thing, so every frame-by-frame
+ * measurement passed against a harness that exercised what the game did not
+ * - the playable game showed an empty level. A sequence written out twice is
+ * a sequence that will differ, so both callers use this.
+ *
+ * `terrain` is the buffer with NO objects on it, because that is what the
+ * original's lemmings probe. `released` is carried across frames.
+ */
+void level_play_step(level_anim *st, const level *lv, lemming *lem,
+                     uint8_t *released, const uint8_t *terrain,
+                     uint16_t w, uint16_t h)
+{
+    level_frame_step(st, lv);
+    if (level_released() != *released) {
+        lemmings_release(lem, *released, lv);
+        *released = level_released();
+    }
+    lemmings_step(lem, *released, terrain, w, h);
+    /* level_frame_step wrote the RELEASED count; the panel wants the LIVE
+     * one, so this goes after the simulation has had its say. */
+    level_status_out(lemmings_live(lem, *released));
+}
+
+/* And the drawing half: the objects at image 0x07BB8, which image 0x01B9
+ * calls, and then the lemmings at image 0x01BC - which is why they go on
+ * LAST, over both the terrain and the objects. */
+void level_play_draw(level_anim *st, const level *lv,
+                     const uint8_t *obj_sec, uint32_t obj_len,
+                     const uint8_t *lem_sec, uint32_t lem_len,
+                     const lemming *lem, uint8_t released,
+                     uint8_t *pix, uint16_t w, uint16_t h)
+{
+    level_anim_draw(st, lv, obj_sec, obj_len, pix, w, h, 0);
+    if (!lem_sec) return;
+    for (uint8_t k = 0; k < released && k < LEMMING_MAX; k++)
+        lemming_draw(pix, w, h, lem_sec, lem_len, &lem[k]);
+}
+
 /* THE CONTROL PANEL, one frame of it.
  *
  * NOT TRANSCRIBED. Every piece it calls is transcribed and carries its own

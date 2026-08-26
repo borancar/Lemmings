@@ -340,6 +340,7 @@ struct level_frame {
     lemming      lem[LEMMING_MAX];
     uint8_t      released;   /* how many have come out of the trapdoor */
     uint16_t     view_x;     /* where the play area has scrolled to */
+    int          stepped;    /* the first frame is the state before a step */
 };
 
 /* THE LEVEL'S SCREEN - mode 0x0D is 320x200 and it is two things stacked:
@@ -373,7 +374,11 @@ static int level_run(struct level_frame *A, const canvas *c,
 
     int32_t max_x = (int32_t)c->w - LEVEL_SCREEN_W;
     if (max_x < 0) max_x = 0;
-    int32_t scroll_x = (int32_t)A->lv.start_x - LEVEL_SCREEN_W / 2;
+    /* The level header's start_x IS the viewport's left edge, not its
+     * centre. tools/compare_run.py fits 624 for "Just dig!" and the header
+     * says 624; centring on it, which is what the old 320x160 view did, put
+     * the play area 160 pixels out and scored 36%. */
+    int32_t scroll_x = (int32_t)A->lv.start_x;
 
     const char *cap = SDL_getenv("LEM_FRAMES");
     long budget = cap ? SDL_atoi(cap) : 0;
@@ -381,11 +386,31 @@ static int level_run(struct level_frame *A, const canvas *c,
     uint8_t *screen = calloc(LEVEL_SCREEN_W * LEVEL_SCREEN_H, 1);
     if (!screen) return -1;
 
+    /* A frame sink, for checking THIS path rather than a second arrangement
+     * of the same calls. Every measurement of the level goes through lemdev,
+     * which composes the canvas and the panel separately; this writes the
+     * screen the game actually puts on the display, in the same 'LEMRW2'
+     * container, so tools/compare_frame.py can score it against the
+     * original's own 320x200 frames.
+     *
+     * Env-gated and in the IO file on purpose: the game has no command line
+     * and writes no files. Setting LEM_SCREEN_DIR is a developer asking for
+     * one, the way LEM_FRAMES already asks for a frame budget. */
+    const char *sink = SDL_getenv("LEM_SCREEN_DIR");
+    long frame_no = 0;
+    /* Edge scrolling waits for a pointer that has actually MOVED. A polled
+     * position cannot tell "at the left edge" from "no pointer here": under
+     * the dummy video driver it reads (0,0) and reports this window as
+     * focused, so the view walked off the left of the level at 8 pixels a
+     * frame and every headless frame after 78 was black. */
+    int seen_motion = 0;
+
     int running = 1;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = 0;
+            else if (e.type == SDL_EVENT_MOUSE_MOTION) seen_motion = 1;
             else if (e.type == SDL_EVENT_KEY_DOWN) {
                 switch (e.key.key) {
                 case SDLK_ESCAPE: case SDLK_Q: running = 0;               break;
@@ -398,8 +423,15 @@ static int level_run(struct level_frame *A, const canvas *c,
             }
         }
         /* The pointer at either edge scrolls, which is what the original
-         * does even though its rate has not been read. */
-        {
+         * does even though its rate has not been read.
+         *
+         * Only while the pointer is actually over this window. Without that
+         * test it scrolls whenever the pointer happens to sit at the screen
+         * origin - which is exactly where it sits under the dummy video
+         * driver, so a headless run walked the view off the left of the
+         * level at 8 pixels a frame and reached black by frame 78. That
+         * looked like the play area not being drawn at all. */
+        if (seen_motion && SDL_GetMouseFocus() == g_win) {
             float mx = 0, my = 0;
             SDL_GetMouseState(&mx, &my);
             float w = 0, h = 0;
@@ -452,6 +484,25 @@ static int level_run(struct level_frame *A, const canvas *c,
             }
             SDL_UnlockTexture(tex);
         }
+        if (sink) {
+            char path[1024];
+            snprintf(path, sizeof(path), "%s/f%05ld.raw", sink, frame_no);
+            FILE *f = fopen(path, "wb");
+            if (f) {
+                uint16_t wh[2] = { LEVEL_SCREEN_W, LEVEL_SCREEN_H };
+                fwrite("LEMRW2", 1, 6, f);
+                fwrite(wh, sizeof(uint16_t), 2, f);
+                for (uint8_t i = 0; i < 16; i++) {
+                    fputc(palette[i].r, f);
+                    fputc(palette[i].g, f);
+                    fputc(palette[i].b, f);
+                }
+                fwrite(screen, 1, LEVEL_SCREEN_W * LEVEL_SCREEN_H, f);
+                fclose(f);
+            }
+        }
+        frame_no++;
+
         SDL_RenderClear(ren);
         SDL_RenderTexture(ren, tex, NULL, NULL);
         SDL_RenderPresent(ren);
@@ -929,20 +980,20 @@ static int level_frame_tick(void *ctx, uint8_t *pix)
     uint16_t w = a->from->w, h = a->from->h;
 
     memcpy(pix, a->from->pix, (size_t)w * h);
-
-    level_frame_step(a->st, &a->lv);
-    if (level_released() != a->released) {
-        lemmings_release(a->lem, a->released, &a->lv);
-        a->released = level_released();
-    }
-    /* They probe the TERRAIN, which is the buffer with no objects on it. */
-    lemmings_step(a->lem, a->released, a->from->pix, w, h);
-    level_status_out(lemmings_live(a->lem, a->released));
-
-    level_anim_draw(a->st, &a->lv, a->sec, a->len, pix, w, h, 0);
-
-    for (uint8_t k = 0; k < a->released && k < LEMMING_MAX; k++)
-        lemming_draw(pix, w, h, a->lem_sec, a->lem_len, &a->lem[k]);
+    /* The FIRST frame is the level as it stands before anything moves, and
+     * every frame after it is one step on. Stepping before the first draw
+     * instead put the whole game one frame ahead of the original: measured,
+     * the game's frame N matched the original's N+1 to 28 pixels - the mouse
+     * cursor - and its own N to 300. The original's loop at image 0x019C
+     * steps and then draws, but its first captured frame at image 0x018F is
+     * the one before any of that. */
+    if (a->stepped)
+        level_play_step(a->st, &a->lv, a->lem, &a->released,
+                        a->from->pix, w, h);
+    a->stepped = 1;
+    level_play_draw(a->st, &a->lv, a->sec, a->len,
+                    a->lem_sec, a->lem_len, a->lem, a->released,
+                    pix, w, h);
     return 1;
 }
 
@@ -990,6 +1041,7 @@ int level_show(const char *dir, const char *file, uint32_t which,
         A.lem_sec = NULL; A.lem_len = 0; A.released = 0;
         A.pan_sec = NULL; A.pan_len = 0;
         A.view_x = lv->start_x;
+        A.stepped = 0;
         A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
 
         /* The lemming sprites live in main.dat, not in the level's own

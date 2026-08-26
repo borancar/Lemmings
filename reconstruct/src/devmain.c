@@ -240,50 +240,51 @@ static int render_level(const char *data, const char *file, uint32_t which,
             level_status_reset(&lv);
             lemmings_reset(g_lem);
             {
-                /* The lemmings probe the TERRAIN, which is what the canvas
+                /* Run to the wanted frame through the GAME's own per-frame
+                 * routine, the same one the window path calls - see
+                 * level_play_step. This loop used to be a second copy of
+                 * that sequence, and the window's copy was missing the half
+                 * of it that draws, which is how the playable game came to
+                 * show an empty level while every frame here matched.
+                 *
+                 * The lemmings probe the TERRAIN, which is what the canvas
                  * held before the objects went on it - so a copy is kept. */
                 uint8_t was = level_released();
-                for (uint16_t k = 0; k < g_obj_frame; k++) {
-                    level_frame_step(st, &lv);
-                    if (level_released() != was) {
-                        lemmings_release(g_lem, was, &lv);
-                        was = level_released();
-                    }
-                    lemmings_step(g_lem, was, terrain, c.w, c.h);
+                for (uint16_t k = 0; k < g_obj_frame; k++)
+                    level_play_step(st, &lv, g_lem, &was, terrain, c.w, c.h);
+
+                /* main.dat for the lemming sprites, so the draw can be the
+                 * game's single call rather than a second arrangement. */
+                char mpath2[1024];
+                dat_file mainf2;
+                const char *e2 = "unknown error";
+                const uint8_t *lemsec = NULL;
+                uint32_t lemlen = 0;
+                int have_lem = 0;
+                snprintf(mpath2, sizeof(mpath2), "%s/main.dat", data);
+                if (objects && dat_load(mpath2, &mainf2, &e2) == 0
+                        && mainf2.count > LEM_SPRITE_SECTION) {
+                    lemsec = mainf2.sections[LEM_SPRITE_SECTION].data;
+                    lemlen = mainf2.sections[LEM_SPRITE_SECTION].size;
+                    have_lem = 1;
                 }
-                level_status_out(lemmings_live(g_lem, was));
+                if (getenv("LEM_DEBUG"))
+                    for (uint8_t k = 0; k < was && k < LEMMING_MAX; k++)
+                        fprintf(stderr, "  lem %u: x=%d y=%d dir=%d anim=%u "
+                                "state=%u alive=%u -> canvas (%d,%d)\n", k,
+                                g_lem[k].x, g_lem[k].y, g_lem[k].dir,
+                                g_lem[k].anim, g_lem[k].state, g_lem[k].alive,
+                                g_lem[k].x + g_lem[k].hot_x - LEMMING_DX,
+                                g_lem[k].y + g_lem[k].hot_y - LEMMING_DY);
+
+                level_play_draw(st, &lv, gfx.sections[1].data,
+                                gfx.sections[1].size, lemsec, lemlen,
+                                g_lem, was, c.pix, c.w, c.h);
+                if (have_lem) dat_free(&mainf2);
             }
-            level_anim_draw(st, &lv, gfx.sections[1].data,
-                            gfx.sections[1].size, c.pix, c.w, c.h, 0);
         }
     }
     dat_free(&gfx);
-
-    /* The lemmings go on last, over the terrain and the objects - image
-     * 0x01BC draws them after image 0x01B9 has drawn the objects. */
-    if (objects) {
-        char mpath2[1024];
-        dat_file mainf2;
-        const char *e2 = "unknown error";
-        snprintf(mpath2, sizeof(mpath2), "%s/main.dat", data);
-        if (dat_load(mpath2, &mainf2, &e2) == 0
-                && mainf2.count > LEM_SPRITE_SECTION) {
-            for (uint8_t k = 0; k < level_released() && k < LEMMING_MAX; k++) {
-                if (getenv("LEM_DEBUG"))
-                    fprintf(stderr, "  lem %u: x=%d y=%d dir=%d anim=%u "
-                            "state=%u alive=%u -> canvas (%d,%d)\n", k,
-                            g_lem[k].x, g_lem[k].y, g_lem[k].dir,
-                            g_lem[k].anim, g_lem[k].state, g_lem[k].alive,
-                            g_lem[k].x + g_lem[k].hot_x - LEMMING_DX,
-                            g_lem[k].y + g_lem[k].hot_y - LEMMING_DY);
-                lemming_draw(c.pix, c.w, c.h,
-                             mainf2.sections[LEM_SPRITE_SECTION].data,
-                             mainf2.sections[LEM_SPRITE_SECTION].size,
-                             &g_lem[k]);
-            }
-            dat_free(&mainf2);
-        }
-    }
 
     if (raw) {
         /* Palette indices, one byte per pixel, for a pixel-for-pixel
@@ -373,11 +374,19 @@ static int render_level(const char *data, const char *file, uint32_t which,
         }
     }
 
-    /* Show it unless a file was the whole point of the run. */
+    /* Show it unless a file was the whole point of the run - and show it
+     * through THE GAME'S OWN level view, not a second one.
+     *
+     * This used to call view_run, which is a 320x160 window of the static
+     * canvas: no panel, no lemmings, no stepping. So `lemdev --show` looked
+     * nothing like `./lemmings`, and the harness could not have caught the
+     * window path being wrong because it never ran it. level_show is what
+     * main.c calls. */
     if (show || !raw) {
-        char title[128];
-        snprintf(title, sizeof(title), "PC Lemmings - %s", lv.name);
-        view_run(&c, g.palette, title, lv.start_x, scale);
+        level lv2;
+        const char *e3 = "unknown error";
+        if (level_show(data, file, which, &lv2, scale, &e3) != 0)
+            fprintf(stderr, "level_show: %s\n", e3);
     }
     free(terrain);
     canvas_free(&c);
