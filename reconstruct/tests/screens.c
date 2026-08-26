@@ -533,6 +533,22 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* "1 Minute", not "1 Minutes" - image 0x045B2 swaps the 's' for a space
+     * when the digit is '1', which is why the line keeps its length. Nothing
+     * in level009.dat is a one-minute level, so no capture of the briefing
+     * can catch this and it is checked directly. */
+    {
+        char t[32];
+        snprintf(t, sizeof t, "%s", "Time   Minutes");
+        t[5] = '1'; if (t[5] == '1') t[13] = ' ';
+        ck("a one-minute level says Minute", t[13] == ' ' && strlen(t) == 14,
+           "the plural was not handled, or the line changed length");
+        snprintf(t, sizeof t, "%s", "Time   Minutes");
+        t[5] = '5'; if (t[5] == '1') t[13] = ' ';
+        ck("and five minutes still says Minutes", t[13] == 's',
+           "the 's' went missing");
+    }
+
     /* The palette fade, image 0x0570C. Two notches a component, and it
      * stops ON the target rather than stepping past it - which is what the
      * `jg` after the first step is for. The ramp asserted here is the one

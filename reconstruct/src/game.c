@@ -2910,11 +2910,13 @@ static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
 #define BR_CONT_Y     304
 
 /*
- * NOT TRANSCRIBED. The original writes digits into these templates too;
- * digits3 at image 0x04BC2 is one instance and status_put_num at image
- * 0x04B68 another, but neither is this one - both are fixed-width and
- * left-aligned, and this fills a template from the right. The routine that
- * fills the briefing's own runs has not been found.
+ * NOT TRANSCRIBED, but its callers are now known. The briefing's own numbers
+ * go through THREE different routines, and image 0x04566 names each: the
+ * lemming count through image 0x04B68 (status_put_num, transcribed), the
+ * percentage through image 0x04B5C, and the level number and release rate
+ * through image 0x04BBE. This is one right-aligned fill standing in for all
+ * three, which is why it is owed: the port gets the same characters into the
+ * same columns by its own arithmetic, and image 0x04BBE has not been read.
  */
 static void put_num(char *dst, size_t end, uint32_t n)
 {
@@ -3091,11 +3093,31 @@ static const uint8_t BRIEF_PAL6[7 * 3] = {
 };
 
 /*
- * NOT TRANSCRIBED. The original reaches this screen from image 0x0454C and
- * draws it in place. Its pieces are transcribed and carry their addresses;
- * 0x0454C has not been read.
- * 0x0454C and draws it in place; the pieces are transcribed individually and
- * this assembly is not.
+ * NOT TRANSCRIBED - but image 0x0454C HAS now been read, and this says what
+ * it found so the next pass starts from the disassembly rather than from
+ * nothing.
+ *
+ * Image 0x0454C zeroes ds:0..0xFCA, calls image 0x0197D, and calls image
+ * 0x04566, which is the text assembly. That routine is transcribed rule by
+ * rule below, each carrying its own address:
+ *
+ *     0x04566  the level number: rating * 30 subtracted from the index + 1,
+ *              so the ratings are thirty levels apart
+ *     0x0458A  the lemming count, through image 0x04B68 - status_put_num
+ *     0x04594  the percentage: rescue * 100 / total, integer divide
+ *     0x045AB  the release rate, through image 0x04BBE
+ *     0x045B2  the minutes, and the plural: the 's' becomes a SPACE when the
+ *              digit is '1', so the line keeps its length
+ *     0x045C6  the level's name, 32 bytes copied whole - which is what
+ *              centres it, padding and all
+ *     0x045D5  the rating's name, six bytes from the table at ds:0x4C01
+ *
+ * What is still unread is the COMPOSITION that follows at image 0x045EF: the
+ * clear at image 0x04DEF, the fade at image 0x05329, image 0x0394F, image
+ * 0x07EB2, the page registers, and the draw at image 0x0463C. The port's
+ * order is measured, the same standing menu_build_rating had before its
+ * caller turned up - and that one was found by scanning for a near call to a
+ * piece it drew, which is worth trying here too.
  */
 int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
                          menu_screen *m, const char **err)
@@ -3256,6 +3278,12 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
 
     snprintf(line, sizeof(line), "%s", T_TIME);
     put_num(line, 5, lv->time_limit);
+    /* "1 Minute", not "1 Minutes". Image 0x045B2 puts the digit at ds:0x4B83
+     * and the 's' at ds:0x4B8B - eight characters apart, which is indices 5
+     * and 13 of this template - and swaps the 's' for a SPACE when the digit
+     * is '1', so the line keeps its length either way. */
+    if (line[5] == '1')
+        line[13] = ' ';
     draw_at(m->pix, font, fontlen, line, BR_BODY_X, y);
     y += BR_BODY_STEP;
 
