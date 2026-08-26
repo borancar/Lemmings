@@ -533,6 +533,42 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* A SKILL MUST NOT BE SPENT ON A LEMMING THAT CANNOT TAKE IT.
+     *
+     * Image 0x0321D refuses a digger when the state word has any of 0xF57F
+     * set, and 0x10 - digging - is one of them. The port tested the
+     * COMPLEMENT of that mask, so clicking a lemming that was already
+     * digging assigned it again and spent a second digger. A player found
+     * it; nothing here could, because every check compares against a run
+     * where the click was made once. */
+    {
+        lemming a;
+        memset(&a, 0, sizeof a);
+        ck("a walker takes a digger", lem_dig_start(&a) == 1,
+           "image 0x0320D refused a plain lemming");
+        ck("and is digging afterwards", (a.flags & 0x0010) != 0,
+           "the dig bit is not set");
+        ck("a lemming already digging refuses a second",
+           lem_dig_start(&a) == 0,
+           "image 0x0321D's 0xF57F includes 0x10 - it must refuse");
+
+        /* WHICH bits 0xF57F actually holds is worth asserting, because it
+         * is not "anything busy". It is bits 0..6, 8, 10 and 12..15 - so a
+         * BLOCKER is refused (0x100 is bit 8) and a BUILDER is not (0x80 is
+         * bit 7, and it is clear). A builder can be turned into a digger
+         * mid-brick; that is the original's rule, not an oversight here. */
+        lemming b;
+        memset(&b, 0, sizeof b);
+        b.flags = 0x0100;                    /* blocking - bit 8, in the mask */
+        ck("a blocker refuses a digger", lem_dig_start(&b) == 0,
+           "0x100 is bit 8 and 0xF57F has it");
+        memset(&b, 0, sizeof b);
+        b.flags = 0x0080;                    /* building - bit 7, NOT in it */
+        ck("but a builder takes one, because 0x80 is not in 0xF57F",
+           lem_dig_start(&b) == 1,
+           "the mask is bits 0..6, 8, 10 and 12..15 - bit 7 is clear");
+    }
+
     /* WHAT THE RESULTS SCREEN IS TOLD, and where the port used to make it up.
      *
      * Both of these were decided in main.c, which no test reaches, and one of

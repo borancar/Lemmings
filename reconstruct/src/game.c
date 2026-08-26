@@ -2616,9 +2616,19 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
  * function below is; only the sprite it points the record at is missing.
  */
 
+/* Image 0x0320D. The refusal is image 0x0321D's `test word [si+8], 0xf57f`
+ * and it refuses when any of those bits IS SET - the port tested the
+ * complement, so a lemming already digging (0x10 is in that mask) passed
+ * straight through and spent a second digger on itself. A player found it.
+ *
+ * The same constant is then used at image 0x0322D as a KEEP mask, which
+ * looks contradictory and is not: by the time that AND runs, the test above
+ * has already established that none of those bits is set, so it does
+ * nothing. Both readings are of the same bytes; only one of them is the
+ * guard. */
 int lem_dig_start(lemming *a)
 {
-    if (a->flags & ~(uint16_t)DIG_KEEP) return 0;   /* image 0x0321D */
+    if (a->flags & DIG_KEEP) return 0;              /* image 0x0321D */
     a->flags = (uint16_t)((a->flags & DIG_KEEP) | DIG_BIT);
     a->anim  = DIG_ANIM_START;
     a->hot_x = DIG_HOT_X;
@@ -3058,9 +3068,18 @@ static void lem_floatdown(lemming *a, const uint8_t *lvl, uint16_t cw,
     uint8_t act = FLOAT_SCRIPT[i * 2 + 1];          /* image 0x02A78 */
     a->fscript = (int16_t)(a->fscript + 2);         /* image 0x02A7B */
 
-    uint8_t steps = (act == 3) ? 2 : (act == 2) ? 2 : (act == 1) ? 1 : 0;
-    if (act == 3 || act == 2 || act == 1) {
-        for (uint8_t k = 0; k < steps; k++) {
+    /* THE ACTION IS THE NUMBER OF STEPS, and each is a probe THEN a move:
+     *
+     *     3  image 0x02A92, 0x02AA3, 0x02AB1 - three of them
+     *     2  image 0x02ABE, 0x02ACF          - two
+     *     1  image 0x02ADC                   - one
+     *
+     * Reading 3 as two steps put the port a frame behind on the very first
+     * entry of the table: from y 59 the original probes 59, 60 and 61 and
+     * lands on the third, where the port ran out of steps at 61 and floated
+     * one frame longer. */
+    if (act >= 1 && act <= 3) {
+        for (uint8_t k = 0; k < act; k++) {
             if (lem_solid(lvl, cw, chh, a->x, a->y)) {  /* 0x02A95 etc */
                 lem_float_land(a);
                 return;

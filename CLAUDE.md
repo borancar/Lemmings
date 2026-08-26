@@ -326,6 +326,26 @@ state that does not move anything.** x, y, the hot spot, the flags and the
 animation counter all agreed; the difference was in a byte none of them
 carried.
 
+## The same constant can be a guard and a keep-mask, and only one is the bug
+
+Image `0x0320D` refuses a digger with `test word [si+8], 0xf57f` and then,
+four instructions later, uses **the same 0xF57F as a KEEP mask**:
+`and word [si+8], 0xf57f / or word [si+8], 0x10`. That reads as a
+contradiction and is not - by the time the AND runs, the test has already
+established that none of those bits is set, so it does nothing.
+
+The port had taken the second reading for the first and tested the
+COMPLEMENT, so a lemming already digging (0x10 is in the mask) sailed
+through, was assigned again, and spent a second digger on itself. **A player
+found it. Nothing here could**: every check in this repository compares
+against a recorded run in which the click was made once.
+
+And what the mask actually holds is worth asserting rather than summarising.
+0xF57F is bits 0..6, 8, 10 and 12..15 - so a BLOCKER is refused (0x100 is bit
+8) and a BUILDER is not (0x80 is bit 7, and it is clear). A builder can be
+turned into a digger mid-brick. "Refuse anything busy" would have been a
+tidier rule and a wrong one.
+
 ## A decision made in main.c is a decision no test can reach
 
 Five of the faults fixed in one session came from the user PLAYING the game,
