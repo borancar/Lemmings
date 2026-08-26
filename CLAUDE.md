@@ -428,6 +428,37 @@ does not. `LEMMINGS.BAT` never runs `VGALEMMI.EXE` directly - it runs
 `lemvga.com /v` for VGA and `/e` for EGA - and the parser at image `0x012E0`
 reads that letter.
 
+## A scripted pointer has to be HELD, or the dummy driver takes it back
+
+`compare_play.py` drives both sides from one input script, and the guest's
+pointer kept wandering back to (160, 100) a few frames after the script put
+it somewhere. It looked exactly like the GAME repositioning it - Lemmings
+plausibly confines its cross-hair to the play area - and a reading of image
+`0x0715F` was already under way to find the clamp.
+
+There is no clamp. Under `SDL_VIDEODRIVER=dummy` pygame still delivers a
+`MOUSEMOTION`, and the emulator's window loop takes it and overwrites
+`mouse_pos`; (160, 100) is what that event maps to. The guest had not called
+INT 33h AX=4 once - the emulator's own `mouse_calls[4]` stayed at **2**, both
+of them from start-up, and that counter is what settled it in one run after
+two rounds of reading disassembly.
+
+So:
+
+- **Re-assert a scripted pointer every frame**, not only when it moves. That
+  is also what a player does: a hand resting on a mouse holds a position, it
+  does not set one and let go.
+- **A button press must be held across frames** for a different reason - the
+  game samples it through its own handler rather than on an edge.
+- And when the guest appears to do something surprising, **count the calls
+  before reading the code**. "Which interrupt did it use, and how often" is a
+  cheaper question than "where is the clamp", and here the answer was that it
+  had not used one at all.
+
+This is the same trap as the edge-scrolling note above: under the dummy
+driver the pointer reads as present, focused and somewhere definite, and
+none of those is true.
+
 ## Wrapping a method the emulator already registered records nothing
 
 `probe_dac.py`'s first version replaced `m._on_out` to watch port writes. It

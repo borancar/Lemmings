@@ -1138,7 +1138,13 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x)
     else if (a->flags & 0x0200) nm = NM_BASHER;      /* image 0x03E2B */
     else if (a->flags & 0x0800) nm = NM_MINER;       /* image 0x03E35 */
     else if (a->flags & 0x0010) nm = NM_DIGGER;      /* image 0x03E3F */
-    else if (a->flags & 0x0400) nm = NM_FALLER;      /* image 0x03E49 */
+    /* FOUR, not 0x400. The encoding is `f7 44 08 04 00` - the immediate is
+     * the last two bytes, little-endian - and reading the hex column left to
+     * right gives 0x0400, which is what went in here first. The original
+     * named a lemming FALLER where the port said WALKER, and one look at the
+     * two words settled it; nothing else could have, because a level nobody
+     * plays never shows either. */
+    else if (a->flags & 0x0004) nm = NM_FALLER;      /* image 0x03E49 */
     else                        nm = NM_WALKER;      /* image 0x03E50 */
 
     for (uint8_t i = 0; i < ST_NAME_LEN; i++)        /* image 0x03E53 */

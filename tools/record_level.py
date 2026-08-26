@@ -41,6 +41,8 @@ DGROUP = 0x9A90            # image offset of DS
 FRAME_DONE = 0x018F        # the game's own end-of-frame
 FRAME_COUNTER = 0x1FD3     # ds: the counter it bumps there
 SCROLL = 0x00              # ds: the view's left edge, in level pixels
+MOUSE_X, MOUSE_Y = 0x10, 0x12   # ds: the pointer, image 0x0427E and 0x04293
+CUR_OFF, CUR_BASE, CUR_BIAS = 0x0C, 0x1F78, 0x1FE0   # image 0x071B1
 ARRAY, COUNT, REC = 0x88, 0x43, 0x2D   # the lemming array
 DIGGERS = 0x7F             # ds: how many diggers are left to give out
 
@@ -121,6 +123,11 @@ def install(m):
         st["manifest"].append({
             "frame": i,
             "scroll": w(SCROLL),
+            "mx": w(MOUSE_X), "my": w(MOUSE_Y),
+            "set_pos_calls": int(getattr(m, "mouse_calls", {}).get(4, 0)),
+            "emu_pos": list(getattr(m, "mouse_pos", (0, 0))),
+            "cur_off": w(CUR_OFF), "cur_base": w(CUR_BASE),
+            "cur_bias": uc.mem_read(base + DGROUP + CUR_BIAS, 1)[0],
             "lemmings": n_lem,
             "diggers": uc.mem_read(base + DGROUP + DIGGERS, 1)[0],
             "lem0": lem0,
@@ -162,11 +169,23 @@ def install(m):
             elif verb == "up" and st.get("at"):
                 st["down"] = None
                 m.click_mouse(0, st["at"][0], st["at"][1], False)
-        # The game samples the button through its own handler rather than on
-        # an edge, so a press has to be HELD across frames to be seen - a
-        # tapped one is missed as often as not. See tools/probe_digger.py.
-        if st["down"]:
-            m.click_mouse(0, st["down"][0], st["down"][1], True)
+        # RE-ASSERT THE POSITION EVERY FRAME, not just when the script moves.
+        #
+        # Under the dummy video driver pygame still delivers a MOUSEMOTION,
+        # and the emulator's window loop takes it: the scripted pointer was
+        # quietly replaced by whatever that event said, five frames after the
+        # script last touched it. It reads as the GAME moving the pointer,
+        # and cost a round chasing an INT 33h set-position call the guest had
+        # never made - the emulator's own AX=4 counter stayed at 2 throughout,
+        # which is what settled it.
+        #
+        # Holding it also matches what a player does. A press in particular
+        # has to be HELD across frames because the game samples the button
+        # through its own handler rather than on an edge - see
+        # tools/probe_digger.py - and a tapped one is missed as often as not.
+        if st.get("at"):
+            m.click_mouse(0, st["at"][0], st["at"][1],
+                          bool(st["down"]))
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame,
                   None, base + FRAME_DONE, base + FRAME_DONE)

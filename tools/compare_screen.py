@@ -17,9 +17,12 @@ attributes 8..15 map to DAC 16..23, which tools/probe_dac.py read straight off
 the attribute controller.
 """
 import argparse
+import operator
 import os
 import struct
 import sys
+
+_ne = operator.ne
 
 PLAY_H = 160
 SCREEN_H = 200
@@ -70,15 +73,23 @@ def main():
             break
         gw, gh, gp = read_raw(g)
         rw, rh, rp = read_scrn(os.path.join(a.ref, refs[i]))
+        # The port stores attributes and the capture stores DAC indices, so
+        # one side is translated through MAP before anything is compared.
+        # bytes.translate does that in C, which matters: 5,100 frames of
+        # 64,000 pixels is 326 million comparisons, and a Python loop over
+        # them takes longer than recording the run did.
+        gm = gp.translate(MAP)
         p = q = 0
-        for y in range(PLAY_H):
-            row = gp[y * gw:y * gw + SCREEN_W]
+        for y in range(SCREEN_H):
+            row = gm[y * gw:y * gw + SCREEN_W]
             ref = rp[y * rw:y * rw + SCREEN_W]
-            p += sum(1 for k in range(SCREEN_W) if MAP[row[k]] != ref[k])
-        for y in range(PLAY_H, SCREEN_H):
-            row = gp[y * gw:y * gw + SCREEN_W]
-            ref = rp[y * rw:y * rw + SCREEN_W]
-            q += sum(1 for k in range(SCREEN_W) if MAP[row[k]] != ref[k])
+            if row == ref:
+                continue
+            d = sum(map(_ne, row, ref))
+            if y < PLAY_H:
+                p += d
+            else:
+                q += d
         n += 1
         if p == 0:
             play_exact += 1
