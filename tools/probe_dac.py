@@ -25,6 +25,13 @@ supposed to do this at all, and 1 is "PC compatibles", which is not.
 import os
 
 FRAME_END = 0x018F          # image offset: the game's own end of frame
+
+# The level has a frame boundary to bracket samples with; the briefing does
+# not - it is a still screen that the game paints, fades in, and leaves up. So
+# this also logs every DISTINCT palette it ever sees, with the instruction
+# count, which works on any screen. On the briefing that is the whole answer:
+# a fade is a long run of values that never repeat, and a mid-screen swap is
+# two that alternate forever.
 EVERY = 512                 # instructions between samples
 MAX_FRAMES = 196
 
@@ -35,7 +42,7 @@ def install(m):
     out = open(os.environ.get("LEM_DAC_OUT", "out/dac.txt"), "w")
     base = m.load_seg * 16
     st = {"frame": 0, "n": 0, "last": None, "changes": 0,
-          "in_frame": [], "seen": set(), "trace": []}
+          "in_frame": [], "seen": set(), "trace": [], "everseen": {}}
 
     def snapshot():
         return (tuple(m.attr_pal), tuple(m.palette[i] for i in range(24)))
@@ -53,6 +60,15 @@ def install(m):
             # with. A fade shows up as a long run of distinct values that
             # never repeat. Counting distinct snapshots tells them apart.
             st["seen"].add(cur)
+            if cur not in st["everseen"]:
+                st["everseen"][cur] = st["n"]
+                a, pp = cur
+                out.write(f"  new palette at insn {st['n']}: "
+                          + " ".join("%02x%02x%02x" % pp[i] for i in range(8))
+                          + " | "
+                          + " ".join("%02x%02x%02x" % pp[i] for i in range(16, 24))
+                          + "\n")
+                out.flush()
             if st["frame"] >= 190:
                 st["trace"].append((st["n"], cur))
 

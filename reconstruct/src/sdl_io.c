@@ -38,6 +38,13 @@
  * So the window, renderer and texture live here and are reused whenever the
  * size and scale match. SDL is shut down once, at exit. */
 static SDL_Window   *g_win;
+
+/* A screen whose palette changes part-way down it - the briefing, and the
+ * level, which has its own loop. The original swaps the palette across a band
+ * of black scanlines, so the rows from `g_split` down take `g_split_pal`.
+ * Zero means one palette for the whole screen, which is every other screen. */
+static uint16_t      g_split;
+static const lem_rgb *g_split_pal;
 static SDL_Renderer *g_ren;
 static SDL_Texture  *g_tex;
 static uint16_t      g_w, g_h;
@@ -159,7 +166,8 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
                 const uint8_t *src =
                     pix + (size_t)(scroll_y + y) * src_w + scroll_x;
                 for (uint16_t x = 0; x < view_w; x++) {
-                    lem_rgb c = palette[src[x]];
+                    lem_rgb c = (g_split && y >= g_split && g_split_pal)
+                              ? g_split_pal[src[x]] : palette[src[x]];
                     row[x] = ((uint32_t)c.r << 16) |
                              ((uint32_t)c.g << 8) | c.b;
                 }
@@ -288,8 +296,11 @@ int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
                 for (uint16_t y = 0; y < h; y++) {
                     uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
                     const uint8_t *src = pix + (size_t)y * w;
+                    const lem_rgb *pl =
+                        (g_split && y >= g_split && g_split_pal)
+                            ? g_split_pal : palette;
                     for (uint16_t x = 0; x < w; x++) {
-                        lem_rgb c = palette[src[x]];
+                        lem_rgb c = pl[src[x]];
                         row[x] = ((uint32_t)c.r << 16)
                                | ((uint32_t)c.g << 8) | c.b;
                     }
@@ -657,7 +668,13 @@ void menu_show_until_dismissed(const menu_screen *m, const char *title,
     any[1].w = 0;
     any[1].h = 0;
     any[1].key = VIEW_KEY_ESC;
+    /* The briefing is two pictures stacked with different palettes - see
+     * menu_screen.split. Every other screen leaves split at zero. */
+    g_split = m->split;
+    g_split_pal = m->split ? m->palette_low : NULL;
     view_interact(m->pix, MENU_W, MENU_H, m->palette, title, scale, any, 2);
+    g_split = 0;
+    g_split_pal = NULL;
 }
 
 /* A flat view of the parsed header, so tools/verify_level.py can compare

@@ -2882,11 +2882,58 @@ static void draw_preview(const char *dir, const level *lv, const ground *g,
  * The seventh, entry 4, reads (44,44,0) here and (60,60,0) on the screen -
  * brighter. Something modifies it at run time and that has not been read, so
  * it is left as the file has it rather than patched to match one capture. */
+/* THE BRIEFING'S LOWER PALETTE - transcribed data, image 0x0E3C0.
+ *
+ * Which is ds:0x4930, entry [2] of the pointer table at cs:0x52E4 that image
+ * 0x055B7 uses when ds:0x1F7C is 4. The article that named this behaviour
+ * calls them "the brown earth colours and the blue shades for the font", and
+ * that is what they are: 824120, 613020 and 300010 are earth, 20087d, 412c92
+ * and 9a8ebe are the text.
+ *
+ * Measured against the running original, not inferred. tools/probe_dac.py on
+ * the briefing shows the palette alternating between the preview's colours
+ * and these, and these widen to exactly the DAC values it records:
+ *
+ *     000000 824120 613020 300010 20087d 412c92 (6959a6 at DAC 20) 9a8ebe
+ *
+ * The seventh entry landing on DAC 20 rather than 6 is the mode 0x10
+ * attribute map - attribute 6 goes to DAC 0x14 - which is the same table
+ * tools/verify_menu.py has always used to score this screen.
+ */
+static const uint8_t BRIEF_LOWER6[8 * 3] = {
+    0x00, 0x00, 0x00,   /* 0  black       */
+    0x20, 0x10, 0x08,   /* 1  earth       */
+    0x18, 0x0C, 0x08,   /* 2  darker      */
+    0x0C, 0x00, 0x04,   /* 3  darkest     */
+    0x08, 0x02, 0x1F,   /* 4  deep blue   */
+    0x10, 0x0B, 0x24,   /* 5  blue        */
+    0x1A, 0x16, 0x29,   /* 6  pale blue   */
+    0x26, 0x23, 0x2F,   /* 7  lavender    */
+};
+
+/* Where the swap happens. Rows 60..77 of the briefing are entirely black -
+ * measured on the original's own capture - so any row in that band gives the
+ * same picture, and this takes the first row after it. Those black scanlines
+ * are the point: they are the margin the game needs to change the palette
+ * without the change being visible. */
+#define BRIEF_SPLIT_Y 78
+
 static const uint8_t BRIEF_PAL6[7 * 3] = {
     0x10, 0x10, 0x38,   /* 1  blue   */
     0x00, 0x2C, 0x00,   /* 2  green  */
     0x3C, 0x34, 0x34,   /* 3  white  */
-    0x2C, 0x2C, 0x00,   /* 4  yellow - the screen shows 0x3C,0x3C,0x00 */
+    /* 4  yellow. The FILE says 0x2C,0x2C,0x00 here and the running game
+     * programs 0x3C,0x3C,0x00 - measured, repeatedly, by tools/probe_dac.py
+     * reading the DAC on the briefing, where the fade climbs c3c300, cbcb00,
+     * d3d300, dbdb00, e3e300, ebeb00 and settles on f3f300. No table in the
+     * image holds the seven entries with 0x3C,0x3C,0x00 among them, so the
+     * game builds its destination palette in RAM and adjusts this one on the
+     * way; ds:0x2608 and ds:0x2638, the buffers image 0x055B7 fades between,
+     * are zeros in the image and filled at run time.
+     *
+     * WHAT DOES THE ADJUSTING HAS NOT BEEN READ. This is the value the
+     * original puts in the DAC, not a value fitted to make pixels agree. */
+    0x3C, 0x3C, 0x00,
     0x3C, 0x08, 0x08,   /* 5  red    */
     0x20, 0x20, 0x20,   /* 6  grey   */
     0x38, 0x20, 0x08,   /* 7  orange */
@@ -2997,6 +3044,21 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
             m->palette[i].b = widen6(BRIEF_PAL6[(i - 1) * 3 + 2]);
         }
     }
+
+    /* The TEXT half of the screen has a palette of its own - see
+     * BRIEF_LOWER6 - and the game swaps it in across the black band. */
+    for (uint8_t i = 0; i < 16; i++)
+        m->palette_low[i] = m->palette[i];
+    for (uint8_t i = 0; i < 8; i++) {
+        /* Attribute 6 goes to DAC 0x14 in mode 0x10, which is why the table's
+         * seventh entry does not land on attribute 6; the port indexes by
+         * ATTRIBUTE, so it goes where the attribute controller sends it. */
+        uint8_t at = (i == 6) ? 6 : i;
+        m->palette_low[at].r = widen6(BRIEF_LOWER6[i * 3 + 0]);
+        m->palette_low[at].g = widen6(BRIEF_LOWER6[i * 3 + 1]);
+        m->palette_low[at].b = widen6(BRIEF_LOWER6[i * 3 + 2]);
+    }
+    m->split = BRIEF_SPLIT_Y;
 
     char line[64];
 

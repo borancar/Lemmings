@@ -586,6 +586,18 @@ int view_run_anim(canvas *c, const lem_rgb *palette, const char *title,
 typedef struct {
     uint8_t *pix;            /* MENU_W * MENU_H, values 0..15 */
     lem_rgb  palette[16];
+    /* A SECOND palette, for the rows from `split` down, and the row it
+     * starts at - zero meaning the screen has only one.
+     *
+     * The briefing is two pictures stacked: the level's own preview at the
+     * top in the level's colours, and the text below in earth browns and
+     * blue shades, with a band of black scanlines between them where the
+     * game swaps the palette over. tools/probe_dac.py measures both. A
+     * capture holds one of them, so a screen can match the original on every
+     * index and still be the wrong colour - which is exactly what this
+     * screen did. */
+    lem_rgb  palette_low[16];
+    uint16_t split;
     /* A copy of MAIN.DAT section 4, kept alive so the banner can be redrawn
      * as it scrolls. The bar's tile and the font both live in it, and
      * menu_build composes only one frame. NULL on the screens that do not
