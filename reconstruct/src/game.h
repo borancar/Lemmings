@@ -455,6 +455,15 @@ int level_code_ok(const char *code);
 void level_code_generate(uint8_t level_no, uint8_t other, uint8_t percent,
                          char *out);
 
+/* THE RESULTS SCREEN, image 0x046EB - mode 0x10 at 640x350, a 40 by 21 grid
+ * of 16x16 cells. `sec` is MAIN.DAT section 4, which carries its font at
+ * 0x69B0. The BACKGROUND is not drawn; the set-up calls have not been read. */
+void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                        const uint8_t *sec, uint32_t sec_len,
+                        uint8_t saved, uint8_t needed, int timed_out,
+                        uint8_t input_kind, uint8_t level_no,
+                        const char *code);
+
 const char *level_results_headline(int timed_out);
 const char *level_results_prompt(uint8_t input_kind);
 void level_results_line(char *line, int needed_line, uint8_t percent);

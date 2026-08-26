@@ -1722,6 +1722,91 @@ void level_results_line(char *line, int needed_line, uint8_t percent)
     put_num(line, n - RESULT_NUM_BACK, percent);   /* image 0x04B5C */
 }
 
+/* THE RESULTS SCREEN'S LAYOUT - transcribed from image 0x04D4D.
+ *
+ * This was "not read" for a long time and it is data, not code. Image
+ * 0x04D4D walks a chain of records and every one carries its own position:
+ *
+ *     one byte  the column PLUS ONE - image 0x04D54 decrements it, and a
+ *               zero is what ends the chain (image 0x04D50)
+ *     one byte  the row
+ *     one byte  a style; zero gives image 0x04D5E's bp = 2
+ *     the text, with 0x0D ending the line (image 0x04D66)
+ *
+ * Image 0x04D78 then puts each character at (column * 16, row * 16) from a
+ * 16x16 glyph, so the screen is a 40 by 21 grid - and it is mode 0x10 at
+ * 640x350, NOT the level's 0x0D. That is why tools/record_level.py cannot
+ * reach it: it captures at image 0x018F, the level loop's own end-of-frame,
+ * and this screen has a loop of its own.
+ */
+typedef struct {
+    uint8_t     col, row, style;
+    const char *text;
+} results_line;
+
+#define RESULTS_COLS   40      /* 640 / 16 */
+#define RESULTS_ROWS   21      /* 350 / 16, near enough */
+#define RESULTS_CELL   16      /* image 0x04DAF and image 0x04DB1 */
+
+/* THE FONT is MAIN.DAT section 4 at 0x69B0 - 94 glyphs of 96 bytes, which is
+ * 16 rows of two bytes in three planes (image 0x04D8E's i*96, image 0x04DB5's
+ * ch = 3). Image 0x04D7C starts it at '!', and a space draws nothing (image
+ * 0x04D7A).
+ *
+ * The offset is MEASURED rather than read: image 0x04D90 indexes ds:0x5BC0 in
+ * a loaded resource, and where that lands in the file is not in the image -
+ * those bytes are still zero there. tools/probe_results.py dumps the guest's
+ * copy and it matches section 4 at 0x69B0 over all 9,024 bytes. */
+#define RESULTS_FONT_OFF   0x69B0
+#define RESULTS_GLYPH      96
+#define RESULTS_GLYPH_W    16
+#define RESULTS_GLYPH_H    16
+#define RESULTS_GLYPH_BPR  2
+#define RESULTS_GLYPH_PL   3
+#define RESULTS_FIRST_CH   0x21
+
+/* One character, image 0x04D78. Three planes, and a zero is transparent -
+ * image 0x04DBB hands the blitter a mask 0x40 bytes past the ink. */
+void results_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                  const uint8_t *sec, uint32_t sec_len,
+                  uint8_t ch, uint8_t col, uint8_t row)
+{
+    if (ch == ' ') return;                          /* image 0x04D7A */
+    if (ch < RESULTS_FIRST_CH) return;
+    uint32_t base = RESULTS_FONT_OFF
+                  + (uint32_t)(ch - RESULTS_FIRST_CH) * RESULTS_GLYPH;
+    if (base + RESULTS_GLYPH > sec_len) return;
+
+    int32_t x0 = (int32_t)col * RESULTS_CELL;       /* image 0x04DB1 */
+    int32_t y0 = (int32_t)row * RESULTS_CELL;       /* image 0x04DAF */
+    for (uint8_t r = 0; r < RESULTS_GLYPH_H; r++) {
+        int32_t y = y0 + r;
+        if (y < 0 || y >= (int32_t)dst_h) continue;
+        for (uint8_t c = 0; c < RESULTS_GLYPH_W; c++) {
+            int32_t x = x0 + c;
+            if (x < 0 || x >= (int32_t)dst_w) continue;
+            uint8_t v = 0;
+            for (uint8_t p = 0; p < RESULTS_GLYPH_PL; p++) {
+                uint8_t byte = sec[base + p * RESULTS_GLYPH_H * RESULTS_GLYPH_BPR
+                                   + r * RESULTS_GLYPH_BPR + (c >> 3)];
+                v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+            }
+            if (v) dst[(size_t)y * dst_w + (size_t)x] = v;
+        }
+    }
+}
+
+/* A whole record, image 0x04D4D: the column walks along as it goes. */
+void results_text(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                  const uint8_t *sec, uint32_t sec_len,
+                  const results_line *line)
+{
+    uint8_t col = line->col;
+    for (const char *p = line->text; *p; p++, col++)
+        results_char(dst, dst_w, dst_h, sec, sec_len,
+                     (uint8_t)*p, col, line->row);   /* image 0x04D73 */
+}
+
 /* WIN OR LOSE - transcribed from image 0x048F6.
  *
  * The end conditions at image 0x001C8 do not decide it; this does, from the
@@ -1759,6 +1844,137 @@ static const char *const VERDICT[VERDICTS] = {
     "You totally stormed that level!|Let's see if you can storm the next...",
     "Superb! You rescued every lemming on|that level. Can you do it again....?",
 };
+
+/* The nine verdicts, image 0x4955's table, each two lines with its own
+ * column and row - image 0x04D4D's records. */
+static const results_line VERDICT_AT[VERDICTS][2] = {
+    { /* ds:0x4f33 */
+        {  3,  7, 0, "ROCK BOTTOM! I hope for your sake" },
+        {  7,  8, 0, "that you nuked that level." },
+    },
+    { /* ds:0x4f77 */
+        {  2,  7, 0, "Better rethink your strategy before" },
+        {  7,  8, 0, "you try this level again!" },
+    },
+    { /* ds:0x4fbc */
+        {  2,  7, 0, "A little more practice on this level" },
+        {  7,  8, 0, "is definitely recommended." },
+    },
+    { /* ds:0x5003 */
+        {  3,  7, 0, "You got pretty close that time." },
+        {  2,  8, 0, "Now try again for that few % extra." },
+    },
+    { /* ds:0x504e */
+        {  1,  7, 0, "OH NO, So near and yet so far (teehee)" },
+        { 10,  8, 0, "Maybe this time....." },
+    },
+    { /* ds:0x5091 */
+        {  2,  7, 0, "RIGHT ON. You can't get much closer" },
+        {  3,  8, 0, "than that. Let's try the next...." },
+    },
+    { /* ds:0x50de */
+        {  1,  7, 0, "That level seemed no problem to you on" },
+        {  1,  8, 0, "that attempt. Onto the next...." },
+    },
+    { /* ds:0x512c */
+        {  4,  7, 0, "You totally stormed that level!" },
+        {  1,  8, 0, "Let's see if you can storm the next..." },
+    },
+    { /* ds:0x517a */
+        {  2,  7, 0, "Superb! You rescued every lemming on" },
+        {  2,  8, 0, "that level. Can you do it again....?" },
+    },
+};
+
+/* THE WHOLE SCREEN, in the order image 0x046EB builds it.
+ *
+ * Positions are the original's own records; see results_line above for where
+ * each address is. The BACKGROUND is not drawn - the set-up calls at image
+ * 0x046EB (0x4DEF, 0x4BE7, 0x53FC, 0x531E, 0x5028, 0x5017) have not been
+ * read - so this lays the text on whatever is already in `dst`.
+ *
+ *     image 0x04703  the headline, and which of the two is chosen by
+ *                    whether ds:0x20A7 and ds:0x20A9 read "0:00" - the
+ *                    CLOCK, not a flag
+ *     image 0x048BD  "You rescued" and "You needed", each with its number
+ *     image 0x04798  the verdict, image 0x048F6 picking one of nine
+ *     image 0x0479C  the prompt, by the input kind
+ *     image 0x04752  the access code, on a level that was won
+ */
+#define RES_HEAD_COL_TIME   12      /* ds:0x4C19 */
+#define RES_HEAD_COL_ALL     6      /* ds:0x4C2E */
+#define RES_HEAD_ROW         1
+#define RES_RESCUED_COL     12      /* ds:0x4C4E */
+#define RES_RESCUED_ROW      3
+#define RES_NEEDED_ROW       4
+#define RES_CODE_COL         4      /* ds:0x4D3F */
+#define RES_CODE_ROW        14
+#define RES_CODE2_COL       12
+#define RES_CODE2_ROW       15
+#define RES_RETRY_ROW       18      /* ds:0x4CD3 */
+#define RES_MENU_ROW        19      /* ds:0x4BA0 */
+
+/* Image 0x04CD3, 0x04CFE and 0x04D20 - the retry prompt by input kind, and
+ * their columns differ because the wordings do. */
+static const results_line S_RETRY[3] = {
+    {  1, RES_RETRY_ROW, 0, "Press left mouse button to retry level" },
+    {  5, RES_RETRY_ROW, 0, "Press button 1 to retry level" },
+    {  7, RES_RETRY_ROW, 0, "Press Space to retry level" },
+};
+/* Image 0x04BA0, 0x04BC3 and 0x04BE5. */
+static const results_line S_CONTINUE[3] = {
+    {  5, RES_MENU_ROW, 0, "Press mouse button to continue" },
+    {  5, RES_MENU_ROW, 0, "Press Fire button to continue" },
+    {  8, RES_MENU_ROW, 0, "Press Space to continue" },
+};
+
+/* Image 0x046EB, in its own order. */
+void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                        const uint8_t *sec, uint32_t sec_len,
+                        uint8_t saved, uint8_t needed, int timed_out,
+                        uint8_t input_kind, uint8_t level_no,
+                        const char *code)
+{
+    char buf[40];
+    results_line ln;
+
+    /* Image 0x04703. */
+    ln.row = RES_HEAD_ROW; ln.style = 0;
+    ln.col = timed_out ? RES_HEAD_COL_TIME : RES_HEAD_COL_ALL;
+    ln.text = level_results_headline(timed_out);
+    results_text(dst, dst_w, dst_h, sec, sec_len, &ln);
+
+    /* Image 0x048BD and image 0x048C7. */
+    level_results_line(buf, 0, saved);
+    ln.col = RES_RESCUED_COL; ln.row = RES_RESCUED_ROW; ln.text = buf;
+    results_text(dst, dst_w, dst_h, sec, sec_len, &ln);
+    level_results_line(buf, 1, needed);
+    ln.row = RES_NEEDED_ROW;
+    results_text(dst, dst_w, dst_h, sec, sec_len, &ln);
+
+    /* Image 0x04798: the verdict, both of its lines. */
+    uint8_t v = level_verdict(saved, needed);
+    for (uint8_t i = 0; i < 2; i++)
+        results_text(dst, dst_w, dst_h, sec, sec_len, &VERDICT_AT[v][i]);
+
+    uint8_t kind = input_kind < 3 ? input_kind : 0;
+    if (level_won(saved, needed)) {
+        /* Image 0x0474B and image 0x04752: the level number and its code. */
+        char lvl[40], is[40];
+        memcpy(lvl, "Your Access Code for Level     ", 32);
+        put_num3(&lvl[27], level_no);   /* image 0x0474B: ds:0x4D5D */
+        ln.col = RES_CODE_COL; ln.row = RES_CODE_ROW; ln.text = lvl;
+        results_text(dst, dst_w, dst_h, sec, sec_len, &ln);
+        snprintf(is, sizeof is, "is %s", code ? code : "");
+        ln.col = RES_CODE2_COL; ln.row = RES_CODE2_ROW; ln.text = is;
+        results_text(dst, dst_w, dst_h, sec, sec_len, &ln);
+        results_text(dst, dst_w, dst_h, sec, sec_len, &S_CONTINUE[kind]);
+    } else {
+        /* Image 0x0477D: retry, not continue. */
+        results_text(dst, dst_w, dst_h, sec, sec_len, &S_RETRY[kind]);
+    }
+}
+
 
 /* Which of the nine, from image 0x048F6's ladder. `saved` and `needed` are
  * percentages - ds:0x40 and ds:0x41. */

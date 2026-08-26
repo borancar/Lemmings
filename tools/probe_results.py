@@ -84,7 +84,25 @@ def install(m):
     def at(uc, ad, size, _):
         off = ad - base
         if off == FRAME_DONE:
+            # THE SAME GUARD tools/record_level.py USES, and leaving it out
+            # cost a fifteen-minute run that looked like a slow one.
+            #
+            # Image 0x018F is reached before the level as well as inside it,
+            # so a frame counter without this starts early; the script's click
+            # then lands before a single lemming is out, no digger is ever
+            # assigned, the level never finishes, and the screen this probe
+            # exists to capture never appears. Nothing says so - the run just
+            # plays on quietly until its ceiling.
+            #
+            # The level is the SECOND time the guest enters mode 0x0D. The
+            # first is the loading screen.
+            modes = getattr(m, "video_modes", [])
+            if (not modes or modes[-1] != 0x0D
+                    or sum(1 for v in modes if v == 0x0D) < 2):
+                return
             st["n"] += 1
+            if st["n"] % 100 == 0:
+                print(f"  [probe_results] level frame {st['n']}")
             while (st["script_at"] < len(script)
                    and script[st["script_at"]][0] <= st["n"]):
                 _, verb, arg = script[st["script_at"]]
