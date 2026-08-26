@@ -1418,8 +1418,10 @@ uint8_t level_verdict(uint8_t saved, uint8_t needed)
     return 7;
 }
 
-/* And whether it was a win at all: the ladder has no flag for it, but the
- * level is passed when the rescued percentage reaches what it asked for. */
+/* THE PORT'S OWN. Image 0x048F6's ladder has no "you failed" branch - the
+ * game says which it was in prose, not in a flag - so this is a one-line
+ * reading of where the ladder divides: at or above the requirement is a
+ * pass, below it is not. Nothing in the original returns this. */
 int level_won(uint8_t saved, uint8_t needed) { return saved >= needed; }
 
 const char *level_verdict_text(uint8_t saved, uint8_t needed)
