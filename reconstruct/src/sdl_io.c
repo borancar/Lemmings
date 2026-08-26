@@ -500,6 +500,10 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
                     took = lem_build_start(&A->lem[k]);    /* image 0x032BD */
                 else if (A->skill == SKILL_BLOCKER)
                     took = lem_block_start(&A->lem[k]);    /* image 0x03336 */
+                else if (A->skill == SKILL_CLIMBER)
+                    took = lem_climb_start(&A->lem[k]);    /* image 0x0329B */
+                else if (A->skill == SKILL_FLOATER)
+                    took = lem_float_start(&A->lem[k]);    /* image 0x03557 */
                 if (took) level_skill_spend(A->skill);
             }
         }

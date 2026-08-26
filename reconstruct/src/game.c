@@ -2895,6 +2895,37 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         lem_build_stop(a, 9, 0);                   /* image 0x02760: no turn */
 }
 
+/* THE TWO PERMANENT ABILITIES - image 0x0329B and image 0x03557.
+ *
+ * Neither is a state. A climber and a floater go on doing whatever they were
+ * doing; what changes is a byte that other routines read later - the walker
+ * when it meets a wall, the faller when it has fallen far enough. Both
+ * refuse the same three states, image 0x032A8 and image 0x03564 testing
+ * [si+8] against 0x103, and both refuse a lemming that already has the
+ * ability.
+ *
+ * The bytes are the ones image 0x03DFD and image 0x03E0E read to name a
+ * lemming on the panel: bit 0 of [si+0x24] is CLIMBER, [si+0x25] is FLOATER,
+ * and image 0x03E63 calls one with both an ATHLETE.
+ */
+#define ABILITY_KEEP 0x0103    /* image 0x032A8 and image 0x03564 */
+
+int lem_climb_start(lemming *a)
+{
+    if (a->extra & 1) return 0;                 /* image 0x032A2 */
+    if (a->flags & ABILITY_KEEP) return 0;      /* image 0x032A8 */
+    a->extra = 1;                               /* image 0x032B3: ASSIGNED */
+    return 1;
+}
+
+int lem_float_start(lemming *a)
+{
+    if (a->floater) return 0;                   /* image 0x0355E */
+    if (a->flags & ABILITY_KEEP) return 0;      /* image 0x03564 */
+    a->floater = 0xFF;                          /* image 0x0356B */
+    return 1;
+}
+
 /* THE BLOCKER - transcribed from image 0x03336, and it is the first skill
  * that writes to the trigger map rather than only reading it.
  *
