@@ -533,6 +533,94 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* THE DIGGER, against what the original actually did.
+     *
+     * tools/probe_digger.py drove the original into assigning one and
+     * recorded this, so these are not numbers read off a disassembly and
+     * hoped for - they are the original's own array, frame by frame:
+     *
+     *     f103  flags=0x0010  anim=17   assigned, x frozen
+     *     f104  flags=0x0010  anim= 0   y 92->93   digs
+     *     f105..f111          anim 1..7            does not dig
+     *     f112  flags=0x0010  anim= 8   y 93->94   digs
+     */
+    {
+        enum { W = 64, H = 64 };
+        static uint8_t ground[W * H];
+        for (uint16_t i = 0; i < W * H; i++) ground[i] = 8;   /* all solid */
+
+        lemming a;
+        memset(&a, 0, sizeof a);
+        a.x = 40; a.y = 40; a.dir = 1; a.state = 9;
+        a.hot_x = -8; a.hot_y = -10;
+
+        ck("a walker takes a digger", lem_dig_start(&a) != 0,
+           "the assignment was refused");
+        ck("which sets bit 0x10 and parks the animation at 17",
+           a.flags == 0x0010 && a.anim == 17, "image 0x0320D's fields");
+        ck("and drops the hot spot two rows", a.hot_y == -12,
+           "image 0x0325x sets hot_y to -12");
+
+        int16_t y0 = a.y;
+        lemmings_step(&a, 1, ground, W, H);
+        ck("the frame after, it is on anim 0 and has dug",
+           a.anim == 0 && a.y == y0 + 1, "the first dig did not happen");
+
+        int moved = 0;
+        for (uint8_t i = 1; i <= 7; i++) {
+            int16_t before = a.y;
+            lemmings_step(&a, 1, ground, W, H);
+            if (a.anim != i || a.y != before) moved = 1;
+        }
+        ck("anims 1..7 animate and do not dig", !moved,
+           "it dug on a frame the original does not");
+
+        int16_t y8 = a.y;
+        lemmings_step(&a, 1, ground, W, H);
+        ck("and anim 8 digs again", a.anim == 8 && a.y == y8 + 1,
+           "the second dig is not on anim 8");
+
+        /* Nothing under it any more - image 0x0244E turns it into a fall. */
+        lemming b;
+        memset(&b, 0, sizeof b);
+        b.x = 40; b.y = 40; b.dir = 1; b.state = 9; b.hot_x = -8; b.hot_y = -10;
+        static uint8_t empty[W * H];
+        memset(empty, 0, sizeof empty);
+        lem_dig_start(&b);
+        lemmings_step(&b, 1, empty, W, H);
+        ck("digging into nothing turns into a fall",
+           (b.flags & 0x0010) == 0 && (b.flags & 4) != 0,
+           "image 0x0244E did not swap the state");
+    }
+
+    /* And which lemming the pointer is over, image 0x03D0A. The same
+     * coordinates that a probe got backwards: level y is mouse_y PLUS eight,
+     * so to point at a lemming the mouse sits eight rows above it. */
+    {
+        lemming l[2];
+        memset(l, 0, sizeof l);
+        l[0].x = 784; l[0].y = 92; l[0].hot_x = -8; l[0].hot_y = -10;
+        l[1].x = 900; l[1].y = 92; l[1].hot_x = -8; l[1].hot_y = -10;
+
+        /* Its box is (784 - 8 - 4, 92 - 10 - 1) = (772, 81), twelve square,
+         * so it spans 772..784 across and 81..93 down. The pointer is at
+         * `view - 16 + mouse_x` and `mouse_y + 8`, so with the view at 640
+         * the middle of that box is mouse (154, 79) - which is exactly where
+         * tools/probe_digger.py's click landed on the original. */
+        lem_mouse_move(154, 79);
+        ck("the pointer finds the lemming under it",
+           level_lemming_at(l, 2, 640) == 0, "the 12x12 box missed");
+
+        lem_mouse_move(154, 79 + 16);
+        ck("and sixteen rows lower finds nothing",
+           level_lemming_at(l, 2, 640) < 0,
+           "the box is not where image 0x03D27 puts it");
+
+        lem_mouse_move(154 + (900 - 784), 79);
+        ck("the second lemming is found at its own x",
+           level_lemming_at(l, 2, 640) == 1, "the scan stopped at the first");
+    }
+
     /* What the pointer is over, image 0x03EF9. The coordinates are the
      * screen's plus eight throughout, which is the thing easiest to get
      * wrong here. */

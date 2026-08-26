@@ -299,8 +299,22 @@ typedef struct {
  * probes has no objects in it. */
 void lemmings_reset(lemming *lem);
 void lemmings_release(lemming *lem, uint8_t n, const level *lv);
+/* Not const: a digger removes terrain, which is the buffer the others
+ * probe - image 0x05EBA writes into the same planes image 0x05DC6 reads. */
 void lemmings_step(lemming *lem, uint8_t n,
-                   const uint8_t *lvl, uint16_t cw, uint16_t chh);
+                   uint8_t *lvl, uint16_t cw, uint16_t chh);
+
+/* Give this one a digger, image 0x0320D. Non-zero if it took - the original
+ * refuses when the lemming is already in a state that forbids it. */
+/* Which lemming the pointer is over, or -1 - image 0x03D0A. */
+int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x);
+
+/* Image 0x03180 dispatches the selected skill by BUTTON index: 0 and 1 are
+ * the release rate and 2..9 the eight skills, of which 9 - the digger - is
+ * the one this port has. */
+#define SKILL_DIGGER 9
+
+int lem_dig_start(lemming *a);
 uint8_t lemmings_live(const lemming *lem, uint8_t n);
 
 /* One lemming's sprite, from main.dat section 0 - 40 bytes a frame, two
@@ -469,7 +483,7 @@ typedef enum { LEM_PC_COMPATIBLE = 0, LEM_PC_HIGH = 1 } lem_pc;
 extern lem_pc lem_machine;
 
 void level_play_step(level_anim *st, const level *lv, lemming *lem,
-                     uint8_t *released, const uint8_t *terrain,
+                     uint8_t *released, uint8_t *terrain,
                      uint16_t w, uint16_t h);
 void level_play_draw(level_anim *st, const level *lv,
                      const uint8_t *obj_sec, uint32_t obj_len,

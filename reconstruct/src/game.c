@@ -1313,6 +1313,128 @@ static void lem_settle(lemming *a, int16_t bp)
 }
 
 /* Image 0x2047. */
+/* THE DIGGER - assignment from image 0x0320D, behaviour from image 0x023F3.
+ *
+ * The first skill this port implements, and the first of the fourteen
+ * handlers behind the dispatch at image 0x01F5E that anything has ever
+ * reached. tools/probe_digger.py reaches it: it drives the original into
+ * assigning one and records the array either side, so this is checked against
+ * the original doing it rather than against a reading of the disassembly
+ * alone.
+ *
+ * What the original does, recorded:
+ *
+ *     f102  flags=0x0000  anim= 0  diggers=10
+ *     f103  flags=0x0010  anim=17  diggers= 9     assigned
+ *     f104  flags=0x0010  anim= 0  y 92->93       digs
+ *     f112  flags=0x0010  anim= 8  y 93->94       digs
+ *
+ * and x freezes the moment it is assigned.
+ */
+
+/* WHICH LEMMING IS UNDER THE POINTER - transcribed from image 0x03D0A.
+ *
+ * The pointer's position in LEVEL coordinates is `scroll - 16 + mouse_x`
+ * across and `mouse_y + 8` down (image 0x03D0A and image 0x03D14), and image
+ * 0x03D27 gives each lemming a 12x12 box at (x + hot_x - 4, y + hot_y - 1).
+ * The scan walks the array and takes a hit.
+ *
+ * Both halves of that were got wrong on the way to reading it: the y relation
+ * is level y MINUS eight, not plus, and a probe that had it the other way
+ * round clicked sixteen pixels below every lemming and reported that the game
+ * simply did not respond. See tools/probe_digger.py.
+ */
+#define HIT_BOX      12          /* image 0x03D4C and image 0x03D5B */
+#define HIT_BACK_X   4           /* image 0x03D2C */
+#define HIT_BACK_Y   1           /* image 0x03D39 */
+
+int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
+{
+    int32_t px = (int32_t)view_x - 16 + (int32_t)lem_mouse_x;
+    int32_t py = (int32_t)lem_mouse_y + 8;
+
+    for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
+        const lemming *a = &lem[k];
+        if (a->alive == 0xFF) continue;          /* image 0x03D1E */
+        int32_t bx = (int32_t)a->x + a->hot_x - HIT_BACK_X;
+        int32_t by = (int32_t)a->y + a->hot_y - HIT_BACK_Y;
+        if (bx < 0) bx = 0;
+        if (by < 0) by = 0;
+        if (px >= bx && px <= bx + HIT_BOX && py >= by && py <= by + HIT_BOX)
+            return (int16_t)k;
+    }
+    return -1;
+}
+
+#define DIG_BIT        0x0010
+#define DIG_KEEP       0xF57F
+#define DIG_ANIM_START 0x11
+#define DIG_HOT_X      (-8)
+#define DIG_HOT_Y      (-12)
+/* Image 0x02424: past this row it has dug its way out of the level. */
+#define DIG_FLOOR      0xB4
+/* Image 0x0242D: 0x0FF8 is nine bits, and image 0x02432 shifts it by the
+ * low three of the x it probes - which is x + hot_x. So the span cleared
+ * runs from that + 3, nine pixels wide: x-5 to x+3. */
+#define DIG_WIDTH      9
+#define DIG_FROM       (-5)
+
+/* Transcribed from image 0x0320D. The mask it clears is 0xF57F - every state
+ * a digger may not also be in - and the bit it sets is 0x10, whose handler is
+ * image 0x023F3. It spends one from the count at ds:0x7F, parks the animation
+ * at 0x11 and drops the hot spot two rows. */
+int lem_dig_start(lemming *a)
+{
+    if (a->flags & ~(uint16_t)DIG_KEEP) return 0;   /* image 0x0321D */
+    a->flags = (uint16_t)((a->flags & DIG_KEEP) | DIG_BIT);
+    a->anim  = DIG_ANIM_START;
+    a->hot_x = DIG_HOT_X;
+    a->hot_y = DIG_HOT_Y;
+    a->state = 0;
+    return 1;
+}
+
+/* Image 0x023F3. Sixteen animation frames, and it digs on the two where the
+ * counter comes round to 0 and to 8 - image 0x02406 and image 0x02408. The
+ * frame it is parked on when assigned, 0x11, is not one of the sixteen and
+ * image 0x023F7 sends it straight to the digging path, which is why the very
+ * next frame is both anim 0 AND a dig. */
+static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    if (a->anim == DIG_ANIM_START) {
+        a->anim = 0;                          /* image 0x0250C */
+    } else {
+        a->anim = (uint8_t)((a->anim + 1) & 0x0F);   /* image 0x023FF */
+        if (a->anim != 0 && a->anim != 8)
+            return;                           /* image 0x0240C: just animate */
+    }
+
+    a->y = (int16_t)(a->y + 1);               /* image 0x0241D */
+    if (a->y >= DIG_FLOOR) {                  /* image 0x02424 */
+        a->alive = 0xFF;
+        return;
+    }
+
+    /* Clear the span, and see whether anything solid is left under it. */
+    int solid = 0;
+    int32_t cy = (int32_t)a->y - LEMMING_DY;
+    for (uint8_t i = 0; i < DIG_WIDTH; i++) {
+        int32_t cx = (int32_t)a->x + DIG_FROM + i - LEMMING_DX;
+        if (cx < 0 || cx >= (int32_t)cw || cy < 0 || cy >= (int32_t)chh)
+            continue;
+        lvl[(size_t)cy * cw + cx] = 0;        /* image 0x05EBA */
+        if (lem_solid(lvl, cw, chh, (int16_t)(a->x + DIG_FROM + i),
+                      (int16_t)(a->y + 1)))
+            solid = 1;
+    }
+    if (!solid) {
+        /* image 0x0244E: nothing left to stand on, so fall. */
+        a->flags = (uint16_t)((a->flags & ~(uint16_t)DIG_BIT) | 4);
+        a->state = 4;
+    }
+}
+
+/* Image 0x2047. */
 static void lem_walk(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     a->anim = (uint8_t)((a->anim + 1) & 7);
@@ -1447,7 +1569,7 @@ void lemmings_release(lemming *lem, uint8_t n, const level *lv)
  * and image 0x1F5E dispatches on [si+8]. Only the zero case is read, so only
  * that is stepped. */
 void lemmings_step(lemming *lem, uint8_t n,
-                   const uint8_t *lvl, uint16_t cw, uint16_t chh)
+                   uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
         lemming *a = &lem[k];
@@ -1468,7 +1590,7 @@ void lemmings_step(lemming *lem, uint8_t n,
          *     0x0400  0x2A6D
          *     0x0001  0x22DF
          *     0x0008  0x23BF  stepping up      transcribed
-         *     0x0010  0x23F3
+         *     0x0010  0x23F3  digging          transcribed
          *     0x0020  0x254F
          *     0x0040  0x2637
          *     0x0080  0x2693
@@ -1497,11 +1619,13 @@ void lemmings_step(lemming *lem, uint8_t n,
         else if (f & 0x8000) { /* image 0x2D0F, not read */ }
         else if (f & 0x0004)
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
+        else if (f & 0x0010)
+            lem_dig(a, lvl, cw, chh);                /* image 0x23F3 */
         else if (f & 0x0400) { /* image 0x2A6D, not read */ }
         else if (f & 0x0001) { /* image 0x22DF, not read */ }
         else if (f & 0x0008)
             lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
-        /* 0x0010 0x23F3, 0x0020 0x254F, 0x0040 0x2637, 0x0080 0x2693,
+        /* 0x0020 0x254F, 0x0040 0x2637, 0x0080 0x2693,
          * 0x0100 0x27E8, 0x0200 0x287D, 0x0800 0x2B35, 0x1000 0x22F5,
          * 0x2000 0x2326, 0x4000 0x2340 - none read. */
     }
@@ -2121,7 +2245,7 @@ void level_panel_palette(lem_rgb *out)
  * original's lemmings probe. `released` is carried across frames.
  */
 void level_play_step(level_anim *st, const level *lv, lemming *lem,
-                     uint8_t *released, const uint8_t *terrain,
+                     uint8_t *released, uint8_t *terrain,
                      uint16_t w, uint16_t h)
 {
     level_frame_step(st, lv);

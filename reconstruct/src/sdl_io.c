@@ -360,7 +360,8 @@ struct level_frame {
     level_anim   st[LEVEL_ANIM_MAX];
     const uint8_t *sec;
     uint32_t     len;
-    const canvas *from;      /* the pristine terrain each frame starts from */
+    canvas       *from;      /* the terrain each frame starts from - NOT
+                              * const, a digger removes some of it */
     const uint8_t *lem_sec;  /* main.dat section 0, the lemming sprites */
     uint32_t     lem_len;
     const uint8_t *pan_sec;  /* main.dat section 2, the panel artwork */
@@ -370,6 +371,8 @@ struct level_frame {
     uint8_t      released;   /* how many have come out of the trapdoor */
     uint16_t     view_x;     /* where the play area has scrolled to */
     uint8_t      selected;   /* which button's box is drawn */
+    uint8_t      skill;      /* ds:0x82 - the one a click would hand out */
+    uint8_t      diggers;    /* ds:0x7F - how many are left */
     int          stepped;    /* the first frame is the state before a step */
 };
 
@@ -493,12 +496,25 @@ static int level_run(struct level_frame *A, const canvas *c,
                     level_hit h = level_pointer_hit();
                     if (h.what == LEVEL_HIT_MINIMAP)
                         scroll_x = h.scroll;
+                    else if (h.what == LEVEL_HIT_PLAY) {
+                        /* Image 0x03170: a skill is selected, so find what
+                         * is under the pointer and give it one. */
+                        if (A->skill == SKILL_DIGGER && A->diggers) {
+                            int16_t k = level_lemming_at(A->lem, A->released,
+                                                         A->view_x);
+                            if (k >= 0 && lem_dig_start(&A->lem[k]))
+                                A->diggers--;
+                        }
+                    }
                     else if (h.what == LEVEL_HIT_BUTTON)
                         /* The highlight sits one slot on from the number it
                          * belongs to - PANEL_SEL_X0 is 16 where the numbers
                          * start at PANEL_ART_X, 32 - so the box for button k
                          * is drawn at k + 1. */
+                    {
                         A->selected = (uint8_t)(h.button + 1);
+                        A->skill = h.button;      /* image 0x03F66: ds:0x82 */
+                    }
                 }
             }
             else if (e.type == SDL_EVENT_KEY_DOWN) {
@@ -1214,6 +1230,8 @@ int level_show(const char *dir, const char *file, uint32_t which,
         A.view_x = lv->start_x;
         A.stepped = 0;
         A.selected = PANEL_SEL_BUTTON;
+        A.skill = 0;
+        A.diggers = (uint8_t)lv->skills[7];   /* the digger's slot */
         A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
 
         /* The lemming sprites live in main.dat, not in the level's own
