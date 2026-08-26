@@ -98,6 +98,20 @@ def install(m):
             t = st.get("target", (DIG_BTN_X, DIG_BTN_Y))
             m.click_mouse(0, t[0], t[1], False)
 
+        # The whole record, either side of the assignment: the sprite fields
+        # the port does not carry are in here - [si+0x0A] and [si+0x0C] are
+        # the ink and mask bases, [si+0x10] the bytes a frame and [si+0x12]
+        # the mask's offset within it.
+        if st["n"] in (WAIT + 11, WAIT + 13) and n:
+            raw = uc.mem_read(ds + ARRAY, REC)
+            out.write(f"  record at f{st['n']}: "
+                      + " ".join(f"{v:02x}" for v in raw) + "\n")
+            for off, name in ((0x0A, "ink base"), (0x0C, "mask base"),
+                              (0x10, "frame bytes"), (0x12, "mask delta"),
+                              (0x14, "?0x14"), (0x1F, "?0x1F")):
+                out.write(f"      +{off:#04x} {name:12s} = "
+                          f"{w(ARRAY + off) & 0xffff:#06x}\n")
+
         if WAIT - 2 <= st["n"] <= WAIT + 40 and n:
             r = rec(0)
             out.write(f"  f{st['n']:4d} n={n} lem0 x={r['x']:5d} y={r['y']:4d} "

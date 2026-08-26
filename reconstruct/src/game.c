@@ -1383,6 +1383,34 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
  * a digger may not also be in - and the bit it sets is 0x10, whose handler is
  * image 0x023F3. It spends one from the count at ds:0x7F, parks the animation
  * at 0x11 and drops the hot spot two rows. */
+/* NOT DRAWN, and here is exactly what is missing.
+ *
+ * tools/probe_digger.py dumped the original's record either side of the
+ * assignment, so both sprites' store fields are measured:
+ *
+ *              [+0x0A] ink   [+0x0C] mask   [+0x10] bytes   [+0x12] mask at
+ *     walker   0             0              0x5A = 90       0x3C = 60
+ *     digger   0             0x32A          0x70 = 112      0x54 = 84
+ *
+ * The walker's 90 decomposes as (2 planes + 1 mask) x 10 rows x 3 bytes,
+ * with the mask at 2 x 10 x 3 = 60 - and 10 rows in 2 planes is the geometry
+ * the port already draws the walker with, correctly, so that reading is
+ * anchored.
+ *
+ * The digger's 112 is NOT divisible by three, so its store is not that
+ * shape, and the arithmetic has more than one answer: three planes over 14
+ * rows at 2 bytes each, or three planes over 7 rows at 4. Both give 112 with
+ * the mask at 84, and 14 rows of a 16-wide sprite and 7 rows of a 32-wide
+ * one are very different pictures.
+ *
+ * So it is not drawn. Picking one and seeing whether it looks plausible is
+ * the fitting this project has been caught by before; what settles it is
+ * reading the store, or capturing a frame of the original mid-dig and
+ * matching the pixels the way the cursor's shape was matched. Until then a
+ * digging lemming is invisible, which is wrong in a way that is obvious
+ * rather than wrong in a way that looks fine.
+ */
+
 int lem_dig_start(lemming *a)
 {
     if (a->flags & ~(uint16_t)DIG_KEEP) return 0;   /* image 0x0321D */
