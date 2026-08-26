@@ -63,6 +63,8 @@ static void usage(void)
           "  --bitorder B  leftmost pixel is the byte's msb or lsb\n"
           "  --reverse     draw the terrain list back to front\n"
           "  --no-objects  terrain only, as the original composes it first\n"
+          "  --baked       bake objects into the terrain (NOT what the\n"
+          "                original does; for comparing the two)\n"
           "  --panel FILE  write the 320x40 control panel on its own\n"
           "  --raw FILE    also write the raw indices and palette, for\n"
           "                checking against the original: 'LEMRW2', width\n"
@@ -109,6 +111,9 @@ static int load_level(const char *data, const char *file, uint32_t which,
 }
 
 static uint8_t g_obj_frame;
+/* Bake the objects into the terrain instead of drawing them as the
+ * original does. Only for comparing the two - see render_objects. */
+static int g_baked_objects;
 
 static int render_level(const char *data, const char *file, uint32_t which,
                         int objects, const char *raw, const char *panel_out,
@@ -184,12 +189,32 @@ static int render_level(const char *data, const char *file, uint32_t which,
         return 1;
     }
     if (objects && gfx.count >= 2) {
-        if (render_objects(&c, &lv, &g, gfx.sections[1].data,
-                           gfx.sections[1].size, g_obj_frame, &err) != 0) {
-            fprintf(stderr, "render objects: %s\n", err);
-            canvas_free(&c);
-            dat_free(&gfx);
-            return 1;
+        if (g_baked_objects) {
+            /* render_objects bakes the objects into the terrain, which is
+             * NOT what the original does and says so where it is defined.
+             * Kept reachable so the two can be compared, but it is not what
+             * --raw uses any more: against a recorded frame it loses the
+             * entrance's torch flames and the colour inside its arch, 91 of
+             * the 134 pixels that differed before any lemming had dropped. */
+            if (render_objects(&c, &lv, &g, gfx.sections[1].data,
+                               gfx.sections[1].size, g_obj_frame, &err) != 0) {
+                fprintf(stderr, "render objects: %s\n", err);
+                canvas_free(&c);
+                dat_free(&gfx);
+                return 1;
+            }
+        } else {
+            /* What the original does: the objects are animated sprites drawn
+             * over the composed terrain at display time, image 0x07BB8. The
+             * window path has always used this; --raw used the baked one,
+             * which is why every frame comparison carried the same residue
+             * around the entrance. */
+            static level_anim st[LEVEL_ANIM_MAX];
+            level_anim_init(st, &lv, &g);
+            for (uint8_t k = 0; k < g_obj_frame; k++)
+                level_anim_step(st, &lv);
+            level_anim_draw(st, &lv, gfx.sections[1].data,
+                            gfx.sections[1].size, c.pix, c.w, c.h, 0);
         }
     }
     dat_free(&gfx);
@@ -355,6 +380,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
         else if (!strcmp(argv[i], "--no-objects")) objects = 0;
+        else if (!strcmp(argv[i], "--baked")) g_baked_objects = 1;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--panel") && i + 1 < argc) { panel_out = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;

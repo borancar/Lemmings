@@ -783,6 +783,40 @@ Each of these is stated as what was *checked*, not what was written.
   what fills its template, so the bare template scores **65.65%** against
   86.41% for the artwork alone. A placeholder there is worse than a gap.
 
+- **The objects are drawn the way the original draws them now.** `--raw` was
+  using `render_objects`, which bakes them into the terrain and whose own
+  comment says that is *not* what the original does; the transcribed
+  `level_anim_draw` (image 0x07BB8) was only ever reached by the window. That
+  is why every frame comparison carried the same residue round the entrance.
+
+  Switching it costs a little on a static render and pays once anything
+  animates, which is the point:
+
+  | | baked, frame 0 | animated, best frame |
+  | --- | --- | --- |
+  | reference frame 30 | 134 differ | 157 |
+  | reference frame 42 | 559 | **329** (frame 7) |
+  | reference frame 54 | 688 | **335** (frame 13) |
+  | reference frame 90 | 742 | **389** (frame 13) |
+
+  Stepping the port's animation once per game frame over the whole run takes
+  the play area's mean from 98.96% to **99.11%** - and shows up a real
+  difference rather than hiding it: the port's entrance starts opening at once
+  while the original's stays shut for about **32 frames**, so the early frames
+  get worse (98.61% at frame 12) as the late ones improve (99.23%). That the
+  late frames agree says the animation ends in the right state; it does *not*
+  establish the rate in between, and the delay has not been read - only
+  measured.
+
+- **The entrance sprite itself is still wrong, in both renderers.** 91 of the
+  134 pixels that differ before any lemming drops are the entrance: the
+  original draws two lit torches and a blue-and-green interior, the port draws
+  the grey arch alone. The original's blit is 48 wide, 25 rows, 4 planes from
+  segment 0x2900, with frames stepping **0x2EE = 750** bytes - and 48x25 at
+  four planes is 600, so there is a fifth 150-byte plane, the mask. Whatever
+  the port is decoding, it is not all of the sprite. That is the next thing to
+  read, and it is worth more than the panel's remaining text.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, one
   static port render against every one):
 
