@@ -1280,6 +1280,30 @@ static void lem_walk(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
     if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;
 }
 
+/* Image 0x23BF - what image 0x2169 turns a walker into when the step up is
+ * four rows or more. It climbs one row a frame while there is still terrain
+ * above, and the frame it finds air it clears bit 3 and hands back to the
+ * walker.
+ *
+ *     dec [si+2] / probe the new row / empty -> stop, anim = 0, y + 1
+ *     dec [si+2] / probe again       / empty -> stop, anim = 0, y + 1
+ *     otherwise settle where it is and keep the bit set
+ */
+static void lem_step_up(lemming *a, const uint8_t *lvl,
+                        uint16_t cw, uint16_t chh)
+{
+    for (uint8_t k = 0; k < 2; k++) {
+        a->y = (int16_t)(a->y - 1);
+        if (!lem_solid(lvl, cw, chh, a->x, a->y)) {
+            a->flags = (uint16_t)(a->flags & ~8u);   /* image 0x23E4 */
+            a->anim  = 0;
+            lem_settle(a, (int16_t)(a->y + 1));
+            return;
+        }
+    }
+    lem_settle(a, a->y);                             /* image 0x23DE */
+}
+
 /* Image 0x21B0 and image 0x2202. */
 static void lem_fall(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
@@ -1357,10 +1381,13 @@ void lemmings_step(lemming *lem, uint8_t n,
         if (a->alive == 0xFF) continue;            /* image 0x1F3C */
         /* Anything set in flags dispatches to a handler that has not been
          * read, so those are left alone rather than stepped wrongly. */
-        if (a->state == 9 && a->flags == 0)
-            lem_walk(a, lvl, cw, chh);
-        else if (a->state == 4 && a->flags == 4)
-            lem_fall(a, lvl, cw, chh);
+        /* image 0x1F5E dispatches on the flags word, in this order */
+        if (a->flags & 4)
+            lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
+        else if (a->flags & 8)
+            lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
+        else if (a->flags == 0 && a->state == 9)
+            lem_walk(a, lvl, cw, chh);               /* image 0x2047 */
     }
 }
 
@@ -1372,6 +1399,81 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
     for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++)
         if (lem[k].alive != 0xFF) live++;          /* image 0x03647 */
     return live;
+}
+
+/* ======================================================================
+ * DRAWING A LEMMING - image 0x0706F, and the store image 0x59BB fills.
+ *
+ * The original never draws from the file. Image 0x59BB walks every creature
+ * through the pre-shift builder at image 0x05B11 - the lemming first, `cx =
+ * 0x12` frames of `dx = 0x020A`, two planes of ten rows, source stepping 0x28
+ * a frame - and image 0x0706F then indexes the result at
+ *
+ *     (anim * 8 + shift) * frame_size,  frame_size = 90
+ *
+ * with the mask 60 bytes in. That was checked against the game's own
+ * registers rather than reasoned about: at image 0x070E7 the walker's mask
+ * offsets come out 60, 870, 1680, 2490, 3300, 4110, 4920, 5730 for its eight
+ * animation frames - steps of exactly 810, which is 9 * 90, because `anim`
+ * and `x & 7` both advance by one every frame.
+ *
+ * The port has no reason to pre-shift: it can put a pixel anywhere. So it
+ * reads the SOURCE the builder reads, which is `main.dat` section 0 from
+ * offset 0 - found by taking the store's own bytes back to the file - laid
+ * out as 40 bytes a frame, plane 0's ten rows of two bytes then plane 1's.
+ *
+ * Two planes give values 1..3, and 0 is transparent: the builder's second
+ * pass ORs the planes together to make the mask, so a pixel is drawn exactly
+ * when either plane has it.
+ *
+ * Which frame: `anim` facing right, and image 0x070AB adds `[di+0x29]` - the
+ * state, 9 for a walker - facing left. Eight frames each way inside the
+ * eighteen the loader builds.
+ * ====================================================================== */
+#define LEM_SPR_SECTION 0
+#define LEM_SPR_W       16      /* image 0x05B1C reads two bytes a row */
+#define LEM_SPR_H       10      /* image 0x059CC: dl = 0x0A */
+#define LEM_SPR_PLANES  2       /* image 0x059CC: dh = 0x02 */
+#define LEM_SPR_ROW     2
+#define LEM_SPR_PLANE   (LEM_SPR_ROW * LEM_SPR_H)          /* 20 */
+#define LEM_SPR_FRAME   (LEM_SPR_PLANE * LEM_SPR_PLANES)   /* 40 */
+#define LEM_SPR_FRAMES  0x12    /* image 0x059C8: cx = 0x12 */
+
+/* One lemming, at its own coordinates - image 0x070F9 puts the top row at
+ * `y + hot_y`, and the canvas sits 16 along and 16 down from those. */
+void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                  const uint8_t *sec, uint32_t sec_len, const lemming *a)
+{
+    uint8_t frame = a->anim;
+    uint32_t base;
+    int32_t x0, y0;
+
+    if (a->alive == 0xFF) return;
+    if (a->dir != 1) frame = (uint8_t)(frame + a->state);   /* image 0x070AB */
+    if (frame >= LEM_SPR_FRAMES) return;
+
+    base = (uint32_t)frame * LEM_SPR_FRAME;
+    if (base + LEM_SPR_FRAME > sec_len) return;
+
+    x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+    y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+
+    for (uint8_t r = 0; r < LEM_SPR_H; r++) {
+        int32_t py = y0 + r;
+        if (py < 0 || py >= (int32_t)dst_h) continue;
+        for (uint8_t c = 0; c < LEM_SPR_W; c++) {
+            int32_t px = x0 + c;
+            uint8_t v = 0;
+            if (px < 0 || px >= (int32_t)dst_w) continue;
+            for (uint8_t p = 0; p < LEM_SPR_PLANES; p++) {
+                uint8_t byte = sec[base + p * LEM_SPR_PLANE
+                                   + r * LEM_SPR_ROW + (c >> 3)];
+                v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+            }
+            if (v)                       /* the mask is the planes OR'd */
+                dst[(size_t)py * dst_w + px] = v;
+        }
+    }
 }
 
 /* Image 0x06FE2: the row is `(y - 0x20) >> 3` and the pixel `x >> 4`, and a

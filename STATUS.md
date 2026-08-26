@@ -1113,39 +1113,39 @@ Each of these is stated as what was *checked*, not what was written.
   It is the stale-artefact trap this file records for captures, applied to
   object files. Fixed.
 
-- **The lemming sprites: the store is confirmed, the addressing is not.**
+- **The lemmings are drawn.** The addressing was right all along; the probe
+  was a frame behind it.
 
-  The loader at image 0x59BB places every creature into the store at
-  `ds:0x1FE6`, and its first group is the lemming: `cx = 0x12` frames,
-  `dx = 0x020A` - **two planes of ten rows** - through image 0x05B11, which is
-  the builder that adds a mask, with the source stepping `0x28` a frame, which
-  is 2 x 10 x 2 exactly. Destination `di` starts at **0**.
+  Capturing the pointers the draw itself computes - at image 0x070E7, where
+  `bp` is the paragraph offset and `bx` the mask's byte - the walker's eight
+  animation frames come out at mask offsets **60, 870, 1680, 2490, 3300,
+  4110, 4920, 5730**. Steps of exactly 810, which is 9 x 90, because `anim`
+  and `x & 7` both advance by one every frame. That is
+  `(anim * 8 + shift) * 90 + 60`, precisely as image 0x070BF reads.
 
-  The builder settles the size with no fitting: eight shifts of
-  `(planes + 1) * rows * 3` bytes, which for two planes of ten rows is **90** -
-  the `frame_size` at `+0x10` - with the mask 60 bytes in, which is `+0x12`.
-  A frame is therefore 8 x 90 = **720** bytes.
+  Why every search had failed: `probe_lemmings.py` samples at image 0x01A3,
+  and the simulation at 0x01B3 and the draw at 0x01BC both run after it, so
+  the record was one step behind the pixels. **Measuring the game's own
+  registers settled in one run what four rounds of searching could not.**
 
-  And the sprites really are there. Searching the store for a lemming lifted
-  out of a recorded frame - unconstrained, over the whole dump - every one of
-  twelve samples matches **fully**, 9 of 9 or 10 of 10 rows, at a definite
-  offset. So the store, the three-byte rows and the 24-bit pre-shifted
-  alignment are all right.
+  With the offsets known, the store's bytes lead back to the source: it is
+  `main.dat` **section 0 from offset 0**, 40 bytes a frame - plane 0's ten
+  rows of two bytes, then plane 1's. The port has no reason to pre-shift, so
+  it reads that directly. Two planes give values 1..3 and 0 is transparent,
+  because the builder's second pass ORs the planes to make the mask. The
+  frame is `anim` facing right and `anim + [si+0x29]` facing left - image
+  0x070AB - which is why the loader builds eighteen.
 
-  What is *not* right is any formula from the recorded `anim` and `x` to those
-  offsets. They are consistent per sprite - anim 0 always lands at 867..870,
-  anim 4 at 1227..1233 - but they are not `(anim * 8 + shift) * 90`, and no
-  sweep of a base or a frame ordering gets past about 28%.
+- **And one more handler.** Every lemming froze at x=851 the first time this
+  ran, all at the same spot: they had hit the four-row climb at image 0x2169,
+  which sets bit 3 of the flags, and the port had no handler for it. Image
+  0x23BF is that handler - climb one row a frame while there is terrain above,
+  clear the bit the frame it finds air - and with it they turn at the wall and
+  walk back, as the original's do.
 
-  **There is a reason to suspect the recording rather than the formula.**
-  `tools/probe_lemmings.py` samples at image 0x01A3. The simulation runs at
-  image 0x01B3 and the draw at image 0x01BC - both *after* it. So the record a
-  frame is compared against is the state BEFORE that frame's update, while the
-  pixels are what was drawn AFTER it. The two are one step apart, and anim 0
-  landing where index 9 would put it (870 predicted, 867..870 measured) is
-  exactly what a one-step offset looks like. That did not hold for every
-  sample, so it is a lead and not an answer - but it means the next move is to
-  fix the probe's sampling point, not to sweep more parameters.
+  That the port could freeze ten lemmings in one place and still score 99.34%
+  is worth remembering. The score moved 0.5% when it was fixed; the picture
+  moved from wrong to right.
 
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
@@ -1154,11 +1154,11 @@ Each of these is stated as what was *checked*, not what was written.
   | frames | play area | panel |
   | --- | --- | --- |
   | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
-  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 99.46 / **99.91** / **100.00** |
+  | 700, worst / mean / best | 99.78 / **99.85** / 99.86% | 99.45 / **99.90** / **100.00** |
 
-  The panel reaches **100.00%** on some frames. What is left in the play area
-  is the lemming *sprites* - image 0x0706F, and the sprite data behind it,
-  which is the last thing nobody has read.
+  Both halves of the screen are now within a fifth of a per cent. What is left
+  in the play area is the **mouse cursor** - which lands wherever the pointer
+  is and says nothing about the reconstruction - and the exit's flames.
 
   Over 700 frames the play area falls from 99.86% to about 99.34% and then
   **flattens** - that is the ten lemmings coming out one by one and then

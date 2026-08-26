@@ -299,6 +299,12 @@ void lemmings_step(lemming *lem, uint8_t n,
                    const uint8_t *lvl, uint16_t cw, uint16_t chh);
 uint8_t lemmings_live(const lemming *lem, uint8_t n);
 
+/* One lemming's sprite, from main.dat section 0 - 40 bytes a frame, two
+ * planes of ten rows. Transcribed from images 0x0706F, 0x059BB and 0x05B11. */
+#define LEM_SPRITE_SECTION 0
+void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                  const uint8_t *sec, uint32_t sec_len, const lemming *a);
+
 /* Their dots on the minimap - image 0x06FE2. */
 void panel_minimap_dots(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                         const lemming *lem, uint8_t n,

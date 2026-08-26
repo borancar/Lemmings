@@ -255,6 +255,32 @@ static int render_level(const char *data, const char *file, uint32_t which,
     }
     dat_free(&gfx);
 
+    /* The lemmings go on last, over the terrain and the objects - image
+     * 0x01BC draws them after image 0x01B9 has drawn the objects. */
+    if (objects) {
+        char mpath2[1024];
+        dat_file mainf2;
+        const char *e2 = "unknown error";
+        snprintf(mpath2, sizeof(mpath2), "%s/main.dat", data);
+        if (dat_load(mpath2, &mainf2, &e2) == 0
+                && mainf2.count > LEM_SPRITE_SECTION) {
+            for (uint8_t k = 0; k < level_released() && k < LEMMING_MAX; k++) {
+                if (getenv("LEM_DEBUG"))
+                    fprintf(stderr, "  lem %u: x=%d y=%d dir=%d anim=%u "
+                            "state=%u alive=%u -> canvas (%d,%d)\n", k,
+                            g_lem[k].x, g_lem[k].y, g_lem[k].dir,
+                            g_lem[k].anim, g_lem[k].state, g_lem[k].alive,
+                            g_lem[k].x + g_lem[k].hot_x - LEMMING_DX,
+                            g_lem[k].y + g_lem[k].hot_y - LEMMING_DY);
+                lemming_draw(c.pix, c.w, c.h,
+                             mainf2.sections[LEM_SPRITE_SECTION].data,
+                             mainf2.sections[LEM_SPRITE_SECTION].size,
+                             &g_lem[k]);
+            }
+            dat_free(&mainf2);
+        }
+    }
+
     if (raw) {
         /* Palette indices, one byte per pixel, for a pixel-for-pixel
          * comparison against the original's video memory. A picture cannot
