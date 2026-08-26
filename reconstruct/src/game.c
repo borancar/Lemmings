@@ -1463,6 +1463,7 @@ void level_triggers_set(const level *lv, const ground *g)
 {
     trig_lv = lv;
     trig_g = g;
+    level_triggers_build(lv, g);       /* image 0x037CB */
 }
 
 /* WHAT THE LEMMING IS STANDING ON - transcribed from image 0x02EC0, and it
@@ -1500,33 +1501,76 @@ void level_triggers_set(const level *lv, const ground *g)
 #define TRIG_Y_LIMIT   0xB0     /* image 0x02EC5: below this, nothing */
 #define TRIG_ROW_UP    1        /* image 0x037F9's `dec bx` */
 
-uint8_t level_trigger_at(const lemming *a, const level *lv, const ground *g)
+/* THE MAP ITSELF. Image 0x037CB builds it once, straight after the terrain
+ * is composed, and everything that asks what a lemming is standing on reads
+ * one byte out of it. The port used to compute the answer from the objects
+ * every time, which gives the same result for a map nothing writes to - and
+ * something does: image 0x03348 has a BLOCKER stamp its own effect in, and
+ * checks the neighbouring cells first to refuse standing next to another.
+ * A map that is recomputed from the level file cannot hold that.
+ *
+ * 0x1A0 is 416 cells of four pixels, which is the 1,664 a level is wide. */
+#define TRIG_COLS   0x1A0
+#define TRIG_ROWS   64          /* 40 rows of four covers the play area */
+static uint8_t g_trigger[TRIG_ROWS][TRIG_COLS];
+
+/* Image 0x0381B: dh cells across, dl rows down, stepping the destination by
+ * 0x1A0 between rows. */
+static void trig_stamp(int32_t col, int32_t row, int32_t w, int32_t h,
+                       uint8_t v)
 {
-    if (a->y >= TRIG_Y_LIMIT) return 0;             /* image 0x02EC5 */
+    for (int32_t r = row; r < row + h; r++) {
+        if (r < 0 || r >= TRIG_ROWS) continue;
+        for (int32_t c = col; c < col + w; c++) {
+            if (c < 0 || c >= TRIG_COLS) continue;
+            g_trigger[r][c] = v;            /* image 0x0381D */
+        }
+    }
+}
 
-    /* The port's object x is sixteen less than the file's - level_parse
-     * takes it off there - and the builder used the file's, so put it back
-     * rather than shifting the lemming, which is in the original's own
-     * coordinates already. */
-    int32_t col = (int32_t)a->x / TRIG_CELL;
-    int32_t row = ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL;
+/* One byte of it, image 0x02EE6's `mov al, ss:[bx]`. */
+uint8_t level_trigger_cell(int32_t col, int32_t row)
+{
+    if (col < 0 || col >= TRIG_COLS || row < 0 || row >= TRIG_ROWS) return 0;
+    return g_trigger[row][col];
+}
 
-    uint8_t effect = 0;
+/* And writing one, which is what image 0x03348's blocker does to the map
+ * after checking its neighbours. */
+void level_trigger_put(int32_t col, int32_t row, uint8_t v)
+{
+    if (col < 0 || col >= TRIG_COLS || row < 0 || row >= TRIG_ROWS) return;
+    g_trigger[row][col] = v;
+}
+
+/* Image 0x037CB, stamping each object in turn - later ones overwrite. */
+void level_triggers_build(const level *lv, const ground *g)
+{
+    memset(g_trigger, 0, sizeof g_trigger);
     for (uint16_t i = 0; i < lv->num_objects; i++) {
         const level_object *o = &lv->objects[i];
         if (o->id >= GROUND_OBJECTS) continue;
         const ground_object *go = &g->objects[o->id];
         if (!go->trigger_effect) continue;          /* image 0x037E3 */
-
+        /* The port's object x is sixteen less than the file's - level_parse
+         * takes it off there - and the builder used the file's. */
         int32_t c0 = ((int32_t)o->x + LEMMING_DX) / TRIG_CELL
-                     + (int32_t)go->trigger_left;
+                     + (int32_t)go->trigger_left;   /* image 0x037E9 */
         int32_t r0 = (int32_t)o->y / TRIG_CELL
-                     + (int32_t)go->trigger_top - TRIG_ROW_UP;
-        if (col >= c0 && col < c0 + (int32_t)go->trigger_width
-            && row >= r0 && row < r0 + (int32_t)go->trigger_height)
-            effect = go->trigger_effect;            /* the LAST one stamped */
+                     + (int32_t)go->trigger_top - TRIG_ROW_UP;  /* 0x037F9 */
+        trig_stamp(c0, r0, go->trigger_width, go->trigger_height,
+                   go->trigger_effect);
     }
-    return effect;
+}
+
+/* Image 0x02EC0: the lookup, now that there is a map to look in. */
+uint8_t level_trigger_at(const lemming *a, const level *lv, const ground *g)
+{
+    (void)lv; (void)g;
+    if (a->y >= TRIG_Y_LIMIT) return 0;             /* image 0x02EC5 */
+    /* Image 0x02ECE and image 0x02ECB. */
+    return level_trigger_cell((int32_t)a->x / TRIG_CELL,
+                              ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL);
 }
 
 /* Image 0x02F15: effect 1, and image 0x02F3B is where it lands. */
