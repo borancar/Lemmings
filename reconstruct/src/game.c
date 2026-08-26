@@ -1477,11 +1477,36 @@ uint8_t level_verdict(uint8_t saved, uint8_t needed)
     return 7;
 }
 
-/* THE PORT'S OWN. Image 0x048F6's ladder has no "you failed" branch - the
- * game says which it was in prose, not in a flag - so this is a one-line
- * reading of where the ladder divides: at or above the requirement is a
- * pass, below it is not. Nothing in the original returns this. */
+/* Transcribed from image 0x04720 - and it WAS in the original after all.
+ *
+ * This was marked the port's own on the grounds that image 0x048F6's ladder
+ * has no pass-or-fail branch, only nine messages. The ladder does not, but
+ * the results screen does: image 0x0471D loads ds:0x40, image 0x04720
+ * compares it against ds:0x41 and image 0x04724's `jge` is the whole
+ * decision. At or above the requirement it sets ds:0x1F6D, advances the
+ * level and offers a code; below it, it does not.
+ *
+ * Found by scanning for a near call to the text assembly at image 0x048BD -
+ * exactly one, at image 0x04700 - which is the same scan that found the
+ * menu's caller at image 0x04401. Worth remembering next time something is
+ * about to be marked the port's own for want of looking one level up. */
 int level_won(uint8_t saved, uint8_t needed) { return saved >= needed; }
+
+/* WHAT WINNING DOES, image 0x04729 onwards: it sets the passed flag at
+ * ds:0x1F6D, advances ds:0x1F6B - the level index across the whole game -
+ * and recomputes the rating from it as index / 30. Image 0x0473E then caps
+ * the index at 0x78, which is 120: four ratings of thirty. */
+#define LEVELS_PER_RATING 30      /* image 0x04737: cl = 0x1E */
+#define LEVELS_TOTAL      120     /* image 0x0473E: cmp against 0x78 */
+
+/* Transcribed from image 0x0472E. Returns non-zero while there is another
+ * level; image 0x04745 leaves for the ending when there is not. */
+int level_advance(uint8_t *index, uint8_t *rating)
+{
+    (*index)++;                                   /* image 0x0472E */
+    *rating = (uint8_t)(*index / LEVELS_PER_RATING);
+    return *index < LEVELS_TOTAL;                 /* image 0x0473E */
+}
 
 const char *level_verdict_text(uint8_t saved, uint8_t needed)
 {

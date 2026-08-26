@@ -419,6 +419,9 @@ void level_results_line(char *line, int needed_line, uint8_t percent);
 uint8_t level_verdict(uint8_t saved, uint8_t needed);
 const char *level_verdict_text(uint8_t saved, uint8_t needed);
 int level_won(uint8_t saved, uint8_t needed);
+/* What winning does - image 0x0472E: on to the next level, and the rating
+ * recomputed from the index. Non-zero while there is another. */
+int level_advance(uint8_t *index, uint8_t *rating);
 
 extern uint8_t level_saved;
 void level_saved_reset(void);

@@ -580,7 +580,20 @@ int main(int argc, char **argv)
            "image 0x04904 must come first");
 
         ck("won is simply reaching the requirement",
-           level_won(10, 10) && !level_won(9, 10), "level_won");
+           level_won(10, 10) && !level_won(9, 10),
+           "image 0x04720's cmp and image 0x04724's jge");
+
+        /* Image 0x0472E: on to the next, with the rating recomputed as
+         * index / 30, and image 0x0473E's cap of 120. */
+        uint8_t idx = 29, rat = 0;
+        ck("the thirtieth level moves to the next rating",
+           level_advance(&idx, &rat) && idx == 30 && rat == 1,
+           "image 0x04737's divide by 30");
+        idx = 118; rat = 3;
+        ck("and there are a hundred and twenty of them",
+           level_advance(&idx, &rat) && idx == 119
+           && (level_advance(&idx, &rat) == 0),
+           "image 0x0473E caps at 0x78");
 
         ck("and the text follows the rung",
            strstr(level_verdict_text(100, 10), "Superb") != NULL
