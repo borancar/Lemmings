@@ -29,7 +29,7 @@ numbers, re-measured on the current build:
 
 | | |
 | --- | --- |
-| **the game's own screen**, all 5,100 frames of the expiration timer | play area **exact — ZERO differing — on 5,059 of 5,100**, cursor included; panel exact on 5,099 (frame 0 is the fade-in). The other 41 are frames 0..40, where the recorded run's pointer had not yet moved off its start position. This is the WINDOW path, what a player sees, not the harness (`tools/compare_screen.py`) |
+| **the game's own screen**, all 5,100 frames of the expiration timer | play area **exact — ZERO differing — on 5,099 of 5,100, THE CURSOR INCLUDED**; panel exact on 5,099 (frame 0 is the fade-in). The one play frame is 40, where a stray `MOUSEMOTION` from the dummy video driver moves the guest's pointer for a single frame before the recorder's per-frame re-assert takes it back — the instrument, not the port. This is the WINDOW path, what a player sees, not the harness (`tools/compare_screen.py` against `out/ref5100b`) |
 | the original's composed **level terrain** vs the port | **100.00%** — 49,741 pixels, 0 differing (`tools/prove.sh`) |
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
@@ -801,6 +801,27 @@ And the round trip through the validator is **not** what settles this; see
 "A round trip only checks the round trip" in `CLAUDE.md`. All three deliberate
 faults tried against the port - a bit in the wrong character, the rotation
 backwards, the nibbles swapped - produced codes image `0x051D4` accepted.
+
+### The pointer has to be held for this number to mean anything
+
+The earlier recording of these 5,100 frames was made with nobody touching the
+mouse, and that is not the same as the pointer being where the game put it.
+Image `0x00F41` sets it to (150, 100) at start-up and the port starts there
+too, but under `SDL_VIDEODRIVER=dummy` pygame still delivers a `MOUSEMOTION`
+and the emulator's window loop takes it, replacing the game's position with
+the emulator's own default of (160, 100). Ten pixels, and the two cross-hairs
+never overlap again.
+
+Scored against that recording the play area is exact on **41** of 5,100
+frames rather than 5,099, and every one of the other 5,059 differs by exactly
+56 pixels — two cursors, drawn ten apart. It reads as a regression and is not
+one: building the port at an earlier commit gives the identical 56.
+
+Re-recorded with the pointer HELD where image `0x00F41` puts it - one line of
+input script, re-asserted every frame - the two coincide and the cursor stops
+being something a comparison has to excuse. **A cursor that is scored rather
+than subtracted is worth having**; it is 28 pixels of the port that nothing
+else checks.
 
 ### The results screen, read at last
 
