@@ -1154,11 +1154,17 @@ Each of these is stated as what was *checked*, not what was written.
 
   | over 5,100 frames | play area | panel |
   | --- | --- | --- |
-  | worst / mean / best | 99.87 / **99.94** / 99.95% | 99.61 / **99.91** / **100.00** |
+  | worst / mean / best | 99.87 / **99.94** / 99.95% | 99.61 / **100.00** / **100.00** |
 
-  And the play area's residue is **the mouse cursor and nothing else**. With
-  its 28 pixels subtracted, `tools/compare_frame.py` reports **100.00%, 0 of
+  **The panel is exact - 0 of 12,800 pixels - at every frame checked.** The
+  99.61 is frame 0, captured mid-fade.
+
+  **The play area's residue is the mouse cursor and nothing else.** With its
+  28 pixels subtracted, `tools/compare_frame.py` reports **100.00%, 0 of
   51,200 differing** - "Everything else in the play area matches exactly."
+
+  So the port draws what the original draws, pixel for pixel, for the whole
+  of the level's expiration timer.
 
   The important thing is not the mean but that it is **flat**. Frame 50 and
   frame 5,000 score the same to two decimal places. Nothing drifts, nothing
@@ -1191,7 +1197,16 @@ Each of these is stated as what was *checked*, not what was written.
   the cursor**. That it does not vary at all is the useful part: what is left
   is static, so nothing about the simulation is still drifting.
 
-- **The last 23 pixels were the object modifier.** The port was drawing the
+- **The minimap's dots sit one pixel left of its terrain.** Measured: the
+  panel is 12 pixels out with the dots at the map's own origin and exactly 0
+  out at one less. That is also the loose end already recorded against the map
+  itself - the copy that places it is byte-aligned so it must start on a
+  multiple of eight, and 240 is one while the fitted 241 is not. The dots are
+  at the aligned origin; the map's 241 is absorbing a one-pixel shift
+  somewhere in its own decode. Both are exact against the original; **why the
+  two differ is not read yet**, and the constant says so.
+
+- **The last 23 pixels of the play area were the object modifier.** The port was drawing the
   exit's bottom rows from a mask that really is dense there - so the data was
   not the answer, and the rule had to be somewhere else. It is the LVL's own
   `e[6] & 0x80`, which `level_parse` had been reading into `no_overwrite`

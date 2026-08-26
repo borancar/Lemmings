@@ -349,7 +349,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
                 panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, lv.start_x,
                                MINIMAP_AT_X, VIEWPORT_AT_Y);
                 panel_minimap_dots(pp, PANEL_LINE_W, PANEL_ART_H, g_lem,
-                                   level_released(), MINIMAP_AT_X,
+                                   level_released(), MINIMAP_DOT_X,
                                    MINIMAP_AT_Y);
                 /* The status line is NOT drawn. It belongs sixteen rows down
                  * - screen row 176, which is PANEL_BASE / PANEL_STRIDE - but

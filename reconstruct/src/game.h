@@ -314,6 +314,16 @@ void panel_minimap_dots(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * than eight of those sixteen are terrain. Transcribed from images 0x0796F,
  * 0x07A25 and 0x07A39; where it sits is measured. */
 #define MINIMAP_AT_X 241
+/* The dots sit ONE pixel left of the map's own origin. Measured: the panel is
+ * 12 pixels out with them at MINIMAP_AT_X and exactly 0 out at one less.
+ *
+ * It is also the loose end recorded against the map itself. The copy that
+ * places the map is byte-aligned, so it must start on a multiple of eight -
+ * and 241 is not one, while 240 is. So the dots are at the aligned origin and
+ * the terrain map's fitted 241 is absorbing a one-pixel shift somewhere in
+ * its own decode. Both are exact against the original either way; what is not
+ * yet read is why the two differ. */
+#define MINIMAP_DOT_X (MINIMAP_AT_X - 1)
 /* 19 and not 17: the sampler starts sixteen canvas rows down (image 0x07992)
  * so the picture rides two stash rows higher, and the origin comes down to
  * meet it. Swept: 201, 98, 12, 93, 194 differing pixels at 17..21. */
