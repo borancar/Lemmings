@@ -1018,6 +1018,39 @@ Each of these is stated as what was *checked*, not what was written.
   recorded frames put it, solid top and bottom with a single pixel down each
   side.
 
+- **The lemming record, read from the running game** (`tools/probe_lemmings.py`).
+  Two of the names in this file were wrong and are corrected here:
+
+  | offset | what it is |
+  | --- | --- |
+  | `+0x00`, `+0x02` | x and y - and **canvas position is the record minus 16 on both axes**, confirmed against two lemmings' pixels in one frame |
+  | `+0x04`, `+0x06` | the sprite's hotspot, -8 and -10 |
+  | `+0x23` | the fall counter: +3 a frame, capped at 21 |
+  | `+0x26` | alive; 0xFF is dead |
+  | `+0x27` | direction, 1 for right |
+  | **`+0x28`** | the **animation frame**, not the action |
+  | **`+0x29`** | the **state**: 4 falling, 9 walking |
+
+  What they do, over 1,127 recorded walking steps:
+
+  - **falling** - x fixed, y **+3** a frame, animation cycling 0..3, the fall
+    counter climbing 3 at a time to 21
+  - **walking** - x **+1** a frame in the direction, animation cycling 0..7,
+    and y becoming the topmost terrain row in the new column
+
+  That last rule was *fitted* and it is **not** finished: searching down from
+  `old_y - 2` gets **1,122 of 1,127** right, and 3 or more gets 1,115. Five
+  steps it cannot explain. This file records twice what happens next if a fit
+  that is nearly right gets built on, so it is not being built on.
+
+- **The simulation is image 0x1F19**, reached from the play loop at image
+  0x01B3. It walks ds:0x88 for ds:0x43 entries, tests `+0x26` for alive, then
+  `+0x20` and bit 7 of `+0x24`, and branches. Image 0x03634 only *draws*;
+  image 0x05726 erases. That routine is the next thing to transcribe, and
+  everything still outstanding is behind it: the play area's half a per cent,
+  the panel's last 53 pixels, and the OUT count being the live tally rather
+  than the released one.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
   game frame):
