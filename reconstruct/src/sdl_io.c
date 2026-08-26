@@ -515,6 +515,31 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
         }
     }
     else if (h.what == LEVEL_HIT_BUTTON) {
+        /* NOT EVERY BUTTON IS A SKILL, and the port had treated all thirteen
+         * as one - clicking the nuke selected "skill 11", which nothing
+         * dispatches, and quietly left the panel with no skill armed.
+         *
+         * Image 0x03F27 refuses anything below 2 outright, then image
+         * 0x03F3D..0x03F4D sends 10, 11 and 12 away before image 0x03F66
+         * stores the rest in ds:0x82:
+         *
+         *     0, 1   image 0x04032   the release rate - NOT TRANSCRIBED
+         *     2..9   image 0x03F66   the eight skills
+         *     10     image 0x04018   pause - NOT TRANSCRIBED
+         *     11     image 0x03FEF   THE NUKE
+         *     12     image 0x03FEE   nothing at all, a bare `ret`
+         *
+         * The two marked not transcribed have their addresses here rather
+         * than a guess in their place; pause in particular is not a button
+         * on its own but a flag the whole frame loop reads (image 0x01F19
+         * returns early on it), so it is a change to the loop and not to
+         * this switch. */
+        if (h.button < 2) return;         /* image 0x03F27 */
+        if (h.button == 10 || h.button == 12) return;
+        if (h.button == 11) {             /* image 0x03F48 */
+            level_nuke_click();           /* image 0x03FEF */
+            return;
+        }
         /* The highlight sits one slot on from the number it belongs to -
          * PANEL_SEL_X0 is 16 where the numbers start at PANEL_ART_X, 32 -
          * so the box for button k is drawn at k + 1. */
@@ -780,18 +805,27 @@ static int level_run(struct level_frame *A, const canvas *c,
         }
         if (statef) {
             fprintf(statef, "{\"frame\":%ld,\"released\":%u,\"live\":%u,"
-                    "\"saved\":%u,\"over\":%u,\"lem\":[", frame_no,
+                    "\"saved\":%u,\"over\":%u,\"tick\":%u,\"lem\":[", frame_no,
                     (unsigned)A->released,
                     (unsigned)lemmings_live(A->lem, A->released),
-                    (unsigned)level_saved, (unsigned)A->over);
+                    (unsigned)level_saved, (unsigned)A->over,
+                    (unsigned)level_tick_now());
             for (uint8_t k = 0; k < A->released && k < LEMMING_MAX; k++) {
                 const lemming *a = &A->lem[k];
+                /* The FUSE and the direction are in here because the nuke
+                 * is a thing that happens to the fuse and to nothing else
+                 * for seventy-nine frames: a comparison of position and
+                 * flags alone agrees all the way from the double click to
+                 * the first explosion, and would have said the cascade was
+                 * right whatever order it lit them in. */
                 fprintf(statef,
                         "%s{\"x\":%d,\"y\":%d,\"hot_x\":%d,\"hot_y\":%d,"
-                        "\"flags\":%u,\"anim\":%u,\"alive\":%u}",
+                        "\"flags\":%u,\"anim\":%u,\"alive\":%u,"
+                        "\"fuse\":%u,\"dir\":%d,\"state\":%u}",
                         k ? "," : "", a->x, a->y, a->hot_x, a->hot_y,
                         (unsigned)a->flags, (unsigned)a->anim,
-                        (unsigned)a->alive);
+                        (unsigned)a->alive, (unsigned)a->fuse,
+                        (int)a->dir, (unsigned)a->state);
             }
             fprintf(statef, "]}\n");
         }

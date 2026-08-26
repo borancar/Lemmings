@@ -1341,6 +1341,91 @@ static uint8_t g_to_release;     /* ds:0x47 */
 /* THE PORT'S OWN, only because ds:0x43 is a byte of the data segment and
  * anything in the original can read it. */
 uint8_t level_released(void) { return g_released; }
+/* ds:0x47, and a VARIABLE - the nuke writes to it. */
+uint8_t level_to_release(void) { return g_to_release; }
+
+/* ======================================================================
+ * THE NUKE - panel button 11, image 0x03FEF.
+ *
+ * It is a DOUBLE CLICK, and that is the whole of why one press appears to
+ * do nothing: image 0x03FFB reads the frame counter at ds:0x1FD3, image
+ * 0x04002 stores it as the last press, and image 0x04007 gives up unless the
+ * two presses were within FIVE frames of each other. At the level's
+ * seventeen a second that is a third of a second.
+ *
+ * ds:0x1FD3 is bumped once a frame at image 0x00199 - the game's own
+ * end-of-frame, the same instruction tools/record_level.py captures at - so
+ * the window is five GAME frames and not five of anything the host counts.
+ * ====================================================================== */
+/* ds:0x1FD3. NOT g_tick - that name was already taken further up this file
+ * by ds:0x85, the clock's frames-per-second counter, and a second
+ * `static uint8_t g_tick;` in the same file is not an error in C: two
+ * tentative definitions MERGE into one variable. It compiled without a
+ * warning and the nuke's clock was the game's seconds counter, which the
+ * timer reloads to 17 every second - so the double click measured its gap
+ * against a byte that never went above 19, and the port nuked or refused to
+ * depending on where in the second the press landed. */
+static uint8_t g_nuke_tick;      /* ds:0x1FD3, image 0x00199 */
+static uint8_t g_nuke;           /* ds:0x4B */
+static uint8_t g_nuke_at;        /* ds:0x4C, the cascade's cursor */
+static uint8_t g_nuke_last;      /* ds:0x1FD4, the previous press */
+
+void level_tick(void) { g_nuke_tick++; }         /* image 0x00199 */
+uint8_t level_tick_now(void) { return g_nuke_tick; }
+uint8_t level_nuking(void) { return g_nuke; }
+
+/* Image 0x03FEF. Returns whether this press was the second of a pair. */
+int level_nuke_click(void)
+{
+    uint8_t was = g_nuke_last;
+    g_nuke_last = g_nuke_tick;                   /* image 0x04002 */
+    /* Image 0x04005 subtracts in AL and image 0x04007 is a SIGNED `jg`, so
+     * a counter that has wrapped between the two presses reads as negative
+     * and is accepted rather than rejected. */
+    if ((int8_t)(uint8_t)(g_nuke_tick - was) > 5) return 0;
+    g_nuke = 0xFF;                               /* image 0x0400B */
+    /* AND NO MORE COME OUT - image 0x04010 copies the released count over
+     * the level's total, so the entrance stops and image 0x001EA's
+     * "everyone released and none alive" can be reached at all. */
+    g_to_release = g_released;                   /* image 0x04013 */
+    return 1;
+}
+
+/* Image 0x01FF8, and it is the TAIL OF THE WALK LOOP rather than a routine
+ * of its own: image 0x01FF3's `dec [0x42] / je` falls into it once every
+ * lemming has been stepped. So it runs at most once a frame, after the
+ * simulation, and not at all while the game is paused - image 0x01F20 jumps
+ * past it to image 0x01FFF.
+ *
+ * ONE LEMMING A FRAME gets its fuse lit, which is what makes the nuke a
+ * cascade of little explosions rather than one bang. A DEAD one costs no
+ * frame at all: image 0x02026 bumps the cursor and jumps back to image
+ * 0x02005 to try the next, in the same pass. */
+static void level_nuke_step(lemming *lem)
+{
+    if (!g_nuke) return;                         /* image 0x01FF8 */
+    for (;;) {
+        if (g_nuke_at == g_released) {           /* image 0x02008 */
+            g_nuke = 0;                          /* image 0x0203C */
+            return;
+        }
+        if (g_nuke_at >= LEMMING_MAX) { g_nuke = 0; return; }
+        lemming *a = &lem[g_nuke_at];            /* image 0x02015 */
+        if (a->fuse) { g_nuke_at++; return; }    /* image 0x0201A */
+        if (a->alive == 0xFF) {                  /* image 0x02020 */
+            g_nuke_at++;                         /* image 0x02026 */
+            continue;                            /* image 0x0202A: no frame */
+        }
+        if (a->flags & 3) { g_nuke_at++; return; }   /* image 0x0202C */
+        /* Image 0x02033 writes 0x4F itself - the same fuse image 0x031E1
+         * gives a bomber, written out again at its own address rather than
+         * borrowed from the bomber's constant, which is defined further
+         * down beside the routine that uses it. */
+        a->fuse = 0x4F;                          /* image 0x02033 */
+        g_nuke_at++;                             /* image 0x02037 */
+        return;
+    }
+}
 
 /* Image 0x39D1 sets the countdown and image 0x39D6 the interval; both run
  * when the level is set up. */
@@ -1350,6 +1435,22 @@ void level_release_reset(const level *lv)
     g_release_step = (uint8_t)(((99u - (uint16_t)lv->release_rate) >> 1) + 4u);
     g_released     = 0;
     g_to_release   = (uint8_t)lv->num_lemmings;
+    /* Image 0x00436..0x0043B: the level's set-up zeroes ds:0x1FD3 and
+     * ds:0x1FD4 together, and NOTHING resets ds:0x4B or ds:0x4C - the
+     * cascade's flag and its cursor are written only by the nuke itself and
+     * by image 0x0203C when it finishes. That is the original's behaviour
+     * and not an omission here: a second nuked level picks the cascade up
+     * where the last one left it.
+     *
+     * And note what the zero does to the double click. Image 0x04005
+     * subtracts in AL and image 0x04007 is a SIGNED compare, so a press at
+     * tick 128 or beyond reads its gap from the zero as NEGATIVE and is
+     * accepted on its own. ds:0x1FD3 is a byte bumped once a frame, so for
+     * half of every fifteen seconds a single click nukes the level. It is
+     * transcribed rather than corrected - the port matched the original
+     * frame for frame through it. */
+    g_nuke_tick = 0;                             /* image 0x0043B */
+    g_nuke_last = 0;                             /* image 0x00438 */
 }
 
 /* Image 0x30A6. What it releases is a lemming into the array at ds:0x88;
@@ -2332,7 +2433,13 @@ uint8_t level_saved_percent(const level *lv)
  * image 0x001F0 reads from ds:0x45. */
 int level_over(const level *lv, uint8_t released, uint8_t live)
 {
-    if (released >= lv->num_lemmings && live == 0)
+    /* Image 0x001EA compares ds:0x43 against ds:0x47, which is a VARIABLE -
+     * the nuke at image 0x04013 writes the released count into it so that
+     * the entrance stops and this test can be reached. Reading the header's
+     * count instead made a nuked level wait for lemmings that would never
+     * come. */
+    (void)lv;
+    if (released >= level_to_release() && live == 0)
         return 1;                          /* image 0x001E7 */
     /* Image 0x001FA ORs the three clock DIGITS and compares against '0' -
      * it tests the characters on the panel, not a counter, which is why
@@ -4136,32 +4243,34 @@ void lemmings_step(lemming *lem, uint8_t n,
          * The whole of it, in the order the original tests:
          *
          *     (none)  0x2047  walking          transcribed
-         *     0x0002  0x2350
-         *     0x8000  0x2D0F
-         *     0x0004  0x21B0  falling          transcribed
-         *     0x0400  0x2A6D
-         *     0x0001  0x22DF
-         *     0x0008  0x23BF  stepping up      transcribed
-         *     0x0010  0x23F3  digging          transcribed
-         *     0x0020  0x254F
-         *     0x0040  0x2637
-         *     0x0080  0x2693
-         *     0x0100  0x27E8
-         *     0x0200  0x287D
-         *     0x0800  0x2B35
-         *     0x1000  0x22F5
-         *     0x2000  0x2326  leaving          transcribed
-         *     0x4000  0x2340
+         *     0x0002  0x2350  the bomber's cloud     transcribed
+         *     0x8000  0x2D0F  the blast              transcribed
+         *     0x0004  0x21B0  falling                transcribed
+         *     0x0400  0x2A6D  floating down          transcribed
+         *     0x0001  0x22DF  splatting              transcribed
+         *     0x0008  0x23BF  stepping up            transcribed
+         *     0x0010  0x23F3  digging                transcribed
+         *     0x0020  0x254F  climbing               transcribed
+         *     0x0040  0x2637  hoisting over the top  transcribed
+         *     0x0080  0x2693  building               transcribed
+         *     0x0100  0x27E8  blocking               transcribed
+         *     0x0200  0x287D  bashing                transcribed
+         *     0x0800  0x2B35  mining                 transcribed
+         *     0x1000  0x22F5  NOT READ
+         *     0x2000  0x2326  leaving                transcribed
+         *     0x4000  0x2340  NOT READ
          *     else    0x2EC0  (called, not jumped to)
          *
-         * Three are transcribed. The rest are the skills and the ways a
-         * lemming can die, and NOTHING REACHES THEM without a player
-         * assigning something - which is why no recorded run has ever
-         * exercised one, and why they are left alone here rather than
-         * stepped wrongly.
+         * Fifteen of the seventeen are transcribed and every one of them is
+         * checked against the original's own record by
+         * tools/verify_skills.py. The two that are not have their addresses
+         * here and nothing in their place: no recorded run has set either
+         * bit, so there is nothing to check a transcription of them against
+         * and a guess would look exactly like the rest of this list.
          *
-         * The order is kept even though only two of the bits can currently
-         * be set, because it stops being harmless the moment a third can. */
+         * The order is the original's and matters: it is a priority chain,
+         * so a lemming with two bits set takes the FIRST of them here and
+         * not the lowest-numbered. */
         uint16_t f = a->flags;
         /* Image 0x01F45, and it comes before even the shrug's test: a lit
          * fuse is counted down every frame, and a lemming whose fuse has
@@ -4250,6 +4359,12 @@ void lemmings_step(lemming *lem, uint8_t n,
             }
         }
     }
+
+    /* Image 0x01FF3's `dec [0x42] / je 0x1FF8` - the walk falls out of its
+     * loop straight into the nuke's cascade. It is not a separate call and
+     * must not become one: put it anywhere else in the frame and it steps a
+     * lemming the walk has not. */
+    level_nuke_step(lem);                          /* image 0x01FF8 */
 }
 
 /* Image 0x03647: the count image 0x03634 accumulates as it walks, and what
@@ -5544,6 +5659,7 @@ void level_play_step(level_anim *st, const level *lv, lemming *lem,
                      uint8_t *released, uint8_t *terrain,
                      uint16_t w, uint16_t h)
 {
+    level_tick();                       /* image 0x00199 */
     level_frame_step(st, lv);
     if (level_released() != *released) {
         lemmings_release(lem, *released, lv);

@@ -796,6 +796,28 @@ the reference moved, not the port.
   and stay out of the verifier's dispatch — comparing a no-op against the
   original reports a decision as a difference.
 
+## Two `static` definitions of one name in a file are one variable
+
+`g_tick` already meant `ds:0x85`, the clock's frames-per-second counter, when
+the nuke's own frame counter at `ds:0x1FD3` was written into the same file
+under the same name. C's tentative definitions **merge**: the compiler said
+nothing, and the two became a single byte the timer reloads to 17 every
+second. So the double click measured its gap against something that never
+went above 19, and the nuke fired or refused depending on where in the second
+the press landed - which reads exactly like a fussy double-click threshold.
+
+What found it was **counting the calls and printing the value beside them**:
+400 calls to a routine whose only statement was `g_tick++`, and `g_tick`
+reading 18. That pair of numbers cannot both be true of one variable, and it
+took one run to get them where an hour of reading the arithmetic got nowhere.
+
+So: when a value provably does not follow from the code that writes it,
+**stop reading the code and instrument the variable**. And when transcribing a
+new byte of the data segment, grep the file for the name first - this port
+names things after what they do, and two different bytes doing similar jobs
+will collide.
+
+
 ## The emulator is shared, not ours
 
 `dos_emulator` is used by other games' reconstructions, and their verification
@@ -843,7 +865,7 @@ sweeps are the only thing that would catch a regression there. So:
 | **`tools/compare_play.py`** | **the port and the original PLAYING the same level**, frame by frame, from one input script both sides read. Every other frame-by-frame number here came from a level nobody touches, which exercises only the part of the game that needs no player - the skills, the panel's behaviour, the cursor's box and the level's ending are all behind a click and none of them was ever scored. It also makes the CURSOR part of the comparison rather than an excused 28 pixels, because with both pointers driven from one script they are in the same place. Refuses to report a happy figure for a run where the digger was never assigned |
 | **`tools/probe_cursor.py`** | the cursor's two shapes, **read out of the original's sprite store** rather than measured off a frame. Image 0x05827 puts them at 144 bytes a shift in segment `ds:0x1FEA`, and image 0x05854 adds 0x480 for the box it wears over a lemming |
 | **`tools/verify_results.py`** | **the results screen, driven rather than played to**: it sets the six bytes image 0x046EB reads and calls it, stopping at the screen's own wait loop. Ninety seconds against the fifteen minutes a playthrough costs. `--step` reports the framebuffer after each set-up call, `--wipe` clears video memory first so a background that was only left over cannot pass for one the game drew |
-| **`tools/verify_skills.py`** | **every skill's RECORD against the original's own**, in one command - the lemming array frame by frame rather than any picture. It compares EVERY lemming on screen, not only the one that was clicked: the bomber's own record was exact while another lemming walked over a hole it should have fallen into, and nothing but comparing all of them would have shown it. A skill with no reference says so rather than being skipped |
+| **`tools/verify_skills.py`** | **every skill's RECORD against the original's own** - and THE NUKE, which is not a skill: `out/nuke.txt` presses panel button 11 twice and the whole array is expected to light its fuses one a frame. It compares the FUSE where both sides carry one, because a nuke does nothing visible for seventy-nine frames and a comparison of position and flags alone would pass whatever order the cascade lit them in. In one command - the lemming array frame by frame rather than any picture. It compares EVERY lemming on screen, not only the one that was clicked: the bomber's own record was exact while another lemming walked over a hole it should have fallen into, and nothing but comparing all of them would have shown it. A skill with no reference says so rather than being skipped |
 | **`tools/record_skills.sh`** | a reference run for each of the eight, one at a time. Sequential on purpose: two emulators on one machine halve each other's frame rate, and a run that falls behind its ceiling looks exactly like a level that ended early |
 | `tools/snapshot.py` | capture memory at a chosen point in a run |
 | `tools/probe_protected.py` | record the protected instruction stream as it runs |

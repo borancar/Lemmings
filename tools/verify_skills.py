@@ -36,7 +36,12 @@ SKILLS = [
     (8, "miner",   "ref_s8",  "out/s8.txt", 1),
     (9, "digger",  "refplay_full", "out/dig.txt", 1),
 ]
-UNTOUCHED = [("level 2, nobody touching it", "ref_l2", None, 2)]
+UNTOUCHED = [("level 2, nobody touching it", "ref_l2", None, 2),
+             # THE NUKE is not a skill and does not belong in the table
+             # above: nothing is assigned to a lemming, the script presses
+             # panel button 11 twice within five frames and the whole array
+             # is expected to light its fuses one a frame and go up.
+             ("the nuke, level 1", "ref_nuke", "out/nuke.txt", 1)]
 
 
 def compare(ref, script, number, frames):
@@ -68,10 +73,16 @@ def compare(ref, script, number, frames):
         shared += 1
         for k in range(min(len(r["lem"]), len(p))):
             A, B = r["lem"][k], p[k]
-            if (A["x"], A["y"], A["hot_x"], A["hot_y"], A["flags"],
-                    A["anim"], A["alive"]) != (
-                    B["x"], B["y"], B["hot_x"], B["hot_y"], B["flags"],
-                    B["anim"], B["alive"]):
+            # The FUSE is compared where the port reports one. A nuke does
+            # nothing visible for seventy-nine frames, so position and flags
+            # agree all the way from the double click to the first explosion
+            # and would pass whatever order the cascade lit them in.
+            keys = ["x", "y", "hot_x", "hot_y", "flags", "anim", "alive"]
+            # Only where BOTH sides carry it: the older reference runs were
+            # recorded before the manifest kept the fuse, and a missing key
+            # must cost coverage rather than raise.
+            keys += [k for k in ("fuse", "dir") if k in A and k in B]
+            if tuple(A[k] for k in keys) != tuple(B[k] for k in keys):
                 bad += 1
                 break
     return bad, shared

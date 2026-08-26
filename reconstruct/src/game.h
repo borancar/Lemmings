@@ -482,6 +482,13 @@ void    status_put_num(char *dst, uint8_t v);
 void    level_release_reset(const level *lv);
 void    level_release_step(void);
 uint8_t level_released(void);
+uint8_t level_to_release(void);
+/* THE NUKE, panel button 11 - image 0x03FEF. A DOUBLE click: two presses
+ * within five game frames. level_tick counts those frames (image 0x00199). */
+void    level_tick(void);
+uint8_t level_tick_now(void);
+int     level_nuke_click(void);
+uint8_t level_nuking(void);
 
 void        level_status_reset(const level *lv);
 

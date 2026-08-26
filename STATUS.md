@@ -954,6 +954,65 @@ exactly where the basher's 1,920 bytes end, and they end at `0xC60` where the
 crater's begin: two directions of two slices of eight shifts of thirteen rows
 of three bytes. `tools/verify_results.py` dumps them; nothing was read by eye.
 
+### The nuke
+
+**0 of 557 frames differ**, against a recording of the original being nuked on
+level 1 - the double click, the cascade, all ten explosions and the level's
+end. `tools/verify_skills.py` runs it; `out/nuke.txt` is the script both sides
+read.
+
+It is **panel button 11** and it is a **DOUBLE CLICK**, image `0x03FEF`: image
+`0x03FFB` reads the frame counter at `ds:0x1FD3`, image `0x04002` stores it as
+the last press, and image `0x04007` gives up unless the two were within five
+frames. `ds:0x1FD3` is bumped once a frame at image `0x00199` - the game's own
+end-of-frame - so the window is five GAME frames, a third of a second at
+seventeen a second.
+
+Image `0x04005` subtracts in AL and image `0x04007` is a **signed** compare,
+and image `0x00438` starts the last-press byte at zero. So a press at tick 128
+or beyond reads its gap as negative and is accepted **on its own**: for half
+of every fifteen seconds a single click nukes the level. The original does
+this - it lit its first fuse on the first press of the reference run, at the
+same frame and with the same 79 as the port - so it is transcribed rather than
+corrected.
+
+Then image `0x04013` copies the released count over the level's total, so the
+entrance stops and image `0x001EA`'s "everyone released and none alive" can be
+reached at all.
+
+**The cascade is the tail of the walk loop**, image `0x01FF8`, not a routine of
+its own: image `0x01FF3`'s `dec [0x42] / je` falls into it once every lemming
+has been stepped. One lemming a frame gets a fuse of `0x4F`, which is what
+makes the nuke a run of little explosions rather than one bang - and a dead one
+costs no frame, image `0x02026` bumping the cursor and going round again in the
+same pass.
+
+Nothing resets `ds:0x4B` or `ds:0x4C` at a level's start; they are written only
+by the nuke and by image `0x0203C` when the cascade finishes. A second nuked
+level picks the cursor up where the last one left it, and that is the
+original's behaviour rather than an omission here.
+
+### The panel is not thirteen skills
+
+Image `0x03F27` refuses any button below 2 outright, and image
+`0x03F3D..0x03F4D` sends 10, 11 and 12 away before image `0x03F66` stores the
+rest in `ds:0x82`. The port had treated all thirteen as skills, so clicking
+the nuke selected "skill 11" - which nothing dispatches, quietly leaving the
+panel with no skill armed.
+
+| | | |
+| --- | --- | --- |
+| 0, 1 | image `0x04032` | the release rate - **not transcribed** |
+| 2..9 | image `0x03F66` | the eight skills |
+| 10 | image `0x04018` | pause - **not transcribed** |
+| 11 | image `0x03FEF` | the nuke |
+| 12 | image `0x03FEE` | nothing at all, a bare `ret` |
+
+Pause is not a button on its own but a flag the whole frame loop reads - image
+`0x01F19` returns early on `ds:0x2B` and so does image `0x0020C` - so it is a
+change to the loop rather than to that switch, and it is left with its address
+against it rather than a guess in its place.
+
 ### Eighty lemmings, not sixteen
 
 `LEMMING_MAX` was **16**, a number nothing in the original says. The array is
