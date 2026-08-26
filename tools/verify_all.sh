@@ -128,7 +128,12 @@ fi
 # BOTH endings, which a playthrough of one level cannot.
 say ""
 say "  the results screen (tools/verify_results.py, driven):"
-for case in "won 100 10 0" "timeup 30 10 1"; do
+# Three cases, because they take three different paths through the screen and
+# a playthrough of one level can only ever show one of them: won on time, won
+# after the clock ran out, and lost with NOTHING saved - which is the else
+# branch at image 0x04778, verdict rung 0, no access code and a retry prompt
+# instead of a next-level one.
+for case in "won 100 10 0" "timeup 30 10 1" "lost 0 10 1"; do
     set -- $case
     name=$1 saved=$2 needed=$3 timed=$4
     rm -rf "out/vr_$name"
