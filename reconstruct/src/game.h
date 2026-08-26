@@ -262,6 +262,9 @@ void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * bl = 0x28 bytes a row, cx = 0x28 rows, bh = 4 planes. PANEL_TOP is the
  * screen row it goes at, measured against a recorded frame. */
 #define PANEL_FONT_SECTION 2
+/* MAIN.DAT section 4 carries the results screen's 16x16 font at 0x69B0 -
+ * measured, see level_results_draw. */
+#define RESULTS_FONT_SECTION 4
 #define PANEL_ART_W 320
 #define PANEL_ART_H 40
 #define PANEL_ART_PL 4
@@ -458,6 +461,12 @@ void level_code_generate(uint8_t level_no, uint8_t other, uint8_t percent,
 /* THE RESULTS SCREEN, image 0x046EB - mode 0x10 at 640x350, a 40 by 21 grid
  * of 16x16 cells. `sec` is MAIN.DAT section 4, which carries its font at
  * 0x69B0. The BACKGROUND is not drawn; the set-up calls have not been read. */
+/* The results screen in a window, and non-zero if the left button was
+ * pressed - image 0x047B4, which is "on to the next level". */
+int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
+                       int timed_out, uint8_t level_no, const char *code,
+                       uint8_t scale, const char **err);
+
 void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                         const uint8_t *sec, uint32_t sec_len,
                         uint8_t saved, uint8_t needed, int timed_out,
@@ -466,6 +475,8 @@ void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 
 const char *level_results_headline(int timed_out);
 const char *level_results_prompt(uint8_t input_kind);
+/* ds:0x25A6 - mouse, joystick or keyboard. Nothing sets it yet. */
+extern uint8_t lem_input_kind;
 void level_results_line(char *line, int needed_line, uint8_t percent);
 
 uint8_t level_verdict(uint8_t saved, uint8_t needed);
@@ -479,6 +490,11 @@ extern uint8_t level_saved;
 void level_saved_reset(void);
 void level_lemming_saved(void);
 uint8_t level_saved_percent(const level *lv);
+
+/* How the last level_show ended - the rescued percentage (ds:0x40) and
+ * whether image 0x001C8 called it over (ds:0x4F). */
+extern uint8_t g_level_saved;
+extern uint8_t g_level_over;
 int level_over(const level *lv, uint8_t released, uint8_t live);
 
 const char *level_status_line(void);

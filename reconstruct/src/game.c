@@ -1687,6 +1687,12 @@ static const char S_ALL_OUT[]   = "All lemmings accounted for."; /* ds:0x4C35 */
 static const char S_RESCUED[]   = "You rescued     ";          /* ds:0x4C51 */
 static const char S_NEEDED[]    = "You needed      ";          /* ds:0x4C65 */
 
+/* ds:0x25A6 - which input the player chose on the start-up screen. Image
+ * 0x048D1, image 0x04781 and image 0x047EE all pick their wording from it.
+ * The port's input screen matches the original's to the pixel but nothing
+ * yet SETS this, so it stays on the mouse's wording. */
+uint8_t lem_input_kind;
+
 /* The three wordings, by ds:0x25A6 - images 0x04C77, 0x04C9D and 0x04CB9. */
 static const char *const S_MENU_PROMPT[3] = {
     "Press right mouse button for menu",

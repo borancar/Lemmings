@@ -104,20 +104,60 @@ int main(int argc, char **argv)
             /* menu -> briefing -> level -> menu. The briefing's own
              * instruction is "Press mouse button to continue" and it means
              * it; the original takes no key off that screen. */
-            char picked[64];
-            uint32_t which = 0;
-            if (level_locate(rating, (uint8_t)number, picked, sizeof(picked),
-                             &which) != 0)
-                continue;
-            which += 1;             /* level_show takes 1-based sections */
-            level lv;
-            if (level_show_briefing(data, picked, which, rating,
-                                    (uint16_t)number, DEFAULT_SCALE,
-                                    &err) != 0)
-                fprintf(stderr, "  %s\n", err);
-            else if (level_show(data, picked, which, &lv,
-                                DEFAULT_SCALE, &err) != 0)
-                fprintf(stderr, "  %s\n", err);
+            /* BRIEFING -> LEVEL -> RESULTS -> THE NEXT LEVEL, which is the
+             * original's own loop: image 0x047B4 takes the left button on
+             * the results screen and jumps to image 0x4551, the next
+             * level's briefing, the index having already been advanced by
+             * image 0x0472E. The right button goes back to the menu. */
+            uint8_t index  = (uint8_t)(rating * 30 + (number - 1));
+            uint8_t rat    = rating;
+            for (;;) {
+                char picked[64];
+                uint32_t which = 0;
+                uint8_t num = (uint8_t)(index % 30 + 1);
+                rat = (uint8_t)(index / 30);
+                if (level_locate(rat, num, picked, sizeof(picked),
+                                 &which) != 0)
+                    break;
+                which += 1;         /* level_show takes 1-based sections */
+                level lv;
+                if (level_show_briefing(data, picked, which, rat,
+                                        num, DEFAULT_SCALE, &err) != 0) {
+                    fprintf(stderr, "  %s\n", err);
+                    break;
+                }
+                if (level_show(data, picked, which, &lv,
+                               DEFAULT_SCALE, &err) != 0) {
+                    fprintf(stderr, "  %s\n", err);
+                    break;
+                }
+                if (!g_level_over) break;      /* the window was closed */
+
+                /* Image 0x04720 judges it, and image 0x0472E advances the
+                 * index only when it was won. */
+                uint8_t saved = g_level_saved;
+                /* The requirement as a PERCENTAGE, which is what image
+                 * 0x04720 compares - the header carries a count. */
+                uint8_t needed = lv.num_lemmings
+                    ? (uint8_t)(lv.num_to_rescue * 100u / lv.num_lemmings)
+                    : 0;
+                char code[11] = "";
+                if (level_won(saved, needed)) {
+                    uint8_t next = index, r2 = rat;
+                    if (!level_advance(&next, &r2)) break;   /* 0x04745 */
+                    level_code_generate(next, 0, saved, code);
+                    if (!level_show_results(data, saved, needed, 0,
+                                            (uint8_t)(next + 1), code,
+                                            DEFAULT_SCALE, &err))
+                        break;                  /* image 0x047BC: the menu */
+                    index = next;
+                    continue;
+                }
+                if (!level_show_results(data, saved, needed, 0, 0, NULL,
+                                        DEFAULT_SCALE, &err))
+                    break;
+                /* Image 0x047B4 on a lost level retries the same one. */
+            }
             continue;
         }
 

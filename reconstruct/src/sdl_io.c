@@ -1361,6 +1361,78 @@ static int level_frame_tick(void *ctx, uint8_t *pix)
     return 1;
 }
 
+
+/* THE RESULTS SCREEN, image 0x046EB - the port's window for it.
+ *
+ * The composition is game.c's; this is the part the hardware used to do:
+ * a 640x350 mode 0x10 picture, the palette it is shown through, and a loop
+ * that waits for a button. That loop is image 0x047A9's, and it polls -
+ * there is no retrace wait in it at all, which is the sort of thing worth
+ * knowing before writing a probe for the screen.
+ *
+ * The BACKGROUND is not drawn. Image 0x046EB's set-up calls have not been
+ * read, so this puts the text on a cleared screen and the difference is
+ * whatever those calls draw - which is the honest state of it, and visible
+ * rather than hidden.
+ *
+ * Returns 1 for the left button (image 0x047B4: on to the next level) and
+ * 0 for anything else.
+ */
+int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
+                       int timed_out, uint8_t level_no, const char *code,
+                       uint8_t scale, const char **err)
+{
+    char path[1024];
+    dat_file mainf;
+    snprintf(path, sizeof(path), "%s/main.dat", dir);
+    if (dat_load(path, &mainf, err) != 0) return 0;
+    if (mainf.count <= RESULTS_FONT_SECTION) {
+        dat_free(&mainf);
+        if (err) *err = "main.dat has no section 4 - no results font";
+        return 0;
+    }
+
+    uint8_t *pix = calloc((size_t)MENU_W * MENU_H, 1);
+    if (!pix) { dat_free(&mainf); return 0; }
+
+    level_results_draw(pix, MENU_W, MENU_H,
+                       mainf.sections[RESULTS_FONT_SECTION].data,
+                       mainf.sections[RESULTS_FONT_SECTION].size,
+                       saved, needed, timed_out, lem_input_kind,
+                       level_no, code);
+
+    /* The whole screen is the hotspot: image 0x047A9 takes a button
+     * anywhere, not a place. */
+    view_hotspot any[1];
+    any[0].x = 0; any[0].y = 0;
+    any[0].w = MENU_W; any[0].h = MENU_H;
+    any[0].id = 1; any[0].key = VIEW_KEY_NONE;
+
+    /* THE PALETTE IS NOT MEASURED YET, and this says so rather than picking
+     * something that looks plausible. It comes from image 0x046EB's set-up
+     * calls, which have not been read, so the sixteen entries here are the
+     * menu's - close enough to read the text by, and wrong in a way a
+     * comparison against the original will report as a colour difference
+     * rather than hide. */
+    lem_rgb pal[16];
+    for (uint8_t i = 0; i < 16; i++) {
+        pal[i].r = (uint8_t)(i * 17);
+        pal[i].g = (uint8_t)(i * 17);
+        pal[i].b = (uint8_t)(i * 17);
+    }
+    int32_t r = view_interact(pix, MENU_W, MENU_H, pal, "PC Lemmings",
+                              scale, any, 1);
+    free(pix);
+    dat_free(&mainf);
+    return r == 1;
+}
+
+/* HOW THE LAST LEVEL ENDED, for the caller. The original keeps these in
+ * ds:0x40 and ds:0x4F; the port has no DGROUP, so they live here beside the
+ * loop that fills them. */
+uint8_t g_level_saved;
+uint8_t g_level_over;
+
 int level_show(const char *dir, const char *file, uint32_t which,
                level *lv, uint8_t scale, const char **err)
 {
@@ -1445,6 +1517,11 @@ int level_show(const char *dir, const char *file, uint32_t which,
         g_show_tick = level_frame_tick; g_show_ctx = &A; g_show_pix = c.pix;
         level_run(&A, &c, g.palette, "PC Lemmings", scale);
         g_show_tick = NULL; g_show_ctx = NULL; g_show_pix = NULL;
+        /* How it ended, for the caller: image 0x001C8 sets A.over, and the
+         * rescued count against the level's requirement is what image
+         * 0x04720 then judges. */
+        g_level_saved = level_saved_percent(&A.lv);
+        g_level_over  = A.over;
         free(A.panel); A.panel = NULL;
         if (have_main) dat_free(&mainf);
     } else if (rc == 0) {

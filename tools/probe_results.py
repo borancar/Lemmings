@@ -118,8 +118,15 @@ def install(m):
                 m.click_mouse(0, st["at"][0], st["at"][1], bool(st["down"]))
             return
 
-        if off == RESULTS and not st["arrived"]:
+        if off == RESULTS:
+            # Image 0x046EB is reached during start-up as well, so the first
+            # visit is not the screen this is after. Say which visit it is
+            # and how far the level had got, and dump the font each time -
+            # the last dump is the one that counts.
             st["arrived"] = True
+            st["visits"] = st.get("visits", 0) + 1
+            print(f"  [probe_results] image 0x046EB, visit {st['visits']}, "
+                  f"after {st['n']} level frames")
             ds = uc.reg_read(UC_X86_REG_DS) * 16
             seg = int.from_bytes(uc.mem_read(ds + FONT_SEG, 2), "little")
             seg = (seg + 0x1000) & 0xFFFF          # image 0x04D9D
@@ -138,7 +145,10 @@ def install(m):
         # from planes mid-write, it came out as noise with a dead palette,
         # which reads as a broken capture rather than as one taken too early.
         # Wait for the composition and the fade-in, then take several.
-        if off == WAIT_LOOP and st["arrived"]:
+        # Unconditional: this address is the screen's own wait, and being
+        # there IS the screen being up. Gating it on having seen image
+        # 0x046EB added a way to miss it and no way to notice.
+        if off == WAIT_LOOP:
             st["retrace"] = st.get("retrace", 0) + 1
             if st["retrace"] % 40 or st["shots"] >= 4:
                 return
