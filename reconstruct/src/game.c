@@ -1452,15 +1452,58 @@ void lemmings_step(lemming *lem, uint8_t n,
     for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
         lemming *a = &lem[k];
         if (a->alive == 0xFF) continue;            /* image 0x1F3C */
-        /* Anything set in flags dispatches to a handler that has not been
-         * read, so those are left alone rather than stepped wrongly. */
-        /* image 0x1F5E dispatches on the flags word, in this order */
-        if (a->flags & 4)
+
+        /* THE STATE DISPATCH, image 0x01F5E - and it is a PRIORITY CHAIN,
+         * not a jump table. It tests the bits of [si+8] one at a time, in an
+         * order that is not the order of the bits, and takes the first that
+         * is set. This file used to call it "16 handlers via 0x1F5E", which
+         * had 0x1F5E down as a table; it is the address the chain starts at.
+         *
+         * The whole of it, in the order the original tests:
+         *
+         *     (none)  0x2047  walking          transcribed
+         *     0x0002  0x2350
+         *     0x8000  0x2D0F
+         *     0x0004  0x21B0  falling          transcribed
+         *     0x0400  0x2A6D
+         *     0x0001  0x22DF
+         *     0x0008  0x23BF  stepping up      transcribed
+         *     0x0010  0x23F3
+         *     0x0020  0x254F
+         *     0x0040  0x2637
+         *     0x0080  0x2693
+         *     0x0100  0x27E8
+         *     0x0200  0x287D
+         *     0x0800  0x2B35
+         *     0x1000  0x22F5
+         *     0x2000  0x2326
+         *     0x4000  0x2340
+         *     else    0x2EC0  (called, not jumped to)
+         *
+         * Three are transcribed. The rest are the skills and the ways a
+         * lemming can die, and NOTHING REACHES THEM without a player
+         * assigning something - which is why no recorded run has ever
+         * exercised one, and why they are left alone here rather than
+         * stepped wrongly.
+         *
+         * The order is kept even though only two of the bits can currently
+         * be set, because it stops being harmless the moment a third can. */
+        uint16_t f = a->flags;
+        if (f == 0) {
+            if (a->state == 9)
+                lem_walk(a, lvl, cw, chh);           /* image 0x2047 */
+        }
+        else if (f & 0x0002) { /* image 0x2350, not read */ }
+        else if (f & 0x8000) { /* image 0x2D0F, not read */ }
+        else if (f & 0x0004)
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
-        else if (a->flags & 8)
+        else if (f & 0x0400) { /* image 0x2A6D, not read */ }
+        else if (f & 0x0001) { /* image 0x22DF, not read */ }
+        else if (f & 0x0008)
             lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
-        else if (a->flags == 0 && a->state == 9)
-            lem_walk(a, lvl, cw, chh);               /* image 0x2047 */
+        /* 0x0010 0x23F3, 0x0020 0x254F, 0x0040 0x2637, 0x0080 0x2693,
+         * 0x0100 0x27E8, 0x0200 0x287D, 0x0800 0x2B35, 0x1000 0x22F5,
+         * 0x2000 0x2326, 0x4000 0x2340 - none read. */
     }
 }
 
