@@ -2895,6 +2895,94 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         lem_build_stop(a, 9, 0);                   /* image 0x02760: no turn */
 }
 
+/* THE BLOCKER - transcribed from image 0x03336, and it is the first skill
+ * that writes to the trigger map rather than only reading it.
+ *
+ * Where it stands, image 0x03348: the cell is ((x - 4) >> 2, (y - 6 - 0x10)
+ * >> 2) - the same four-pixel cells and the same 0x10 on the y that image
+ * 0x02EC0 reads back with.
+ *
+ * What it refuses, image 0x0336E onwards: a 3x3 block of cells is checked
+ * and any of 2, 0x0A or 3 already there sends it away, so two blockers
+ * cannot stand within a cell of each other.
+ *
+ * What it writes, image 0x0346E: the same 3x3, with the columns taking 2,
+ * 0x0A and 3 in turn -
+ *
+ *     2 A 3
+ *     2 A 3
+ *     2 A 3
+ *
+ * - and the nine bytes it displaced go into the RECORD at [si+0x16], so
+ * they can be put back. That is why the port's map had to become a real one
+ * before this could be written at all: a map recomputed from the level file
+ * has nowhere to keep them.
+ */
+#define BLOCK_BIT     0x0100
+#define BLOCK_KEEP    0xF56F   /* image 0x03340 */
+#define BLOCK_BACK_X  4        /* image 0x0334D */
+#define BLOCK_BACK_Y  6        /* image 0x03350 */
+#define BLOCK_LEFT    2        /* image 0x03471 */
+#define BLOCK_MID     0x0A     /* image 0x0347A */
+#define BLOCK_RIGHT   3        /* image 0x03483 */
+
+static int block_taken(uint8_t v)
+{
+    return v == BLOCK_LEFT || v == BLOCK_MID || v == BLOCK_RIGHT;
+}
+
+int lem_block_start(lemming *a)
+{
+    if (a->flags & BLOCK_KEEP) return 0;            /* image 0x03340 */
+
+    int32_t col = ((int32_t)a->x - BLOCK_BACK_X) / TRIG_CELL;
+    int32_t row = ((int32_t)a->y - BLOCK_BACK_Y - TRIG_Y_BIAS) / TRIG_CELL;
+
+    /* Image 0x0336E: nine cells, and any of the three sends it away. */
+    for (int32_t r = 0; r < 3; r++)
+        for (int32_t c = 0; c < 3; c++)
+            if (block_taken(level_trigger_cell(col + c, row + r)))
+                return 0;
+
+    static const uint8_t across[3] = { BLOCK_LEFT, BLOCK_MID, BLOCK_RIGHT };
+    for (int32_t r = 0; r < 3; r++)
+        for (int32_t c = 0; c < 3; c++) {
+            a->under[r * 3 + c] = level_trigger_cell(col + c, row + r);
+            level_trigger_put(col + c, row + r, across[c]);   /* 0x03471 */
+        }
+
+    a->flags = BLOCK_BIT;
+    a->hot_x = -8;                                  /* image 0x0344C */
+    a->hot_y = -10;                                 /* image 0x03451: fff6 */
+    a->anim  = 0;
+    a->state = 0;                                   /* image 0x03448 */
+    a->extra &= 1;                                  /* image 0x03460 */
+    return 1;
+}
+
+/* What a blocker DOES, image 0x027E8: sixteen animation frames, and it goes
+ * on blocking for as long as there is ground under it. Image 0x027EF probes
+ * with the same routine everything else probes with, and when the answer is
+ * "nothing there" - dug away beneath it - image 0x027FC puts it back to
+ * walking.
+ *
+ * It does NOT put its nine trigger cells back here. Those stay stamped,
+ * which is the original's behaviour and not an omission: a blocker whose
+ * floor is removed leaves its block behind.
+ */
+static void lem_block(lemming *a, const uint8_t *lvl, uint16_t cw,
+                      uint16_t chh)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 0x0F);      /* image 0x027E8 */
+    if (lem_solid(lvl, cw, chh, a->x, a->y)) return; /* image 0x027F5 */
+
+    a->flags = 0;                                   /* image 0x027FC */
+    a->hot_x = -8;
+    a->hot_y = -10;                                 /* image 0x0281E */
+    a->anim  = 0;                                   /* image 0x02815 */
+    a->state = 9;                                   /* image 0x02823 */
+}
+
 /* THE SHRUG - transcribed from image 0x02DB5, and it is dispatched from the
  * LOOP HEAD rather than from the state chain.
  *
@@ -3125,6 +3213,8 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
         else if (f & 0x2000)
             lem_exiting(a);                          /* image 0x2326 */
+        else if (f & 0x0100)
+            lem_block(a, lvl, cw, chh);              /* image 0x27E8 */
         else if (f & 0x0080)
             lem_build(a, lvl, cw, chh);              /* image 0x2693 */
         else if (f & 0x0010)
@@ -3149,9 +3239,28 @@ void lemmings_step(lemming *lem, uint8_t n,
          * One frame, and it showed up as lemmings entering the exit a frame
          * or two late, the level ending at a different moment, and 24 to 40
          * differing pixels for the last quarter of the run. */
-        if (trig_lv && trig_g && !(a->flags & EXIT_BIT)
-                && level_at_exit(a, trig_lv, trig_g))
-            lem_exit_start(a);                       /* image 0x01FE8 */
+        /* Image 0x02F0F dispatches the trigger byte's low nibble, and three
+         * of its effects are read:
+         *
+         *     1  image 0x02F3B  the exit
+         *     2  image 0x02FA2  a blocker's LEFT column - a lemming walking
+         *                       right turns, one already walking left does
+         *                       not
+         *     3  image 0x02FAC  its right column, the other way round
+         *
+         * 0x0A is the blocker's own middle, which nothing dispatches - it is
+         * there for image 0x0336E to refuse a second blocker by. */
+        if (trig_lv && trig_g) {
+            uint8_t eff = level_trigger_at(a, trig_lv, trig_g);
+            if (eff == TRIGGER_EXIT) {
+                if (!(a->flags & EXIT_BIT) && !(a->flags & 4))
+                    lem_exit_start(a);               /* image 0x02F3B */
+            } else if (eff == 2) {
+                if (a->dir != -1) a->dir = (int8_t)-a->dir;   /* 0x02FA2 */
+            } else if (eff == 3) {
+                if (a->dir != 1) a->dir = (int8_t)-a->dir;    /* 0x02FAC */
+            }
+        }
     }
 }
 
@@ -3461,6 +3570,22 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * which is what scoring every offset against the original's own pixels,
  * over all eight frames at once, does. Nought to eight pixels a frame
  * disagree and every one of them is another lemming walking past. */
+/* THE BLOCKER'S SPRITE, measured the same way: 16 wide, ten rows, two
+ * planes, 40 bytes a frame, at 18800. One pixel disagrees across eight
+ * frames of 310 ink.
+ *
+ * Sixteen frames of forty ends at 19440, which is exactly where the shrug's
+ * begin - so the two are adjacent in the file, and each was found without
+ * reference to the other. Two independent measurements meeting at a boundary
+ * is worth more than either alone. */
+#define BLOCK_SPR_BASE  18800
+#define BLOCK_SPR_H     10
+#define BLOCK_SPR_PLANES 2
+#define BLOCK_SPR_ROW   2
+#define BLOCK_SPR_PLANE (BLOCK_SPR_ROW * BLOCK_SPR_H)          /* 20 */
+#define BLOCK_SPR_FRAME (BLOCK_SPR_PLANE * BLOCK_SPR_PLANES)   /* 40 */
+#define BLOCK_SPR_FRAMES 16
+
 #define SHRUG_SPR_BASE  19440
 #define SHRUG_SPR_H     10
 #define SHRUG_SPR_PLANES 2
@@ -3506,6 +3631,31 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                 for (uint8_t p = 0; p < EXIT_SPR_PLANES; p++) {
                     uint8_t byte = sec[base + p * EXIT_SPR_PLANE
                                        + r * EXIT_SPR_ROW + (c >> 3)];
+                    v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                }
+                if (v) dst[(size_t)py * dst_w + px] = v;
+            }
+        }
+        return;
+    }
+
+    /* A blocker - see BLOCK_SPR_BASE. */
+    if (a->flags & 0x0100) {
+        if (a->anim >= BLOCK_SPR_FRAMES) return;
+        base = BLOCK_SPR_BASE + (uint32_t)a->anim * BLOCK_SPR_FRAME;
+        if (base + BLOCK_SPR_FRAME > sec_len) return;
+        x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+        y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+        for (uint8_t r = 0; r < BLOCK_SPR_H; r++) {
+            int32_t py = y0 + r;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            for (uint8_t c = 0; c < 16; c++) {
+                int32_t px = x0 + c;
+                uint8_t v = 0;
+                if (px < 0 || px >= (int32_t)dst_w) continue;
+                for (uint8_t p = 0; p < BLOCK_SPR_PLANES; p++) {
+                    uint8_t byte = sec[base + p * BLOCK_SPR_PLANE
+                                       + r * BLOCK_SPR_ROW + (c >> 3)];
                     v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
                 }
                 if (v) dst[(size_t)py * dst_w + px] = v;

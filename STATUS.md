@@ -823,7 +823,7 @@ being something a comparison has to excuse. **A cursor that is scored rather
 than subtracted is worth having**; it is 28 pixels of the port that nothing
 else checks.
 
-### The builder, and the harness that reached it
+### Three skills of eight, and the harness that reached them
 
 "Just dig!" stocks nothing but diggers, so seven of the eight skills cannot be
 assigned by playing it - and a routine no run reaches is one the port can have
@@ -832,10 +832,15 @@ wrong for ever. `tools/record_level.py --skills` stocks all eight in the guest
 `tools/make_skill_script.py` writes the input for one of them. Both sides get
 the same poke, so the comparison stays a comparison.
 
-| the builder, 400 driven frames | |
-| --- | --- |
-| every lemming's record | **0 differ** |
-| the play area | **399 of 400 exact** |
+| 400 driven frames | records | play area |
+| --- | --- | --- |
+| the digger (button 9) | 0 differ | — the level's own |
+| the builder (button 6) | **0 differ** | **399 of 400 exact** |
+| the blocker (button 5) | **0 differ** | **398 of 400 exact** |
+
+The frames that are not exact are all 28 pixels of CURSOR, where a stray
+`MOUSEMOTION` from the dummy video driver moves the pointer for a single
+frame - the instrument, not the port.
 
 The one frame is 31, where a stray `MOUSEMOTION` from the dummy video driver
 moves the pointer for a single frame - the instrument, not the port.

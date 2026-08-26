@@ -314,6 +314,10 @@ typedef struct {
     uint8_t  anim;        /* +0x28 */
     uint8_t  state;       /* +0x29 - 4 falling, 9 walking */
     uint8_t  bricks;      /* +0x21 - image 0x032F2 gives a builder twelve */
+    uint8_t  under[9];    /* +0x16 - the nine trigger cells a BLOCKER covers,
+                           * kept so they can be put back. Image 0x0346E
+                           * reads each one out and image 0x03471 writes the
+                           * blocker's own value over it. */
     uint8_t  extra;       /* +0x24 - image 0x027DE sets bit 7 when a builder
                            * runs out, and image 0x03DFD reads that bit to
                            * keep calling it a BUILDER */
@@ -361,11 +365,15 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x);
 /* Image 0x03180 dispatches the selected skill by BUTTON index: 0 and 1 are
  * the release rate and 2..9 the eight skills, of which 9 - the digger - is
  * the one this port has. */
+#define SKILL_BLOCKER 5
 #define SKILL_BUILDER 6
 #define SKILL_DIGGER 9
 
 /* Give this one a builder, image 0x032BD. Non-zero if it took. */
 int lem_build_start(lemming *a);
+/* And a blocker, image 0x03336 - which refuses if another is already
+ * standing within a cell of it. */
+int lem_block_start(lemming *a);
 
 int lem_dig_start(lemming *a);
 uint8_t lemmings_live(const lemming *lem, uint8_t n);
