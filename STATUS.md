@@ -1113,6 +1113,31 @@ Each of these is stated as what was *checked*, not what was written.
   It is the stale-artefact trap this file records for captures, applied to
   object files. Fixed.
 
+- **The lemming sprites: where they are, and what is still not known.**
+  The masks are **found and confirmed**. Taking a lemming's pixels out of a
+  recorded frame - which the simulation now makes possible, since it gives the
+  exact position - and searching for that bit pattern:
+
+  - not in `main.dat` at all, at any stride: the sprites the draw reads are
+    the **pre-shifted** ones, built at run time
+  - in the segment at **`ds:0x1FE6`**, at **three bytes a row** - sixteen
+    pixels shifted by up to seven needs 23 bits, padded to 24 - and all nine
+    of the sprite's non-empty rows matched exactly
+
+  Locating each animation frame that way gives offsets that step by about
+  **720 bytes** for each `+9` of `anim * 8 + shift`, so roughly 80 bytes an
+  index. Image 0x070BF computes `bp = (index * frame_size) >> 4` with
+  `frame_size` = 90 from `+0x10`, and `cx = [0x1FE6] + bp` adds it to a
+  SEGMENT, so bp is in paragraphs - which would be 90 bytes an index, not 80.
+
+  **Those two do not agree yet, and nothing has been written on the strength
+  of either.** The search also has a few bytes of slack in it, because a
+  sprite's blank rows let a match start a row early, so the 720 is not exact
+  either. What settles it is reading the routine that BUILDS that store -
+  images 0x05B11 and 0x09347, which `tools/verify_preshift.py` and
+  `tools/verify_shift.py` already check - rather than measuring the store from
+  outside.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
   game frame):
