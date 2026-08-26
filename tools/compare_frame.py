@@ -30,21 +30,33 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 PLAY_H  = 160
 PANEL_Y = 176
-DAC_BIAS = 8            # the mode's attribute -> DAC map for terrain
-
-# The panel is drawn at screen row 160 and does NOT share the terrain's map.
-# Measured, not assumed: taking every pixel of the artwork (main.dat section
-# 2, 320x40, four plane-major planes) against a recorded frame and asking
-# what the original shows at each of the sixteen values, 0..6 come back as
-# themselves at 96-100% and 10, 11, 12, 14, 15 come back as 18, 19, 20, 22,
-# 23 - so 0..7 map to themselves and 8..15 to 16..23. 7, 8, 9 and 13 never
-# occur in the artwork at all, so that half of the rule is inference from the
-# five values that do.
 PANEL_TOP = 160
 
 
-def panel_dac(v):
+def dac(v):
+    """The mode's attribute map: a 4-bit video value to a DAC index.
+
+    ONE rule for the whole screen - 0..7 to themselves, 8..15 to 16..23.
+
+    It was two for a while, and that hid a real difference. Terrain was
+    compared with an unconditional +8, which happens to be right because
+    terrain values are all 8..15, and it was wrong for everything that is
+    not terrain. The objects proved it: where the port and the original
+    disagreed around the exit, the port's raw 1, 3, 4, 5, 6 and 7 came back
+    from the original as 1, 3, 4, 5, 6 and 7 - unmapped - while the checker
+    was showing them as 9, 11, 12, 13, 14 and 15. Switching to this rule
+    takes the play area from 98.61% to 98.76% without touching the port.
+
+    The panel agrees independently: taking its artwork against a recorded
+    frame, 0..6 come back as themselves and 10, 11, 12, 14, 15 come back as
+    18, 19, 20, 22, 23. The 8..15 half is inference from the five high values
+    that actually occur - 7, 8, 9 and 13 appear in neither.
+    """
     return v if v < 8 else v + 8
+
+
+# The panel is the same map; kept as a name so callers read clearly.
+panel_dac = dac
 
 
 def read_capture(path):
@@ -94,8 +106,7 @@ def play_diff(cap, cw, lev, lw, lh, scroll):
         for x in range(cw):
             cx = scroll + x
             v = lev[y * lw + cx] if cx < lw else 0
-            got = v + DAC_BIAS if v else 0
-            if got != cap[y * cw + x]:
+            if dac(v) != cap[y * cw + x]:
                 bad.append((x, y))
     return bad
 
@@ -207,7 +218,7 @@ def main():
                 return (0, 0, 0)
             cx = scroll + x
             v = lev[y * lw + cx] if cx < lw else 0
-            return rgb(v + DAC_BIAS) if v else (0, 0, 0)
+            return rgb(dac(v))
         emit("original", lambda x, y: rgb(cap[y * cw + x]))
         emit("port", port)
         emit("diff", lambda x, y: (255, 0, 255) if (x, y) in bset

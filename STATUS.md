@@ -808,6 +808,20 @@ Each of these is stated as what was *checked*, not what was written.
   establish the rate in between, and the delay has not been read - only
   measured.
 
+- **There is ONE attribute map for the screen, and believing there were two
+  hid a real difference.** The checker compared terrain with an unconditional
+  +8. That is right by accident - terrain values are all 8..15 - and wrong for
+  everything else. The objects proved it: where the port and the original
+  disagreed around the exit, the port's raw 1, 3, 4, 5, 6 and 7 came back from
+  the original as **1, 3, 4, 5, 6 and 7**, unmapped, while the checker was
+  showing them as 9, 11, 12, 13, 14 and 15.
+
+  The rule is `v < 8 ? v : v + 8`, the same one measured independently on the
+  panel's artwork. Applying it took the play area from 98.61% to **98.76%**
+  without touching a line of the port - the port's canvas was right and the
+  instrument was wrong, which is the failure mode this file keeps recording
+  from the other direction.
+
 - **The entrance sprite itself is still wrong, in both renderers.** 91 of the
   134 pixels that differ before any lemming drops are the entrance: the
   original draws two lit torches and a blue-and-green interior, the port draws
@@ -817,47 +831,21 @@ Each of these is stated as what was *checked*, not what was written.
   the port is decoding, it is not all of the sprite. That is the next thing to
   read, and it is worth more than the panel's remaining text.
 
-- **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, one
-  static port render against every one):
+- **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames,
+  the port stepping its object animation once per game frame):
 
   | | play area | panel |
   | --- | --- | --- |
-  | frame 0, before any lemming drops | **99.74%** | 86.04% |
-  | frame 114, eight lemmings out | 98.50% | 86.12% |
-  | worst / mean / best | 98.50 / 98.98 / 99.74% | 86.04 / 86.13 / 86.41% |
+  | frame 0, before any lemming drops | **99.86%** | 86.04% |
+  | frame 12, entrance still shut in the original | 98.76% | 86.04% |
+  | frame 108, eight lemmings out | **99.76%** | 86.10% |
+  | worst / mean / best | 98.76 / **99.50** / 99.86% | 86.04 / 86.12 / 86.41% |
 
-  The curve is the point: the terrain is essentially exact and every tenth of
-  a percent lost is something that moved. That is the measurement to drive the
-  play loop against.
-
-- **The panel: what is settled and what is not.** `main.dat` section 2 is
-  8,384 bytes and splits cleanly: the last 1,984 are the status font (already
-  transcribed, image 0x0592C), and the first 6,400 are the panel artwork.
-  Decoded 320 wide in **three** planes it is unmistakably the panel — button
-  surrounds, the release-rate `+`/`-`, the `M`, the minimap border — where
-  four planes gives the same shapes in the wrong colours. Fitted against rows
-  160..199 of a recorded frame over every plane count, height and top row,
-  the best is three planes, 40 rows, **top row 160**, at 69.9%.
-
-  It is **not** good enough to build on, and the picture says why rather than
-  the number: the artwork's buttons are visibly *taller* than the ones the
-  original draws, so the row stride is wrong, not merely the offset. Fitting
-  further would be the same mistake this file already records twice. The
-  layout has to be read.
-
-- **Image 0x07E76 is not the panel — it unpacks the lemming sprites.** This
-  is worth having. `tools/probe_blits.py --rows 176 199` named it, and
-  dumping what it reads out of guest memory and matching that against the
-  data files settles it: the source is `main.dat` **section 3**, 61,968
-  bytes, at offset 0. It runs four passes of two blits, 320 wide by 104 rows
-  at two planes, at x=0 and x=320 with y stepping 0, 104, 208, 312 — a
-  **640-wide, 416-row, two-plane staging buffer**. That is the sprite sheet
-  the level's lemmings come out of, and it is the next thing to read.
-
-  The skill icons are separate: image 0x04DBB, thirteen 16x16 three-plane
-  blits, out of segment 0x687E rather than any section directly — a
-  pre-shifted buffer, which is what images 0x05B11 and 0x09347 build and what
-  `tools/verify_preshift.py` and `tools/verify_shift.py` already check.
+  Frame 0 is 72 differing pixels, which is the mouse cursor. The dip in the
+  middle is the one difference left that is the port's: **its entrance starts
+  opening at once, the original's stays shut for about 32 frames**. That has
+  been measured, not read, and reading it is the next thing worth doing - the
+  animation is otherwise at the right rate and ends in the right state.
 
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte
