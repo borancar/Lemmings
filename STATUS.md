@@ -1218,19 +1218,31 @@ Each of these is stated as what was *checked*, not what was written.
   5,100 are recorded (`tools/record_level.py`, 319 MB) and 102 of them -
   every fiftieth - are scored against the port:
 
-  | over 5,100 frames | play area | panel |
-  | --- | --- | --- |
-  | worst / mean / best | 99.87 / **99.94** / 99.95% | 99.61 / **100.00** / **100.00** |
+  Every one of the 5,100, not a sample:
 
-  **The panel is exact - 0 of 12,800 pixels - at every frame checked.** The
-  99.61 is frame 0, captured mid-fade.
+  | over 5,100 frames | exact |
+  | --- | --- |
+  | play area, once the mouse cursor's 28 pixels are subtracted | **5,100 / 5,100** |
+  | panel | **5,099 / 5,100** |
 
-  **The play area's residue is the mouse cursor and nothing else.** With its
-  28 pixels subtracted, `tools/compare_frame.py` reports **100.00%, 0 of
-  51,200 differing** - "Everything else in the play area matches exactly."
+  The single exception is frame 0, caught mid-fade with the palette still
+  dark. Everything else is pixel for pixel.
 
   So the port draws what the original draws, pixel for pixel, for the whole
   of the level's expiration timer.
+
+- **The last sixty frames were the faller's own sprites.** Comparing every
+  frame rather than every fiftieth found them: ten groups of six consecutive
+  frames, starting at 55, 83, 111 ... 307 - exactly the release frames, and
+  exactly the six frames each lemming spends falling. A 2% sample had missed
+  all sixty.
+
+  A released lemming gets `[si+0x0c] = 0xA42` from image 0x030F1, which is the
+  paragraph its group starts at in the pre-shift store - the walker's is 0 -
+  and image 0x05A48 builds a group of eight there. Reading those frames back
+  out of the store and looking for them in the file puts them at source frames
+  **358..361**, one match each and no others, and they are unmistakably
+  falling lemmings with their arms out.
 
   The important thing is not the mean but that it is **flat**. Frame 50 and
   frame 5,000 score the same to two decimal places. Nothing drifts, nothing

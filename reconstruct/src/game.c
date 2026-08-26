@@ -1443,20 +1443,35 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
 #define LEM_SPR_ROW     2
 #define LEM_SPR_PLANE   (LEM_SPR_ROW * LEM_SPR_H)          /* 20 */
 #define LEM_SPR_FRAME   (LEM_SPR_PLANE * LEM_SPR_PLANES)   /* 40 */
-#define LEM_SPR_FRAMES  0x12    /* image 0x059C8: cx = 0x12 */
+#define LEM_SPR_FRAMES  0x12    /* image 0x059C8: cx = 0x12 - the WALKER's */
+/* The faller is a different group. Image 0x030F1 gives a released lemming
+ * `[si+0x0c] = 0xA42`, which is the paragraph its group starts at in the
+ * pre-shift store - the walker's is 0 - and image 0x05A48 builds a group of
+ * eight there, `dx = 0x020A` through the builder that adds a mask, the same
+ * two planes of ten rows.
+ *
+ * Reading those frames back out of the store at 0xA42 * 16 and looking for
+ * them in the file puts them at source frames 358..361, one match each and no
+ * others - and they are unmistakably falling lemmings, arms out. Eight frames
+ * is four each way, which is what `anim & 3` and image 0x070AB's `+ state`
+ * need. */
+#define LEM_SPR_FALL    358
 
 /* One lemming, at its own coordinates - image 0x070F9 puts the top row at
  * `y + hot_y`, and the canvas sits 16 along and 16 down from those. */
 void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                   const uint8_t *sec, uint32_t sec_len, const lemming *a)
 {
-    uint8_t frame = a->anim;
+    uint16_t frame = a->anim;
     uint32_t base;
     int32_t x0, y0;
 
     if (a->alive == 0xFF) return;
-    if (a->dir != 1) frame = (uint8_t)(frame + a->state);   /* image 0x070AB */
-    if (frame >= LEM_SPR_FRAMES) return;
+    if (a->dir != 1) frame = (uint16_t)(frame + a->state);  /* image 0x070AB */
+    /* Which group, from the state - the store base the original carries in
+     * [si+0x0c] is a group, and the port indexes the same groups in the file. */
+    if (a->state == 4) frame = (uint16_t)(LEM_SPR_FALL + frame);
+    else if (frame >= LEM_SPR_FRAMES) return;
 
     base = (uint32_t)frame * LEM_SPR_FRAME;
     if (base + LEM_SPR_FRAME > sec_len) return;
