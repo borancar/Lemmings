@@ -1154,7 +1154,11 @@ Each of these is stated as what was *checked*, not what was written.
 
   | over 5,100 frames | play area | panel |
   | --- | --- | --- |
-  | worst / mean / best | 99.83 / **99.90** / 99.90% | 99.61 / **99.91** / **100.00** |
+  | worst / mean / best | 99.87 / **99.94** / 99.95% | 99.61 / **99.91** / **100.00** |
+
+  And the play area's residue is **the mouse cursor and nothing else**. With
+  its 28 pixels subtracted, `tools/compare_frame.py` reports **100.00%, 0 of
+  51,200 differing** - "Everything else in the play area matches exactly."
 
   The important thing is not the mean but that it is **flat**. Frame 50 and
   frame 5,000 score the same to two decimal places. Nothing drifts, nothing
@@ -1187,12 +1191,24 @@ Each of these is stated as what was *checked*, not what was written.
   the cursor**. That it does not vary at all is the useful part: what is left
   is static, so nothing about the simulation is still drifting.
 
-- **The last 23 pixels** are the exit object's bottom two rows, where the port
-  fills a solid run from its mask and the original shows terrain with only two
-  pairs of object pixels in it. The mask in `vgagr0.dat` really is dense
-  there, so the port is drawing what the data says; the original is doing
-  something else with it that has not been read. 23 pixels of 51,200 is
-  **0.045%**.
+- **The last 23 pixels were the object modifier.** The port was drawing the
+  exit's bottom rows from a mask that really is dense there - so the data was
+  not the answer, and the rule had to be somewhere else. It is the LVL's own
+  `e[6] & 0x80`, which `level_parse` had been reading into `no_overwrite`
+  since the level format was done, which `render_objects` had always honoured,
+  and which the transcribed `level_anim_draw` that replaced it did not: **an
+  object is not drawn where there is terrain**. It reaches the blitter as bit
+  15 of `bp`, which is the `0x800E` the blit probe logs against every object.
+
+  The measurement is what makes it certain rather than plausible. Of the
+  pixels where the port drew the exit and the original did not, **23 of 23**
+  had terrain under them; of the pixels where both drew it, **49 of 49** did
+  not. Terrain is the only thing with bit 3 set, so the test is exact rather
+  than "something is already there".
+
+  A capability the port already had, lost in the move to the transcribed
+  routine. Worth looking for whenever a rewrite makes something slightly
+  worse.
 
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte

@@ -1757,6 +1757,20 @@ void level_anim_draw(const level_anim *st, const level *lv,
                 uint8_t m = (object_sec[mask + (uint32_t)r * stride + (c >> 3)]
                              >> (7 - (c & 7))) & 1u;
                 if (!m) continue;
+                /* The LVL's own modifier - `e[6] & 0x80`, which level_parse
+                 * already reads as no_overwrite, and which reaches the
+                 * blitter as bit 15 of bp: the object is not drawn where
+                 * there is terrain. Every object in "Just dig!" carries it.
+                 *
+                 * Measured, and the separation is total: of the pixels where
+                 * the port drew the exit and the original did not, 23 of 23
+                 * had terrain under them; of the pixels where both drew it,
+                 * 49 of 49 did not. Terrain is the only thing with bit 3
+                 * set, which is what makes the test exact rather than
+                 * "something is already there". */
+                if (o->no_overwrite
+                        && (dst[(size_t)y * dst_w + (uint16_t)x] & 8))
+                    continue;
                 dst[(size_t)y * dst_w + (uint16_t)x] =
                     planar(object_sec, ink, plane, stride, 4, c, r);
             }
