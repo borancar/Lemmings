@@ -1365,6 +1365,54 @@ static void lem_exiting(lemming *a)
     a->alive = 0xFF;                       /* image 0x02339 */
 }
 
+/* THE ACCESS CODE - partly transcribed, and honest about which part.
+ *
+ * The results screen offers "Your Access Code for Level NN is ABCDEFGHIJ",
+ * and the code screen at image 0x04967 takes one back. Image 0x05042 builds
+ * it from three bytes: ds:0x1F6B the level index, ds:0x491D, and ds:0x40 the
+ * rescued percentage - scattering their bits across ten characters, each
+ * added to a base letter.
+ *
+ * TWO PARTS ARE CERTAIN, because two independent routines agree on them:
+ *
+ *   the base letters, ds:0x4913 - "AJHLDHBBCJ", ten of them, static in the
+ *   image, and the SAME table the validator reads at image 0x051CD
+ *
+ *   the tenth character, a checksum. Image 0x05147 sums the first nine, masks
+ *   to four bits and adds the base; image 0x051D4 does the same sum on what
+ *   was typed and image 0x051E4 compares. Generator and validator, written
+ *   separately, describing one rule.
+ *
+ * THE BIT SHUFFLE FOR CHARACTERS 0..8 IS NOT TRANSCRIBED. It is ten near
+ * identical blocks of mask-and-shift, and reading them off by eye invites
+ * exactly the sort of error this port has already made twice with bit
+ * positions. An automatic pass over the disassembly produced a plausible
+ * table whose last four rows were stale register state - plausible and
+ * wrong, which is the worst kind. It wants driving the original over chosen
+ * inputs, the way tools/verify_digits.py drives image 0x04BC2, and the
+ * validator makes that a round trip: generate a code, feed it back, and the
+ * original's own checksum either accepts it or does not.
+ */
+#define CODE_LEN 10
+static const char CODE_BASE[CODE_LEN + 1] = "AJHLDHBBCJ";   /* ds:0x4913 */
+
+/* Transcribed from image 0x05147: the last character carries a checksum of
+ * the other nine, four bits of it, added to the base letter. */
+char level_code_checksum(const char *first_nine)
+{
+    uint8_t al = 0;
+    for (uint8_t i = 0; i < CODE_LEN - 1; i++)
+        al = (uint8_t)(al + (uint8_t)first_nine[i]);
+    al &= 0x0F;                                   /* image 0x05163 */
+    return (char)(al + CODE_BASE[CODE_LEN - 1]);  /* image 0x05165 */
+}
+
+/* Transcribed from image 0x051D4: the validator's half of the same rule. */
+int level_code_ok(const char *code)
+{
+    return code[CODE_LEN - 1] == level_code_checksum(code);
+}
+
 /* THE RESULTS SCREEN'S TEXT - transcribed from image 0x048BD.
  *
  * The screen's COMPOSITION is not read: image 0x048F3 hands a record at

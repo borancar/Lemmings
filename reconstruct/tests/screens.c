@@ -533,6 +533,19 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* The access code's checksum - the one part of it two routines agree
+     * on: image 0x05147 builds it and image 0x051D4 checks it. */
+    {
+        char code[11];
+        memcpy(code, "AJHLDHBBCJ", 11);
+        code[9] = level_code_checksum(code);
+        ck("a generated code passes the validator's own rule",
+           level_code_ok(code), "images 0x05147 and 0x051D4 disagree");
+        code[3]++;
+        ck("and one character out fails it",
+           !level_code_ok(code), "the checksum does not depend on the code");
+    }
+
     /* The results screen's TEXT, image 0x048BD. */
     {
         char ln[32];

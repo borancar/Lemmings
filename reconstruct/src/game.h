@@ -412,6 +412,12 @@ void lem_exit_start(lemming *a);
  * image 0x048F6's ladder. */
 /* The results screen's text - image 0x048BD. Its COMPOSITION is not read;
  * these are the lines it assembles. */
+/* The access code's checksum - image 0x05147 builds it, image 0x051D4
+ * checks it. The bit shuffle that makes the other nine characters is NOT
+ * transcribed; see game.c. */
+char level_code_checksum(const char *first_nine);
+int level_code_ok(const char *code);
+
 const char *level_results_headline(int timed_out);
 const char *level_results_prompt(uint8_t input_kind);
 void level_results_line(char *line, int needed_line, uint8_t percent);
