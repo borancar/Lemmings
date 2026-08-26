@@ -166,7 +166,7 @@ def install(m):
                                 "anim": b1(0x28), "alive": b1(0x26),
                                 "dir": b1(0x27) - (256 if b1(0x27) > 127 else 0),
                                 "state": b1(0x29), "extra": b1(0x24),
-                                "floater": b1(0x25),
+                                "floater": b1(0x25), "fuse": b1(0x20),
                                 "bricks": b1(0x21)})
         st["manifest"].append({
             "frame": i,

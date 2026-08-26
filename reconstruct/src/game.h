@@ -318,6 +318,8 @@ typedef struct {
                            * kept so they can be put back. Image 0x0346E
                            * reads each one out and image 0x03471 writes the
                            * blocker's own value over it. */
+    uint8_t  fuse;        /* +0x20 - image 0x031E1 sets it to 0x4F and the
+                           * LOOP HEAD counts it down at image 0x01F45 */
     uint8_t  floater;     /* +0x25 - image 0x0356B sets it to 0xFF, and image
                            * 0x03E0E reads it to call one a FLOATER */
     uint8_t  extra;       /* +0x24 - image 0x027DE sets bit 7 when a builder
@@ -367,6 +369,7 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x);
 /* Image 0x03180 dispatches the selected skill by BUTTON index: 0 and 1 are
  * the release rate and 2..9 the eight skills, of which 9 - the digger - is
  * the one this port has. */
+#define SKILL_BOMBER  4
 #define SKILL_CLIMBER 2
 #define SKILL_FLOATER 3
 #define SKILL_BLOCKER 5
@@ -379,6 +382,9 @@ int lem_build_start(lemming *a);
  * changes what the lemming is doing; each sets a byte that changes what
  * happens to it later. */
 int lem_climb_start(lemming *a);
+/* And the bomber, image 0x031C4 - which does not change what the lemming is
+ * doing at all; it lights a fuse. */
+int lem_bomb_start(lemming *a);
 int lem_float_start(lemming *a);
 
 /* And a blocker, image 0x03336 - which refuses if another is already

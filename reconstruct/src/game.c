@@ -2996,6 +2996,103 @@ static void lem_hoist(lemming *a)
     a->y = (int16_t)(a->y - 2);                     /* image 0x0264A */
 }
 
+/* THE BOMBER - transcribed from image 0x031C4, and it is the second thing
+ * the LOOP HEAD dispatches rather than the state chain.
+ *
+ * Assigning it changes nothing the lemming is doing. Image 0x031E1 puts 0x4F
+ * - seventy-nine - in [si+0x20], and that is all. The countdown lives at
+ * image 0x01F45, above even the shrug's test: every frame, if the byte is
+ * not zero, image 0x01F4C calls image 0x02E04, and a lemming whose fuse has
+ * just run out is SKIPPED for that frame entirely.
+ *
+ * Image 0x02E12 then sets 0x8000, whose handler at image 0x02D0F counts
+ * sixteen frames and ORs 2 in - the cloud - with a hot spot of (-16, -25)
+ * and 0x280 bytes a frame, which is a far bigger sprite than a lemming.
+ */
+#define BOMB_FUSE     0x4F      /* image 0x031E1 */
+#define BOMB_KEEP     0xC003    /* image 0x031D1 */
+#define BOMB_BLOCKED  0x5404    /* image 0x02E0B */
+#define BOOM_BIT      0x8000
+#define CLOUD_BIT     0x0002
+
+int lem_bomb_start(lemming *a)
+{
+    if (a->fuse) return 0;                          /* image 0x031CB */
+    if (a->flags & BOMB_KEEP) return 0;             /* image 0x031D1 */
+    a->fuse = BOMB_FUSE;                            /* image 0x031E1 */
+    return 1;
+}
+
+/* Image 0x02E04, called from the loop head. Non-zero means "carry on and
+ * dispatch this lemming"; zero means image 0x01F51 skips it this frame. */
+static int lem_fuse_step(lemming *a)
+{
+    if (--a->fuse) return 1;                        /* image 0x02E06 */
+    if (a->flags & BOMB_BLOCKED) {                  /* image 0x02E0B */
+        a->flags |= CLOUD_BIT;                      /* image 0x02E63 */
+        return 1;
+    }
+    a->flags |= BOOM_BIT;                           /* image 0x02E12 */
+    a->hot_x = -8;
+    a->hot_y = -10;                                 /* image 0x02E34 */
+    a->anim  = 0;                                   /* image 0x02E2B */
+    a->state = 0;                                   /* image 0x02E39 */
+    a->extra &= 1;                                  /* image 0x02E47 */
+    return 0;                                       /* image 0x02E5E */
+}
+
+/* Image 0x02D0F: sixteen frames of looking up, then the cloud. */
+static void lem_boom(lemming *a)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 0x0F);      /* image 0x02D12 */
+    if (a->anim) return;                            /* image 0x02D19 */
+    a->flags |= CLOUD_BIT;                          /* image 0x02D1B */
+    a->hot_x = -16;                                 /* image 0x02D3C: fff0 */
+    a->hot_y = -25;                                 /* image 0x02D37: ffe7 */
+    a->anim  = 0;                                   /* image 0x02D33 */
+    a->state = 0;                                   /* image 0x02D41 */
+    a->extra &= 1;                                  /* image 0x02D53 */
+}
+
+/* THE CLOUD - transcribed from image 0x02350, the last of the bomber.
+ *
+ * Its counter is NOT masked: image 0x02353 simply increments, and image
+ * 0x02358 ends the whole thing at 0x34 - fifty-two frames - where image
+ * 0x020E2 sets [si+0x26] to 0xFF and the lemming is gone.
+ *
+ * Everything else happens on ONE frame. Image 0x0235F takes the counter back
+ * to zero only when it was 1, and that is when the crater is dug: image
+ * 0x02379 first hands a BLOCKER's nine trigger cells back through image
+ * 0x0283B, then image 0x023A6 reads the cell under it and refuses on
+ * effects 9 and 5 - steel - before image 0x023B9 calls the terrain removal
+ * at image 0x05DF8.
+ *
+ * THE CRATER ITSELF IS NOT WRITTEN, and it is a data problem rather than a
+ * logic one. Image 0x05DF8 clears twenty-two rows (image 0x05E17's cx) from
+ * thirty above the lemming (image 0x05E1F), through the Set/Reset path that
+ * takes all four planes at once - so it removes terrain outright, the way
+ * image 0x05EBA does for the digger. What it clears in each row comes from a
+ * table image 0x05E51 indexes by row times three and image 0x05E60 by the
+ * low three bits of x - 8: twenty-two rows of eight pre-shifted three-byte
+ * masks. WHERE that table is has not been found.
+ *
+ * So the port's explosion takes the lemming away and leaves the ground
+ * alone. The comparison says exactly that: the bomber's own record matches
+ * for all 400 frames and ANOTHER lemming diverges at 207, because in the
+ * original it falls into the hole and in the port it walks over it.
+ */
+#define CLOUD_FRAMES  0x34      /* image 0x02358 */
+
+static void lem_cloud(lemming *a)
+{
+    a->anim = (uint8_t)(a->anim + 1);               /* image 0x02353 */
+    if (a->anim == CLOUD_FRAMES) {                  /* image 0x02358 */
+        a->alive = 0xFF;                            /* image 0x020E2 */
+        return;
+    }
+    /* image 0x0235F: the crater, on the frame after the cloud appears */
+}
+
 /* THE TWO PERMANENT ABILITIES - image 0x0329B and image 0x03557.
  *
  * Neither is a state. A climber and a floater go on doing whatever they were
@@ -3324,6 +3421,11 @@ void lemmings_step(lemming *lem, uint8_t n,
          * The order is kept even though only two of the bits can currently
          * be set, because it stops being harmless the moment a third can. */
         uint16_t f = a->flags;
+        /* Image 0x01F45, and it comes before even the shrug's test: a lit
+         * fuse is counted down every frame, and a lemming whose fuse has
+         * just run out is skipped entirely. */
+        if (a->fuse && !lem_fuse_step(a)) continue;  /* image 0x01F51 */
+
         /* Image 0x01F54, and it comes BEFORE the flag word is even read:
          * bit 7 of [si+0x24] sends it to the shrug and nowhere else. */
         if (a->extra & 0x80) {                       /* image 0x01F57 */
@@ -3341,12 +3443,14 @@ void lemmings_step(lemming *lem, uint8_t n,
              * while the port's stood still for ever. */
             lem_walk(a, lvl, cw, chh);               /* image 0x2047 */
         }
-        else if (f & 0x0002) { /* image 0x2350, not read */ }
-        else if (f & 0x8000) { /* image 0x2D0F, not read */ }
+        else if (f & 0x0002)
+            lem_cloud(a);                            /* image 0x2350 */
         else if (f & 0x0004)
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
         else if (f & 0x2000)
             lem_exiting(a);                          /* image 0x2326 */
+        else if (f & 0x8000)
+            lem_boom(a);                             /* image 0x2D0F */
         else if (f & 0x0020)
             lem_climb(a, lvl, cw, chh);              /* image 0x254F */
         else if (f & 0x0040)
