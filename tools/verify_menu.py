@@ -172,6 +172,14 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
             cmd += ["--cmd", "sleep 3.0",
                     "--cmd", f"screen {control}",
                     "--cmd", f"key {key} 24", "--cmd", "sleep 4.0"]
+        # The walkers are read BOTH SIDES of the screen dump. The guest keeps
+        # running between socket commands, so one read alone can describe a
+        # different moment from the picture - and it does: a run whose counter
+        # had wrapped past the on-screen window in the gap scored 38 pixels of
+        # walker that the port was right not to draw. Two reads that agree
+        # mean the gap contained no step; two that disagree mean the capture
+        # is untimed, and the run says so instead of scoring it.
+        cmd += ["--cmd", f"read i+{ANIM_VAR:#x} {ANIM_N * ANIM_REC}"]
         cmd += ["--cmd", f"screen {os.path.abspath(path)}",
                 "--cmd", f"read i+{SCROLL_VAR:#x} 2",
                 "--cmd", f"read i+{ANIM_VAR:#x} {ANIM_N * ANIM_REC}",
@@ -255,6 +263,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
 
         scroll = None
         anim = None
+        anims = []
         pend = False
         apend = 0
         abytes = []
@@ -270,11 +279,12 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                     except ValueError:
                         pass
                 if len(abytes) >= ANIM_N * ANIM_REC:
-                    anim = [
+                    anims.append([
                         int.from_bytes(bytes(abytes[i * ANIM_REC:
                                                     i * ANIM_REC + 2]),
                                        "little", signed=True)
-                        for i in range(ANIM_N)]
+                        for i in range(ANIM_N)])
+                    abytes = []
                     apend = 0
                 continue
             if f"read i+{SCROLL_VAR:#x}" in line:
@@ -297,14 +307,45 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                 # and leaving the loop here is exactly why it came back None.
                 pend = False
                 continue
+        # Before and after the dump. The counters step once per socket
+        # command, so the two are almost never equal - but a counter is not
+        # what gets DRAWN. Image 0x04FC4 shifts it right one, so each frame
+        # spans two counts, and a one-step gap usually leaves the picture
+        # identical. Compare what would be drawn: for every entry, whether it
+        # is on screen and which of its eight frames.
+        def drawn(cs):
+            return [None if c == -32768 or c >= 0 else ((-c) - 1) >> 1
+                    for c in cs]
+
+        if len(anims) == 2 and drawn(anims[0]) == drawn(anims[1]):
+            anim = anims[0]
+        elif len(anims) == 2:
+            a, b = drawn(anims[0]), drawn(anims[1])
+            moved = [i for i in range(ANIM_N) if a[i] != b[i]]
+            print(f"  the walkers changed FRAME across the screen dump - "
+                  f"entries {moved}, {anims[0][0]} then {anims[1][0]}. The "
+                  f"capture is between two pictures, so it is not scored "
+                  f"against either.")
+            anim = None
+        elif anims:
+            anim = anims[0]
         if scroll is None:
             raise SystemExit(
                 "could not read ds:0x21 back, so which phase of the banner\n"
                 "this capture shows is unknown. That is a failure, not a pass.")
         if got > 3:
             raise SystemExit(f"ds:0x1F6E reads {got}, which is not a rating")
-        if got == rating:
+        if got == rating and anim is not None:
             return path, got, scroll, anim
+        if got == rating:
+            # The rating is right and only the walkers' phase is ambiguous.
+            # That is worth another run, not a score against a guess.
+            print("  the capture's phase is ambiguous"
+                  f"{'; retrying' if attempt < tries - 1 else ''}.")
+            last = got
+            last_scroll = scroll
+            last_anim = anim
+            continue
         print(f"  asked for rating {rating}, the guest reached {got} - "
               f"presses were dropped or doubled"
               f"{'; retrying' if attempt < tries - 1 else ''}.")

@@ -321,6 +321,147 @@ int view_run(const canvas *c, const lem_rgb *palette, const char *title,
                      start_x, scale);
 }
 
+/* One frame of a level: the terrain as composed, then every object over it at
+ * whatever frame the stepper has reached. The objects are drawn into the
+ * CANVAS rather than the screen, because view_show does the scrolling - so the
+ * `scroll` the original applies at image 0x07BCF is zero here and the viewport
+ * supplies it instead. */
+struct level_frame {
+    level        lv;
+    level_anim   st[LEVEL_ANIM_MAX];
+    const uint8_t *sec;
+    uint32_t     len;
+    const canvas *from;      /* the pristine terrain each frame starts from */
+    const uint8_t *lem_sec;  /* main.dat section 0, the lemming sprites */
+    uint32_t     lem_len;
+    const uint8_t *pan_sec;  /* main.dat section 2, the panel artwork */
+    uint32_t     pan_len;
+    uint8_t     *panel;      /* PANEL_LINE_W x PANEL_ART_H, rebuilt a frame */
+    lemming      lem[LEMMING_MAX];
+    uint8_t      released;   /* how many have come out of the trapdoor */
+    uint16_t     view_x;     /* where the play area has scrolled to */
+};
+
+/* THE LEVEL'S SCREEN - mode 0x0D is 320x200 and it is two things stacked:
+ * the play area at rows 0..159 and the control panel at 160..199. This port
+ * had been showing a 320x160 window of the play area alone, so the panel -
+ * every piece of which is transcribed and scores 100.00% against the
+ * original - was never on screen in the game.
+ *
+ * The play area is a WINDOW onto the 1584-wide canvas; the panel is composed
+ * fresh each frame because the minimap's dots and its viewport box move.
+ *
+ * The scrolling is THE PORT'S OWN. The original scrolls from the mouse at
+ * the screen edges and from the minimap, and neither has been read, so this
+ * offers the arrow keys and the mouse at the edges and says so rather than
+ * inventing a rate and calling it transcribed.
+ */
+#define LEVEL_SCREEN_W 320
+#define LEVEL_SCREEN_H 200
+#define LEVEL_PLAY_H   160
+#define LEVEL_EDGE     8       /* how near the edge the pointer must be */
+#define LEVEL_SCROLL   8       /* pixels a step */
+
+static int level_run(struct level_frame *A, const canvas *c,
+                     const lem_rgb *palette, const char *title, uint8_t scale)
+{
+    if (scale < 1) scale = 1;
+    if (view_open(LEVEL_SCREEN_W, LEVEL_SCREEN_H, title, scale) != 0)
+        return -1;
+    SDL_Renderer *ren = g_ren;
+    SDL_Texture  *tex = g_tex;
+
+    int32_t max_x = (int32_t)c->w - LEVEL_SCREEN_W;
+    if (max_x < 0) max_x = 0;
+    int32_t scroll_x = (int32_t)A->lv.start_x - LEVEL_SCREEN_W / 2;
+
+    const char *cap = SDL_getenv("LEM_FRAMES");
+    long budget = cap ? SDL_atoi(cap) : 0;
+
+    uint8_t *screen = calloc(LEVEL_SCREEN_W * LEVEL_SCREEN_H, 1);
+    if (!screen) return -1;
+
+    int running = 1;
+    while (running) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_EVENT_QUIT) running = 0;
+            else if (e.type == SDL_EVENT_KEY_DOWN) {
+                switch (e.key.key) {
+                case SDLK_ESCAPE: case SDLK_Q: running = 0;               break;
+                case SDLK_LEFT:  scroll_x -= LEVEL_SCROLL * 2;            break;
+                case SDLK_RIGHT: scroll_x += LEVEL_SCROLL * 2;            break;
+                case SDLK_HOME:  scroll_x = 0;                            break;
+                case SDLK_END:   scroll_x = max_x;                        break;
+                default: break;
+                }
+            }
+        }
+        /* The pointer at either edge scrolls, which is what the original
+         * does even though its rate has not been read. */
+        {
+            float mx = 0, my = 0;
+            SDL_GetMouseState(&mx, &my);
+            float w = 0, h = 0;
+            SDL_GetRenderOutputSize(ren, (int *)&w, (int *)&h);
+            if (w > 0) {
+                float px = mx * (float)LEVEL_SCREEN_W / w;
+                if (px >= 0 && px < LEVEL_EDGE)                  scroll_x -= LEVEL_SCROLL;
+                else if (px > LEVEL_SCREEN_W - LEVEL_EDGE
+                         && px < LEVEL_SCREEN_W)                 scroll_x += LEVEL_SCROLL;
+            }
+            (void)my; (void)h;
+        }
+        if (scroll_x < 0) scroll_x = 0;
+        if (scroll_x > max_x) scroll_x = max_x;
+        A->view_x = (uint16_t)scroll_x;
+
+        /* One frame of the game, then one of the panel. */
+        if (g_show_tick && g_show_pix) g_show_tick(g_show_ctx, g_show_pix);
+        if (A->panel && A->pan_sec) {
+            memset(A->panel, 0, (size_t)PANEL_LINE_W * PANEL_ART_H);
+            level_panel_build(A->panel, A->pan_sec, A->pan_len, &A->lv,
+                              A->from->pix, A->from->w, A->from->h,
+                              A->lem, A->released, A->view_x,
+                              PANEL_SEL_BUTTON);
+        }
+
+        for (uint16_t y = 0; y < LEVEL_PLAY_H; y++)
+            memcpy(screen + (size_t)y * LEVEL_SCREEN_W,
+                   c->pix + (size_t)y * c->w + scroll_x, LEVEL_SCREEN_W);
+        for (uint16_t y = 0; y < LEVEL_SCREEN_H - LEVEL_PLAY_H; y++) {
+            uint8_t *dst = screen + (size_t)(LEVEL_PLAY_H + y) * LEVEL_SCREEN_W;
+            if (A->panel && y < PANEL_ART_H)
+                memcpy(dst, A->panel + (size_t)y * PANEL_LINE_W + PANEL_ART_X,
+                       LEVEL_SCREEN_W);
+            else
+                memset(dst, 0, LEVEL_SCREEN_W);
+        }
+
+        void *pixels = NULL;
+        int pitch = 0;
+        if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
+            for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
+                uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+                const uint8_t *src = screen + (size_t)y * LEVEL_SCREEN_W;
+                for (uint16_t x = 0; x < LEVEL_SCREEN_W; x++) {
+                    lem_rgb q = palette[src[x]];
+                    row[x] = ((uint32_t)q.r << 16) |
+                             ((uint32_t)q.g << 8) | q.b;
+                }
+            }
+            SDL_UnlockTexture(tex);
+        }
+        SDL_RenderClear(ren);
+        SDL_RenderTexture(ren, tex, NULL, NULL);
+        SDL_RenderPresent(ren);
+        SDL_Delay(16);
+        if (budget && --budget == 0) running = 0;
+    }
+    free(screen);
+    return 0;
+}
+
 int view_run_anim(canvas *c, const lem_rgb *palette, const char *title,
                   uint16_t start_x, uint8_t scale,
                   view_tick tick, void *ctx)
@@ -771,26 +912,37 @@ int level_show_briefing(const char *dir, const char *file, uint32_t which,
     return 0;
 }
 
-/* One frame of a level: the terrain as composed, then every object over it at
- * whatever frame the stepper has reached. The objects are drawn into the
- * CANVAS rather than the screen, because view_show does the scrolling - so the
- * `scroll` the original applies at image 0x07BCF is zero here and the viewport
- * supplies it instead. */
-struct level_frame {
-    level        lv;
-    level_anim   st[LEVEL_ANIM_MAX];
-    const uint8_t *sec;
-    uint32_t     len;
-    const canvas *from;      /* the pristine terrain each frame starts from */
-};
 
+/* One frame of a level, in the order image 0x019C runs it: the release at
+ * image 0x030A6, the simulation at image 0x01F19, the objects at image
+ * 0x07BB8, and the lemmings LAST at image 0x01BC.
+ *
+ * This used to step the objects and nothing else, so the game you could
+ * actually play showed an empty level while every frame-by-frame measurement
+ * passed - the measurements go through lemdev, which drives the release and
+ * the simulation itself. A harness that exercises what the game does not is
+ * the failure this whole method is supposed to prevent, so the two now call
+ * the same routines in the same order. */
 static int level_frame_tick(void *ctx, uint8_t *pix)
 {
     struct level_frame *a = (struct level_frame *)ctx;
-    memcpy(pix, a->from->pix, (size_t)a->from->w * a->from->h);
-    level_anim_step(a->st, &a->lv);
-    level_anim_draw(a->st, &a->lv, a->sec, a->len,
-                    pix, a->from->w, a->from->h, 0);
+    uint16_t w = a->from->w, h = a->from->h;
+
+    memcpy(pix, a->from->pix, (size_t)w * h);
+
+    level_frame_step(a->st, &a->lv);
+    if (level_released() != a->released) {
+        lemmings_release(a->lem, a->released, &a->lv);
+        a->released = level_released();
+    }
+    /* They probe the TERRAIN, which is the buffer with no objects on it. */
+    lemmings_step(a->lem, a->released, a->from->pix, w, h);
+    level_status_out(lemmings_live(a->lem, a->released));
+
+    level_anim_draw(a->st, &a->lv, a->sec, a->len, pix, w, h, 0);
+
+    for (uint8_t k = 0; k < a->released && k < LEMMING_MAX; k++)
+        lemming_draw(pix, w, h, a->lem_sec, a->lem_len, &a->lem[k]);
     return 1;
 }
 
@@ -831,11 +983,49 @@ int level_show(const char *dir, const char *file, uint32_t which,
                         gfx.sections[0].size, err);
     if (rc == 0 && gfx.count >= 2) {
         static struct level_frame A;
+        static dat_file mainf;
+        int have_main = 0;
         A.lv = *lv; A.sec = gfx.sections[1].data; A.len = gfx.sections[1].size;
         A.from = &terrain;
+        A.lem_sec = NULL; A.lem_len = 0; A.released = 0;
+        A.pan_sec = NULL; A.pan_len = 0;
+        A.view_x = lv->start_x;
+        A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
+
+        /* The lemming sprites live in main.dat, not in the level's own
+         * graphics - so the level path has to open it too. */
+        snprintf(path, sizeof(path), "%s/main.dat", dir);
+        {
+            const char *e2 = "unknown error";
+            if (dat_load(path, &mainf, &e2) == 0
+                    && mainf.count > LEM_SPRITE_SECTION) {
+                A.lem_sec = mainf.sections[LEM_SPRITE_SECTION].data;
+                A.lem_len = mainf.sections[LEM_SPRITE_SECTION].size;
+                have_main = 1;
+                if (mainf.count > PANEL_FONT_SECTION) {
+                    A.pan_sec = mainf.sections[PANEL_FONT_SECTION].data;
+                    A.pan_len = mainf.sections[PANEL_FONT_SECTION].size;
+                }
+            }
+        }
+
         level_anim_init(A.st, &A.lv, &g);
-        view_run_anim(&c, g.palette, "PC Lemmings", lv->start_x, scale,
-                      level_frame_tick, &A);
+        /* One step before the first frame. Measured: without it the exit's
+         * flames are one animation frame behind the original's at every
+         * frame checked. */
+        level_anim_step(A.st, &A.lv);
+        level_start_reset();
+        level_release_reset(&A.lv);
+        level_status_reset(&A.lv);
+        lemmings_reset(A.lem);
+
+        /* The level gets its own screen - 320x200, play area over panel -
+         * rather than view_run_anim's window of the play area alone. */
+        g_show_tick = level_frame_tick; g_show_ctx = &A; g_show_pix = c.pix;
+        level_run(&A, &c, g.palette, "PC Lemmings", scale);
+        g_show_tick = NULL; g_show_ctx = NULL; g_show_pix = NULL;
+        free(A.panel); A.panel = NULL;
+        if (have_main) dat_free(&mainf);
     } else if (rc == 0) {
         view_run(&terrain, g.palette, "PC Lemmings", lv->start_x, scale);
     }

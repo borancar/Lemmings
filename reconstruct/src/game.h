@@ -368,6 +368,14 @@ void        level_status_reset(const level *lv);
 void        level_timer_step(void);
 const char *level_status_line(void);
 
+/* One frame of the control panel, in the order the original draws it - see
+ * level_panel_build in game.c. `pp` is PANEL_LINE_W x PANEL_ART_H. */
+void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
+                       const level *lv, const uint8_t *terrain,
+                       uint16_t tw, uint16_t th,
+                       const lemming *lem, uint8_t nlem,
+                       uint16_t view_x, uint8_t sel);
+
 void panel_status(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                   const uint8_t *sec, uint32_t sec_len,
                   const char *text, uint16_t x, uint16_t y);

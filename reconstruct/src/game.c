@@ -1733,6 +1733,45 @@ void level_frame_step(level_anim *st, const level *lv)
     level_status_in(0);          /* nothing is counted saved yet */
 }
 
+/* THE CONTROL PANEL, one frame of it.
+ *
+ * NOT TRANSCRIBED. Every piece it calls is transcribed and carries its own
+ * address, but the routine that calls them in order has not been found, so
+ * the SEQUENCE here is measured - the same standing as menu_build_rating had
+ * before image 0x04401 turned up, and it should be chased the same way.
+ *
+ * It is here rather than in a caller because the order is the game's
+ * whichever way it was arrived at. It had been written out once in devmain.c
+ * for --panel and not at all in the window path, so the game you could
+ * actually play showed no panel while every measurement of the panel passed.
+ * Two copies of a sequence, one of them missing, is how that happens.
+ *
+ * `pp` is PANEL_LINE_W wide, not 320: the artwork sits PANEL_ART_X into the
+ * logical line and the status text starts at the line's first cell. The
+ * screen shows it windowed from PANEL_ART_X.
+ *
+ * `view_x` is where the play area has scrolled to, which is what the
+ * viewport box on the minimap marks.
+ */
+void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
+                       const level *lv, const uint8_t *terrain,
+                       uint16_t tw, uint16_t th,
+                       const lemming *lem, uint8_t nlem,
+                       uint16_t view_x, uint8_t sel)
+{
+    panel_frame(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, PANEL_ART_X, 0);
+    panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
+                 level_status_line(), 0, 0);
+    panel_buttons(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, lv);
+    panel_highlight(pp, PANEL_LINE_W, PANEL_ART_H, sel);
+    panel_minimap(pp, PANEL_LINE_W, PANEL_ART_H, terrain, tw, th,
+                  MINIMAP_AT_X, MINIMAP_AT_Y);
+    panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, view_x,
+                   MINIMAP_AT_X, VIEWPORT_AT_Y);
+    panel_minimap_dots(pp, PANEL_LINE_W, PANEL_ART_H, lem, nlem,
+                       MINIMAP_DOT_X, MINIMAP_AT_Y);
+}
+
 /* Image 0x07BB8.
  *
  *     ax = be16([di]) ; x from the LEVEL's own list, unbiased
@@ -2553,9 +2592,10 @@ static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
 
 /*
  * NOT TRANSCRIBED. The original writes digits into these templates too;
- * digits3 at image 0x04BC2 is one instance, and the routine filling the
- * briefing's own runs has not been read.
- * through its own arithmetic - see digits3 at image 0x04BC2 for one.
+ * digits3 at image 0x04BC2 is one instance and status_put_num at image
+ * 0x04B68 another, but neither is this one - both are fixed-width and
+ * left-aligned, and this fills a template from the right. The routine that
+ * fills the briefing's own runs has not been found.
  */
 static void put_num(char *dst, size_t end, uint32_t n)
 {
@@ -3160,6 +3200,15 @@ static void draw_anim(uint8_t *dst, const uint8_t *gfx, uint32_t len)
  * 0x0D. Transcribed here with its address for the same reason a routine is:
  * it is in the executable, not in a data file. 0xFF is the pause marker and
  * is not a glyph - see above - so it is stripped when the ribbon is built. */
+/* THE RIBBON'S MESSAGE - transcribed DATA, image 0x0E45E.
+ *
+ * Which is ds:0x49CE: image 0x07CBC loads that address into ds:0x1D and
+ * ds:0x1F, the pair the scroll step reads its next character through. All
+ * 266 bytes are byte-identical to the image, and the byte after the final
+ * `\xff ` is 0x0D, which is the next record starting.
+ *
+ * It lives in the executable's data segment, not in any DAT file, so the
+ * port cannot load it the way it loads the artwork - it is copied here. */
 static const char SCROLL_TEXT[] =
     "         Lemmings By DMA Design      \xff"
     "       Programming By Russell Kay    \xff"
@@ -3195,10 +3244,21 @@ static uint8_t ribbon_pause[sizeof SCROLL_TEXT];  /* 0xFF came before this */
 static uint16_t ribbon_len;
 
 /*
- * NOT TRANSCRIBED. Image 0x07D33 walks this stream one character at a time
- * and never builds it. Same rules, computed once instead - a restructuring,
- * so it is owed rather than claimed.
- * character at a time. Same rules, computed once.
+ * The port's own INDEX over transcribed data - not a routine the original
+ * has, and this used to be on the owed list by mistake.
+ *
+ * "Owed" means game logic the original has a routine for that nobody has
+ * read. Image 0x07D33 has now been read: it does `lodsb`, compares against
+ * 0xFF, and where it finds one it takes the pause and reads the next
+ * character, all inline as it shifts the strip. There is no build step in
+ * the original to transcribe, because the original never holds the message
+ * as anything but a pointer walking forward.
+ *
+ * The port composes a whole frame instead of shifting a buffer, so it has to
+ * be able to ask "which character is at position k" - hence one pass to
+ * split SCROLL_TEXT into characters and their pause flags. The DATA is
+ * transcribed (image 0x0E45E, byte-identical) and the RULE is image
+ * 0x07D33's; only the once-instead-of-each-step is the port's.
  */
 static void ribbon_build(void)
 {
@@ -3401,10 +3461,39 @@ static void draw_rating(uint8_t *dst, const uint8_t *font, uint8_t rating)
 
 
 /*
- * NOT TRANSCRIBED. Every piece it draws is transcribed and carries its
- * address - 0x04EEF, 0x04F31, 0x04EC2 - but the routine that calls them in
- * order has not been found, so the sequence here is measured.
- * carries its address; the order it draws them in is measured, not read.
+ * Transcribed from image 0x04401 - the caller, which this file used to say
+ * had not been found. It was found by scanning the image for a near `call`
+ * whose target is 0x04EEF: exactly one, at image 0x04434, and image 0x04401
+ * is the routine around it - the same address the code screen jumps back to.
+ *
+ * Its sequence, and what each call is:
+ *
+ *     0x04425  call 0x531E   palette to black, 16 entries from ds:0x100
+ *     0x04428  call 0x4DEF   clear 0x6D60 bytes of video - 640x350/8
+ *     0x0442B  call 0x5017   the background tile (tail-jumps to 0x7E76)
+ *     0x0442E  call 0x7CBC   the banner: ds:0x1D and ds:0x1F to the message
+ *                            at ds:0x49CE, ds:0x21 to 4, then the strip
+ *     0x04431  call 0x4FF8   menu_anim_reset
+ *     0x04434  call 0x4EEF   the logo
+ *     0x04437  call 0x4F2B   the plate rows - four, through 0x04F4A
+ *     0x0443A  si = 0x4AD9, call 0x4D4D    the two credit lines
+ *     0x04441  call 0x4EA2   the rating plate; 0x04EC2 is its draw, and
+ *                            0x04EA2 the wrapper that compares ds:0x1F6F
+ *                            against ds:0x1F6E and only redraws on a change
+ *     0x04444  call 0x4E37   the FX plate, the same shape on ds:0x1F72/0x1F70
+ *     0x0444D  call 0x4C32   the CRTC start address
+ *     0x04450  call 0x536C   palette on, 16 entries from ds:0x200
+ *
+ * This port composes one frame rather than driving a display, so it keeps the
+ * DRAWING and drops the palette, the clear and the page registers - those are
+ * in sdl_io.c or are not the port's to do. The animation is drawn last
+ * because the original draws it in its LOOP (image 0x04F96, called at image
+ * 0x04461) rather than in this build, and a single composed frame is the
+ * build followed by one pass of that loop.
+ *
+ * The order here used to be measured. Putting it back to the original's is
+ * byte-identical on all four ratings - 0 of 224,000 each - which is what
+ * proves the pieces write disjoint regions, rather than it being assumed.
  */
 int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
                       const char **err)
@@ -3462,10 +3551,21 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
                 planar(sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE, 2,
                        x % BG_W, y % BG_H);
 
+    /* Image 0x07E2F derives the frame from the scroll; --lem-frame stays only
+     * so one frame can be forced when comparing a single capture. */
+    draw_banner(m->pix, font, fontlen, menu_scroll,
+                menu_lem_frame ? menu_lem_frame
+                : (uint8_t)(((((menu_scroll + BAR_SCROLL_INIT) >> 2)
+                              - LEM_FRAME_BIAS)) & (LEM_FRAMES - 1)));
+
     draw_logo(m->pix, sec);                          /* image 0x04EEF */
     for (uint8_t r = 0; r < 2; r++)                  /* image 0x04F31 */
         draw_plate_row(m->pix, sec, SIGN_ROW[r].first, SIGN_ROW[r].count,
                        SIGN_ROW[r].x, SIGN_ROW[r].y);
+    draw_text(m->pix, font, fontlen, CREDIT_1,
+              CREDIT_1_CELL_X, CREDIT_1_CELL_Y);
+    draw_text(m->pix, font, fontlen, CREDIT_2,
+              CREDIT_2_CELL_X, CREDIT_2_CELL_Y);
     draw_rating(m->pix, font, rating);               /* image 0x04EC2 */
 
     /* The FX plate's label, which is not part of its plate bitmap - and which
@@ -3489,17 +3589,8 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
         }
     }
 
-    draw_text(m->pix, font, fontlen, CREDIT_1,
-              CREDIT_1_CELL_X, CREDIT_1_CELL_Y);
-    draw_text(m->pix, font, fontlen, CREDIT_2,
-              CREDIT_2_CELL_X, CREDIT_2_CELL_Y);
+
     draw_anim(m->pix, font, fontlen);
-    /* Image 0x07E2F derives the frame from the scroll; --lem-frame stays only
-     * so one frame can be forced when comparing a single capture. */
-    draw_banner(m->pix, font, fontlen, menu_scroll,
-                menu_lem_frame ? menu_lem_frame
-                : (uint8_t)(((((menu_scroll + BAR_SCROLL_INIT) >> 2)
-                              - LEM_FRAME_BIAS)) & (LEM_FRAMES - 1)));
 
     /* Keep section 4 so the banner can be redrawn as it scrolls; menu_build
      * composes one frame and the strip moves. Failing to copy it is not fatal

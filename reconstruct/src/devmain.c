@@ -335,22 +335,13 @@ static int render_level(const char *data, const char *file, uint32_t which,
             if (!pp) {
                 fprintf(stderr, "out of memory\n");
             } else {
-                panel_frame(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
-                            PANEL_ART_X, 0);
-                panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
-                             level_status_line(), 0, 0);
-                panel_buttons(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, &lv);
-                panel_highlight(pp, PANEL_LINE_W, PANEL_ART_H,
-                                PANEL_SEL_BUTTON);
-                panel_minimap(pp, PANEL_LINE_W, PANEL_ART_H,
-                              terrain, c.w, c.h, MINIMAP_AT_X, MINIMAP_AT_Y);
-                /* The port does not scroll yet, so the view is where the
-                 * level says it starts. */
-                panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, lv.start_x,
-                               MINIMAP_AT_X, VIEWPORT_AT_Y);
-                panel_minimap_dots(pp, PANEL_LINE_W, PANEL_ART_H, g_lem,
-                                   level_released(), MINIMAP_DOT_X,
-                                   MINIMAP_AT_Y);
+                /* The sequence lives in game.c, because it is the game's -
+                 * see level_panel_build. This used to be written out here,
+                 * and the window path had no copy at all. A static render
+                 * does not scroll, so the view is where the level starts. */
+                level_panel_build(pp, sec, seclen, &lv, terrain, c.w, c.h,
+                                  g_lem, level_released(), lv.start_x,
+                                  PANEL_SEL_BUTTON);
                 /* The status line is NOT drawn. It belongs sixteen rows down
                  * - screen row 176, which is PANEL_BASE / PANEL_STRIDE - but
                  * what writes the counts into the template has not been read,
