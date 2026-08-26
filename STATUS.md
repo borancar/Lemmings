@@ -888,6 +888,40 @@ Each of these is stated as what was *checked*, not what was written.
   is the signal this file already records for the menu's plates: a structured
   residue is a rule not yet found, not noise.
 
+- **The lemming array, and the release schedule transcribed.** Image 0x03634
+  walks it: `di = 0x88`, `cl = ds:0x43` entries of **0x2D = 45 bytes**, and it
+  ends by putting the count of live ones - those whose `+0x26` is not 0xFF -
+  into the line at `ds:0x2095`, which is the OUT field at col 22. Fields read
+  so far, from records dumped out of the running game: `+0x00` x, `+0x02` y,
+  `+0x04`/`+0x06` the sprite's hotspot offset (-8, -10), `+0x26` alive,
+  `+0x28` the action.
+
+  The release itself is image 0x30A6, gated on the same `ds:0x55` the
+  trapdoor is, with the interval from image 0x39D6:
+
+      al = 99 - rate / shr / neg / add 0x35 / neg / add 0x39
+
+  which is `((99 - rate) >> 1) + 4` once the two negations cancel - **28
+  frames** at the rate of 50 that "Just dig!" carries - and the countdown
+  starts at **0x14 = 20** (image 0x39D1). So the entrance opens on pass 36 and
+  the ten come out on 55, 83, 111 ... 307.
+
+  **The OUT field differs in 0 pixels** at frames 60, 200, 400 and 690, and
+  across both release boundaries (52..58 and 82..85). The probe's readings
+  are one pass later than the releases because it read `ds:0x43` at image
+  0x01A3 and image 0x30A6 runs at 0x01B0, later in the same pass; the pixels
+  settle it independently.
+
+  What OUT really counts is the LIVE lemmings, not the released ones. Nothing
+  walks the array yet, so the port feeds it the released count, and
+  `level_status_out` says so where it does it: the two agree only while
+  nothing is lost.
+
+- **`status_put_num`, image 0x04B68** - three cells, left-aligned with leading
+  zeros suppressed, `si` advancing only when a digit is printed. Not the
+  briefing's `put_num`, which is still unread and right-aligns, and not
+  `digits3` at 0x04BC2 either; the game has three.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
   game frame):
@@ -895,7 +929,7 @@ Each of these is stated as what was *checked*, not what was written.
   | frames | play area | panel |
   | --- | --- | --- |
   | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
-  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 89.85 / **90.39** / 90.73% |
+  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 90.43 / **90.86** / 90.92% |
 
   Over 700 frames the play area falls from 99.86% to about 99.34% and then
   **flattens** - that is the ten lemmings coming out one by one and then

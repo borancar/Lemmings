@@ -219,14 +219,10 @@ static int render_level(const char *data, const char *file, uint32_t which,
             static level_anim st[LEVEL_ANIM_MAX];
             level_anim_init(st, &lv, &g);
             level_start_reset();
-            /* One pass of the level's frame: the opening sequence first -
-             * image 0x019D is the play loop's first line - then the
-             * animations. The entrance stays shut until frame 35 because
-             * level_start_step is what opens it. */
-            for (uint16_t k = 0; k < g_obj_frame; k++) {
-                level_start_step();
-                level_anim_step(st, &lv);
-            }
+            level_release_reset(&lv);
+            level_status_reset(&lv);
+            for (uint16_t k = 0; k < g_obj_frame; k++)
+                level_frame_step(st, &lv);
             level_anim_draw(st, &lv, gfx.sections[1].data,
                             gfx.sections[1].size, c.pix, c.w, c.h, 0);
         }
@@ -285,10 +281,6 @@ static int render_level(const char *data, const char *file, uint32_t which,
             } else {
                 panel_frame(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
                             PANEL_ART_X, 0);
-                /* The clock runs on the same frames the animations do. */
-                level_status_reset(&lv);
-                for (uint16_t k = 0; k < g_obj_frame; k++)
-                    level_timer_step();
                 panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
                              level_status_line(), 0, 0);
                 /* The status line is NOT drawn. It belongs sixteen rows down

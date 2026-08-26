@@ -317,6 +317,74 @@ int main(int argc, char **argv)
            level_status_line() + 40);
     }
 
+    /* RELEASING THE LEMMINGS, images 0x30A6 and 0x39D6.
+     *
+     * The schedule is the assertion, and it came out of the running game:
+     * ds:0x43 reads 1 at pass 56 and 2..10 at 84, 112, 140, 168, 196, 224,
+     * 252, 280 and 308. Twenty frames after the entrance opens, then one
+     * every ((99 - 50) >> 1) + 4 = 28.
+     *
+     * The releases happen one pass EARLIER than those readings, at 55, 83 and
+     * so on, and that is not a fudge to make a test pass. The probe read
+     * ds:0x43 at image 0x01A3, and image 0x30A6 - which does the releasing -
+     * runs at image 0x01B0, later in the same pass. So a release during pass
+     * N is first visible to that probe at pass N+1. The pixels settle it
+     * independently: the OUT field is compared against recorded frames 52..58
+     * and 82..85, straight across two release boundaries, and differs in zero
+     * pixels at every one. */
+    {
+        level lv;
+        memset(&lv, 0, sizeof(lv));
+        lv.release_rate = 50;
+        lv.num_lemmings = 10;
+        level_start_reset();
+        level_release_reset(&lv);
+
+        static const uint16_t WHEN[10] = {
+            55, 83, 111, 139, 167, 195, 223, 251, 279, 307
+        };
+        int ok = 1, k = 0;
+        uint8_t was = 0;
+        for (uint16_t f = 1; f <= 400; f++) {
+            level_start_step();
+            level_release_step();
+            if (level_released() != was) {
+                was = level_released();
+                if (k >= 10 || f != WHEN[k]) ok = 0;
+                k++;
+            }
+        }
+        ck("the lemmings come out on the original's own frames",
+           ok && k == 10, "the release schedule differs");
+        level_start_reset();
+        {
+            uint16_t f = 0;
+            while (f < 60 && level_entrance_open() != 0xFF) {
+                level_start_step();
+                f++;
+            }
+            ck("and the entrance opens on pass 36", f == 36, "not pass 36");
+        }
+        ck("and stop at the level's count",
+           level_released() == 10, "it kept releasing");
+    }
+
+    /* THE STATUS LINE'S NUMBERS, image 0x04B68 - left-aligned, leading zeros
+     * suppressed, and `si` only advancing when a digit is printed. That last
+     * is what makes 5 come out as "5  " and not "  5". */
+    {
+        char c[4];
+        c[3] = 0;
+        status_put_num(c, 5);
+        ck("a single digit is left-aligned", !strcmp(c, "5  "), c);
+        status_put_num(c, 10);
+        ck("ten fills two cells", !strcmp(c, "10 "), c);
+        status_put_num(c, 105);
+        ck("and 105 does not come out as \"1 5\"", !strcmp(c, "105"), c);
+        status_put_num(c, 0);
+        ck("zero still prints its units digit", !strcmp(c, "0  "), c);
+    }
+
     /* THE PANEL'S FONT, at the tail of main.dat section 2.
      *
      * Checked by drawing and reading back, because the point of finding it was

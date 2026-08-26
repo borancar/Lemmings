@@ -262,6 +262,16 @@ void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 /* The status line the panel draws, and the level clock inside it. The time is
  * ASCII in the line itself; there is no binary countdown behind it.
  * Transcribed from image 0x0213, seventeen frames to a second. */
+/* Three cells of the status line, left-aligned with leading zeros
+ * suppressed. Transcribed from image 0x04B68. */
+void    status_put_num(char *dst, uint8_t v);
+
+/* Releasing the lemmings: twenty frames after the entrance opens, then one
+ * every ((99 - rate) >> 1) + 4. Transcribed from images 0x30A6 and 0x39D6. */
+void    level_release_reset(const level *lv);
+void    level_release_step(void);
+uint8_t level_released(void);
+
 void        level_status_reset(const level *lv);
 void        level_timer_step(void);
 const char *level_status_line(void);
@@ -310,6 +320,11 @@ uint8_t level_entrance_open(void);
 uint8_t level_frame_counter(void);
 
 void level_anim_step(level_anim *st, const level *lv);
+
+/* One pass of the level's frame, in the order image 0x019C..0x01C5 runs the
+ * parts of it that have been read. */
+void level_frame_step(level_anim *st, const level *lv);
+void level_status_out(uint8_t live);
 
 /* One pass of image 0x07BB8, onto a 320-wide viewport scrolled `scroll`
  * pixels into the level. */

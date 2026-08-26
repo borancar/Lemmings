@@ -870,6 +870,95 @@ void level_anim_init(level_anim *st, const level *lv, const ground *g)
 }
 
 /* ======================================================================
+ * PUTTING A NUMBER IN THE STATUS LINE - image 0x04B68.
+ *
+ * Not the same routine as the briefing's put_num below, which is still
+ * unread and right-aligns; this one is the status line's own and is
+ * left-aligned. digits3 at image 0x04BC2 is a third.
+ *
+ * Three cells, blanked first, then filled LEFT-aligned with leading zeros
+ * suppressed - not right-aligned, which is what the line looks like at a
+ * glance because the counts it holds are small. `si` only advances when a
+ * digit is actually printed, which is what makes it left-aligned:
+ *
+ *     [si] = [si+1] = [si+2] = ' '
+ *     ah = 0 / bl = 0                bl remembers a digit has been printed
+ *     inc ah / sub al,100 / jae      count the hundreds
+ *     add al,100 / dec ah
+ *     and ah,ah / je                 no hundreds: leave si where it is
+ *     add ah,'0' / inc bl / [si] = ah / inc si
+ *     ...the same for tens, which also prints when bl says a hundreds digit
+ *     already went out, so 105 does not come out as "1 5"
+ *     add al,'0' / [si] = al / inc si
+ * ====================================================================== */
+void status_put_num(char *dst, uint8_t v)
+{
+    uint8_t al = v, ah, bl = 0;
+    dst[0] = dst[1] = dst[2] = ' ';
+
+    ah = 0;
+    do { ah++; } while (al >= 100 ? (al = (uint8_t)(al - 100), 1) : 0);
+    ah--;
+    if (ah) { *dst++ = (char)(ah + '0'); bl++; }
+
+    dst[0] = ' ';
+    dst[1] = ' ';
+    ah = 0;
+    do { ah++; } while (al >= 10 ? (al = (uint8_t)(al - 10), 1) : 0);
+    ah--;
+    if (ah || bl) { *dst++ = (char)(ah + '0'); }
+
+    *dst = (char)(al + '0');
+}
+
+/* ======================================================================
+ * RELEASING THE LEMMINGS - image 0x30A6, and the interval at image 0x39D6.
+ *
+ * The interval is not the release rate: image 0x39D6 computes it as
+ *
+ *     al = 99 - rate / al >>= 1 / neg al / add al,0x35 / neg al / add al,0x39
+ *
+ * which is ((99 - rate) >> 1) + 4 once the two negations cancel - 28 frames
+ * at the release rate of 50 that "Just dig!" carries. The countdown starts
+ * at 0x14, twenty, from image 0x39D1, and only runs once the entrance is
+ * open, because image 0x30B0 tests ds:0x55 before image 0x30BA decrements.
+ *
+ * Checked against the running game, which is where the numbers came from:
+ * the gate opens on pass 36 and ds:0x43 goes to 1 on pass 56, then 2, 3, 4
+ * ... on 84, 112, 140, 168, 196, 224, 252, 280 and 308. Twenty then
+ * twenty-eight, exactly.
+ * ====================================================================== */
+static uint8_t g_release_wait;   /* ds:0x48 */
+static uint8_t g_release_step;   /* ds:0x49 */
+static uint8_t g_released;       /* ds:0x43 */
+static uint8_t g_to_release;     /* ds:0x47 */
+
+/* THE PORT'S OWN, only because ds:0x43 is a byte of the data segment and
+ * anything in the original can read it. */
+uint8_t level_released(void) { return g_released; }
+
+/* Image 0x39D1 sets the countdown and image 0x39D6 the interval; both run
+ * when the level is set up. */
+void level_release_reset(const level *lv)
+{
+    g_release_wait = 0x14;                      /* image 0x39D1 */
+    g_release_step = (uint8_t)(((99u - (uint16_t)lv->release_rate) >> 1) + 4u);
+    g_released     = 0;
+    g_to_release   = (uint8_t)lv->num_lemmings;
+}
+
+/* Image 0x30A6. What it releases is a lemming into the array at ds:0x88;
+ * this keeps only the count, because nothing walks that array yet. */
+void level_release_step(void)
+{
+    if (level_entrance_open() != 0xFF) return;  /* image 0x30B0 */
+    if (--g_release_wait) return;               /* image 0x30BA */
+    g_release_wait = g_release_step;            /* image 0x30C3 */
+    if (g_released == g_to_release) return;     /* image 0x30CC */
+    g_released++;
+}
+
+/* ======================================================================
  * THE LEVEL'S OPENING SEQUENCE - image 0x0361, called from the play loop's
  * first line at image 0x019D.
  *
@@ -932,6 +1021,20 @@ void level_start_step(void)
     g_level_frame++;                        /* image 0x01A3 */
 }
 
+/* Image 0x3684: the walk over the lemming array ends by putting the LIVE
+ * count - ds:0x45, the entries whose +0x26 is not 0xFF - into the line at
+ * ds:0x2095, which is col 22.
+ *
+ * Nothing walks that array here yet, so what gets passed in is the RELEASED
+ * count instead. The two agree only for as long as no lemming is lost, which
+ * over the first 700 frames of "Just dig!" they do - it is not the same
+ * quantity and this says so rather than letting a number that happens to
+ * match stand as if it were. */
+void level_status_out(uint8_t live)
+{
+    status_put_num(&g_status[22], live);
+}
+
 /* Image 0x07C0A, line for line.
  *
  *     bx = [si]              the flags word
@@ -969,6 +1072,28 @@ void level_anim_step(level_anim *st, const level *lv)
         a->frame = f;
         a->ink = (uint16_t)(a->base + (uint16_t)f * a->frame_size);
     }
+}
+
+/* One pass of the level's frame - as much of the chain at image 0x019C..
+ * 0x01C5 as has been read, in its order:
+ *
+ *     image 0x019D  call 0x031E   the opening sequence
+ *     image 0x01B0  call 0x30A6   release a lemming
+ *     image 0x01B6  call 0x3944   which tail-jumps to 0x07C0A, the objects
+ *     image 0x01BC  call 0x3634   walk the lemmings - NOT READ, so the OUT
+ *                                 count is fed the released count instead
+ *     image 0x0213                the clock, later in the same pass
+ *
+ * The calls this does not make are the ones nobody has read: 0x4085, 0x80FD,
+ * 0x7900, 0x3150, 0x1F19, 0x3634, 0x3AC8 (the minimap) and 0x3CDE (what the
+ * cursor is over). */
+void level_frame_step(level_anim *st, const level *lv)
+{
+    level_start_step();
+    level_release_step();
+    level_anim_step(st, lv);
+    level_timer_step();
+    level_status_out(level_released());
 }
 
 /* Image 0x07BB8.
