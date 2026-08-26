@@ -92,6 +92,14 @@ BAR_SCROLL_INIT = 4
 # eleven bytes with the signed counter at +0. Same idea as the scroll: the
 # capture shows one phase of them and the port has to be told which, or the
 # one that happens to be on screen scores as a difference.
+# Which palette path the guest is on, ds:0x1F7C. Image 0x055B7 compares it
+# against 4: on 4 it takes the pointer table at cs:0x52E4, whose entry is
+# ds:0x25F0 - DAC triples, 18-bit - and otherwise the table at cs:0x52D4,
+# whose entry is ds:0x25E8, eight ATTRIBUTE CONTROLLER values. The two give
+# completely different colours for the same pixels, so a capture is only
+# comparable against a port that took the same branch. Image 0x01312 sets it
+# to 4 for 'v'; 'o', '2', '4' and 'x' give 2, 8 and 0.
+ADAPTER_VAR = 0x0BA0C
 ANIM_VAR = 0x0E3F0
 ANIM_N = 10
 ANIM_REC = 11
@@ -153,6 +161,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
         if rating:
             cmd += ["--cmd", "sleep 1.5"]      # let the plate redraw
         cmd += ["--cmd", f"read i+{RATING_VAR:#x} 1"]
+        cmd += ["--cmd", f"read i+{ADAPTER_VAR:#x} 2"]
         key = KEY_FOR.get(screen)
         control = os.path.abspath(path) + ".menu"
         if screen == "briefing":
@@ -262,6 +271,8 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                 "this capture shows is unknown. That is a failure, not a pass.")
 
         scroll = None
+        adapter = None
+        apend2 = False
         anim = None
         anims = []
         pend = False
@@ -287,6 +298,17 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                     abytes = []
                     apend = 0
                 continue
+            if f"read i+{ADAPTER_VAR:#x}" in line:
+                apend2 = True
+                continue
+            if apend2 and line.strip():
+                by = [int(t, 16) for t in line.replace(":", " ").split()
+                      if len(t) == 2 and all(c in "0123456789abcdefABCDEF"
+                                             for c in t)]
+                if len(by) >= 2:
+                    adapter = by[0] | (by[1] << 8)
+                apend2 = False
+                continue
             if f"read i+{SCROLL_VAR:#x}" in line:
                 pend = True
                 continue
@@ -307,6 +329,10 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                 # and leaving the loop here is exactly why it came back None.
                 pend = False
                 continue
+        if adapter is not None:
+            print(f"  the palette path: ds:0x1F7C reads {adapter}, so the "
+                  f"{'DAC (18-bit, ds:0x25F0)' if adapter == 4 else 'EGA ATTRIBUTE table (ds:0x25E8)'}"
+                  f" - image 0x055B7.")
         # Before and after the dump. The counters step once per socket
         # command, so the two are almost never equal - but a counter is not
         # what gets DRAWN. Image 0x04FC4 shifts it right one, so each frame

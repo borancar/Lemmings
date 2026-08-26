@@ -533,6 +533,16 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* The disk check, image 0x0062B. A fixed disk passes because the
+     * ORIGINAL passes it - image 0x0062E jumps clear of the protection - and
+     * a floppy passes here only because LEM_DISK_CHECK is off. Both are
+     * asserted so that turning it on is a visible change and not a silent
+     * one, and so the no-op is a decision the tests know about. */
+    ck("disk_check passes a fixed disk (image 0x0062E)",
+       disk_check(0xF8) == 0, "0xF8 was refused");
+    ck("and a floppy too, LEM_DISK_CHECK being off",
+       disk_check(0xF9) == 0, "0xF9 was refused with the check disabled");
+
     ck("menu_hotspots fills its array",
        spots[MENU_HOTSPOTS - 1].w == MENU_W, "last hotspot not written");
 

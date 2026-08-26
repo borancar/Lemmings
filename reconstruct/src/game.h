@@ -53,6 +53,10 @@ int dat_decompress(const uint8_t *comp, uint32_t comp_len,
                    uint8_t bits_in_first, uint8_t checksum,
                    uint8_t *out, uint32_t out_len, const char **err);
 
+/* The original's disk check, image 0x0062B - transcribed and deliberately
+ * no-op; see game.c. 0 carries on, -1 is the "Disk 1 Not found" exit. */
+int disk_check(uint8_t media);
+
 int dat_load(const char *path, dat_file *out, const char **err);
 void dat_free(dat_file *d);
 

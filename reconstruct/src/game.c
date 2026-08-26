@@ -206,6 +206,73 @@ int dat_decompress(const uint8_t *comp, uint32_t comp_len,
 }
 
 
+/* ======================================================================
+ * THE DISK CHECK - image 0x0062B, transcribed, and DELIBERATELY NO-OP.
+ *
+ * The original decides whether to run its copy protection from the media
+ * descriptor byte it saved at start-up: image 0x00090 asks DOS for the drive
+ * data (INT 21h AH=1Bh), keeps `[bx]` in ds:0x1FDE, and image 0x0062B reads
+ * it back. 0xF8 is a fixed disk, and the routine jumps clear of the whole
+ * thing to image 0x00E66. Anything else is a floppy, and it calls image
+ * 0x0063E and treats carry-clear as a pass; carry set falls into image
+ * 0x00EDF, which prints "Lemmings Disk 1 Not found, Insert into drive A or B
+ * and retry" from ds:0x20D4 and exits through INT 21h AX=4C00.
+ *
+ * Image 0x0063E is not a disk read in any ordinary sense and is NOT
+ * transcribed. It pushes the low interrupt vectors 0..0x14, points vector 3
+ * at itself and executes `int3` - it is the trap-flag protection that
+ * decrypts itself one instruction at a time and re-encrypts behind itself,
+ * the same one image/README.md describes and tools/decrypt_image.py had to
+ * drive at media 0xF9 to recover 651 bytes of plaintext.
+ *
+ * So it is a no-op here, behind a define, rather than a gap:
+ *
+ *   - There is no floppy to check. The port loads from a directory, which is
+ *     the media byte's own 0xF8 case, so the honest transcription of image
+ *     0x0062B for this port takes the branch it already takes.
+ *   - Reconstructing a protection check would be reconstructing a thing whose
+ *     only purpose is to refuse to run, and it cannot pass without the
+ *     physical disk it was written to look for.
+ *   - It stays visible instead of being quietly dropped, because "the port
+ *     does not do this, on purpose" and "nobody has read this yet" are
+ *     different claims and this file keeps them apart.
+ *
+ * Set LEM_DISK_CHECK to 1 and the shape of the original is still here to
+ * hang an implementation on; disk_protection() is where image 0x0063E would
+ * go, and it is not written.
+ * ====================================================================== */
+
+#define LEM_DISK_CHECK 0
+
+#define DISK_MEDIA_FIXED 0xF8      /* image 0x0062E */
+
+#if LEM_DISK_CHECK
+/* NOT TRANSCRIBED. Image 0x0063E, the trap-flag protection - see above. */
+static int disk_protection(void);
+#endif
+
+/* Transcribed from image 0x0062B. Returns 0 to carry on, -1 for the path
+ * that prints ds:0x20D4 and exits. */
+int disk_check(uint8_t media)
+{
+    /* Image 0x0062E: a fixed disk, so there is nothing to check. */
+    if (media == DISK_MEDIA_FIXED)
+        return 0;
+
+#if LEM_DISK_CHECK
+    /* Image 0x00635 calls it; image 0x00638 takes carry-clear as a pass and
+     * image 0x0063A is the failure. */
+    return disk_protection() ? -1 : 0;
+#else
+    /* The no-op: every medium passes. Nothing in this port calls disk_check
+     * yet either - the start-up at image 0x00090 that reads the media byte
+     * is not transcribed - so this is the decision recorded, not a check
+     * being performed. */
+    return 0;
+#endif
+}
+
+
 /* NOT TRANSCRIBED. The original streams sections through a read routine
  * (image 0x01D2E) into one buffer as it goes; this reads the whole file and
  * decompresses every section up front, which is the port's own arrangement. */
