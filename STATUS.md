@@ -644,43 +644,75 @@ Each of these is stated as what was *checked*, not what was written.
 
 ## Into a level
 
-- **BLOCKER: the original does not play under the emulator.** It reaches the
-  first level, draws it correctly, begins to fade in, and then stops. Nothing
-  further can be matched frame by frame until this is fixed, so it is the top
-  of this list.
+- **The original was not frozen — it was running on a clock made of noise,
+  and that clock is now the hardware's.** The level looked static because the
+  game paces itself off numbers the emulator was inventing.
 
-  What is measured, not guessed:
+  **The game measures its own frame rate.** It does not assume one. At image
+  `0x1602` it loads PIT channel 0 with `0xFFFF`, counts `bx` transitions of
+  the display-enable bit on port `0x3DA`, latches the counter and keeps
+  `0xFFFF - count`: the number of PIT counts in `bx` scanlines. Image
+  `0x15AD` stores that in `ds:0x1FC9`, and the IRQ 0 handler at `0x17C7`
+  reloads the divisor from it on **every tick**. So whatever the emulator
+  says about the display comes straight back as the game's clock.
 
-  | observation | value |
+  `bx` is 320 or 160, chosen at image `0x15DF` from `ds:0x2007`, which the
+  adapter probes at image `0x13DC` fill in. A VGA doubles the lines of a
+  200-line mode, so 320 of its lines and 160 of a CGA's are the same 10.17 ms
+  — the game is compensating for the adapter, and getting the adapter wrong
+  costs exactly a factor of two.
+
+  Four faults, all in the emulator, all now fixed (`dos_emulator` 347c1d4):
+
+  | fault | what the game saw |
   | --- | --- |
-  | screen, twice in ONE run 10s apart | **0 of 64,000 pixels differ** |
-  | screen, three separate runs at delays 62s, 78s, 105s | all **byte-identical** |
-  | DAC entries lit, at both moments | **0 of 256** |
-  | `out3c9` (DAC data writes) | climbing continuously — 37k → 52k over 25s |
-  | `in3da` (retrace polls) | 10.4 million |
-  | CS:IP, six samples 5s apart | **every one** inside `0x17C7..0x1812` |
-  | CRTC start address | constant at `0x2C2` |
-  | framebuffer non-zero bytes | constant at 6,016 |
+  | PIT counter read back from elapsed time, ignoring the loaded value | divisor `0x3853`, `0x7698`, `0xC59C`, `0xDD25` across four runs of the same program |
+  | a latched count recomputed per byte | low byte of one instant, high byte of another |
+  | `INT 10h AH=12h BL=10h` unanswered → BL returns unchanged → "no EGA" | detected a **CGA**, timed against 160 lines, twice too fast |
+  | timer looked at once a slice (40/s), and every divisor write threw the next deadline away | 13 Hz delivered against 97 Hz asked |
 
-  `0x17C7` is the **vertical-retrace interrupt handler** - a full register
-  push, then `out 0x0C`/`0x0D` setting the CRTC start from
-  `[0x1F78] + [0x1F7A] + 2`. So the guest is executing, and spending all of
-  its sampled time in that ISR, writing the DAC over and over while the
-  picture never changes and the page never flips.
+  The display-enable bit is the awkward one: it changes every 32 µs and a
+  slice of guest instructions is a millisecond, so no wall clock this
+  emulator can offer resolves it — which is why it toggled per read, and why
+  a guest timing against it measured how fast the emulator was running. The
+  guest says which it is doing, though: to *time* the register it needs a
+  counter it can read back, so it puts channel 0 in **mode 0** first. While
+  that holds, each read advances a virtual clock an eighth of a scanline.
+  Otherwise it toggles as before and costs nothing.
 
-  It reads as a fade that never completes. The handler's first test is
-  `cmp byte [0x200E], 0xFF` - one of the machine-type flags in
-  docs/machine-types.md, the one shared by "PC compatible" and "Amstrad" - and
-  reading that byte is the obvious next move. `tools/lemmings.py` answers the
-  start-up menus with keys `1` and `2`, so the guest is on **High Performance
-  PCs**, and whether that path needs something the emulator does not provide
-  has never been checked. The deferred note in this file - *"we'll want to keep
-  disassembling all 3 options"* - is no longer a nicety.
+  Measured after, and stable run to run where it used to be noise:
 
-  One thing did fall out of it: the status line reports `crtc_off=22`, which
-  is 22 **words** = **44 bytes**, independently confirming the logical line
-  width derived from `0x1E40 = 176 x 44`.
+  | | |
+  | --- | --- |
+  | lines counted | **320** (was 160 — detected CGA) |
+  | `ds:0x1FC9` | **12,279** counts (hardware: 12,135 — within **1.2%**) |
+  | timer tick | **97.2 Hz** |
 
+  **This did not regress anything, and the figures this file used to carry
+  were stale.** Baselined by stashing the change and running the same check:
+
+  | screen | before | after |
+  | --- | --- | --- |
+  | menu | 99.45% (1242 px) | **99.92% (186 px)** |
+  | code | 65.43% | 65.43% |
+  | input | 64.44% | 64.45% |
+  | briefing | 29.90% | 29.91% |
+  | `tools/prove.sh` | 100.00% | **100.00%** |
+
+  The menu *improved*: a correct frame rate puts the animation on the phase
+  the capture expects. The 100% recorded here for **code**, **input** and
+  **briefing** was not measured at this tooling and is withdrawn — those
+  three are ~65%, ~64% and ~30% and were so before this change too.
+
+  **Still open, and the next thing to chase.** The level loop does not
+  sustain. With ranged hooks over a 106 s run: the ISR at `0x17C7` is entered
+  20.2/s and reaches its tail at `0x189E` 14.4/s, against the 97.2 Hz it
+  programs. And `0x00FB`'s `call 0x3E7` is entered **once and never
+  returns** — that is the program's real main loop, so `0x0105..0x0199`,
+  read here earlier as the frame loop that counts five ticks to a frame, is
+  **dead in this configuration**. It was not dead before the adapter
+  detection changed (it ran at exactly 5.00 ticks per frame then), so
+  `ds:0x2006`/`ds:0x2007` select more than the line count. Read `0x3E7`.
 
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte

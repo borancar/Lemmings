@@ -70,13 +70,31 @@ STARTUP_KEYS = ("1", "2")
 class LemmingsVga(VgaDos):
     """PC Lemmings (VGA) on the shared machine.
 
-    Nothing overridden yet. Game-specific behaviour - routine names on the
-    control socket, sync points, the read cache - lands here as it is found,
-    so that `dos_emulator` stays free of anything that mentions Lemmings.
+    Game-specific behaviour - routine names on the control socket, sync
+    points, the read cache - lands here as it is found, so that
+    `dos_emulator` stays free of anything that mentions Lemmings.
     """
 
     fs_note = ("host filesystem READ-ONLY; writes intercepted in memory "
                "(RUSSELL.DAT is never touched)")
+
+    def __init__(self, *a, **kw):
+        # The game does not take the display's timing on trust - it measures
+        # it, at image 0x1602, and divides the answer into its whole clock.
+        # So these two numbers *are* the frame rate, and the emulator's
+        # defaults are a CGA's.
+        #
+        # A VGA refreshes its 200-line modes at 70 Hz, and scans 449 lines to
+        # do it, which is 31.469 kHz across the line. The game counts 320 of
+        # those line transitions on port 0x3DA bit 0 at image 0x1622 - 320 and
+        # not 200, because a VGA doubles the lines of a 200-line mode, and the
+        # adapter probe at image 0x1462 asks the BIOS which it is on. 320
+        # lines at 31.469 kHz is 10.17 ms, which is 12,135 PIT counts and a
+        # 98.3 Hz timer tick. Measured here: 12,279, within 1.2%, and steady
+        # from run to run where it used to be noise.
+        kw.setdefault("vsync_hz", 70.0)
+        kw.setdefault("hsync_hz", 31469.0)
+        super().__init__(*a, **kw)
 
 
 REC_MAGIC = b"LEMREC01"
@@ -154,6 +172,16 @@ class RecordingLemmingsVga(LemmingsVga):
         self.uc.hook_add(UC_HOOK_CODE, code)
 
 
+# The game's own INT 08h handler at image 0x17C7 reprograms the PIT on every
+# tick and the main loop at image 0x0164 counts five ticks to a frame, so the
+# frame rate *is* the tick rate over five. A tick can only be delivered when
+# the emulator looks at the timer, which it does once per slice; at the default
+# chunk of 20,000 instructions and 800,000 ips that is 40 looks a second, and
+# the 82.7 Hz the game asks for during start-up cannot fit into it. Eight
+# slices give 320 looks a second, comfortably above anything the game programs.
+TIMER_SLICES = 8
+
+
 def make_machine(args):
     """Build the machine from parsed CLI args, for `main(make_machine=...)`.
 
@@ -201,6 +229,14 @@ def run(argv=None):
         argv.insert(0, EXE)
     if not any(a == "--game-dir" or a.startswith("--game-dir=") for a in argv):
         argv += ["--game-dir", GAME_DIR]
+    if not any(a == "--timer-slices" or a.startswith("--timer-slices=")
+               for a in argv):
+        # The game drives everything from IRQ 0 and programs the PIT for
+        # itself - 39.3 Hz inside a level, 82.7 Hz during start-up - so the
+        # timer has to be looked at far more often than once a chunk or it
+        # simply ticks at the chunk rate and the game runs slow. See
+        # TIMER_SLICES.
+        argv += ["--timer-slices", str(TIMER_SLICES)]
     set_game_dir(GAME_DIR)
     return _emu_main(argv, make_machine=make_machine)
 
