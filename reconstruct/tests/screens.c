@@ -533,6 +533,39 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* WHAT THE RESULTS SCREEN IS TOLD, and where the port used to make it up.
+     *
+     * Both of these were decided in main.c, which no test reaches, and one of
+     * them was simply wrong: a constant 0 for "timed out", so a level whose
+     * clock had run out was told "All lemmings accounted for." A player found
+     * it. They are game.c's now, with the original's addresses on them, which
+     * is what lets a test ask. */
+    {
+        level lv;
+        memset(&lv, 0, sizeof lv);
+        lv.num_lemmings = 10; lv.num_to_rescue = 1;
+        ck("the requirement is a percentage, image 0x04591",
+           level_needed_percent(&lv) == 10, "10 of 1 is not 10%");
+        lv.num_lemmings = 80; lv.num_to_rescue = 40;
+        ck("and it divides rather than assuming tens",
+           level_needed_percent(&lv) == 50, "40 of 80 is not 50%");
+        lv.num_lemmings = 0;
+        ck("a level that releases nobody does not divide by zero",
+           level_needed_percent(&lv) == 0, "it divided by zero");
+
+        /* Image 0x04710 asks the panel's own three digits. */
+        level lv2;
+        memset(&lv2, 0, sizeof lv2);
+        lv2.time_limit = 5;
+        level_status_reset(&lv2);
+        ck("a fresh level has not run out of time",
+           !level_out_of_time(), "5:00 read as out of time");
+        for (uint32_t i = 0; i < 5u * 60u * LEVEL_FPS + 4 * LEVEL_FPS; i++)
+            level_timer_step();
+        ck("and one whose clock reads 0:00 has",
+           level_out_of_time(), "the clock ran down and it said otherwise");
+    }
+
     /* The access code's checksum - the one part of it two routines agree
      * on: image 0x05147 builds it and image 0x051D4 checks it. */
     {

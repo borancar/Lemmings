@@ -275,6 +275,36 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
+## A decision made in main.c is a decision no test can reach
+
+Five of the faults fixed in one session came from the user PLAYING the game,
+not from any check in this repository, and three of those lived in the same
+place: `main.c`, deciding something the game decides for itself.
+
+- it passed a constant 0 for "did the clock run out", so a level that timed
+  out was told "All lemmings accounted for."
+- it worked out the requirement percentage inline, correctly, with no address
+  against it - a guess that happens to be right is still a guess
+- it took any click on the results screen as "next level", because the menu's
+  hotspot matcher reports WHERE a click landed and not WHICH button made it
+
+None of these is visible to a frame comparison. `verify_results.py` sets the
+clock itself, so it was confirming the screen renders a timed-out result
+correctly - which it did - while the game never asked for one. **A harness
+that feeds both sides the same answer cannot tell you the question was
+wrong.**
+
+The rule the port already has covers it and had drifted: **`game.c` holds the
+game.** A thing the original decides is a thing to transcribe with its
+address, not to recompute in the caller - and the practical test is whether a
+unit test can reach it. `level_out_of_time` (image 0x04710) and
+`level_needed_percent` (image 0x04591) are both three lines long, and both
+were in `main.c` where nothing could ask them anything.
+
+So when a routine's INPUTS are assembled by the caller, check the caller
+against the original too. The screen being pixel-exact says only that it
+draws what it was told.
+
 ## A verifier that never reached the positive case has verified nothing
 
 `verify_hit.py` compared 326 frames against the original's own `ds:0x1A` and

@@ -140,11 +140,9 @@ int main(int argc, char **argv)
                  * level that had timed out. */
                 int timed_out = level_out_of_time();
                 uint8_t saved = g_level_saved;
-                /* The requirement as a PERCENTAGE, which is what image
-                 * 0x04720 compares - the header carries a count. */
-                uint8_t needed = lv.num_lemmings
-                    ? (uint8_t)(lv.num_to_rescue * 100u / lv.num_lemmings)
-                    : 0;
+                /* Image 0x04591 - the header carries a count and image
+                 * 0x04720 judges a percentage. */
+                uint8_t needed = level_needed_percent(&lv);
                 char code[11] = "";
                 if (level_won(saved, needed)) {
                     uint8_t next = index, r2 = rat;

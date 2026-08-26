@@ -487,6 +487,10 @@ void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                         uint8_t input_kind, uint8_t level_no,
                         const char *code);
 
+/* The level's requirement as a percentage - image 0x04591, and it is
+ * eight-bit arithmetic there. */
+uint8_t level_needed_percent(const level *lv);
+
 /* Whether the clock ran out, image 0x04710 - asked of the panel's own three
  * digits rather than passed in as a flag. */
 int level_out_of_time(void);

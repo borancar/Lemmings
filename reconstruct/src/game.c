@@ -2236,6 +2236,30 @@ int level_over(const level *lv, uint8_t released, uint8_t live)
     return 0;
 }
 
+/* THE REQUIREMENT AS A PERCENTAGE - transcribed from image 0x04591.
+ *
+ * ds:0x41 is what image 0x04720 judges the level by, and it is set when the
+ * BRIEFING is composed, not when the results are:
+ *
+ *     al = ds:0x0FD0      the count to rescue
+ *     cl = 0x64 / mul cl  times a hundred, into ax
+ *     cl = ds:0x0FCE      the lemmings the level releases
+ *     div cl              and the quotient is the percentage
+ *
+ * Eight-bit throughout - `mul cl` on al, `div cl` back to al - which is why
+ * this takes uint8_t rather than the header's uint16_t fields. main.c had
+ * the same arithmetic written out inline and no address against it; a guess
+ * that happens to be right is still a guess, and it is the sort that stays
+ * right until a level with different numbers comes along.
+ */
+uint8_t level_needed_percent(const level *lv)
+{
+    uint8_t total = (uint8_t)lv->num_lemmings;
+    if (!total) return 0;
+    uint16_t ax = (uint16_t)((uint8_t)lv->num_to_rescue * 100u);
+    return (uint8_t)(ax / total);
+}
+
 /* DID THE CLOCK RUN OUT - transcribed from image 0x04710.
  *
  * The results screen does not take this as a flag from whoever called it.
