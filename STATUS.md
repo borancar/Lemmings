@@ -1038,18 +1038,48 @@ Each of these is stated as what was *checked*, not what was written.
   - **walking** - x **+1** a frame in the direction, animation cycling 0..7,
     and y becoming the topmost terrain row in the new column
 
-  That last rule was *fitted* and it is **not** finished: searching down from
-  `old_y - 2` gets **1,122 of 1,127** right, and 3 or more gets 1,115. Five
-  steps it cannot explain. This file records twice what happens next if a fit
-  that is nearly right gets built on, so it is not being built on.
+  The walker is **transcribed now, and exact**: image 0x2047, replayed over
+  every recorded step, is **1,127 right and 0 wrong**
+  (`probe_lemmings.py --check`).
+
+      anim = (anim + 1) & 7                         image 0x2047
+      x += direction                                image 0x2051
+      if x < 0x10 or x >= 0x680: turn round         images 0x2057, 0x2142
+      solid at y?  yes: the first empty of y-1..y-3 settles at y-(k-1)
+                        the first empty of y-4..y-7 settles at y-2 and sets
+                        bit 3 of [si+8], a different handler from then on
+                        none of the seven: turn round, unless it can climb
+                   no:  the first solid of y+1..y+3 settles there
+                        none: it becomes a faller, y += 4
+
+  Getting there needed three things right, and each one alone made an exact
+  rule look approximate:
+
+  - **the canvas.** Image 0x5DC6 takes the row from `y - 0x10` and the byte
+    from `x >> 3`, and the port's canvas sits 16 pixels along from the
+    original's - which is not a fudge, it is the `offset 16` that
+    `tools/prove.sh` has been printing all along.
+  - **terrain only.** The buffer the original probes has no objects in it;
+    they are drawn at display time. Probing a canvas with the entrance in it
+    scored 322 of 1,134.
+  - **what counts as a step.** `[si+8]` dispatches to fifteen other handlers,
+    and seven of the steps in the recording belong to the one that image
+    0x2169 turns the lemming into. Counting those made 1,127-out-of-1,127
+    read as 1,127 out of 1,134, which is exactly the shape of a rule that is
+    nearly right - and it was not nearly right, it was right.
 
 - **The simulation is image 0x1F19**, reached from the play loop at image
-  0x01B3. It walks ds:0x88 for ds:0x43 entries, tests `+0x26` for alive, then
-  `+0x20` and bit 7 of `+0x24`, and branches. Image 0x03634 only *draws*;
-  image 0x05726 erases. That routine is the next thing to transcribe, and
-  everything still outstanding is behind it: the play area's half a per cent,
-  the panel's last 53 pixels, and the OUT count being the live tally rather
-  than the released one.
+  0x01B3. Image 0x03634 only *draws*; image 0x05726 erases. `[si+8]` is a
+  **state bitmask** and image 0x1F5E dispatches on it to sixteen handlers -
+  and with no player input it is **zero on every lemming on every frame**, so
+  the default at image 0x2047 is the only path the whole reference run takes.
+  That is why the walker was worth transcribing first.
+
+  Still to read: the faller at image 0x21B0 (its shape is clear - probe three
+  rows, land on the first solid one, else `y += 3` with the counter `+= 3`,
+  and over 0x3C it splats), where a released lemming starts, and the sprites.
+  The dots on the minimap at image 0x06FE2 need only x and y, so they come
+  free with the simulation.
 
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
