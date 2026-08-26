@@ -3819,19 +3819,36 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * begin - so the two are adjacent in the file, and each was found without
  * reference to the other. Two independent measurements meeting at a boundary
  * is worth more than either alone. */
-/* THE HOIST'S SPRITE - the eight frames a climber spends pulling itself over
- * the top. 16 wide, twelve rows, two planes, 48 bytes a frame, at 3472:
- * ZERO pixels disagree across all eight frames, of 180 of ink.
+/* THE CLIMBER'S SPRITES, and this is the one place a sprite has turned out to
+ * come in TWO - one for each way the lemming faces.
  *
- * THE CLIMB'S OWN SPRITE IS NOT FOUND, and the likeliest reason is worth
- * writing down rather than guessing past. Scoring every offset over the
- * climbing frames gives nothing better than 65 disagreements at any
- * geometry, where every sprite found this way so far has come in at 0 to 2.
- * A score that bad usually means the frames being compared do not share one
- * base - and a climber can be going either way up a wall. The reference for
- * this run was recorded before the manifest carried the DIRECTION, so the
- * frames cannot be split by it; re-record button 2 and try each direction on
- * its own. Until then a climber is drawn as a walker. */
+ * Scoring every offset over all the climbing frames together gave nothing
+ * better than 65 disagreements at any geometry, where every sprite found this
+ * way had come in at 0 to 2. A score that bad means the frames do not share
+ * one base. Splitting them by direction - which needed the reference
+ * re-recording, because the manifest had not carried it - gives ZERO at once,
+ * twice over: 2064 going right and 2448 going left, 12 rows in two planes.
+ * Eight frames of 48 is 384, and 2448 - 2064 is 384, so the two sets are
+ * adjacent.
+ *
+ * 2064 IS THE OFFSET THAT WAS GUESSED FOR THE BUILDER AND DISMISSED. It sits
+ * exactly where the digger's sixteen frames end, it decoded as a perfectly
+ * plausible lemming, and it changed that comparison by nothing - because it
+ * is this. A wrong sprite in the right file looks no different from a right
+ * one until something scores it.
+ *
+ * The hoist's is 12 rows in two planes at 3472: ZERO across all eight frames
+ * of 180 ink. Whether it comes in two like the climb's is not known - every
+ * hoist in the run so far faces the same way. */
+#define CLIMB_SPR_RIGHT 2064
+#define CLIMB_SPR_LEFT  2448
+#define CLIMB_SPR_H     12
+#define CLIMB_SPR_PLANES 2
+#define CLIMB_SPR_ROW   2
+#define CLIMB_SPR_PLANE (CLIMB_SPR_ROW * CLIMB_SPR_H)          /* 24 */
+#define CLIMB_SPR_FRAME (CLIMB_SPR_PLANE * CLIMB_SPR_PLANES)   /* 48 */
+#define CLIMB_SPR_FRAMES 8
+
 #define HOIST_SPR_BASE  3472
 #define HOIST_SPR_H     12
 #define HOIST_SPR_PLANES 2
@@ -3893,6 +3910,32 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                 for (uint8_t p = 0; p < EXIT_SPR_PLANES; p++) {
                     uint8_t byte = sec[base + p * EXIT_SPR_PLANE
                                        + r * EXIT_SPR_ROW + (c >> 3)];
+                    v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                }
+                if (v) dst[(size_t)py * dst_w + px] = v;
+            }
+        }
+        return;
+    }
+
+    /* A climber going up a wall - and which way it faces picks the sprite. */
+    if (a->flags & 0x0020) {
+        if (a->anim >= CLIMB_SPR_FRAMES) return;
+        base = (a->dir > 0 ? CLIMB_SPR_RIGHT : CLIMB_SPR_LEFT)
+             + (uint32_t)a->anim * CLIMB_SPR_FRAME;
+        if (base + CLIMB_SPR_FRAME > sec_len) return;
+        x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+        y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+        for (uint8_t r = 0; r < CLIMB_SPR_H; r++) {
+            int32_t py = y0 + r;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            for (uint8_t c = 0; c < 16; c++) {
+                int32_t px = x0 + c;
+                uint8_t v = 0;
+                if (px < 0 || px >= (int32_t)dst_w) continue;
+                for (uint8_t p = 0; p < CLIMB_SPR_PLANES; p++) {
+                    uint8_t byte = sec[base + p * CLIMB_SPR_PLANE
+                                       + r * CLIMB_SPR_ROW + (c >> 3)];
                     v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
                 }
                 if (v) dst[(size_t)py * dst_w + px] = v;
