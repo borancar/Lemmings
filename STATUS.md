@@ -898,6 +898,38 @@ puts it back to walking. The original bashed for FOUR frames on "Just dig!"
 where the port bashed for 288, which is what said the test was missing
 rather than mis-read.
 
+### The miner, read but not written
+
+The last of the eight. Everything here is read; none of it is transcribed.
+
+**Assigning**, image `0x03598`: refuse on `[si+8] & 0xFD6F`; refuse if
+`[si+0x2C] & 0x0F` - the cell UNDER it - is 9, which is steel; then the same
+ahead-test the basher has, `[si+0x2B] & 0x0F` against 7 facing right or 8
+facing left, with 9 diverting to image `0x03287`. Then
+`flags = (flags & 0xFD6F) | 0x800`, hot spot **(-8, -13)**, state `0x18`,
+and a sprite of `0x68` = 104 bytes a frame with the mask `0x4E` in - the
+builder's shape.
+
+**Doing it**, image `0x02B35`: a counter of TWENTY-FOUR, image `0x02B3A`
+wrapping at `0x18` rather than masking. Its value dispatches:
+
+| | |
+| --- | --- |
+| 0 | image `0x02BE1` drops y by one, and dies past `0xB4` |
+| 1, 2 | image `0x02B60` takes a slice away, index `al - 1` |
+| 3 | image `0x02BF1` moves x by the direction TWICE |
+| 0x0F | image `0x02B66` does the same again |
+| otherwise | nothing |
+
+So a miner cuts down and along on a diagonal, two slices a cycle, moving
+twice per cycle - which is why its counter is 24 where the basher's is 32.
+
+**The masks**, image `0x0606B`: `0x270` = 624 bytes a direction (image
+`0x060E2`), which for eight shifts of thirteen rows of three bytes is two
+slices. Same resource as the basher's and the crater's, built at run time.
+The tails of image `0x02B66` and image `0x02BF1` past their bounds checks are
+not read yet.
+
 ### Level 2, where lemmings fall and die
 
 `tools/record_level.py --level N` pokes `ds:0x1F6B` before the briefing reads
