@@ -632,6 +632,58 @@ static uint32_t panel_glyph(uint8_t ch)
 #define PANEL_NUM_BG    0
 
 /* ======================================================================
+ * THE SELECTED BUTTON'S BOX - image 0x0780D.
+ *
+ *     ax += ax / di = ax + 0x2100 + [0x1f76] + 2     two bytes a button
+ *     Enable Set/Reset 0x0C                          planes 2,3 cleared,
+ *                                                    0,1 from the CPU - so
+ *                                                    writing 0xFF is colour 3
+ *     al = 0xFF / stosb / stosb / add di,0x2a        the top edge, 16 px
+ *     cx = 0x16                                      twenty-two middle rows
+ *       Bit Mask 0x80 / stosb 0x80                     the leftmost pixel
+ *       Bit Mask 0x01 / stosb 0x01                     and the rightmost
+ *       add di,0x2a
+ *     Bit Mask 0xFF / al = 0xFF / stosb / stosb      the bottom edge
+ *
+ * Twenty-four rows from video row 192, which is the panel's row 16, and
+ * 0x2102 puts button 0 at byte 2 - so button b starts 16 + 16b pixels into
+ * the 352-wide line. The colour is 3, which is what a recorded frame shows
+ * and what Enable Set/Reset 0x0C makes of a 0xFF.
+ *
+ * Which button is boxed is ds:0x83, and image 0x0427 starts it at 3 - the
+ * third skill button, whether or not the level offers that skill. ds:0x82 is
+ * the one boxed before it, so image 0x3B29 can rub one out and draw the
+ * other; with nothing clicked they stay 2 and 3.
+ * ====================================================================== */
+#define PANEL_SEL_ROW    16      /* image 0x2102: video row 192 */
+#define PANEL_SEL_H      24
+#define PANEL_SEL_X0     16      /* image 0x2102: byte 2 */
+#define PANEL_SEL_INK     3
+#define PANEL_SEL_START   3      /* image 0x0427: ds:0x83 starts at 3 */
+
+void panel_highlight(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                     uint8_t button)
+{
+    uint16_t x0 = (uint16_t)(PANEL_SEL_X0 + button * PANEL_BUTTON_W);
+    for (uint8_t r = 0; r < PANEL_SEL_H; r++) {
+        uint16_t y = (uint16_t)(PANEL_SEL_ROW + r);
+        if (y >= dst_h) break;
+        if (r == 0 || r == PANEL_SEL_H - 1) {
+            for (uint8_t c = 0; c < PANEL_BUTTON_W; c++)
+                if (x0 + c < dst_w)
+                    dst[(size_t)y * dst_w + x0 + c] = PANEL_SEL_INK;
+        } else {
+            if (x0 < dst_w)
+                dst[(size_t)y * dst_w + x0] = PANEL_SEL_INK;
+            if (x0 + PANEL_BUTTON_W - 1 < dst_w)
+                dst[(size_t)y * dst_w + x0 + PANEL_BUTTON_W - 1] =
+                    PANEL_SEL_INK;
+        }
+    }
+}
+
+
+/* ======================================================================
  * THE NUMBERS ON THE SKILL BUTTONS - image 0x0765F.
  *
  * A different font from the status line's, and one nobody had found: ten
@@ -1110,6 +1162,36 @@ void level_start_step(void)
     g_level_frame++;                        /* image 0x01A3 */
 }
 
+#define ST_IN_HUNDREDS 29
+#define ST_IN_TENS     30
+#define ST_IN_UNITS    31
+
+/* The IN percentage, image 0x03AF8. Three cells at cols 29..31, and the
+ * trick in it is worth keeping: with no tens digit it loads ah with 0xF0 and
+ * then adds '0', which wraps a byte to 0x20 - a space. So 0% shows as " 0"
+ * and not "00". A hundred per cent is special-cased before any of that and
+ * writes "100" across all three.
+ *
+ * What it is a percentage OF is not established here: nothing counts the
+ * saved lemmings yet, so this is called with zero, which is what the whole of
+ * the first seven hundred frames of "Just dig!" shows anyway. */
+void level_status_in(uint8_t percent)
+{
+    uint8_t al = percent, ah;
+    if (al == 100) {                       /* image 0x03AFB */
+        g_status[ST_IN_HUNDREDS] = '1';
+        g_status[ST_IN_TENS]     = '0';
+        g_status[ST_IN_UNITS]    = '0';
+        return;
+    }
+    ah = 0;
+    do { ah++; } while (al >= 10 ? (al = (uint8_t)(al - 10), 1) : 0);
+    ah--;
+    /* image 0x03B17: no tens, so 0xF0 + '0' wraps to a space */
+    g_status[ST_IN_TENS]  = ah ? (char)(ah + '0') : ' ';
+    g_status[ST_IN_UNITS] = (char)(al + '0');
+}
+
 /* Image 0x3684: the walk over the lemming array ends by putting the LIVE
  * count - ds:0x45, the entries whose +0x26 is not 0xFF - into the line at
  * ds:0x2095, which is col 22.
@@ -1183,6 +1265,7 @@ void level_frame_step(level_anim *st, const level *lv)
     level_anim_step(st, lv);
     level_timer_step();
     level_status_out(level_released());
+    level_status_in(0);          /* nothing is counted saved yet */
 }
 
 /* Image 0x07BB8.

@@ -949,6 +949,33 @@ Each of these is stated as what was *checked*, not what was written.
   0x076D2 straight away, where a rank by volume had buried them under the
   background repaints.
 
+- **The selected button's box, image 0x0780D.** Sixteen by twenty-four in
+  colour 3 with only its edges drawn: top and bottom rows solid, and
+  twenty-two middle rows carrying just the leftmost and rightmost pixel,
+  which image 0x07869 does with Bit Mask 0x80 then 0x01. `Enable Set/Reset`
+  0x0C is what makes a `0xFF` come out as colour 3 - planes 2 and 3 cleared,
+  0 and 1 from the CPU - and that agrees with the recorded frame.
+
+  Image 0x2102 starts the buttons **two bytes into the line**, so button *b*
+  is at 16 + 16*b*, and `ds:0x83` names the boxed one - image 0x0427 starts
+  it at **3**, the third skill button, whether or not the level offers that
+  skill. `ds:0x82` is the previously boxed one so image 0x3B29 can rub one out
+  and draw the other; with nothing clicked they stay 2 and 3.
+
+- **The IN percentage, image 0x03AF8**, and the trick in it: with no tens
+  digit it loads `0xF0` and adds `'0'`, which wraps a byte to a **space**. So
+  0 reads `" 0"` and not `"00"`. A hundred is special-cased across all three
+  cells before any of that.
+
+- **The minimap is read but not built.** Image 0x07900 copies it into place -
+  13 bytes by 20 rows at video row 194 byte 28, so screen x 192 and rows
+  178..197 - from a stashed image at `0xA000:0xD320`, one cleared row then 19
+  copied. The lemming dots go in separately at image 0x06FE2, which fixes the
+  scale beyond doubt: minimap x is `level_x >> 4` and the row is
+  `(y - 32) >> 3`. The level's terrain spans x 511..1020, which is **31.9**
+  minimap pixels at that scale, and the content measured in a recorded frame
+  is **31** pixels wide. What has not been read is what builds 0xD320.
+
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
   game frame):
@@ -956,11 +983,9 @@ Each of these is stated as what was *checked*, not what was written.
   | frames | play area | panel |
   | --- | --- | --- |
   | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
-  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 95.43 / **95.86** / 95.92% |
+  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 96.12 / **96.84** / 96.91% |
 
-  What is left in the panel is the selected button's highlight box (16 x 24 at
-  x 32..47), the IN percentage's one digit, and the minimap's contents at
-  x 241..271 - and the minimap needs the lemmings.
+  The panel's remaining 402 pixels are **almost entirely the minimap**.
 
   Over 700 frames the play area falls from 99.86% to about 99.34% and then
   **flattens** - that is the ten lemmings coming out one by one and then

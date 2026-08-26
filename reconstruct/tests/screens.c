@@ -436,6 +436,60 @@ int main(int argc, char **argv)
         }
     }
 
+    /* THE SELECTED BUTTON'S BOX, image 0x0780D - a 16 x 24 rectangle in
+     * colour 3 with only its edges drawn: the top and bottom rows solid and
+     * twenty-two middle rows carrying just the leftmost and rightmost pixel,
+     * which image 0x07869 does with Bit Mask 0x80 then 0x01. */
+    {
+        static uint8_t box[128 * 40];
+        uint16_t solid = 0, edges = 0, inside = 0;
+        /* Button 0 does NOT sit at x 0: image 0x2102 starts the buttons two
+         * bytes into the line, so it is at 16. */
+        const uint16_t x0 = 16;
+        memset(box, 0, sizeof(box));
+        panel_highlight(box, 128, 40, 0);
+        for (uint16_t x = 0; x < 16; x++) {
+            if (box[16 * 128 + x0 + x] == 3) solid++;
+            if (box[39 * 128 + x0 + x] == 3) solid++;
+        }
+        for (uint16_t y = 17; y < 39; y++) {
+            if (box[y * 128 + x0 + 0]  == 3) edges++;
+            if (box[y * 128 + x0 + 15] == 3) edges++;
+            for (uint16_t x = 1; x < 15; x++)
+                if (box[y * 128 + x0 + x]) inside++;
+        }
+        ck("the box has solid top and bottom edges", solid == 32, "not 32");
+        ck("and two pixels on each of 22 middle rows", edges == 44, "not 44");
+        ck("with nothing inside it", inside == 0, "it filled the button");
+    }
+
+    /* THE IN PERCENTAGE, image 0x03AF8. The one thing worth asserting is the
+     * trick at image 0x03B17: with no tens digit it loads 0xF0 and adds '0',
+     * which wraps a byte to a SPACE. So 0 reads " 0" and not "00", and 100 is
+     * special-cased across all three cells. */
+    {
+        level lv;
+        memset(&lv, 0, sizeof(lv));
+        lv.time_limit = 5;
+        level_status_reset(&lv);
+        level_status_in(0);
+        ck("0 per cent reads as a space then a zero",
+           !strncmp(level_status_line() + 29, "  0%", 4),
+           level_status_line() + 29);
+        level_status_in(7);
+        ck("and 7 keeps the leading space",
+           !strncmp(level_status_line() + 29, "  7%", 4),
+           level_status_line() + 29);
+        level_status_in(42);
+        ck("42 uses both cells",
+           !strncmp(level_status_line() + 29, " 42%", 4),
+           level_status_line() + 29);
+        level_status_in(100);
+        ck("and 100 fills all three",
+           !strncmp(level_status_line() + 29, "100%", 4),
+           level_status_line() + 29);
+    }
+
     /* THE PANEL'S FONT, at the tail of main.dat section 2.
      *
      * Checked by drawing and reading back, because the point of finding it was

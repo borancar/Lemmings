@@ -264,6 +264,16 @@ void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                       const uint8_t *sec, uint32_t sec_len,
                       uint8_t value, uint16_t x0, uint16_t y0);
+/* The box round the selected button - 16 wide, 24 tall, colour 3, at
+ * 16 + 16*button in the panel's 352-wide line. Transcribed from image
+ * 0x0780D; ds:0x83 names the button and image 0x0427 starts it at 3. */
+#define PANEL_SEL_BUTTON 3
+void panel_highlight(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                     uint8_t button);
+
+/* The IN percentage, image 0x03AF8. */
+void level_status_in(uint8_t percent);
+
 void panel_buttons(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                    const uint8_t *sec, uint32_t sec_len, const level *lv);
 
