@@ -2645,6 +2645,30 @@ static void draw_preview(const char *dir, const level *lv, const ground *g,
     dat_free(&gfx);
 }
 
+/* The briefing's OWN lower seven DAC entries, transcribed from image 0x0C04B
+ * (ds:0x25BB) - seven 6-bit RGB triples, entry 1 first.
+ *
+ * The briefing does not keep the menu's lower eight. The menu's are the
+ * background's browns; the briefing's are the bright set its text is drawn in
+ * - blue, green, white, yellow, red, grey, orange. Every pixel of the screen
+ * matched by INDEX long before this, which is exactly why it went unnoticed:
+ * a palette-only difference is invisible to a comparison of indices and
+ * changes every colour on the screen.
+ *
+ * Six of the seven are byte-for-byte what a capture of the original shows.
+ * The seventh, entry 4, reads (44,44,0) here and (60,60,0) on the screen -
+ * brighter. Something modifies it at run time and that has not been read, so
+ * it is left as the file has it rather than patched to match one capture. */
+static const uint8_t BRIEF_PAL6[7 * 3] = {
+    0x10, 0x10, 0x38,   /* 1  blue   */
+    0x00, 0x2C, 0x00,   /* 2  green  */
+    0x3C, 0x34, 0x34,   /* 3  white  */
+    0x2C, 0x2C, 0x00,   /* 4  yellow - the screen shows 0x3C,0x3C,0x00 */
+    0x3C, 0x08, 0x08,   /* 5  red    */
+    0x20, 0x20, 0x20,   /* 6  grey   */
+    0x38, 0x20, 0x08,   /* 7  orange */
+};
+
 /*
  * NOT TRANSCRIBED. The original reaches this screen from image 0x0454C and
  * draws it in place. Its pieces are transcribed and carry their addresses;
@@ -2739,6 +2763,15 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
             for (uint8_t i = 8; i < 16; i++)
                 m->palette[i] = g.preview[i - 8];
             draw_preview(dir, lv, &g, m->pix);
+        }
+    }
+
+    /* And its lower seven are its own, not the menu's - see BRIEF_PAL6. */
+    {
+        for (uint8_t i = 1; i < 8; i++) {
+            m->palette[i].r = widen6(BRIEF_PAL6[(i - 1) * 3 + 0]);
+            m->palette[i].g = widen6(BRIEF_PAL6[(i - 1) * 3 + 1]);
+            m->palette[i].b = widen6(BRIEF_PAL6[(i - 1) * 3 + 2]);
         }
     }
 

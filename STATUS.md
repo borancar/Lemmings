@@ -688,6 +688,26 @@ Each of these is stated as what was *checked*, not what was written.
   - and a single held F1 does not leave the menu at all, because the title
     fades its palette in and drops what is pressed during it.
 
+- **The briefing has its own lower seven DAC entries**, at image 0x0C04B
+  (`ds:0x25BB`) - blue, green, white, yellow, red, grey, orange, the set its
+  text is drawn in. It does *not* keep the menu's, which are the background's
+  browns.
+
+  This went unnoticed for as long as it did because **every pixel of the
+  screen already matched by index**. A palette-only difference is invisible to
+  a comparison of indices and changes every colour on the screen; only
+  `verify_menu`'s separate palette check saw it, and its message about which
+  half was wrong had gone stale in the meantime.
+
+  Six of the seven are byte-for-byte what a capture shows. The seventh, entry
+  4, reads (44,44,0) in the file and (60,60,0) on screen - brighter. Something
+  modifies it at run time, that has not been read, and it is left as the file
+  has it rather than patched to match one capture.
+
+- **The code screen's last 57 pixels are the entry caret** - the original
+  draws a bar over the first code slot where the port draws the plain button.
+  An animated element, like the banner, and not yet drawn.
+
 ## Into a level
 
 - **BLOCKER CLEARED: the original plays.** It was never frozen. It was
