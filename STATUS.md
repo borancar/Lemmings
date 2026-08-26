@@ -1113,30 +1113,38 @@ Each of these is stated as what was *checked*, not what was written.
   It is the stale-artefact trap this file records for captures, applied to
   object files. Fixed.
 
-- **The lemming sprites: where they are, and what is still not known.**
-  The masks are **found and confirmed**. Taking a lemming's pixels out of a
-  recorded frame - which the simulation now makes possible, since it gives the
-  exact position - and searching for that bit pattern:
+- **The lemming sprites: the format is settled, the base is not.**
 
-  - not in `main.dat` at all, at any stride: the sprites the draw reads are
-    the **pre-shifted** ones, built at run time
-  - in the segment at **`ds:0x1FE6`**, at **three bytes a row** - sixteen
-    pixels shifted by up to seven needs 23 bits, padded to 24 - and all nine
-    of the sprite's non-empty rows matched exactly
+  Reading image 0x05B11, the pre-shift builder, settles the layout without any
+  fitting. For each of eight shifts it walks `dh` planes of `dl` rows, reads
+  two source bytes a row, shifts them right into **three** bytes - sixteen
+  pixels shifted by up to seven needs 23 bits - and then makes one more pass
+  OR-ing every plane together to produce the **mask**. So one shift costs
 
-  Locating each animation frame that way gives offsets that step by about
-  **720 bytes** for each `+9` of `anim * 8 + shift`, so roughly 80 bytes an
-  index. Image 0x070BF computes `bp = (index * frame_size) >> 4` with
-  `frame_size` = 90 from `+0x10`, and `cx = [0x1FE6] + bp` adds it to a
-  SEGMENT, so bp is in paragraphs - which would be 90 bytes an index, not 80.
+      (dh + 1) * dl * 3 bytes
 
-  **Those two do not agree yet, and nothing has been written on the strength
-  of either.** The search also has a few bytes of slack in it, because a
-  sprite's blank rows let a match start a row early, so the 720 is not exact
-  either. What settles it is reading the routine that BUILDS that store -
-  images 0x05B11 and 0x09347, which `tools/verify_preshift.py` and
-  `tools/verify_shift.py` already check - rather than measuring the store from
-  outside.
+  and for a lemming, which is **10 rows of 2 planes**, that is exactly **90** -
+  which is the `frame_size` at `+0x10` in the record, and puts the mask 60
+  bytes in, which is `+0x12`. Two fields of the record explained by one
+  routine, neither of them guessed.
+
+  That also kills the "80 bytes an index" this file recorded last time. The 90
+  is derived; the 80 came from locating sprites in a memory dump, and that
+  measurement has slack in it because a sprite's blank rows let a match start
+  a row early. **The disagreement was the measurement's, not the routine's.**
+
+  The masks *are* in the segment at `ds:0x1FE6` at three bytes a row - a
+  lemming's pixels lifted out of a recorded frame match there exactly. What is
+  still not known is where the walker's frames begin in that store and in what
+  order, and searching for it from outside converges to about 65%, which is
+  not an answer. It cannot be settled by more searching, because pixels
+  extracted from a frame are only the ones that *differ* from the background:
+  a sprite pixel that happens to match what is behind it is invisible to the
+  extraction, so a perfect match is not available to be found.
+
+  What settles it is reading the **caller** of image 0x05B11 - the loader that
+  decides where each creature's frames go - rather than measuring the store it
+  produced.
 
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
