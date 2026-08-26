@@ -2851,6 +2851,36 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         lem_build_stop(a, 9, 0);                   /* image 0x02760: no turn */
 }
 
+/* THE SHRUG - transcribed from image 0x02DB5, and it is dispatched from the
+ * LOOP HEAD rather than from the state chain.
+ *
+ * Image 0x01F54 reads [si+0x24], tests bit 7 and jumps straight here if it
+ * is set - BEFORE image 0x01F5E ever looks at the flag word. That is why the
+ * builder's last frames could not be explained from the record: its flags
+ * read zero, so the dispatch says "walk", and the original plainly was not
+ * walking. Eight frames animating in place, and the position never moves
+ * because no handler that moves anything runs at all.
+ *
+ * Image 0x02DBF: everything happens on the wrap, like the builder's own
+ * sixteen. Then image 0x02DEB puts it back to state 9 - walking - and image
+ * 0x02DFD clears the bit.
+ *
+ * The bit is set by image 0x027DE, when a builder runs out of bricks, and
+ * read by image 0x03DFD, which goes on calling it a BUILDER on the panel
+ * while it shrugs.
+ */
+static void lem_shrug(lemming *a)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 7);        /* image 0x02DB8 */
+    if (a->anim) return;                           /* image 0x02DBF */
+    a->flags = 0;                                  /* image 0x02DC4 */
+    a->hot_x = -8;                                 /* image 0x02DE1 */
+    a->hot_y = -10;                                /* image 0x02DE6: 0xfff6 */
+    a->state = 9;                                  /* image 0x02DEB */
+    a->extra &= 1;                                 /* image 0x02DF9 */
+    a->extra &= 0x7F;                              /* image 0x02DFD */
+}
+
 /* Image 0x2047. */
 static void lem_walk(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
@@ -3028,6 +3058,13 @@ void lemmings_step(lemming *lem, uint8_t n,
          * The order is kept even though only two of the bits can currently
          * be set, because it stops being harmless the moment a third can. */
         uint16_t f = a->flags;
+        /* Image 0x01F54, and it comes BEFORE the flag word is even read:
+         * bit 7 of [si+0x24] sends it to the shrug and nowhere else. */
+        if (a->extra & 0x80) {                       /* image 0x01F57 */
+            lem_shrug(a);
+            continue;
+        }
+
         if (f == 0) {
             /* Image 0x01F61: `and ax,ax / jne / jmp 0x2047`. The flag word
              * alone decides; the state byte at +0x29 takes no part in it.

@@ -275,6 +275,27 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
+## The dispatch is not the only thing that dispatches
+
+The builder's last eight frames could not be explained from its record. The
+flag word read zero, so image `0x01F5E`'s chain says "walk", and the original
+was plainly not walking - the position did not move while the animation
+counter climbed.
+
+Because the flag word is not asked first. Image `0x01F54` reads `[si+0x24]`,
+tests bit 7 and jumps to image `0x02DB5` - the shrug - **before** image
+`0x01F5E` ever looks at the flags. There is a second test above it too, at
+image `0x01F45`, on `[si+0x20]`.
+
+So the loop head is part of the state machine, not scaffolding around it, and
+a port that transcribes the chain and calls the loop its own has left a
+branch out. What made it findable was recording the fields nothing had
+needed until then - the direction at +0x27, the state at +0x29, the byte at
++0x24 - because **a record comparison that stops at position cannot see a
+state that does not move anything.** x, y, the hot spot, the flags and the
+animation counter all agreed; the difference was in a byte none of them
+carried.
+
 ## A decision made in main.c is a decision no test can reach
 
 Five of the faults fixed in one session came from the user PLAYING the game,

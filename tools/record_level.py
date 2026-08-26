@@ -151,13 +151,22 @@ def install(m):
             lem_all = []
             for k in range(min(n_lem, 16)):
                 o = ARRAY + k * REC
+                def b1(k):
+                    return uc.mem_read(base + DGROUP + o + k, 1)[0]
+                # +0x27 the direction, +0x29 the state, +0x24 the byte image
+                # 0x027DE sets bit 7 of when a builder runs out and image
+                # 0x03DFD reads to go on calling it a BUILDER, +0x21 the
+                # bricks image 0x032F2 hands out. A record comparison that
+                # stops at position cannot see any of them - and the builder's
+                # last six frames differ in something none of x, y, the hot
+                # spot, the flags or the animation counter carries.
                 lem_all.append({"x": w(o), "y": w(o + 2),
                                 "hot_x": w(o + 4), "hot_y": w(o + 6),
                                 "flags": w(o + 8) & 0xFFFF,
-                                "anim": uc.mem_read(base + DGROUP + o + 0x28,
-                                                    1)[0],
-                                "alive": uc.mem_read(base + DGROUP + o + 0x26,
-                                                     1)[0]})
+                                "anim": b1(0x28), "alive": b1(0x26),
+                                "dir": b1(0x27) - (256 if b1(0x27) > 127 else 0),
+                                "state": b1(0x29), "extra": b1(0x24),
+                                "bricks": b1(0x21)})
         st["manifest"].append({
             "frame": i,
             "scroll": w(SCROLL),
