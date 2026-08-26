@@ -1452,6 +1452,14 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
             return;                           /* image 0x0240C: just animate */
     }
 
+    /* THE ROW IT CLEARS IS THE ONE IT IS STANDING ON, not the one it moves
+     * to. Image 0x02418 calls image 0x05DC6 BEFORE the `inc [si+2]` at image
+     * 0x0241D, and image 0x05DCB builds the destination from the y it sees
+     * there - so the clear at image 0x05EBA lands on the old row. Doing it
+     * the other way round starts the shaft one row low, which is visible as
+     * a lip of terrain left under the lemming's feet. */
+    int32_t cy = (int32_t)a->y - LEMMING_DY;
+
     a->y = (int16_t)(a->y + 1);               /* image 0x0241D */
     if (a->y >= DIG_FLOOR) {                  /* image 0x02424 */
         a->alive = 0xFF;
@@ -1468,7 +1476,6 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
      * ledge, where the row dug is the last solid one and the row below is
      * already open. */
     int had = 0;
-    int32_t cy = (int32_t)a->y - LEMMING_DY;
     for (uint8_t i = 0; i < DIG_WIDTH; i++) {
         int32_t cx = (int32_t)a->x + DIG_FROM + i - LEMMING_DX;
         if (cx < 0 || cx >= (int32_t)cw || cy < 0 || cy >= (int32_t)chh)

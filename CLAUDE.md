@@ -253,6 +253,27 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
+## A test written from the same reading as the code proves nothing
+
+`level_lemming_at` was sixteen pixels wrong and its unit test passed. Both
+came from one reading of image 0x03D0A - that the pointer's record x is
+`scroll - 16 + mouse_x` - and both used the GUEST's scroll where the port's
+`view_x` is sixteen less. The test agreed with the code because they were the
+same mistake written twice.
+
+The port has three coordinate systems - record, canvas and screen - and the
+sixteen between them is the offset `tools/prove.sh` prints and
+`tools/compare_run.py` fits. Any test that hard-codes a number from the
+disassembly rather than from the port's own units can only confirm the
+author's arithmetic.
+
+So: **for anything with a coordinate in it, check against the ORIGINAL, not
+against your reading of the original.** `tools/verify_hit.py` is the pattern -
+the guest clears ds:0x1A at image 0x03DAF and sets it at image 0x03DE8 when
+its own scan finds a lemming, so that byte is the answer, and the port has to
+agree with it frame by frame on the guest's own inputs. It compares 326
+frames and would have failed on the first one.
+
 ## The level runs at seventeen frames a second, not seventy
 
 The clock fell down its own display in the playable game while every frame
@@ -524,6 +545,7 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/probe_protected.py` | record the protected instruction stream as it runs |
 | `tools/probe_desync.py` | find a single-step desynchronisation, if the decryptor ever loses step |
 | **`tools/probe_rating.py`** | the rating plate, watching `ds:0x1F6E` rather than the plate's pixels - and refusing a key the control socket would not deliver |
+| **`tools/verify_hit.py`** | **the under-pointer test against the original's own answer**, frame by frame. The guest clears ds:0x1A at image 0x03DAF and sets it at image 0x03DE8 when its scan finds a lemming, so that byte settles it. Exists because the unit test for this passed while the code was sixteen pixels wrong - both were written from the same reading, and a test that shares the code's mistake agrees with it |
 | **`tools/verify_pace.py`** | **how long the port's loops take**, against the rates the original sets - the level at 17 a second (image 0x0418) and the menu at 70 (image 0x01550 waits a retrace). The ONLY check here that measures duration: every other one compares frame N against frame N and cannot see a port running at four times speed, which is exactly how the level shipped at sixty. Times the port's own loops on the host, never the guest's - the emulator's throughput answers between 3 and 8 a second and that is the instrument, not the game |
 | **`tools/compare_screen.py`** | **the game's own 320x200 screen** against the original's, frame by frame - the window path, not the harness. A different claim from `compare_run.py`, which scores a canvas and a panel `lemdev` composed separately: every frame of that matched while `./lemmings` showed an empty cave. Play area and panel scored SEPARATELY, and the cursor's 28 pixels named rather than averaged away |
 | **`tools/probe_dac.py`** | **is the palette changed part-way down the screen?** Samples the emulator's palette every 512 instructions between the game's own end-of-frame points at image 0x018F. It is a sampler and not a port hook on purpose: wrapping `m._on_out` records nothing, because Unicorn holds the bound method from construction - and "no port writes" reads as a finding |

@@ -598,6 +598,13 @@ int main(int argc, char **argv)
         lemmings_step(&a, 1, ground, W, H);
         ck("the frame after, it is on anim 0 and has dug",
            a.anim == 0 && a.y == y0 + 1, "the first dig did not happen");
+        /* And the row it cleared is the one it was STANDING on - image
+         * 0x02418 probes before image 0x0241D increments. Clearing the new
+         * row instead leaves a lip of terrain under its feet. */
+        ck("and the row it cleared is the one it stood on",
+           ground[(y0 - 16) * W + (a.x - 5 - 16)] == 0
+           && ground[(y0 + 1 - 16) * W + (a.x - 5 - 16)] == 8,
+           "the shaft starts a row low");
 
         int moved = 0;
         for (uint8_t i = 1; i <= 7; i++) {
