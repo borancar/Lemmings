@@ -738,6 +738,39 @@ Each of these is stated as what was *checked*, not what was written.
   between two pictures and is not scored against either, which happens often
   enough to matter - one run needed two retries. Both scored **100.00%**.
 
+## The results screen, mapped but not written
+
+Both end conditions at image `0x001C8` jump to image `0x02B3`, which sets
+`ds:0x4F` and `ds:0x4E` bit 1 and returns to the frame loop; the teardown is
+image `0x02CD`. Neither decides win or lose - that is the saved count against
+the level's requirement, and it belongs to this screen.
+
+Its text is all in one run, and reading it says a good deal about the screen's
+shape:
+
+| | |
+| --- | --- |
+| `ds:0x4C1C` | "Your time is up!" — the clock ran out |
+| `ds:0x4C35` | "All lemmings accounted for." — everyone released, none active |
+| `ds:0x4C55` | "You rescued     " |
+| `ds:0x4C69` | "You needed      " |
+| `ds:0x517D` | the verdicts, two lines each, up to a "Congratulations!" block for finishing Mayhem |
+| `ds:0x4C88`.. | "Press right mouse button for menu", "Press button 2 for menu", "Press Return for menu" |
+
+**Three variants of every prompt** — mouse, joystick, keyboard — which is what
+the input chooser screen is choosing between, and a thing the port's own
+input screen matches to the pixel without yet acting on.
+
+There is also "Your Access Code for Level     is ABCDEFGHIJ", so the screen
+generates the code the level-code screen accepts. `ds:0x552A` and `ds:0x5539`
+hold what look like the alphabets it builds them from.
+
+**What is not known**: which routine composes it - none of these strings has a
+literal reference, so they are reached through a table - and how the verdict
+is chosen from the rescued percentage against the level's requirement.
+Finding the composer is the same caller-scan that found image 0x04401 for the
+menu.
+
 ## The first skill: the digger
 
 Nothing in a recorded run ever assigns one, so none of the fourteen handlers
