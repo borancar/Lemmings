@@ -861,9 +861,25 @@ no retrace wait at all, which is its own trap for a probe:
 | left | `jmp 0x4551` - the NEXT level's briefing, the index having already advanced at image `0x0472E` |
 | right | `jmp 0x4401` - the main menu |
 
-**Still not written**: the screen's background. The set-up calls at image
-`0x046EB` - `0x4DEF`, `0x4BE7`, `0x53FC`, `0x531E`, `0x5028`, `0x5017` - have
-not been read.
+**The background is a TILE**, image `0x07E76`, reached through image
+`0x05017` - the call at image `0x046FD`. Two across and four down, at
+y = 0, 104, 208 and 312, each 320x104 in two planes from offset 0 of a loaded
+resource; that resource is **MAIN.DAT section 3**, measured the way the font
+was.
+
+And the right-hand tile loses its last byte. Image `0x08846` takes the
+clipping path because image `0x07E99` passes `bp = 0x0C`, and image `0x099A1`
+compares with `jl` - so a blit whose right edge lands EXACTLY on the limit
+still has a byte taken off it. The right tile starts at 320, is 320 wide, and
+never writes columns 632..639. That is 1,413 pixels, and it is the last thing
+between this screen and an exact match.
+
+| the results screen, 640x350 | **0 differing of 224,000 — 100.00%** |
+
+Everything on it: the tiled background, its clip, the sixteen colours, the
+16x16 font, all six text records in their own columns and rows, the verdict
+chosen from image `0x04955`'s table, the percentages with the per cent sign
+image `0x04B63` moves with them, and the access code.
 
 ## The results screen, mapped but not written
 

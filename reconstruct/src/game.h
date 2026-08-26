@@ -265,6 +265,10 @@ void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 /* MAIN.DAT section 4 carries the results screen's 16x16 font at 0x69B0 -
  * measured, see level_results_draw. */
 #define RESULTS_FONT_SECTION 4
+/* MAIN.DAT section 3 holds the results screen's background tile at offset 0 -
+ * 320x104 in two planes, tiled two across and four down. Measured; see
+ * level_results_background. */
+#define RESULTS_BG_SECTION 3
 #define PANEL_ART_W 320
 #define PANEL_ART_H 40
 #define PANEL_ART_PL 4
@@ -471,8 +475,11 @@ int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
                        int timed_out, uint8_t level_no, const char *code,
                        uint8_t scale, const char **err);
 
+void level_results_background(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                              const uint8_t *sec, uint32_t sec_len);
 void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                         const uint8_t *sec, uint32_t sec_len,
+                        const uint8_t *bg, uint32_t bg_len,
                         uint8_t saved, uint8_t needed, int timed_out,
                         uint8_t input_kind, uint8_t level_no,
                         const char *code);

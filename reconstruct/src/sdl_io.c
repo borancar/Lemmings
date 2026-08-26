@@ -1395,9 +1395,15 @@ int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
     uint8_t *pix = calloc((size_t)MENU_W * MENU_H, 1);
     if (!pix) { dat_free(&mainf); return 0; }
 
+    const uint8_t *bg = NULL; uint32_t bg_len = 0;
+    if (mainf.count > RESULTS_BG_SECTION) {
+        bg = mainf.sections[RESULTS_BG_SECTION].data;
+        bg_len = mainf.sections[RESULTS_BG_SECTION].size;
+    }
     level_results_draw(pix, MENU_W, MENU_H,
                        mainf.sections[RESULTS_FONT_SECTION].data,
                        mainf.sections[RESULTS_FONT_SECTION].size,
+                       bg, bg_len,
                        saved, needed, timed_out, lem_input_kind,
                        level_no, code);
 

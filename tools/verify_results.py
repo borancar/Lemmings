@@ -88,6 +88,14 @@ def install(m):
 
         attr = list(uc.mem_read(ds + ATTR_MAP, 16))
 
+        # THE BACKGROUND TILE. Image 0x07E76 sets ds:0x1FE4 from ds:0x1FEE and
+        # blits from si = 0 - offset zero of that resource - eight times: two
+        # 320-wide pieces on each of four rows at y = 0, 104, 208 and 312.
+        # Dump enough of it to find in the files the way the font was found.
+        rseg = int.from_bytes(uc.mem_read(ds + FONT_SEG, 2), "little")
+        tile = bytes(uc.mem_read(rseg * 16, 0x8000))
+        open(os.path.join(out_dir, "tile.bin"), "wb").write(tile)
+
         # IS THE BACKGROUND DRAWN, OR IS IT WHAT WAS ALREADY THERE?
         #
         # Image 0x046EB calls the clear at image 0x04DEF twice, once before
@@ -113,6 +121,14 @@ def install(m):
             import collections
             stops = [0x046EE, 0x046F1, 0x046F4, 0x046F7, 0x046FA,
                      0x046FD, 0x04700, 0x04703, STOP]
+            fine = os.environ.get("LEM_RES_FINE")
+            if fine:
+                # Inside the text pass. Image 0x048BD writes two numbers into
+                # strings in DGROUP - which cannot touch the screen - and
+                # then jumps to the drawer at image 0x04D4D. If the texture
+                # is already there when the DRAWER is entered, nothing that
+                # draws put it there.
+                stops = [int(v, 0) for v in fine.split(",")]
             at_ip = cs * 16 + ENTRY
             for stop in stops:
                 uc.emu_start(at_ip, cs * 16 + stop, 0, 0)

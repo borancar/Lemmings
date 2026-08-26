@@ -2006,15 +2006,94 @@ void level_results_palette(lem_rgb *out)
     for (uint8_t i = 0; i < 16; i++) out[i] = RESULTS_PAL[i];
 }
 
+/* THE BACKGROUND, transcribed from image 0x07E76 - and it is tiled, which is
+ * why stepping the set-up calls found the screen black after every one of
+ * them and a texture appearing "during the text pass".
+ *
+ * That reading was off by one instruction. Each stop in a stepped run is the
+ * address of the NEXT instruction, so stopping at image 0x046FD is BEFORE
+ * the call there has run, not after it. The call at image 0x046FD is
+ * image 0x05017, which is `xor bx, bx` and a tail jump to image 0x07E76 -
+ * the tiler. It draws the whole background and nothing else does.
+ *
+ *     image 0x07E76  ds:0x1FE4 = ds:0x1FEE, the resource to blit from
+ *     image 0x07E7C  cx = 4, four rows
+ *     image 0x07E82  ax = 0 then image 0x07E95 ax = 0x140, so two across
+ *     image 0x07E8A  cx = 0x268: cl = 0x68 = 104 rows, ch = 2 planes
+ *     image 0x07E87  dx = 0x140 = 320 wide
+ *     image 0x07E8D  si = 0, offset zero of the resource
+ *     image 0x07EAC  bx += 0x68, so the rows are at 0, 104, 208 and 312
+ *
+ * Two planes is four colours, which is what the picture uses. WHERE the tile
+ * is in the file is MEASURED, not read - ds:0x1FEE is a loaded resource and
+ * the image says nothing about which - and it is MAIN.DAT section 3 at
+ * offset 0, checked against the original's own screen: on every row of the
+ * top tile that no text crosses, ZERO pixels differ.
+ */
+#define BG_SECTION   3          /* measured; see above */
+#define BG_W         320        /* image 0x07E87 */
+#define BG_H         104        /* image 0x07E8A's cl */
+#define BG_PLANES    2          /* image 0x07E8A's ch */
+#define BG_ROWS      4          /* image 0x07E7C */
+#define BG_STEP      104        /* image 0x07EAC: bx += 0x68 */
+
+void level_results_background(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                              const uint8_t *sec, uint32_t sec_len)
+{
+    const uint16_t bpr = BG_W / 8;
+    if ((uint32_t)BG_H * bpr * BG_PLANES > sec_len) return;
+
+    for (uint8_t row = 0; row < BG_ROWS; row++) {
+        int32_t y0 = (int32_t)row * BG_STEP;
+        for (uint8_t col = 0; col < 2; col++) {          /* 0x07E82, 0x07E95 */
+            int32_t x0 = (int32_t)col * BG_W;
+
+            /* THE CLIP AT IMAGE 0x09997, and its comparison is `jl` - so a
+             * blit whose right edge lands EXACTLY on the limit still loses a
+             * byte. Image 0x08846 selects this path because image 0x07E99
+             * passes bp = 0x0C.
+             *
+             *     cmp bp, [0x66F2] / jl done     image 0x099A1
+             *     sub dx, 8                      image 0x099AC
+             *
+             * The right-hand tile starts at 320 and is 320 wide, so its edge
+             * is 640 on a 640-wide screen and the last byte column - 632..639
+             * - is never written. That is 1,413 pixels of this screen, and
+             * the port filled them until this was read. */
+            int32_t w = BG_W;
+            while (w > 0 && x0 + w >= (int32_t)dst_w) w -= 8;
+            for (uint16_t r = 0; r < BG_H; r++) {
+                int32_t y = y0 + r;
+                if (y < 0 || y >= (int32_t)dst_h) continue;
+                for (int32_t c = 0; c < w; c++) {
+                    int32_t x = x0 + c;
+                    if (x < 0 || x >= (int32_t)dst_w) continue;
+                    uint8_t v = 0;
+                    for (uint8_t p = 0; p < BG_PLANES; p++) {
+                        uint8_t byte = sec[(uint32_t)p * BG_H * bpr
+                                           + (uint32_t)r * bpr + (c >> 3)];
+                        v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                    }
+                    dst[(size_t)y * dst_w + (size_t)x] = v;
+                }
+            }
+        }
+    }
+}
+
 /* Image 0x046EB, in its own order. */
 void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                         const uint8_t *sec, uint32_t sec_len,
+                        const uint8_t *bg, uint32_t bg_len,
                         uint8_t saved, uint8_t needed, int timed_out,
                         uint8_t input_kind, uint8_t level_no,
                         const char *code)
 {
     char buf[40];
     results_line ln;
+
+    /* Image 0x046FD, before any text: the tiled background. */
+    if (bg) level_results_background(dst, dst_w, dst_h, bg, bg_len);
 
     /* Image 0x04703. */
     ln.row = RES_HEAD_ROW; ln.style = 0;
