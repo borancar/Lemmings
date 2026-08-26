@@ -81,8 +81,22 @@ typedef struct {
     uint16_t mask_offset;
     uint16_t frames_base_loc;   /* offset into VGAGRx.DAT section 1 */
     uint8_t  preview_frame;
-    uint8_t  trigger_effect;
+    /* WHERE the object acts, and how. The rectangle sits immediately before
+     * the effect byte in the entry, and the game tests a lemming's position
+     * against it - image 0x02F3B is the exit's arm of that test, which sets
+     * the whole state word to 0x2000. Without the rectangle the port can
+     * draw an exit and never notice a lemming reaching it. */
+    uint16_t trigger_left;      /* +0x0E */
+    uint16_t trigger_top;       /* +0x10 */
+    uint8_t  trigger_width;     /* +0x12 */
+    uint8_t  trigger_height;    /* +0x13 */
+    uint8_t  trigger_effect;    /* +0x14 */
 } ground_object;
+
+/* The effects this port acts on. Image 0x02F1x dispatches them as a chain of
+ * `dec al / jne`, and the arm that falls through to image 0x02F3B - the one
+ * that sets 0x2000 - is the exit. */
+#define TRIGGER_EXIT 1
 
 typedef struct {
     ground_terrain terrain[GROUND_TERRAIN];
@@ -384,6 +398,15 @@ uint8_t level_released(void);
 
 void        level_status_reset(const level *lv);
 void        level_timer_step(void);
+/* How many got out, and whether the level is over - see level_over in
+ * game.c. ds:0x46 counts them and image 0x02335 is what increments it; the
+ * two end conditions are at image 0x001E7 and image 0x001FA. */
+extern uint8_t level_saved;
+void level_saved_reset(void);
+void level_lemming_saved(void);
+uint8_t level_saved_percent(const level *lv);
+int level_over(const level *lv, uint8_t released, uint8_t live);
+
 const char *level_status_line(void);
 
 /* One frame of the control panel, in the order the original draws it - see

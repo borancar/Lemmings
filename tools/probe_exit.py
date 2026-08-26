@@ -1,75 +1,63 @@
-# SPDX-License-Identifier: GPL-2.0-only
-"""Catch the INT 21h AH=4Ch that ends the run, and show how it got there."""
+"""Where does the original decide a lemming has reached the exit?
+
+Image 0x02F3B sets the whole state word to 0x2000 when a lemming is over an
+exit and not falling, and image 0x02326 then animates eight frames, increments
+the saved count at ds:0x46 and removes it. What is NOT obvious is the trigger
+area: GROUNDxO gives the exit a rectangle at (6,4) of 1x2, and whether those
+are pixels or four-pixel units is exactly the kind of guess this project keeps
+getting caught by.
+
+So measure it. This records every lemming's position on the frame its state
+becomes 0x2000, which is the trigger area in level coordinates, and the
+saved count either side.
+
+    LEM_HOOK=tools/probe_exit.py LEM_EXIT_OUT=out/exit.txt \\
+        uv run python tools/play.py --auto --machine 2 --start \\
+        --click-tries 4 -- --run-seconds 300
+"""
 import os
-import sys
-from collections import deque
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import lemmings
-from dos_emulator import set_game_dir, KEYMAP
-import pygame
-import capstone
-from unicorn import UC_HOOK_CODE
-from unicorn.x86_const import (UC_X86_REG_AX, UC_X86_REG_CS, UC_X86_REG_IP,
-                               UC_X86_REG_SP, UC_X86_REG_SS, UC_X86_REG_BX,
-                               UC_X86_REG_CX, UC_X86_REG_DX)
-
-set_game_dir(lemmings.GAME_DIR)
-pygame.init()
-md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_16)
-hist = deque(maxlen=400)
-fired = [False]
+FRAME_END = 0x018F
+ARRAY, COUNT, REC = 0x88, 0x43, 0x2D
+SAVED, TOTAL = 0x46, 0x47
 
 
-class Probe(lemmings.LemmingsVga):
-    def _on_intr(self, uc, intno, user):
-        ax = uc.reg_read(UC_X86_REG_AX)
-        if intno == 0x21 and (ax >> 8) == 0x4C and not fired[0]:
-            fired[0] = True
-            base = self.load_seg * 16
-            print(f"\n=== INT 21h AH=4Ch (exit {ax & 0xFF}) ===")
-            print(f"  at image {uc.reg_read(UC_X86_REG_CS)*16 + uc.reg_read(UC_X86_REG_IP) - base:#08x}")
-            print(f"  bx={uc.reg_read(UC_X86_REG_BX):04x} "
-                  f"cx={uc.reg_read(UC_X86_REG_CX):04x} "
-                  f"dx={uc.reg_read(UC_X86_REG_DX):04x}")
-            print("\n  the instructions before it:")
-            for o in hist:
-                try:
-                    b = bytes(uc.mem_read(base + o, 8))
-                except Exception:
-                    b = b""
-                t = "??"
-                for i in md.disasm(b, o):
-                    t = f"{i.mnemonic} {i.op_str}"
-                    break
-                print(f"    img{o:#08x}  {b[:5].hex():<10} {t}")
-            uc.emu_stop()
-        return super()._on_intr(uc, intno, user)
+def install(m):
+    from unicorn import UC_HOOK_CODE
+    from unicorn.x86_const import UC_X86_REG_DS
+    import atexit
 
+    out = open(os.environ.get("LEM_EXIT_OUT", "out/exit.txt"), "w")
+    base = m.load_seg * 16
+    st = {"n": 0, "was": {}, "hits": 0}
 
-m = Probe(lemmings.EXE, max_insns=1 << 62, psp_seg=lemmings.PSP_SEG)
-base = m.load_seg * 16
-m.uc.hook_add(UC_HOOK_CODE, lambda uc, a, sz, _: hist.append(a - base))
+    def at(uc, ad, size, _):
+        if ad - base != FRAME_END:
+            return
+        st["n"] += 1
+        ds = uc.reg_read(UC_X86_REG_DS) * 16
 
-KEYS = [getattr(pygame, f"K_{k}") for k in lemmings.STARTUP_KEYS]
-addr, sent = m.start, 0
-for _ in range(200):
-    m.blocked_on_input = False
-    try:
-        m.uc.emu_start(addr, 0, count=200_000)
-    except Exception as e:
-        print("cpu:", e)
-        break
-    if fired[0]:
-        break
-    addr = m._reg(UC_X86_REG_CS) * 16 + m._reg(UC_X86_REG_IP)
-    m.service_keyboard()
-    if m.finished:
-        break
-    if m.blocked_on_input and sent < len(KEYS):
-        sc, asc = KEYMAP[KEYS[sent]]
-        m.press_key(sc, asc, True)
-        m.press_key(sc, asc, False)
-        sent += 1
-if not fired[0]:
-    print("no AH=4Ch seen")
+        def b(o):
+            return uc.mem_read(ds + o, 1)[0]
+
+        def w(o):
+            return int.from_bytes(uc.mem_read(ds + o, 2), "little", signed=True)
+
+        for i in range(b(COUNT)):
+            o = ARRAY + i * REC
+            fl = w(o + 8) & 0xFFFF
+            if st["was"].get(i) != 0x2000 and fl == 0x2000:
+                out.write(f"  frame {st['n']:5d}: lemming {i} entered the exit "
+                          f"at ({w(o)}, {w(o + 2)}) - saved {b(SAVED)} of "
+                          f"{b(TOTAL)}\n")
+                out.flush()
+                st["hits"] += 1
+            st["was"][i] = fl
+
+        if st["hits"] >= 6:
+            out.close()
+            raise SystemExit(0)
+
+    m.uc.hook_add(UC_HOOK_CODE, at)
+    atexit.register(lambda: out.write(f"  {st['hits']} lemmings reached it\n"))
+    print("  [probe_exit] watching for the exit state")

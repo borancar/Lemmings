@@ -390,6 +390,7 @@ struct level_frame {
     uint16_t     view_x;     /* where the play area has scrolled to */
     uint8_t      selected;   /* which button's box is drawn */
     uint8_t      skill;      /* ds:0x82 - the one a click would hand out */
+    uint8_t      over;       /* image 0x001C8 said the level has finished */
     uint8_t      diggers;    /* ds:0x7F - how many are left */
     int          stepped;    /* the first frame is the state before a step */
 };
@@ -671,6 +672,7 @@ static int level_run(struct level_frame *A, const canvas *c,
             else due = now;          /* behind: start again from here */
         }
         if (budget && --budget == 0) running = 0;
+        if (A->over) running = 0;      /* image 0x001C8 */
     }
     /* Never leave the pointer captured by a window that is going away. */
     SDL_SetWindowRelativeMouseMode(g_win, false);
@@ -1098,6 +1100,10 @@ int ground_load(const char *path, ground *g, const char **err)
         o->height          = e[0x05];
         o->frame_data_size = le16(e + 0x06);
         o->mask_offset     = le16(e + 0x08);
+        o->trigger_left    = le16(e + 0x0E);
+        o->trigger_top     = le16(e + 0x10);
+        o->trigger_width   = e[0x12];
+        o->trigger_height  = e[0x13];
         o->trigger_effect  = e[0x14];
         o->frames_base_loc = le16(e + 0x15);
         o->preview_frame   = e[0x17];
@@ -1226,9 +1232,16 @@ static int level_frame_tick(void *ctx, uint8_t *pix)
      * cursor - and its own N to 300. The original's loop at image 0x019C
      * steps and then draws, but its first captured frame at image 0x018F is
      * the one before any of that. */
-    if (a->stepped)
+    if (a->stepped) {
         level_play_step(a->st, &a->lv, a->lem, &a->released,
                         a->from->pix, w, h);
+        /* Image 0x001C8: everyone released and none active, or the clock
+         * run out. Which of the two it was does not decide win or lose -
+         * that is the saved count against the level's requirement. */
+        if (level_over(&a->lv, a->released,
+                       lemmings_live(a->lem, a->released)))
+            a->over = 1;
+    }
     a->stepped = 1;
     level_play_draw(a->st, &a->lv, a->sec, a->len,
                     a->lem_sec, a->lem_len, a->lem, a->released,
@@ -1283,6 +1296,8 @@ int level_show(const char *dir, const char *file, uint32_t which,
         A.stepped = 0;
         A.selected = PANEL_SEL_BUTTON;
         A.skill = 0;
+        A.over = 0;
+        level_saved_reset();
         A.diggers = (uint8_t)lv->skills[7];   /* the digger's slot */
         A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
 

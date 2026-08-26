@@ -1249,6 +1249,58 @@ void level_start_step(void)
  * What it is a percentage OF is not established here: nothing counts the
  * saved lemmings yet, so this is called with zero, which is what the whole of
  * the first seven hundred frames of "Just dig!" shows anyway. */
+/* HOW MANY GOT OUT, and whether the level is over.
+ *
+ * ds:0x46 is the saved count and ds:0x47 the total - image 0x03ACE divides
+ * one by the other for the percentage on the panel. Image 0x02335 is what
+ * increments it: the exiting handler at image 0x02326 animates eight frames
+ * and then, on the frame the counter wraps, adds one and marks the lemming
+ * gone.
+ *
+ * The level ENDS on either of two conditions, both at image 0x001C8:
+ *
+ *   image 0x001E7  ds:0x43 == ds:0x47 and ds:0x45 == 0 - everyone has been
+ *                  released and none is still active
+ *   image 0x001FA  ds:0x20A7, ds:0x20A9 and ds:0x20AA are all '0' - the
+ *                  clock has run out, which it tests on the DIGITS rather
+ *                  than on a counter
+ *
+ * Both jump to image 0x02B3. Which of them it was does not decide win or
+ * lose: that is the saved count against the level's requirement, and it is
+ * the results screen's business.
+ */
+uint8_t level_saved;              /* ds:0x46 */
+
+void level_saved_reset(void) { level_saved = 0; }
+
+/* Image 0x02335. */
+void level_lemming_saved(void) { level_saved++; }
+
+/* Image 0x03ACE: the saved count over the total. */
+uint8_t level_saved_percent(const level *lv)
+{
+    if (!lv->num_lemmings) return 0;
+    return (uint8_t)((uint32_t)level_saved * 100u / lv->num_lemmings);
+}
+
+/* Transcribed from image 0x001C8. `live` is the count still active, which
+ * image 0x001F0 reads from ds:0x45. */
+int level_over(const level *lv, uint8_t released, uint8_t live)
+{
+    if (released >= lv->num_lemmings && live == 0)
+        return 1;                          /* image 0x001E7 */
+    /* Image 0x001FA ORs the three clock DIGITS and compares against '0' -
+     * it tests the characters on the panel, not a counter, which is why
+     * level_timer_step's floor of "0", "0", "0" is the end state. */
+    const char *st = level_status_line();
+    if (st[ST_MIN] == '0' && st[ST_SEC_TENS] == '0'
+            && st[ST_SEC_UNITS] == '0')
+        return 1;
+    return 0;
+}
+
+/* Transcribed from image 0x03AF7: the panel's IN reading, with 100 written
+ * out in full and no leading zero below it. */
 void level_status_in(uint8_t percent)
 {
     uint8_t al = percent, ah;
@@ -2262,7 +2314,8 @@ void level_frame_step(level_anim *st, const level *lv)
     level_anim_step(st, lv);
     level_timer_step();
     level_status_out(level_released());
-    level_status_in(0);          /* nothing is counted saved yet */
+    /* Image 0x03ACE: the saved count over the total, as a percentage. */
+    level_status_in(level_saved_percent(lv));
 }
 
 /* WHAT THE POINTER IS OVER - transcribed from image 0x03EF9.
