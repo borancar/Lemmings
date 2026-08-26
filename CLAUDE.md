@@ -275,6 +275,24 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
+## When a change moves nothing, the routine is not where you think
+
+The bomber's crater cleared 29 pixels where the original clears 343. The
+obvious reading was that it was in the wrong place horizontally, so the start
+was moved a byte left, then two, then to zero - and the count did not change.
+**Not by one pixel, at any offset.**
+
+That is the finding, not the failure. A routine that is landing in the wrong
+place still clears a DIFFERENT wrong set of pixels when you move it; one that
+does not respond to being moved is landing where there is nothing to clear.
+Replacing the mask with a deliberate 40x40 block confirmed it from the other
+side: 47 pixels, so the routine IS called and the region really is empty.
+
+Two rounds went into the horizontal offset before that control was run, and
+the control took one minute. **When a parameter has no effect, stop tuning it
+and ask whether the code runs at all** - and prove the answer with something
+too big to miss.
+
 ## Finding a sprite: score it, and check the scorer on one you know
 
 The builder's frames had to be found in MAIN.DAT the way the digger's and the

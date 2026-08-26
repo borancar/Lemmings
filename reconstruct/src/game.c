@@ -3037,19 +3037,30 @@ static void lem_hoist(lemming *a)
  * (image 0x05DFD and image 0x05E05), so it removes terrain outright, the way
  * image 0x05EBA does for the digger.
  *
- * IT IS NOT RIGHT YET, and the measurement says by how much. Placing the
- * mask at (x - 8, y - 30) clears 27 pixels where the original clears 343,
- * and the original's leftmost cleared column is about eight to the LEFT of
- * the port's - roughly a byte. So either the window starts at the byte
- * BEFORE the one holding x - 8, or the shift is being applied the other way
- * round. What the port draws is therefore a smaller crater in almost the
- * right place, and the record comparison still diverges at frame 207 - not
- * on the bomber, which is exact, but on ANOTHER lemming that falls through
- * the original's hole and walks over the port's.
+ * IT IS NOT PLACED RIGHT, and four measurements say so without saying where
+ * it should go. Recorded against the original's own frames:
  *
- * The next measurement to make is the obvious one: clear at (x - 16, y - 30)
- * and see whether 343 comes back. It is one number and it has not been made,
- * so the code says what it does rather than what it might.
+ *   the original clears 343 pixels over screen rows 55..79, about 24 columns
+ *   wide and centred on the lemming, its bottom one row above the feet
+ *
+ *   the port clears 29, and moving the start sideways by a byte in either
+ *   direction changes NOTHING - which is what says the routine is landing on
+ *   empty sky rather than in the wrong place horizontally
+ *
+ *   replacing the mask with a deliberate 40x40 block clears 47, so the
+ *   routine IS being called and the region really is mostly empty
+ *
+ *   the literal reading, y - 0x1E, puts the top at screen 66 where the
+ *   original's clearing starts at 55 - and the mask's top rows are five
+ *   pixels wide, so the true top could be higher than the first row that
+ *   happens to meet ground
+ *
+ * Two things are still unaccounted for: the original's crater looks 24 wide
+ * where this mask is 16, and 25 rows deep where it is 22. Either the shape
+ * spans all three bytes at other shifts and shift 0 is not representative,
+ * or what a frame diff shows includes the cloud SPRITE being drawn over the
+ * ground. Both are testable and neither has been tested, so the code stays
+ * as the literal reading and says it is wrong.
  */
 #define CRATER_ROWS  22         /* image 0x05E17: cx = 0x16 */
 #define CRATER_UP    0x1E       /* image 0x05E1F */
@@ -3082,7 +3093,16 @@ static const uint16_t CRATER[CRATER_ROWS] = {
 static void lem_crater(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     int32_t x0 = (int32_t)a->x - CRATER_BACK - LEMMING_DX;
-    int32_t y0 = (int32_t)a->y - CRATER_UP - LEMMING_DY;
+    /* NO LEMMING_DY HERE, and that was the whole of it. Image 0x05DC6 builds
+     * a row as y - 0x10 and everything that probes terrain goes through it,
+     * so the port's canvas row is y - 16 and its helpers say so. Image
+     * 0x05DF8 does its OWN arithmetic - y - 0x1E - and that thirty already
+     * includes the sixteen. Subtracting LEMMING_DY as well put the crater
+     * sixteen rows too high, which on this level is open sky: it cleared
+     * nothing, and changing where it started sideways changed nothing
+     * either, which is what said the routine was not landing on ground at
+     * all rather than landing in the wrong place. */
+    int32_t y0 = (int32_t)a->y - CRATER_UP;
     for (uint8_t r = 0; r < CRATER_ROWS; r++) {
         int32_t y = y0 + r;
         if (y < 0 || y >= (int32_t)chh) continue;
