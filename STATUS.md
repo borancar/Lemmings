@@ -642,6 +642,42 @@ Each of these is stated as what was *checked*, not what was written.
   wrong**, and no amount of further fitting was going to reach zero from 257.
   Reading the routine took less time than the fitting did.
 
+- **Three of the four menu screens were being compared against the main
+  menu.** `tools/verify_menu.py` drove to the title and captured, with the
+  *same commands for every screen* - so `--screen code`, `--screen input` and
+  `--screen briefing` scored the port's screen against a picture of the MENU
+  and reported 65%, 64% and 30% as measurements. They never moved because
+  nothing about the port was in them.
+
+  The tool's own docstring records this exact failure for the RATING - "the
+  port was then scored against the wrong screen, which read as the port
+  drawing Taxing and Mayhem badly when it was drawing them correctly against a
+  screen that was not showing them" - and the same bug was sitting one level
+  up, in which screen was captured at all.
+
+  With the key presses added, and F1 driven by the machinery `play.py`
+  already had for it:
+
+  | screen | reported before | actually |
+  | --- | --- | --- |
+  | menu | 99.3-100% | **99.47%** (the banner's phase) |
+  | code | 65.43% | **99.97%** |
+  | input | 64.44% | **100.00%** |
+  | briefing | 29.90% | **100.00%**, and its level preview **0 pixels** |
+
+  Three controls had to be added before that number could be trusted, and each
+  one caught a different way of reaching nothing:
+
+  - *"the capture changed"* is not enough - the menu's banner scrolls, so two
+    captures of it never match and an inequality test passes while nothing has
+    happened. It must change **most** of the picture.
+  - *"it changed a lot"* is not enough either - pressing F1 twice went past
+    the briefing into the level and the capture came back **entirely black**,
+    which differs from the menu everywhere. A mostly-blank capture is a
+    transition, not a screen.
+  - and a single held F1 does not leave the menu at all, because the title
+    fades its palette in and drops what is pressed during it.
+
 ## Into a level
 
 - **BLOCKER CLEARED: the original plays.** It was never frozen. It was

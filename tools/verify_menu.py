@@ -68,7 +68,12 @@ def read_raw(path):
 RATING_VAR = 0x0B9FE      # image address of ds:0x1F6E, the current rating
 
 
-def capture(path, seconds, delay, rating=0, tries=3):
+# Which key leaves the main menu for each screen, read off the plates the
+# game draws: F1 play (which shows the briefing), F2 enter a code, F4 input.
+KEY_FOR = {"menu": None, "code": "f2", "input": "f4", "briefing": "f1"}
+
+
+def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
     """Drive the original to its menu at `rating`, retrying dropped presses.
 
     Returns the rating it ACTUALLY reached, which is not always the one asked
@@ -89,6 +94,17 @@ def capture(path, seconds, delay, rating=0, tries=3):
     So the run reads ds:0x1F6E back and the caller renders THAT rating. A
     dropped press then costs coverage, which is visible, instead of producing
     a confident wrong number.
+
+    The SAME bug lived here for the screen itself, and went uncaught far
+    longer. Every screen was captured with these identical commands, which
+    reach the main menu and stop - so `--screen code`, `--screen input` and
+    `--screen briefing` compared the port's screen against a picture of the
+    MENU, and reported 65%, 64% and 30% as though those were measurements of
+    the port. They never moved because nothing about the port was in them.
+
+    Now the run presses the key that leaves the menu and captures a SECOND
+    picture, and refuses to compare if the two are the same. A screen that was
+    never reached costs coverage instead of producing a number.
     """
     last = rating
     for attempt in range(tries):
@@ -105,8 +121,27 @@ def capture(path, seconds, delay, rating=0, tries=3):
             cmd += ["--cmd", "key up 24", "--cmd", "sleep 1.5"]
         if rating:
             cmd += ["--cmd", "sleep 1.5"]      # let the plate redraw
-        cmd += ["--cmd", f"read i+{RATING_VAR:#x} 1",
-                "--cmd", f"screen {os.path.abspath(path)}",
+        cmd += ["--cmd", f"read i+{RATING_VAR:#x} 1"]
+        key = KEY_FOR.get(screen)
+        control = os.path.abspath(path) + ".menu"
+        if screen == "briefing":
+            # F1 is not a key the menu takes on demand: it fades its palette in
+            # first and drops anything pressed during that, and there is no cue
+            # over the socket for "the fade has finished". play.py already
+            # solves this - it waits for mode 10h and then presses F1 several
+            # times, spaced out - so use that rather than a second guess at the
+            # timing here. --click-tries 0 leaves it ON the briefing, which
+            # needs a real mouse click to get past.
+            cmd += ["--start", "--start-delay", "5", "--start-tries", "3",
+                    "--click-tries", "0"]
+        elif key:
+            # A HELD key, not a single press, for the same reason the rating
+            # uses one: the game reads a key-state array its own INT 9 fills,
+            # and a press that lands between two of its samples is not seen.
+            cmd += ["--cmd", "sleep 3.0",
+                    "--cmd", f"screen {control}",
+                    "--cmd", f"key {key} 24", "--cmd", "sleep 4.0"]
+        cmd += ["--cmd", f"screen {os.path.abspath(path)}",
                 "--", "--run-seconds", str(seconds)]
         print(f"driving the original to its main menu"
               f"{f', asking for rating {rating}' if rating else ''} ...")
@@ -115,6 +150,56 @@ def capture(path, seconds, delay, rating=0, tries=3):
             raise SystemExit(
                 "the run produced no capture - it never reached mode 10h.\n"
                 "That is a failure, not a pass.")
+        if screen == "briefing":
+            # The control here is a menu capture from a previous run, because
+            # --start has already left the menu by the time any --cmd runs.
+            menu_cap = os.path.join(ROOT, "out", "menu.scrn")
+            with open(path, "rb") as f1:
+                a2 = f1.read()
+            n = len(a2) - (8 + 768)
+            ink = sum(1 for i in range(8 + 768, len(a2)) if a2[i])
+            if ink < n // 10:
+                raise SystemExit(
+                    f"the briefing capture is {n - ink} of {n} pixels blank -"
+                    f" a screen in\ntransition, not the briefing. A failure,"
+                    f" not a percentage.")
+            if os.path.exists(menu_cap):
+                with open(menu_cap, "rb") as f2:
+                    b2 = f2.read()
+                m = min(len(a2), len(b2))
+                moved = sum(1 for i in range(8 + 768, m) if a2[i] != b2[i])
+                if moved < (m - 8 - 768) // 5:
+                    raise SystemExit(
+                        f"the briefing capture is within {moved} pixels of"
+                        f" out/menu.scrn - F1\nnever left the menu. A"
+                        f" failure, not a percentage.")
+        elif KEY_FOR.get(screen) and os.path.exists(path + ".menu"):
+            with open(path, "rb") as f1, open(path + ".menu", "rb") as f2:
+                a2, b2 = f1.read(), f2.read()
+            n = min(len(a2), len(b2)) - (8 + 768)
+            moved = sum(1 for i in range(8 + 768, 8 + 768 + n)
+                        if a2[i] != b2[i])
+            # NOT "are they different" - the menu's banner scrolls, so two
+            # captures of it never match byte for byte and an inequality test
+            # passes while nothing has happened. A different SCREEN moves most
+            # of the picture.
+            if moved < n // 5:
+                raise SystemExit(
+                    f"the {screen} screen was never reached: only {moved} of"
+                    f" {n} pixels\nchanged after the key press, which is the"
+                    f" menu's own animation and not a\nnew screen. That is a"
+                    f" failure, not a percentage.")
+            # And "it changed a lot" is not enough either. Pressing F1 twice
+            # went straight past the briefing into the level, and the capture
+            # came back ENTIRELY BLACK - which differs from the menu
+            # everywhere and sailed through the test above. A screen that is
+            # nearly all zero is a transition, not a screen.
+            ink = sum(1 for i in range(8 + 768, 8 + 768 + n) if a2[i])
+            if ink < n // 10:
+                raise SystemExit(
+                    f"the capture after the key press is {n - ink} of {n}"
+                    f" pixels blank.\nThat is a screen in transition, not the"
+                    f" {screen} screen. A failure, not a percentage.")
 
         got = None
         for line in out.splitlines():
@@ -171,8 +256,9 @@ def main():
         cap, shown = a.capture, a.rating
     else:
         cap, shown = capture(
-            os.path.join(ROOT, "out", f"menu{a.rating or ''}.scrn"),
-            a.seconds, a.delay, a.rating)
+            os.path.join(ROOT, "out",
+                         f"{a.screen}{a.rating or ''}.scrn"),
+            a.seconds, a.delay, a.rating, screen=a.screen)
     w, h, pal, theirs = read_scrn(cap)
 
     port_raw = os.path.join(ROOT, "out", "menu_port.raw")
