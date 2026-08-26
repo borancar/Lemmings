@@ -43,10 +43,10 @@ numbers, re-measured on the current build:
 | **the pointer's hit test** vs the original's own answer | **326 frames, 326 agreed** — the guest sets `ds:0x1A` when its scan finds a lemming, so that byte settles it (`tools/verify_hit.py`) |
 | **the digger** vs the original digging | state **138 frames agreed**; the shaft it cuts **1,056 pixels, 1,056 agreed** (`tools/verify_dig.py`) |
 | **pace** | the level 170 frames in 10.01s against 17/s; the menu 350 passes in 5.01s against 70 Hz (`tools/verify_pace.py`) |
-| tests | `make test` 112 checks across two binaries, `make sanitize` clean under ASan + UBSan |
+| tests | `make test` 134 checks across two binaries, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 76
-routines with an address, 47 marked the port's own and 9 still owed** — counted by `reconstruct/tests/provenance.py`, which reads
+**Transcription is a different claim from any of the above, and it is 87
+routines with an address, 48 marked the port's own and 9 still owed** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
 geometry measured against the original — that is real evidence, and it is not
@@ -737,6 +737,36 @@ Each of these is stated as what was *checked*, not what was written.
   blink did not turn over during the dump; different means the capture is
   between two pictures and is not scored against either, which happens often
   enough to matter - one run needed two retries. Both scored **100.00%**.
+
+## A level can now be finished
+
+Everything between a lemming reaching the exit and the game deciding what
+that was worth:
+
+- **the exit trigger**, image `0x02F3B`: not while falling, and the whole
+  state word becomes `0x2000`. Its rectangle's units are FOUR PIXELS, which
+  was measured rather than read - `tools/probe_exit.py` caught six lemmings
+  entering, every one at record (888, 147), against an exit object at
+  (848, 116)
+- **leaving**, image `0x02326`: eight frames, then `ds:0x46` and gone. Its
+  sprite is `main.dat` section 0 offset 16816, 16x13 in two planes
+- **the end**, image `0x001C8`: everyone released with none active, or the
+  clock's three digits all reading `'0'`
+- **win or lose**, image `0x04720`: `saved >= needed`, and nothing subtler.
+  The nine verdicts at image `0x048F6` are a ladder either side of it
+- **what winning does**, image `0x0472E`: the level index advances, the
+  rating is recomputed as index / 30, and image `0x0473E` caps at 120
+
+Thirty a rating and a hundred and twenty in all is the same thirty the
+briefing's level number subtracts at image `0x04566`, reached from the other
+end - which is the kind of agreement worth more than either reading alone.
+
+**Still not written**: the results screen's LAYOUT. Its text assembly is
+transcribed (image `0x048BD`) and its composer found (image `0x046F4`), but
+what draws the screen around the record at `ds:0x4C4E` has not been read. Nor
+has the access code at image `0x05042` - a ten-character bit-shuffle of the
+level index, `ds:0x491D` and the rescued percentage, which the code screen's
+validator at image `0x051A2` would round-trip against.
 
 ## The results screen, mapped but not written
 
