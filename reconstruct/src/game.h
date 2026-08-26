@@ -264,6 +264,15 @@ void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                       const uint8_t *sec, uint32_t sec_len,
                       uint8_t value, uint16_t x0, uint16_t y0);
+/* The minimap: 104 x 20, a pixel per 16 x 1 span of the level, set when more
+ * than eight of those sixteen are terrain. Transcribed from images 0x0796F,
+ * 0x07A25 and 0x07A39; where it sits is measured. */
+#define MINIMAP_AT_X 241
+#define MINIMAP_AT_Y 17
+void panel_minimap(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                   const uint8_t *canvas, uint16_t cw, uint16_t chh,
+                   uint16_t x0, uint16_t y0);
+
 /* The box round the selected button - 16 wide, 24 tall, colour 3, at
  * 16 + 16*button in the panel's 352-wide line. Transcribed from image
  * 0x0780D; ds:0x83 names the button and image 0x0427 starts it at 3. */

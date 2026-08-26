@@ -967,14 +967,44 @@ Each of these is stated as what was *checked*, not what was written.
   0 reads `" 0"` and not `"00"`. A hundred is special-cased across all three
   cells before any of that.
 
-- **The minimap is read but not built.** Image 0x07900 copies it into place -
-  13 bytes by 20 rows at video row 194 byte 28, so screen x 192 and rows
-  178..197 - from a stashed image at `0xA000:0xD320`, one cleared row then 19
-  copied. The lemming dots go in separately at image 0x06FE2, which fixes the
-  scale beyond doubt: minimap x is `level_x >> 4` and the row is
-  `(y - 32) >> 3`. The level's terrain spans x 511..1020, which is **31.9**
-  minimap pixels at that scale, and the content measured in a recorded frame
-  is **31** pixels wide. What has not been read is what builds 0xD320.
+- **The minimap, transcribed.** Image 0x07900 copies it into place from a
+  bitmap the game stashes off-screen at `0xA000:0xD320`, 13 bytes by 20 rows,
+  and images 0x0796F, 0x07A25 and 0x07A39 build that bitmap one byte-column a
+  frame - `ds:0x56` cycling by 16 and wrapping at 0xD0, so thirteen frames to
+  refresh the lot. The port builds all thirteen at once; the picture is the
+  same.
+
+  How a pixel is decided had to be read. Image 0x079C9 puts the graphics
+  controller in **read mode 1** with Color Compare and Color Don't Care both
+  0x08, so a read returns "is plane 3 set" - and plane 3 is where terrain
+  lives, which is why GROUNDxO.DAT's fourth bitplane doubles as its mask.
+  Image 0x07A39 then reads two of those bytes, counts the sixteen bits, and
+
+      cmp dh, 8 / jg  ->  or byte cs:[bx], dl
+
+  sets the pixel only when **more than eight of the sixteen** are terrain. A
+  majority, not "any" - which is why a level's stalactites do not show on the
+  map. Vertically there is no reduction at all: image 0x079FB steps the source
+  by 0x680, eight rows of the 208-byte canvas, so it samples every eighth row
+  and ignores the seven between.
+
+  The colour is **7**, and the EGA state says it must be: Set/Reset 0x06 with
+  Enable Set/Reset 0x08 leaves plane 3 clear and gives planes 0, 1 and 2 the
+  CPU's bits. A recorded frame agrees - 308 of the 389 pixels the rule lights
+  are index 7 there, the rest being the viewport box and the lemming dots over
+  it.
+
+  Where it sits is measured, like `PANEL_TOP`: screen x **209**, y **177**, a
+  sharp minimum over a 7 x 7 search - 137 differing at that origin against
+  216 and 217 either side.
+
+  **One loose end, written down rather than papered over.** The copy is
+  byte-aligned, so the map must start on a byte boundary of the 352-pixel
+  line; screen x 209 is line x 241, and 241 is not a multiple of eight.
+  Something in the page-offset-to-screen-column mapping is still a pixel out,
+  and the proof is that clearing the full 104-pixel span - which the
+  original's copy does - rubs out part of the artwork's frame: 232 differing
+  against 137 for ink alone. Until that is read, only the ink is drawn.
 
 - **Frame by frame over a whole run** (`tools/compare_run.py`, 120 frames, the
   port stepping the opening sequence, the animations and the clock once per
@@ -983,9 +1013,10 @@ Each of these is stated as what was *checked*, not what was written.
   | frames | play area | panel |
   | --- | --- | --- |
   | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
-  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 96.12 / **96.84** / 96.91% |
+  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 98.26 / **98.92** / 99.04% |
 
-  The panel's remaining 402 pixels are **almost entirely the minimap**.
+  The panel's remaining 137 pixels are the minimap's viewport box and the
+  lemming dots on it - both of which need the lemmings.
 
   Over 700 frames the play area falls from 99.86% to about 99.34% and then
   **flattens** - that is the ten lemmings coming out one by one and then

@@ -1192,6 +1192,95 @@ void level_status_in(uint8_t percent)
     g_status[ST_IN_UNITS] = (char)(al + '0');
 }
 
+#define MINIMAP_W      104      /* 13 bytes, image 0x0794E: cx = 0x0D */
+#define MINIMAP_H      20       /* image 0x079F1: cx = 0x14 */
+#define MINIMAP_XSTEP  16       /* image 0x07A2F: si += 2, two bytes */
+#define MINIMAP_YSTEP  8        /* image 0x079FB: si += 0x680, eight rows */
+#define MINIMAP_VOTE   8        /* image 0x07A4E: cmp dh, 8 / jg */
+#define MINIMAP_INK    7
+#define MINIMAP_X      241      /* screen 209, in the panel's 352-wide line */
+#define MINIMAP_Y      17       /* screen 177, rows into the panel */
+
+/* ======================================================================
+ * THE MINIMAP - images 0x0796F, 0x07A25 and 0x07A39 to build it, 0x07900 to
+ * put it on the screen.
+ *
+ * The game keeps it as a 13-byte by 20-row bitmap stashed off-screen at
+ * 0xA000:0xD320 and rebuilds ONE byte-column of it a frame, cycling ds:0x56
+ * by 16 and wrapping at 0xD0 - thirteen frames to refresh the lot. The port
+ * has no reason to spread the work out, so it builds all thirteen at once;
+ * the result is the same bitmap.
+ *
+ * How a pixel is decided is the part that had to be read rather than guessed.
+ * Image 0x079C9 puts the graphics controller in READ MODE 1 with Color
+ * Compare and Color Don't Care both 0x08, so a read returns a byte of "is
+ * plane 3 set" - and plane 3 is where terrain lives, which is why
+ * GROUNDxO.DAT's fourth bitplane doubles as its mask. Then image 0x07A39
+ * reads TWO of those bytes, counts the sixteen bits, and:
+ *
+ *     cmp dh, 8 / jg  ->  or byte cs:[bx], dl
+ *
+ * sets the minimap pixel only when MORE THAN EIGHT of the sixteen are
+ * terrain. A majority, not "any" - which is why the top of a level with a few
+ * stalactites in it shows as empty on the map.
+ *
+ * Vertically there is no reduction at all: image 0x079FB steps the source by
+ * 0x680, which is eight rows of the 208-byte canvas, so it samples every
+ * eighth row and ignores the seven between.
+ *
+ * The colour is index 7, and that is what the EGA state says it must be:
+ * Set/Reset 0x06 with Enable Set/Reset 0x08 (images 0x079B9 and 0x079C1)
+ * leaves plane 3 clear and gives planes 0, 1 and 2 the CPU's bits, so a set
+ * bit is 0b0111. A recorded frame agrees - 308 of the 389 pixels the rule
+ * lights are index 7 there, the rest being the viewport box and the lemming
+ * dots drawn over it.
+ *
+ * Where it sits on the screen is measured, like PANEL_TOP: x 209, y 177, the
+ * sharp minimum of a search over 7 x 7 origins - 137 differing pixels at that
+ * one against 216 and 217 either side of it.
+ *
+ * ONE LOOSE END, written down rather than papered over. The copy is
+ * byte-aligned, so the minimap must start on a byte boundary of the 352-pixel
+ * line; x 209 on screen is x 241 in that line, and 241 is not a multiple of
+ * eight. Something in the mapping from a page offset to a screen column is
+ * still off by a pixel, and the proof of it is that clearing the full
+ * 104-pixel span - which the original's copy does - rubs out part of the
+ * artwork's frame. Until that is read, only the ink is drawn.
+ * ====================================================================== */
+/* Transcribed from images 0x0796F, 0x07A25 and 0x07A39 - see the note above.
+ * Built and drawn in one pass: the original's rolling column, ds:0x56 at
+ * image 0x0797D, is a way of spreading the cost over thirteen frames and not
+ * part of the picture. */
+void panel_minimap(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                   const uint8_t *lvl, uint16_t cw, uint16_t chh,
+                   uint16_t x0, uint16_t y0)
+{
+    for (uint16_t r = 0; r < MINIMAP_H; r++) {
+        uint16_t y = (uint16_t)(r * MINIMAP_YSTEP);
+        uint16_t py = (uint16_t)(y0 + r);
+        if (py >= dst_h) break;
+        for (uint16_t p = 0; p < MINIMAP_W; p++) {
+            uint16_t px = (uint16_t)(x0 + p);
+            if (px >= dst_w) break;
+            uint8_t n = 0;
+            if (y < chh) {
+                uint16_t sx = (uint16_t)(p * MINIMAP_XSTEP);
+                for (uint8_t k = 0; k < MINIMAP_XSTEP; k++)
+                    if (sx + k < cw && lvl[(size_t)y * cw + sx + k])
+                        n++;
+            }
+            /* Ink only. The original's copy writes all thirteen bytes a
+             * row, background included, but doing that here rubs out part of
+             * the artwork's own frame - which says the 104-pixel span is not
+             * quite in the right place yet, and the note above records it. So
+             * this leaves what is underneath: measured, that is 137 differing
+             * pixels against 232 for clearing. */
+            if (n > MINIMAP_VOTE)
+                dst[(size_t)py * dst_w + px] = MINIMAP_INK;
+        }
+    }
+}
+
 /* Image 0x3684: the walk over the lemming array ends by putting the LIVE
  * count - ds:0x45, the entries whose +0x26 is not 0xFF - into the line at
  * ds:0x2095, which is col 22.
