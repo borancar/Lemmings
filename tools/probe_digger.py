@@ -112,6 +112,28 @@ def install(m):
                 out.write(f"      +{off:#04x} {name:12s} = "
                           f"{w(ARRAY + off) & 0xffff:#06x}\n")
 
+        # The SCREEN while it digs. The sprite's size is the open question -
+        # its record says 112 bytes a frame, which is neither the walker's
+        # shape nor obviously anything else - so look at the pixels instead
+        # of dividing the number again.
+        if st["n"] in (WAIT + 3, WAIT + 14, WAIT + 18) and n:
+            fb = m.framebuffer()
+            r = rec(0)
+            sx = r["x"] - w(SCROLL)
+            out.write(f"\n  screen at f{st['n']}: lemming 0 at level "
+                      f"({r['x']}, {r['y']}), screen x {sx}, anim {r['anim']}\n")
+            for y in range(max(0, r["y"] - 24), min(160, r["y"] + 8)):
+                # The sprite is drawn in attributes 1..7, which the
+                # attribute controller sends to DAC 1..7; the terrain is
+                # 8..15, which it sends to 16..23. So anything below 8 is
+                # the lemming and everything else is the level.
+                line = "".join(
+                    ("%x" % fb[y * 320 + x] if fb[y * 320 + x] < 8 else ".")
+                    if 0 <= x < 320 else " "
+                    for x in range(sx - 24, sx + 24))
+                out.write(f"    y{y:3d} {line}\n")
+            out.flush()
+
         if WAIT - 2 <= st["n"] <= WAIT + 40 and n:
             r = rec(0)
             out.write(f"  f{st['n']:4d} n={n} lem0 x={r['x']:5d} y={r['y']:4d} "

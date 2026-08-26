@@ -1733,7 +1733,21 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * (tools/probe_digger.py measured both), 112 is not a multiple of three so
  * it is not the walker's pre-shift shape, and there is no reason to expect
  * its file frames to be 40 bytes either. Finding it means locating the
- * animation, not dividing a number. */
+ * animation, not dividing a number.
+ *
+ * One of the two candidates IS ruled out, by looking. probe_digger.py dumps
+ * the original's own framebuffer while a lemming digs, printing anything
+ * below attribute 8 as itself and the terrain as dots - the sprite is drawn
+ * in 1..7 and the level in 8..15, so that separates them. What comes out is
+ * about SIXTEEN pixels wide and eight to ten tall, in colours 1, 2 and 3.
+ *
+ * So it is not the 32-wide, 7-row reading. It is 16 wide, like the walker.
+ * What still does not close is the byte count: sixteen wide in two planes is
+ * three bytes a row including the mask, and 112 is not divisible by three -
+ * so either there is padding in the frame or the store packs it in a way
+ * neither sprite here has shown yet. The dump is too tangled with the
+ * terrain the digger is removing to read the shape off directly; catching it
+ * over black, or reading the store, is what finishes this. */
 /* The faller is a different group. Image 0x030F1 gives a released lemming
  * `[si+0x0c] = 0xA42`, which is the paragraph its group starts at in the
  * pre-shift store - the walker's is 0 - and image 0x05A48 builds a group of
