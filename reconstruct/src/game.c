@@ -1171,12 +1171,27 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x)
 
     const lemming *a = &lem[sc.chosen];
     uint8_t nm;
-    if      (a->flags & 0x0100) nm = NM_BLOCKER;     /* image 0x03E17 */
+    /* THE LADDER IN FULL, image 0x03DFA. Its first three rungs read the two
+     * ABILITY bytes rather than the state word, and they come FIRST - so a
+     * floater is called a FLOATER whatever it happens to be doing, and a
+     * climber a CLIMBER. The port used to start at image 0x03E17 and call
+     * both of them WALKER, which is what a player saw. They were left out
+     * when the lemming record carried neither byte; it carries both now. */
+    if      (a->extra & 0x80)   nm = NM_BUILDER;     /* image 0x03E00 */
+    else if (a->extra & 1)                           /* image 0x03E07 */
+        nm = a->floater ? NM_ATHLETE : NM_CLIMBER;   /* image 0x03E63 */
+    else if (a->floater)        nm = NM_FLOATER;     /* image 0x03E0E */
+    else if (a->flags & 0x0100) nm = NM_BLOCKER;     /* image 0x03E17 */
     else if (a->flags & 0x0080) nm = NM_BUILDER;     /* image 0x03E21 */
     else if (a->flags & 0x0200) nm = NM_BASHER;      /* image 0x03E2B */
     else if (a->flags & 0x0800) nm = NM_MINER;       /* image 0x03E35 */
     else if (a->flags & 0x0010) nm = NM_DIGGER;      /* image 0x03E3F */
-    /* FOUR, not 0x400. The encoding is `f7 44 08 04 00` - the immediate is
+    /* NOTHING NAMES A SPLAT OR A BOMBER. There is no rung for 0x0001 or for
+     * a lit fuse, so a lemming on its way to the ground reads WALKER in the
+     * original too - SPLATTR is in the name table at ds:0x4905 and this
+     * ladder never reaches it.
+     *
+     * FOUR, not 0x400. The encoding is `f7 44 08 04 00` - the immediate is
      * the last two bytes, little-endian - and reading the hex column left to
      * right gives 0x0400, which is what went in here first. The original
      * named a lemming FALLER where the port said WALKER, and one look at the
@@ -4042,6 +4057,19 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * The hoist's is 12 rows in two planes at 3472: ZERO across all eight frames
  * of 180 ink. Whether it comes in two like the climb's is not known - every
  * hoist in the run so far faces the same way. */
+/* FOUND THE SAME WAY as the others - scored against the original's own
+ * pixels, all four at ZERO disagreeing. The faller and the splat came off
+ * LEVEL 2, because "Just dig!" has nothing that falls far enough to do
+ * either, and the floater off the run that assigned one there.
+ *
+ * The search had to take the SCROLL from the manifest rather than assume
+ * 624: level 2 starts at 528, and hard-coding the first level's put every
+ * candidate in the wrong place and returned nothing at any geometry. */
+#define FALL_SPR_BASE   14320   /* 10 rows, 2 planes - ink 222, 0 differ */
+#define SPLAT_SPR_BASE  16176   /* 10 rows, 2 planes - ink 147, 0 differ */
+#define FLOAT_SPR_BASE  14640   /* 16 rows, 3 planes - ink 356, 0 differ */
+#define BLAST_SPR_BASE  20080   /* 10 rows, 2 planes - ink 256, 0 differ */
+
 #define CLIMB_SPR_RIGHT 2064
 #define CLIMB_SPR_LEFT  2448
 #define CLIMB_SPR_H     12
@@ -4118,6 +4146,41 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
             }
         }
         return;
+    }
+
+    /* The states whose sprites are 16 wide and differ only in size and
+     * where they live. Image 0x01F5E's order decides which is asked first;
+     * these follow it. */
+    {
+        uint32_t sb = 0; uint8_t sh = 0, sp = 0, sf = 0;
+        if (a->flags & 0x0400) { sb = FLOAT_SPR_BASE; sh = 16; sp = 3; sf = 8; }
+        else if (a->flags & 0x0001) { sb = SPLAT_SPR_BASE; sh = 10; sp = 2; sf = 16; }
+        else if (a->flags & 0x8000) { sb = BLAST_SPR_BASE; sh = 10; sp = 2; sf = 16; }
+        else if (a->flags & 0x0004) { sb = FALL_SPR_BASE; sh = 10; sp = 2; sf = 4; }
+        if (sb) {
+            if (a->anim >= sf) return;
+            uint32_t plane = 2u * sh;
+            uint32_t fsz = plane * sp;
+            base = sb + (uint32_t)a->anim * fsz;
+            if (base + fsz > sec_len) return;
+            x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+            y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+            for (uint8_t r = 0; r < sh; r++) {
+                int32_t py = y0 + r;
+                if (py < 0 || py >= (int32_t)dst_h) continue;
+                for (uint8_t c = 0; c < 16; c++) {
+                    int32_t px = x0 + c;
+                    uint8_t v = 0;
+                    if (px < 0 || px >= (int32_t)dst_w) continue;
+                    for (uint8_t p = 0; p < sp; p++) {
+                        uint8_t byte = sec[base + p * plane + r * 2 + (c >> 3)];
+                        v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                    }
+                    if (v) dst[(size_t)py * dst_w + px] = v;
+                }
+            }
+            return;
+        }
     }
 
     /* A climber going up a wall - and which way it faces picks the sprite. */
