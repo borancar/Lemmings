@@ -55,6 +55,16 @@ DIGGERS = 0x7F             # ds: how many diggers are left to give out
 # and says so: it changes what the level offers, not how any skill behaves,
 # and both sides get the same poke so the comparison stays a comparison.
 SKILLS = [0x6A, 0x6D, 0x70, 0x73, 0x76, 0x79, 0x7C, 0x7F]
+# WHICH LEVEL. ds:0x1F6B is the index across the whole game - image 0x0472E
+# advances it when one is won and image 0x04566 turns it into the briefing's
+# number. play.py reaches Fun 1 and nothing else, so a run that wants another
+# level pokes this before the level loads.
+#
+# The second is worth having for its own sake: lemmings FALL there, and far
+# enough to die. Nothing on "Just dig!" falls far enough for image 0x021BA to
+# even ask whether a lemming is a floater, so the floater's behaviour and the
+# splat cannot be reached on the first level at all.
+LEVEL_INDEX = 0x1F6B
 # The end condition, image 0x001E7: released == to-release AND active == 0.
 RELEASED, ACTIVE, TO_RELEASE = 0x43, 0x45, 0x47
 SAVED, OVER = 0x46, 0x4F   # ds:0x4F is what image 0x001C8 tests first
@@ -93,9 +103,18 @@ def install(m):
         script.sort(key=lambda a: a[0])
         print(f"  [rec] {len(script)} scripted actions from {sp}")
     all_lem = os.environ.get("LEM_REC_ARRAY") == "1"
+    want_level = os.environ.get("LEM_REC_LEVEL")
     stock = int(os.environ.get("LEM_REC_SKILLS", "0"))
     st["script_at"] = 0
     st["down"] = None
+
+    def pick_level(uc, address, size, user):
+        """Poke the level index before the briefing reads it."""
+        if want_level is None or st.get("picked"):
+            return
+        st["picked"] = True
+        uc.mem_write(base + DGROUP + LEVEL_INDEX, bytes([int(want_level)]))
+        print(f"  [rec] level index poked to {want_level}")
 
     def on_frame(uc, address, size, user):
         # The emulator keeps every mode the guest has set, in order, so the
@@ -244,6 +263,11 @@ def install(m):
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame,
                   None, base + FRAME_DONE, base + FRAME_DONE)
+    # Image 0x04401 is the menu, by which point the image is unpacked and DS
+    # is up - the same place tools/probe_code.py drives from.
+    if want_level is not None:
+        m.uc.hook_add(UC_HOOK_CODE, pick_level, None,
+                      base + 0x04401, base + 0x04401)
 
     def save():
         with open(os.path.join(out_dir, "manifest.json"), "w") as f:
@@ -259,6 +283,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--frames", type=int, default=300)
     ap.add_argument("--out", default=os.path.join(ROOT, "out", "ref"))
+    ap.add_argument("--level", type=int, default=None,
+                    help="poke ds:0x1F6B, the level index, before the "
+                         "briefing reads it - play.py only reaches Fun 1. "
+                         "Level 2 is where lemmings fall far enough to die")
     ap.add_argument("--skills", type=int, default=0,
                     help="stock every skill this many times - a POKE, so that "
                          "the seven \"Just dig!\" never offers can be driven "
@@ -304,6 +332,8 @@ def main():
         env["LEM_REC_ARRAY"] = "1"
     if a.skills:
         env["LEM_REC_SKILLS"] = str(a.skills)
+    if a.level is not None:
+        env["LEM_REC_LEVEL"] = str(a.level)
     subprocess.run([sys.executable, os.path.join(HERE, "play.py"),
                     "--auto", "--start", "--start-delay", "5",
                     "--start-tries", "3", "--click-tries", "4",

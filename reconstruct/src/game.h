@@ -318,6 +318,8 @@ typedef struct {
                            * kept so they can be put back. Image 0x0346E
                            * reads each one out and image 0x03471 writes the
                            * blocker's own value over it. */
+    int16_t  fscript;     /* +0x0E - how far into the float table image
+                           * 0x02A70 has got */
     uint8_t  fuse;        /* +0x20 - image 0x031E1 sets it to 0x4F and the
                            * LOOP HEAD counts it down at image 0x01F45 */
     uint8_t  floater;     /* +0x25 - image 0x0356B sets it to 0xFF, and image

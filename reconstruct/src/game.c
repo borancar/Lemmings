@@ -2996,6 +2996,82 @@ static void lem_hoist(lemming *a)
     a->y = (int16_t)(a->y - 2);                     /* image 0x0264A */
 }
 
+/* THE SPLAT - transcribed from image 0x022DF. Sixteen frames and the lemming
+ * is gone; image 0x022EE sets [si+0x26]. Image 0x02250 is what sends it here:
+ * a fall counter over 0x3C, and image 0x02273 also clears the direction and
+ * image 0x02277 the fuse, so a bomber that lands too hard does not explode. */
+static void lem_splat(lemming *a)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 0x0F);      /* image 0x022E2 */
+    if (a->anim) return;                            /* image 0x022E9 */
+    a->alive = 0xFF;                                /* image 0x022EE */
+}
+
+/* FLOATING - transcribed from image 0x02A6D, and it is the only state in
+ * this game driven by a TABLE rather than by arithmetic.
+ *
+ * ds:0x2698 holds pairs. Image 0x02A73 takes the first as the animation
+ * frame and image 0x02A78 the second as what to do about height, then image
+ * 0x02A7B steps the pointer at [si+0x0E] on by two:
+ *
+ *     3   image 0x02A92  probe, then fall up to two rows, stopping on ground
+ *     2   image 0x02ABE  the same, but the two probes are separate
+ *     1   image 0x02ADC  probe and fall one
+ *     otherwise          image 0x02A8C adds the value straight to y, which
+ *                        is how 0 holds it still and 0xFF lifts it
+ *
+ * The umbrella opens in the FALLER: image 0x021BA wants the fall counter past
+ * 0x10 before image 0x021C0 even asks whether [si+0x25] is set. Nothing on
+ * "Just dig!" falls that far, which is why this could not be reached from the
+ * first level at all - see the note on the floater's 400 of 400.
+ */
+#define FLOAT_BIT     0x0400
+#define FLOAT_TABLE   0x2698    /* ds: image 0x02A6D */
+#define FLOAT_MIN_FALL 0x10     /* image 0x021BA */
+
+/* Transcribed from ds:0x2698 - the pairs image 0x02A73 and image 0x02A78
+ * read. The tail repeats, which is what keeps a floater drifting. */
+static const uint8_t FLOAT_SCRIPT[] = {
+    1,3, 2,3, 3,3, 5,3, 5,0xFF, 5,0, 5,1, 5,1,
+    5,2, 6,2, 7,2, 7,2, 6,2, 5,2, 4,2, 4,2,
+    5,2, 6,2, 7,2, 7,2, 6,2, 5,2, 4,2, 4,2,
+};
+#define FLOAT_LOOP_AT 16        /* where the repeating tail begins, in pairs */
+
+static void lem_float_land(lemming *a)
+{
+    a->flags = 0;                                   /* image 0x02AEC */
+    a->hot_x = -8;
+    a->hot_y = -10;                                 /* image 0x02B0E */
+    a->anim  = 0;                                   /* image 0x02B05 */
+    a->state = 9;                                   /* image 0x02B13 */
+}
+
+static void lem_floatdown(lemming *a, const uint8_t *lvl, uint16_t cw,
+                          uint16_t chh)
+{
+    size_t n = sizeof FLOAT_SCRIPT / 2;
+    size_t i = (size_t)a->fscript / 2;
+    if (i >= n) i = FLOAT_LOOP_AT + (i - FLOAT_LOOP_AT) % (n - FLOAT_LOOP_AT);
+
+    a->anim = FLOAT_SCRIPT[i * 2];                  /* image 0x02A75 */
+    uint8_t act = FLOAT_SCRIPT[i * 2 + 1];          /* image 0x02A78 */
+    a->fscript = (int16_t)(a->fscript + 2);         /* image 0x02A7B */
+
+    uint8_t steps = (act == 3) ? 2 : (act == 2) ? 2 : (act == 1) ? 1 : 0;
+    if (act == 3 || act == 2 || act == 1) {
+        for (uint8_t k = 0; k < steps; k++) {
+            if (lem_solid(lvl, cw, chh, a->x, a->y)) {  /* 0x02A95 etc */
+                lem_float_land(a);
+                return;
+            }
+            a->y = (int16_t)(a->y + 1);             /* image 0x02A9C */
+        }
+        return;
+    }
+    a->y = (int16_t)(a->y + (int8_t)act);           /* image 0x02A8C */
+}
+
 /* THE BOMBER - transcribed from image 0x031C4, and it is the second thing
  * the LOOP HEAD dispatches rather than the state chain.
  *
@@ -3313,6 +3389,17 @@ static void lem_step_up(lemming *a, const uint8_t *lvl,
 static void lem_fall(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     a->anim = (uint8_t)((a->anim + 1) & 3);
+
+    /* Image 0x021BA: far enough down, and a floater opens its umbrella. */
+    if (a->fall > FLOAT_MIN_FALL && a->floater) {   /* image 0x021C0 */
+        a->flags   = FLOAT_BIT;                     /* image 0x021C6 */
+        a->anim    = 0;                             /* image 0x021DF */
+        a->fscript = 0;                             /* image 0x021E3 */
+        a->hot_y   = -16;                           /* image 0x021E8: fff0 */
+        a->state   = 8;                             /* image 0x021ED */
+        a->extra  &= 1;                             /* image 0x021FB */
+        return;
+    }
     for (int8_t k = 0; k < 3; k++) {
         if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y + k))) {
             a->y = (int16_t)(a->y + k);            /* image 0x224D */
@@ -3461,8 +3548,10 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_build(a, lvl, cw, chh);              /* image 0x2693 */
         else if (f & 0x0010)
             lem_dig(a, lvl, cw, chh);                /* image 0x23F3 */
-        else if (f & 0x0400) { /* image 0x2A6D, not read */ }
-        else if (f & 0x0001) { /* image 0x22DF, not read */ }
+        else if (f & 0x0400)
+            lem_floatdown(a, lvl, cw, chh);          /* image 0x2A6D */
+        else if (f & 0x0001)
+            lem_splat(a);                            /* image 0x22DF */
         else if (f & 0x0008)
             lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
         /* 0x0200 0x287D, 0x0800 0x2B35, 0x1000 0x22F5, 0x4000 0x2340 -

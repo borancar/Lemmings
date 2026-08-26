@@ -840,7 +840,25 @@ the same poke, so the comparison stays a comparison.
 | the climber (button 2) | **0 differ** | 390 of 400 |
 | the floater (button 3) | **0 differ** | 400 of 400 — but see below |
 
-The floater's number is weaker than it looks: image `0x021BA` wants the fall
+### Level 2, where lemmings fall and die
+
+`tools/record_level.py --level N` pokes `ds:0x1F6B` before the briefing reads
+it, because `tools/play.py` reaches Fun 1 and nothing else. The second level
+is worth having for its own sake: **nothing on "Just dig!" falls far enough
+for image `0x021BA` to even ask whether a lemming is a floater**, so the
+splat, the fatal fall and the floater's own behaviour cannot be reached from
+the first level at all.
+
+| level 2, 482 shared frames | |
+| --- | --- |
+| every lemming's record | **0 differ** |
+| what it exercised | 1,610 lemming-frames of SPLAT, 360 of falling, 1,450 dead |
+
+That is a real positive case rather than agreement in a state nothing
+reached: image `0x02250`'s fall counter over `0x3C` sends a lemming to state
+1, and image `0x022DF` counts sixteen frames before `[si+0x26]` ends it.
+
+The floater's number on the first level is weaker than it looks: image `0x021BA` wants the fall
 counter past `0x10` before image `0x021C0` even asks whether `ds:0x25` is set,
 and nothing on this level falls that far. What is verified is that ASSIGNING
 it changes nothing else. The climber's ten are its own sprite, which is not
