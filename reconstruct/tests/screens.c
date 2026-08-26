@@ -281,6 +281,42 @@ int main(int argc, char **argv)
         }
     }
 
+    /* THE LEVEL CLOCK, image 0x0213.
+     *
+     * Seventeen frames to a second, and the time is ASCII in the status line
+     * itself. Checked against the original's own line, read out of the running
+     * game: at play-loop frame 40 it says TIME 4:58 and at frame 200 TIME
+     * 4:49. Those two are the assertion - not a screenshot, and not a rule
+     * re-derived here and checked against itself.
+     *
+     * The seconds tens wrap to '5', not '9', which is the one place a decimal
+     * countdown written digit by digit can go wrong and still look right. */
+    {
+        level lv;
+        memset(&lv, 0, sizeof(lv));
+        lv.time_limit = 5;
+        level_status_reset(&lv);
+        ck("the clock starts at the level's time limit",
+           !strncmp(level_status_line() + 40, "5:00", 4),
+           level_status_line() + 40);
+
+        for (int k = 0; k < 40; k++) level_timer_step();
+        ck("frame 40 reads 4:58, as the original's own line does",
+           !strncmp(level_status_line() + 40, "4:58", 4),
+           level_status_line() + 40);
+
+        for (int k = 40; k < 200; k++) level_timer_step();
+        ck("frame 200 reads 4:49",
+           !strncmp(level_status_line() + 40, "4:49", 4),
+           level_status_line() + 40);
+
+        /* Run it down past a minute boundary: 4:49 to 3:59 is 50 seconds. */
+        for (int k = 0; k < 50 * 17; k++) level_timer_step();
+        ck("and the seconds tens wrap to 5, not 9",
+           !strncmp(level_status_line() + 40, "3:59", 4),
+           level_status_line() + 40);
+    }
+
     /* THE PANEL'S FONT, at the tail of main.dat section 2.
      *
      * Checked by drawing and reading back, because the point of finding it was

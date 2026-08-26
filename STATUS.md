@@ -892,9 +892,20 @@ Each of these is stated as what was *checked*, not what was written.
   port stepping the opening sequence, the animations and the clock once per
   game frame):
 
-  | | play area | panel |
+  | frames | play area | panel |
   | --- | --- | --- |
-  | worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
+  | 120, worst / mean / best | 99.75 / **99.82** / 99.86% | 90.53 / **90.59** / 90.73% |
+  | 700, worst / mean / best | 99.32 / **99.49** / 99.86% | 89.85 / **90.39** / 90.73% |
+
+  Over 700 frames the play area falls from 99.86% to about 99.34% and then
+  **flattens** - that is the ten lemmings coming out one by one and then
+  walking, nothing else drifting.
+
+  **The clock is exact, not close.** Comparing only the TIME field - screen
+  x 288..320, rows 160..175 - against the original at frames 60, 150, 300,
+  450 and 690 gives **0 differing pixels of 512** every time. Forty seconds
+  of game time, forty ticks, no drift. `make test` now asserts the same
+  sequence against the two readings taken out of the running game.
 
   The panel this session: 86.41% for the artwork alone, 89.34% once the status
   line was placed at its real origin with the clock running, **90.73%** once

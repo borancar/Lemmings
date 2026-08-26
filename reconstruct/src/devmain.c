@@ -50,7 +50,7 @@ static void usage(void)
           "  --rating R    fun | tricky | taxing | mayhem (default fun)\n"
           "  --scroll N    banner ribbon position in pixels (default 0)\n"
           "  --lem-frame N banner end lemmings, frame 0..15 (default 0)\n"
-          "  --obj-frame N the level objects' animation frame (default 0)\n"
+          "  --obj-frame N the frame number within the level (default 0)\n"
           "  --number N    the GAME's level number, 1-30 (default 1)\n"
           "                resolved through the original's own order table,\n"
           "                so --rating fun --number 1 is \"Just dig!\"\n"
@@ -110,7 +110,9 @@ static int load_level(const char *data, const char *file, uint32_t which,
     return rc;
 }
 
-static uint8_t g_obj_frame;
+/* The frame number within a level. A byte wraps at 256 and the
+ * five-minute timer runs to 5,100 frames, so this is a word. */
+static uint16_t g_obj_frame;
 /* Bake the objects into the terrain instead of drawing them as the
  * original does. Only for comparing the two - see render_objects. */
 static int g_baked_objects;
@@ -197,7 +199,12 @@ static int render_level(const char *data, const char *file, uint32_t which,
              * entrance's torch flames and the colour inside its arch, 91 of
              * the 134 pixels that differed before any lemming had dropped. */
             if (render_objects(&c, &lv, &g, gfx.sections[1].data,
-                               gfx.sections[1].size, g_obj_frame, &err) != 0) {
+                               gfx.sections[1].size,
+                               /* render_objects indexes a frame, not a
+                                * frame number; no object has more than
+                                * eighteen. */
+                               (uint8_t)(g_obj_frame & 0xFF),
+                               &err) != 0) {
                 fprintf(stderr, "render objects: %s\n", err);
                 canvas_free(&c);
                 dat_free(&gfx);
@@ -216,7 +223,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
              * image 0x019D is the play loop's first line - then the
              * animations. The entrance stays shut until frame 35 because
              * level_start_step is what opens it. */
-            for (uint8_t k = 0; k < g_obj_frame; k++) {
+            for (uint16_t k = 0; k < g_obj_frame; k++) {
                 level_start_step();
                 level_anim_step(st, &lv);
             }
@@ -280,7 +287,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
                             PANEL_ART_X, 0);
                 /* The clock runs on the same frames the animations do. */
                 level_status_reset(&lv);
-                for (uint8_t k = 0; k < g_obj_frame; k++)
+                for (uint16_t k = 0; k < g_obj_frame; k++)
                     level_timer_step();
                 panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
                              level_status_line(), 0, 0);
@@ -377,7 +384,7 @@ int main(int argc, char **argv)
             menu_set_scroll((uint32_t)atoi(argv[++i]));
         }
         else if (!strcmp(argv[i], "--obj-frame") && i + 1 < argc) {
-            g_obj_frame = (uint8_t)atoi(argv[++i]);
+            g_obj_frame = (uint16_t)atoi(argv[++i]);
         }
         else if (!strcmp(argv[i], "--lem-frame") && i + 1 < argc) {
             /* Which frame the banner's two lemmings are on, 0..15. Separate
