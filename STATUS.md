@@ -34,12 +34,12 @@ numbers, re-measured on the current build:
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing** | **100.00%** — 0 of 224,000: background, text, palette, and the level preview |
-| the **main menu** | **100.00%** — zero pixels differing, at all four ratings. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, and the whole scrolling banner |
+| the **main menu** | **100.00%** — zero pixels differing, at all four ratings, **with one of the walking lemmings on screen** in three of the four. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, the whole scrolling banner, its two end lemmings, and the animation |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
-| tests | `make test` 14 checks, `make sanitize` clean under ASan + UBSan |
+| tests | `make test` 80 checks across two binaries, `make sanitize` clean under ASan + UBSan |
 
 **Transcription is a different claim from any of the above, and it is 33 of
 211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
@@ -661,19 +661,33 @@ Each of these is stated as what was *checked*, not what was written.
   | screen | reported before | actually |
   | --- | --- | --- |
   | menu | 99.3-100% | **100.00%** |
-  | code | 65.43% | **99.97%** |
+  | code | 65.43% | **100.00%**, or 99.97% when the caret is up |
   | input | 64.44% | **100.00%** |
   | briefing | 29.90% | **100.00%**, and its level preview **0 pixels** |
 
   The menu needed the banner's phase. It scrolls, so a capture shows one
   moment of it, and the port has to be rendered at the same one. `ds:0x21` is
-  the game's own scroll and the run reads it back - but it is not the port's
-  `--scroll` in the same units. Fitting the phase against two captures taken
-  minutes apart gave 176 -> 36 and 168 -> 28: **both exactly 140 apart**. So
-  the offset is derived, not fitted, and the fit is kept as its check - on a
-  third capture `ds:0x21` read 136, the derived 60 agreed with the fitted 60,
-  and the screen came out **0 of 224,000 differing**. Where the 140 comes from
-  has not been read, and the constant says so.
+  the game's own scroll and the run reads it back.
+
+  **The 140 this used to subtract was not a real quantity**, and the way it
+  survived is worth keeping. The socket was asked for **one byte** of a
+  variable the game reads and writes as a **word** (`mov word ptr [0x21], 4`
+  at image `0x07CC6`, `add ax, 4` at image `0x07D23`), so any counter past 255
+  came back truncated. The derived phase was then wrapped to `0..63` and
+  checked against a fit over the same 64 values - and a fit that only searches
+  one tile cannot see a message position at all. The port's `--scroll` is a
+  position along the whole **261-character** message: `draw_banner` indexes
+  `ribbon[]` by `scroll/16 - 35`. So the check agreed, repeatedly, about four
+  characters of it.
+
+  Reading **both** bytes and using `c - 4` unwrapped - image `0x07CC6` starts
+  the counter at four - puts the ribbon at **exactly zero** differing pixels on
+  every capture. Sweeping the port's scroll across the whole message is what
+  showed it: the best position was `c - 4` each time, and for two of the four
+  captures that was 272 and 256 against a byte read of 20 and 4.
+
+  The fit over `0..63` is kept, but as what it actually is - a check on the
+  **phase**, not on the position.
 
   Three controls had to be added before that number could be trusted, and each
   one caught a different way of reaching nothing:
@@ -706,7 +720,13 @@ Each of these is stated as what was *checked*, not what was written.
 
 - **The code screen's last 57 pixels are the entry caret** - the original
   draws a bar over the first code slot where the port draws the plain button.
-  An animated element, like the banner, and not yet drawn.
+  An animated element, like the banner, and not yet drawn: the screen scores
+  **100.00%** on a capture taken while it is down and 99.97% while it is up,
+  which is the blink and not a difference in the drawing.
+
+  This is now the only animated thing on these four screens the port cannot be
+  told the phase of. The banner's scroll comes from `ds:0x21` and the five
+  walkers from `ds:0x4960`; the caret's own variable has not been found.
 
 ## Into a level
 
@@ -1681,11 +1701,30 @@ Each of these is stated as what was *checked*, not what was written.
   and adds `frame<<7` and `frame<<6`.
 
   So each is on screen **32 passes out of 400–560**, about seven per cent of
-  the time. **That is why no capture of the original shows one**, and it is
-  worth being precise about what that means: all four captures agree with the
-  port to the pixel inside all five boxes, which says the port was right to
-  draw nothing there — not that there was nothing to draw. The score is
-  unchanged at 99.85% with them implemented, and always will be.
+  the time. This section used to say **that is why no capture of the original
+  shows one** — and to treat the port agreeing to the pixel inside all five
+  boxes as evidence, while being careful to say it only meant the port was
+  right to draw *nothing* there.
+
+  It was still a claim about a routine nothing had ever run. Driving the
+  original to each of the four ratings puts entry 0 on screen at frames 4, 5
+  and 6, and the compositing was **wrong**: these are drawn **opaquely**
+  through four planes, their own black included, exactly as the banner's end
+  lemmings next door are, and the port keyed on `v != 0`. Against those three
+  captures the four candidate rules score 14, 22, 22 and **zero**.
+
+  The counters are the original's own array at `ds:0x4960` (image `0x0E3F0`),
+  eleven bytes an entry with the signed counter at `+0`. `verify_menu.py` reads
+  them back and hands them to the port with `--anim`, the same way it hands it
+  the banner's phase. They come back as **11, 51, 91, 131, 171** — spacing
+  `0x28`, which is image `0x04FF8`'s stagger arriving as independent
+  confirmation — and the five dead entries as `INT16_MIN`, which is the port's
+  `ANIM_IDLE`.
+
+  The lesson is the one this file already records about the rating plate:
+  *a check at one value of a parameter says nothing about the parameter*, and
+  "no capture shows this" is a reason to go and **reach** the state, not a
+  reason to record the routine as settled.
 
   Since pixels cannot settle it, the counter logic is tested directly:
   `menu_anim_visible()` is exposed for that. Zero is a **valid** counter value
