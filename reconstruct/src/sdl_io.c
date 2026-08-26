@@ -488,10 +488,18 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          * spends it. The count lives in game.c now, because the PANEL has
          * to draw the same number the assignment reads - it was drawing the
          * level header's instead, which never moves. */
-        if (A->skill == SKILL_DIGGER && level_skill_left(SKILL_DIGGER)) {
+        /* Image 0x03180 dispatches the selected button to its handler, and
+         * each opens by testing its own count - see level_skill_left. */
+        if (level_skill_left(A->skill)) {
             int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
-            if (k >= 0 && lem_dig_start(&A->lem[k]))
-                level_skill_spend(SKILL_DIGGER);
+            if (k >= 0) {
+                int took = 0;
+                if (A->skill == SKILL_DIGGER)
+                    took = lem_dig_start(&A->lem[k]);      /* image 0x0320D */
+                else if (A->skill == SKILL_BUILDER)
+                    took = lem_build_start(&A->lem[k]);    /* image 0x032BD */
+                if (took) level_skill_spend(A->skill);
+            }
         }
     }
     else if (h.what == LEVEL_HIT_BUTTON) {

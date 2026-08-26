@@ -2678,6 +2678,179 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     }
 }
 
+/* THE BRICK - transcribed from image 0x05F0F.
+ *
+ * Six pixels wide: image 0x05F5D loads 0xFC, which is six bits, and image
+ * 0x05F67 shifts it right by the low three of the x it lands on - the same
+ * shift-a-mask-into-place the digger's nine-wide span uses at image 0x0242D.
+ *
+ * WHERE it lands is MEASURED, and it disagrees with the reading. Image
+ * 0x05F42 adds [si+4] - the hot spot, which image 0x032E4 set to -8 - and
+ * image 0x05F4B takes four MORE off when the direction is negative. By that
+ * reading the brick starts at x - 8; measured against the original's own
+ * screen it starts at x.
+ *
+ * The measurement is not in doubt. The builder's record agrees with the
+ * original's frame for frame - x, y, animation and flags, all of them - and
+ * on the frame it lays its first brick it is at x 794, with the brick
+ * landing on canvas columns 778..783, which is 794..799 in record terms.
+ * Eight out, and eight is exactly the hot spot, so something either does not
+ * add it or adds it back. Rather than write arithmetic that produces the
+ * right answer for a reason I have made up, this uses the measured relation
+ * and says so; the four for a leftward builder is image 0x05F4B's and has
+ * not been reached yet.
+ *
+ * Image 0x05F51 drops y by one, so the brick is the row above.
+ *
+ * WHAT it writes: image 0x05F13 sets the Map Mask to 8 - plane 3 alone -
+ * which is the plane image 0x05DC6 probes for solidity. So a brick adds the
+ * solid bit and leaves the other three planes as they were, and this ORs 8
+ * in rather than assigning, exactly as the digger's counterpart clears the
+ * byte outright at image 0x05EBA.
+ */
+#define BRICK_WIDTH  6         /* image 0x05F5D: 0xFC is six bits */
+#define BRICK_BACK   4         /* image 0x05F4B, when going left */
+#define BRICK_SOLID  8         /* image 0x05F13's Map Mask, plane 3 */
+
+static void lem_build_brick(lemming *a, uint8_t *lvl, uint16_t cw,
+                            uint16_t chh)
+{
+    int32_t bx = (int32_t)a->x;                     /* measured; see above */
+    if (a->dir < 0) bx -= BRICK_BACK;               /* image 0x05F4B */
+    int32_t cy = (int32_t)a->y - 1 - LEMMING_DY;    /* image 0x05F51 */
+    for (uint8_t i = 0; i < BRICK_WIDTH; i++) {
+        int32_t cx = bx + i - LEMMING_DX;
+        if (cx < 0 || cx >= (int32_t)cw || cy < 0 || cy >= (int32_t)chh)
+            continue;
+        lvl[(size_t)cy * cw + cx] |= BRICK_SOLID;
+    }
+}
+
+/* THE BUILDER - transcribed from image 0x032BD (assigning it) and image
+ * 0x02693 (doing it).
+ *
+ * Neither could be reached by playing "Just dig!", which stocks only diggers,
+ * so both were written against a run driven with tools/record_level.py
+ * --skills - the same poke the port takes through LEM_SKILLS - and checked
+ * against what the original's own array did with it.
+ *
+ * Assigning, image 0x032BD:
+ *
+ *     0x032BD  refuse if there are none left
+ *     0x032C4  refuse if y + hot_y is 0x0A or less - too near the top
+ *     0x032CF  refuse if the state word has any of 0xF5EF set
+ *     0x032DF  the state word BECOMES 0x80, assigned rather than OR-ed
+ *     0x032E4  the hot spot moves to (-8, -13)
+ *     0x032F2  TWELVE bricks, at [si+0x21]
+ *
+ * Doing it, image 0x02693: sixteen animation frames, and everything happens
+ * on the one where the counter wraps to zero - image 0x0269D. The recorded
+ * original bears that out exactly: assigned at frame 112, walking again at
+ * 303, which is 191 frames for twelve bricks at sixteen apiece.
+ */
+#define BUILD_BIT      0x0080
+#define BUILD_KEEP     0xF5EF    /* image 0x032CF */
+#define BUILD_BRICKS   12        /* image 0x032F2 */
+#define BUILD_HOT_X    (-8)      /* image 0x032E4 */
+#define BUILD_HOT_Y    (-13)     /* image 0x032E9 */
+#define BUILD_TOP      0x0A      /* image 0x032CA and image 0x02758 */
+#define BUILD_X_MIN    0x10      /* image 0x026EF */
+#define BUILD_X_MAX    0x680     /* image 0x026F7 */
+#define BUILD_STATE    0x10      /* image 0x0330A */
+#define BUILD_SHRUG    0x80      /* image 0x027DE, on [si+0x24] */
+
+int lem_build_start(lemming *a)
+{
+    if ((int32_t)a->y + a->hot_y <= BUILD_TOP) return 0;   /* 0x032C4 */
+    if (a->flags & BUILD_KEEP) return 0;                   /* 0x032CF */
+    a->flags  = BUILD_BIT;                                 /* 0x032DF */
+    a->hot_x  = BUILD_HOT_X;
+    a->hot_y  = BUILD_HOT_Y;
+    a->anim   = 0;                                         /* 0x032EE */
+    a->bricks = BUILD_BRICKS;                              /* 0x032F2 */
+    a->state  = BUILD_STATE;                               /* 0x0330A */
+    a->extra &= 1;                                         /* 0x03318 */
+    return 1;
+}
+
+/* Image 0x02766 and image 0x027A5 both put it back to walking; they differ in
+ * the state byte and in the shrug bit. */
+static void lem_build_stop(lemming *a, uint8_t state, int shrug)
+{
+    a->flags = 0;                                  /* 0x02766, 0x027A5 */
+    a->hot_x = -8;
+    a->hot_y = -10;                                /* 0xfff6 */
+    a->anim  = 0;
+    a->state = state;
+    a->extra &= 1;
+    if (shrug) a->extra |= BUILD_SHRUG;            /* image 0x027DE */
+}
+
+/* Image 0x02693, the handler the dispatch at image 0x01F5E reaches for
+ * flags & 0x0080. */
+static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    /* Image 0x02693: sixteen frames, and only the wrap does anything. */
+    a->anim = (uint8_t)((a->anim + 1) & 0x0F);
+    if (a->anim) {
+        /* Image 0x026DE lays the brick on frame 9, and image 0x026A2's
+         * frame 10 is a warning noise when three or fewer are left - a
+         * deliberate non-goal here, this port has no sound. */
+        if (a->anim == 9)
+            lem_build_brick(a, lvl, cw, chh);      /* image 0x05F0F */
+        return;                                    /* image 0x026DB */
+    }
+
+    /* Image 0x026E4: a step up and along, then three probes. */
+    int16_t step = a->dir;                         /* [si+0x27] */
+    a->x = (int16_t)(a->x + step);                 /* image 0x026E8 */
+    a->y = (int16_t)(a->y - 1);                    /* image 0x026EA */
+
+    if (a->x <= BUILD_X_MIN || a->x >= BUILD_X_MAX) {   /* 0x026EF, 0x026F7 */
+        a->dir = (int8_t)-a->dir;                  /* image 0x02763 */
+        lem_build_stop(a, 9, 0);
+        return;
+    }
+    /* Image 0x02700 and image 0x02710 probe the row ABOVE - image 0x02703
+     * takes ds:4, one row's stride, off the address image 0x05DC6 built. */
+    if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y - 1))) {
+        a->dir = (int8_t)-a->dir;
+        lem_build_stop(a, 9, 0);
+        return;
+    }
+    a->x = (int16_t)(a->x + step);                 /* image 0x0270E */
+    if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y - 1))) {
+        a->dir = (int8_t)-a->dir;
+        lem_build_stop(a, 9, 0);
+        return;
+    }
+
+    if (--a->bricks == 0) {                        /* image 0x0271E */
+        /* Image 0x027A5: out of bricks. It keeps its direction, takes state
+         * 8, and sets the bit image 0x03DFD reads to go on calling it a
+         * BUILDER on the panel. */
+        lem_build_stop(a, 8, 1);
+        return;
+    }
+
+    /* Image 0x02726: nine rows up, two along - the headroom for the next
+     * brick. Image 0x02737 shifts ds:4 by three, so it is eight more rows on
+     * top of the one image 0x02735 already took off. */
+    if (lem_solid(lvl, cw, chh, (int16_t)(a->x + step * 2),
+                  (int16_t)(a->y - 9))) {          /* image 0x02740 */
+        a->dir = (int8_t)-a->dir;
+        lem_build_stop(a, 9, 0);
+        return;
+    }
+    if (a->x <= BUILD_X_MIN || a->x >= BUILD_X_MAX) {   /* 0x02747, 0x0274C */
+        a->dir = (int8_t)-a->dir;
+        lem_build_stop(a, 9, 0);
+        return;
+    }
+    if ((int32_t)a->y + a->hot_y <= BUILD_TOP)     /* image 0x02752 */
+        lem_build_stop(a, 9, 0);                   /* image 0x02760: no turn */
+}
+
 /* Image 0x2047. */
 static void lem_walk(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
@@ -2856,8 +3029,14 @@ void lemmings_step(lemming *lem, uint8_t n,
          * be set, because it stops being harmless the moment a third can. */
         uint16_t f = a->flags;
         if (f == 0) {
-            if (a->state == 9)
-                lem_walk(a, lvl, cw, chh);           /* image 0x2047 */
+            /* Image 0x01F61: `and ax,ax / jne / jmp 0x2047`. The flag word
+             * alone decides; the state byte at +0x29 takes no part in it.
+             * The port used to require state 9 as well, which is true of a
+             * lemming that has always been walking and false of one that has
+             * just STOPPED doing something: image 0x027CC leaves a builder
+             * out of bricks on state 8, and it walked on in the original
+             * while the port's stood still for ever. */
+            lem_walk(a, lvl, cw, chh);               /* image 0x2047 */
         }
         else if (f & 0x0002) { /* image 0x2350, not read */ }
         else if (f & 0x8000) { /* image 0x2D0F, not read */ }
@@ -2865,6 +3044,8 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
         else if (f & 0x2000)
             lem_exiting(a);                          /* image 0x2326 */
+        else if (f & 0x0080)
+            lem_build(a, lvl, cw, chh);              /* image 0x2693 */
         else if (f & 0x0010)
             lem_dig(a, lvl, cw, chh);                /* image 0x23F3 */
         else if (f & 0x0400) { /* image 0x2A6D, not read */ }
