@@ -1365,6 +1365,65 @@ static void lem_exiting(lemming *a)
     a->alive = 0xFF;                       /* image 0x02339 */
 }
 
+/* THE RESULTS SCREEN'S TEXT - transcribed from image 0x048BD.
+ *
+ * The screen's COMPOSITION is not read: image 0x048F3 hands a record at
+ * ds:0x4C4E to the text drawer at image 0x04D4D and what lays the screen out
+ * around it has not been found. Its text assembly is small and complete,
+ * though, and it is here:
+ *
+ *     image 0x048BD  the rescued percentage, ds:0x40, written into
+ *                    "You rescued     " through image 0x04B5C - the same
+ *                    right-aligned writer the briefing's percentage uses
+ *     image 0x048C7  the needed percentage, ds:0x41, into "You needed      "
+ *     image 0x048D1  the prompt, chosen by ds:0x25A6 - 0 gives the mouse
+ *                    wording, 1 the joystick's, 2 the keyboard's
+ *
+ * That last is what the input chooser screen is for, and it is why the
+ * strings come in threes. The headline above them is one of two: image
+ * 0x001FA's clock-ran-out gives "Your time is up!" at ds:0x4C1C and image
+ * 0x001E7's everyone-accounted-for gives ds:0x4C35.
+ */
+static const char S_TIME_UP[]   = "Your time is up!";          /* ds:0x4C1C */
+static const char S_ALL_OUT[]   = "All lemmings accounted for."; /* ds:0x4C35 */
+static const char S_RESCUED[]   = "You rescued     ";          /* ds:0x4C51 */
+static const char S_NEEDED[]    = "You needed      ";          /* ds:0x4C65 */
+
+/* The three wordings, by ds:0x25A6 - images 0x04C77, 0x04C9D and 0x04CB9. */
+static const char *const S_MENU_PROMPT[3] = {
+    "Press right mouse button for menu",
+    "Press button 2 for menu",
+    "Press Return for menu",
+};
+
+/* Image 0x048BD writes the number three characters from the end, which is
+ * what leaves "You rescued   10" reading as a column. It goes through the
+ * same right-aligned fill the briefing uses; that lives further down this
+ * file, so it is declared here. */
+#define RESULT_NUM_BACK 3
+static void put_num(char *dst, size_t end, uint32_t n);
+
+const char *level_results_headline(int timed_out)
+{
+    return timed_out ? S_TIME_UP : S_ALL_OUT;   /* images 0x001FA, 0x001E7 */
+}
+
+const char *level_results_prompt(uint8_t input_kind)
+{
+    return S_MENU_PROMPT[input_kind < 3 ? input_kind : 0];
+}
+
+/* Transcribed from image 0x048BD and image 0x048C7: "You rescued" and "You
+ * needed", each with its percentage written three characters from the end
+ * through the fill at image 0x04B5C. `line` takes at least 20 characters. */
+void level_results_line(char *line, int needed_line, uint8_t percent)
+{
+    const char *t = needed_line ? S_NEEDED : S_RESCUED;
+    size_t n = strlen(t);
+    memcpy(line, t, n + 1);
+    put_num(line, n - RESULT_NUM_BACK, percent);   /* image 0x04B5C */
+}
+
 /* WIN OR LOSE - transcribed from image 0x048F6.
  *
  * The end conditions at image 0x001C8 do not decide it; this does, from the

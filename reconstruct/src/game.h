@@ -410,6 +410,12 @@ void lem_exit_start(lemming *a);
 
 /* Win or lose, and which of the nine things the game says about it -
  * image 0x048F6's ladder. */
+/* The results screen's text - image 0x048BD. Its COMPOSITION is not read;
+ * these are the lines it assembles. */
+const char *level_results_headline(int timed_out);
+const char *level_results_prompt(uint8_t input_kind);
+void level_results_line(char *line, int needed_line, uint8_t percent);
+
 uint8_t level_verdict(uint8_t saved, uint8_t needed);
 const char *level_verdict_text(uint8_t saved, uint8_t needed);
 int level_won(uint8_t saved, uint8_t needed);

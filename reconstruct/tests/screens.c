@@ -533,6 +533,29 @@ int main(int argc, char **argv)
     view_hotspot spots[MENU_HOTSPOTS];
     memset(spots, 0xAA, sizeof(spots));
     menu_hotspots(spots);
+    /* The results screen's TEXT, image 0x048BD. */
+    {
+        char ln[32];
+        level_results_line(ln, 0, 10);
+        ck("\"You rescued\" carries the percentage",
+           strncmp(ln, "You rescued", 11) == 0
+           && strstr(ln, "10") != NULL && strlen(ln) == 16,
+           "image 0x048BD writes it three from the end");
+        level_results_line(ln, 1, 100);
+        ck("and \"You needed\" takes three digits",
+           strncmp(ln, "You needed", 10) == 0 && strstr(ln, "100") != NULL,
+           "100 does not fit where the original puts it");
+        ck("the headline says which end it was",
+           strcmp(level_results_headline(1), "Your time is up!") == 0
+           && strncmp(level_results_headline(0), "All lemmings", 12) == 0,
+           "images 0x001FA and 0x001E7");
+        ck("and the prompt follows the input type",
+           strstr(level_results_prompt(0), "mouse") != NULL
+           && strstr(level_results_prompt(1), "button 2") != NULL
+           && strstr(level_results_prompt(2), "Return") != NULL,
+           "ds:0x25A6 picks among images 0x04C77, 0x04C9D and 0x04CB9");
+    }
+
     /* WIN OR LOSE, image 0x048F6's ladder. The rungs are what the original
      * tests, in the order it tests them - and the order matters, because
      * each falls through to the next. Level 1 needs 10%. */
