@@ -135,6 +135,10 @@ int main(int argc, char **argv)
 
                 /* Image 0x04720 judges it, and image 0x0472E advances the
                  * index only when it was won. */
+                /* Image 0x04710 asks the CLOCK, not the caller. Passing a
+                 * constant 0 here put "All lemmings accounted for." on a
+                 * level that had timed out. */
+                int timed_out = level_out_of_time();
                 uint8_t saved = g_level_saved;
                 /* The requirement as a PERCENTAGE, which is what image
                  * 0x04720 compares - the header carries a count. */
@@ -146,15 +150,16 @@ int main(int argc, char **argv)
                     uint8_t next = index, r2 = rat;
                     if (!level_advance(&next, &r2)) break;   /* 0x04745 */
                     level_code_generate(next, 0, saved, code);
-                    if (!level_show_results(data, saved, needed, 0,
-                                            (uint8_t)(next + 1), code,
-                                            DEFAULT_SCALE, &err))
+                    if (level_show_results(data, saved, needed, timed_out,
+                                           (uint8_t)(next + 1), code,
+                                           DEFAULT_SCALE, &err)
+                            != RESULTS_NEXT)
                         break;                  /* image 0x047BC: the menu */
                     index = next;
                     continue;
                 }
-                if (!level_show_results(data, saved, needed, 0, 0, NULL,
-                                        DEFAULT_SCALE, &err))
+                if (level_show_results(data, saved, needed, timed_out, 0, NULL,
+                                       DEFAULT_SCALE, &err) != RESULTS_NEXT)
                     break;
                 /* Image 0x047B4 on a lost level retries the same one. */
             }

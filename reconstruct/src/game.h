@@ -469,8 +469,11 @@ void level_code_generate(uint8_t level_no, uint8_t other, uint8_t percent,
  * RESULTS_PAL in game.c. */
 void level_results_palette(lem_rgb *out);
 
-/* The results screen in a window, and non-zero if the left button was
- * pressed - image 0x047B4, which is "on to the next level". */
+/* What the results screen was dismissed with - image 0x047B4 takes the left
+ * button on to the next level and image 0x047B9 takes the right one back to
+ * the menu. */
+#define RESULTS_MENU 0
+#define RESULTS_NEXT 1
 int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
                        int timed_out, uint8_t level_no, const char *code,
                        uint8_t scale, const char **err);
@@ -483,6 +486,10 @@ void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                         uint8_t saved, uint8_t needed, int timed_out,
                         uint8_t input_kind, uint8_t level_no,
                         const char *code);
+
+/* Whether the clock ran out, image 0x04710 - asked of the panel's own three
+ * digits rather than passed in as a flag. */
+int level_out_of_time(void);
 
 const char *level_results_headline(int timed_out);
 const char *level_results_prompt(uint8_t input_kind);

@@ -2236,6 +2236,24 @@ int level_over(const level *lv, uint8_t released, uint8_t live)
     return 0;
 }
 
+/* DID THE CLOCK RUN OUT - transcribed from image 0x04710.
+ *
+ * The results screen does not take this as a flag from whoever called it.
+ * Image 0x04707 reads ds:0x20A7 and ds:0x20A9, ORs them together and
+ * compares the pair against 0x3030 - "00" - so what it is asking is whether
+ * the panel's own clock reads zero. The port had main.c passing a constant
+ * 0, which put "All lemmings accounted for." on a level that had timed out.
+ *
+ * Same three characters image 0x001FA tests in level_over above; asking them
+ * here rather than threading a flag through is what keeps the two answers
+ * from drifting apart. */
+int level_out_of_time(void)
+{
+    const char *st = level_status_line();
+    return st[ST_MIN] == '0' && st[ST_SEC_TENS] == '0'
+        && st[ST_SEC_UNITS] == '0';
+}
+
 /* Transcribed from image 0x03AF7: the panel's IN reading, with 100 written
  * out in full and no leading zero below it. */
 void level_status_in(uint8_t percent)

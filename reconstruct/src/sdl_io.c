@@ -1407,22 +1407,78 @@ int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
                        saved, needed, timed_out, lem_input_kind,
                        level_no, code);
 
-    /* The whole screen is the hotspot: image 0x047A9 takes a button
-     * anywhere, not a place. */
-    view_hotspot any[1];
-    any[0].x = 0; any[0].y = 0;
-    any[0].w = MENU_W; any[0].h = MENU_H;
-    any[0].id = 1; any[0].key = VIEW_KEY_NONE;
-
-    /* Measured off the original's own DAC while the screen was up - see
-     * RESULTS_PAL in game.c. */
+    /* THE SCREEN'S OWN WAIT, transcribed from image 0x047A9 - not the menu's
+     * hotspot matcher, which cannot tell one button from another:
+     *
+     *     0x047A9  ax = ds:0x14 / test ax,7 / jne 0x47A9   wait for RELEASE
+     *     0x047B1  ax = ds:0x14
+     *     0x047B4  test ax,1 / jne 0x47D7    left  -> the next level
+     *     0x047B9  test ax,2 / jne 0x47CB    right -> the menu
+     *     0x047C9  je 0x47B1                 otherwise keep waiting
+     *
+     * Two things the matcher got wrong. It returned the same answer for
+     * either button, so a right click advanced instead of going back to the
+     * menu; and it takes a press immediately, where the original waits for
+     * every button to be UP first - which is what stops the click that
+     * dismissed the level being read again by this screen.
+     */
     lem_rgb pal[16];
     level_results_palette(pal);
-    int32_t r = view_interact(pix, MENU_W, MENU_H, pal, "PC Lemmings",
-                              scale, any, 1);
+    if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0) {
+        free(pix); dat_free(&mainf); return RESULTS_MENU;
+    }
+
+    int32_t out = RESULTS_MENU;
+    int released = 0;                     /* image 0x047AF's wait */
+    int running = 1, dirty = 1;
+    while (running) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_EVENT_QUIT) { out = RESULTS_MENU; running = 0; }
+            else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) released = 1;
+            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && released) {
+                if (e.button.button == SDL_BUTTON_LEFT) {
+                    out = RESULTS_NEXT;   /* image 0x047B4 */
+                    running = 0;
+                } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    out = RESULTS_MENU;   /* image 0x047B9 */
+                    running = 0;
+                }
+            }
+            else if (e.type == SDL_EVENT_KEY_DOWN) {
+                /* Image 0x047BE reads ds:0x1FC7 as well, so a key does end
+                 * this screen; which keys is not read, and Escape is the one
+                 * every other screen here takes. */
+                if (e.key.key == SDLK_ESCAPE) { out = RESULTS_MENU; running = 0; }
+                else if (released) { out = RESULTS_NEXT; running = 0; }
+            }
+        }
+        /* Nothing on this screen animates - image 0x047A9 polls and draws
+         * nothing - so it is uploaded once. */
+        if (dirty) {
+            void *px = NULL; int pitch = 0;
+            if (SDL_LockTexture(g_tex, NULL, &px, &pitch)) {
+                for (uint16_t y = 0; y < MENU_H; y++) {
+                    uint32_t *row = (uint32_t *)((uint8_t *)px + y * pitch);
+                    const uint8_t *src = pix + (size_t)y * MENU_W;
+                    for (uint16_t x = 0; x < MENU_W; x++) {
+                        lem_rgb q = pal[src[x] & 15];
+                        row[x] = ((uint32_t)q.r << 16)
+                               | ((uint32_t)q.g << 8) | q.b;
+                    }
+                }
+                SDL_UnlockTexture(g_tex);
+            }
+            dirty = 0;
+        }
+        SDL_RenderClear(g_ren);
+        SDL_RenderTexture(g_ren, g_tex, NULL, NULL);
+        SDL_RenderPresent(g_ren);
+        SDL_Delay(10);
+    }
     free(pix);
     dat_free(&mainf);
-    return r == 1;
+    return out;
 }
 
 /* HOW THE LAST LEVEL ENDED, for the caller. The original keeps these in
