@@ -482,6 +482,24 @@ void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x);
 typedef enum { LEM_PC_COMPATIBLE = 0, LEM_PC_HIGH = 1 } lem_pc;
 extern lem_pc lem_machine;
 
+/* THE DISPLAY'S refresh, which is what the MENU runs at - and it is a
+ * different mechanism from the level's rate, not a different number for the
+ * same one.
+ *
+ * Image 0x01550 is a vertical retrace wait: it reads the status register at
+ * ds:0x1FDA + 6 and spins for bit 3 to go high and then low again. The menu
+ * loop calls it once a pass (image 0x0445B), so the menu advances one step
+ * per retrace and its speed is the adapter's, whatever that is. On the VGA
+ * this port is of, the 640x350 and 320x200 modes both refresh at 70 Hz -
+ * which is the figure tools/lemmings.py hands the emulator, and the figure
+ * the game's own measurement at image 0x1602 arrives at.
+ *
+ * The LEVEL does not run at this. It waits several retraces a frame and
+ * lands on LEVEL_FPS below, which is the game's number and not the
+ * display's. Reading one rate off the other is how the level came to run
+ * three and a half times too fast. */
+#define VIEW_REFRESH_HZ 70
+
 /* THE LEVEL'S FRAME RATE, image 0x0418 and image 0x041D: ds:0x85 and ds:0x86
  * both start at 0x11, and the clock steps a second every time the counter
  * runs out - which is what makes 5,100 frames exactly the five minutes of the

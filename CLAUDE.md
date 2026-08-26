@@ -278,6 +278,21 @@ Two things follow, and the second is the one that bites:
   N frames should take N/LEVEL_FPS seconds, and that is measurable
   (`LEM_FRAMES=170` takes 10.0 s).
 
+**The menu is a different mechanism, not a different number.** Image 0x01550
+is a vertical retrace wait - it reads the status register at `ds:0x1FDA + 6`
+and spins for bit 3 to go high and then low - and the menu loop calls it once
+a pass (image 0x0445B). So the menu advances one step per retrace and its
+speed is the *adapter's*: 70 Hz for the modes this port uses, which is both
+what `tools/lemmings.py` hands the emulator and what the game's own
+measurement at image 0x1602 arrives at. The level waits several retraces a
+frame and lands on seventeen.
+
+Measuring this from the outside does **not** work: counting menu passes
+against `m._elapsed()` in a guest run gives 3.4, 5.0, 4.9, 3.7, 8.3 and 3.4
+per second in consecutive windows, because what that measures is the
+emulator's throughput, not the game's intent. The rate has to be read out of
+what the loop waits ON.
+
 Pace on an **absolute deadline**, not a sleep per frame. A sleep is at the
 mercy of the host scheduler and of however long the frame took to compose,
 which makes the game's speed a property of the machine rather than of the

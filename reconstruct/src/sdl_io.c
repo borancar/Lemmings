@@ -141,6 +141,8 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
         return -1;
     SDL_Renderer *ren = g_ren;
     SDL_Texture  *tex = g_tex;
+    const Uint64 period = SDL_NS_PER_SECOND / VIEW_REFRESH_HZ;
+    Uint64 due = SDL_GetTicksNS();
 
     int32_t scroll_x = (int32_t)start_x - view_w / 2;
     int32_t max_x = (int32_t)src_w - view_w;
@@ -195,7 +197,14 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
         SDL_RenderClear(ren);
         SDL_RenderTexture(ren, tex, NULL, NULL);
         SDL_RenderPresent(ren);
-        SDL_Delay(16);
+        /* One pass per retrace - see VIEW_REFRESH_HZ. An absolute
+         * deadline, for the reason level_run gives. */
+        due += period;
+        {
+            Uint64 now = SDL_GetTicksNS();
+            if (now < due) SDL_DelayNS(due - now);
+            else due = now;
+        }
     }
 
     /* The window stays open; it is torn down at exit. */
@@ -270,6 +279,8 @@ int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
     if (view_open(w, h, title, scale) != 0) return VIEW_CLOSED;
     SDL_Renderer *ren = g_ren;
     SDL_Texture  *tex = g_tex;
+    const Uint64 period = SDL_NS_PER_SECOND / VIEW_REFRESH_HZ;
+    Uint64 due = SDL_GetTicksNS();
 
     /* A frame budget, for tests: the animation has to be observable without a
      * person watching it, and a loop that only ends on a keypress is not. */
@@ -330,7 +341,14 @@ int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
         SDL_RenderClear(ren);
         SDL_RenderTexture(ren, tex, NULL, NULL);
         SDL_RenderPresent(ren);
-        SDL_Delay(16);
+        /* One pass per retrace - see VIEW_REFRESH_HZ. An absolute
+         * deadline, for the reason level_run gives. */
+        due += period;
+        {
+            Uint64 now = SDL_GetTicksNS();
+            if (now < due) SDL_DelayNS(due - now);
+            else due = now;
+        }
         if (budget && --budget == 0) running = 0;
     }
     /* The window stays open. It is torn down at exit, not here. */
@@ -778,6 +796,8 @@ static void view_fade_out(const uint8_t *pix, uint16_t w, uint16_t h,
     if (view_open(w, h, title, scale) != 0) return;
     SDL_Renderer *ren = g_ren;
     SDL_Texture  *tex = g_tex;
+    const Uint64 period = SDL_NS_PER_SECOND / VIEW_REFRESH_HZ;
+    Uint64 due = SDL_GetTicksNS();
     for (;;) {
         SDL_Event e;
         while (SDL_PollEvent(&e))
@@ -806,7 +826,14 @@ static void view_fade_out(const uint8_t *pix, uint16_t w, uint16_t h,
         SDL_RenderTexture(ren, tex, NULL, NULL);
         SDL_RenderPresent(ren);
         if (!moved) return;
-        SDL_Delay(16);
+        /* One pass per retrace - see VIEW_REFRESH_HZ. An absolute
+         * deadline, for the reason level_run gives. */
+        due += period;
+        {
+            Uint64 now = SDL_GetTicksNS();
+            if (now < due) SDL_DelayNS(due - now);
+            else due = now;
+        }
     }
 }
 
