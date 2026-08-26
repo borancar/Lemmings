@@ -753,6 +753,47 @@ Each of these is stated as what was *checked*, not what was written.
   **input** and **briefing** was not measured at this tooling and is
   withdrawn — they were at ~65%, ~64% and ~30% before any of this too.
 
+- **Where the port stands inside a level, measured against a real frame.**
+  With `tools/record_level.py` giving a reference sequence,
+  `tools/compare_frame.py` against frame 60:
+
+  | | |
+  | --- | --- |
+  | play area, rows 0..159, at the fitted scroll of 624 | **98.60%** (716 of 51,200 differ) |
+  | panel, rows 176..199 | 4,717 pixels of ink in the original, **the port draws none** |
+
+  The 716 are the lemmings, the cursor and the animated objects — everything
+  that moves. The terrain underneath is right.
+
+- **The panel: what is settled and what is not.** `main.dat` section 2 is
+  8,384 bytes and splits cleanly: the last 1,984 are the status font (already
+  transcribed, image 0x0592C), and the first 6,400 are the panel artwork.
+  Decoded 320 wide in **three** planes it is unmistakably the panel — button
+  surrounds, the release-rate `+`/`-`, the `M`, the minimap border — where
+  four planes gives the same shapes in the wrong colours. Fitted against rows
+  160..199 of a recorded frame over every plane count, height and top row,
+  the best is three planes, 40 rows, **top row 160**, at 69.9%.
+
+  It is **not** good enough to build on, and the picture says why rather than
+  the number: the artwork's buttons are visibly *taller* than the ones the
+  original draws, so the row stride is wrong, not merely the offset. Fitting
+  further would be the same mistake this file already records twice. The
+  layout has to be read.
+
+- **Image 0x07E76 is not the panel — it unpacks the lemming sprites.** This
+  is worth having. `tools/probe_blits.py --rows 176 199` named it, and
+  dumping what it reads out of guest memory and matching that against the
+  data files settles it: the source is `main.dat` **section 3**, 61,968
+  bytes, at offset 0. It runs four passes of two blits, 320 wide by 104 rows
+  at two planes, at x=0 and x=320 with y stepping 0, 104, 208, 312 — a
+  **640-wide, 416-row, two-plane staging buffer**. That is the sprite sheet
+  the level's lemmings come out of, and it is the next thing to read.
+
+  The skill icons are separate: image 0x04DBB, thirteen 16x16 three-plane
+  blits, out of segment 0x687E rather than any section directly — a
+  pre-shifted buffer, which is what images 0x05B11 and 0x09347 build and what
+  `tools/verify_preshift.py` and `tools/verify_shift.py` already check.
+
 - **Open lead: the four-plane writer at image 0x07F1D.** `probe_writes.py`,
   run over the rows the missing lemming occupies with the correct 44-byte
   stride, ranks four writers at 601 bytes apiece — images `0x07F7B`,
