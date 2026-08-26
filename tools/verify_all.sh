@@ -94,6 +94,23 @@ else
         --dir out/verify_screen 2>/dev/null | tail -4
 fi
 
+# WHAT A RECORDED RUN CANNOT SHOW. No recorded run ever assigns a skill or
+# moves the pointer, so everything the player does is invisible to every
+# comparison above. These two drive the ORIGINAL into doing it and compare
+# against what it did.
+say ""
+say "  the pointer and the digger, against the original doing them:"
+if [ -f out/hit.json ]; then
+    uv run python tools/verify_hit.py --check out/hit.json 2>/dev/null | tail -4 || fail=1
+else
+    say "    no out/hit.json - run the LEM_HOOK line in tools/verify_hit.py"
+fi
+if [ -f out/digtrace.json ]; then
+    uv run python tools/verify_dig.py --check out/digtrace.json 2>/dev/null | tail -6 || fail=1
+else
+    say "    no out/digtrace.json - run the LEM_HOOK line in tools/verify_dig.py"
+fi
+
 # PACE. Every check above compares pictures; none of them can see how long a
 # frame lasts, and a port at four times speed matches all 5,100 of them.
 say ""
