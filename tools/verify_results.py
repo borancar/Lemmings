@@ -102,6 +102,13 @@ def install(m):
         # is 0x900. game.c carries both shapes as tables MEASURED off the
         # original; if the unshifted one is in a file the way the font and the
         # background tile are, it can be read instead.
+        # THE CRATER'S MASKS. Image 0x05E73 offsets 0xC60 into the resource
+        # at ds:0x1FE8, indexed shift * 66 + row * 3 - eight shifts of
+        # twenty-two rows of three bytes, which is 528.
+        mseg = int.from_bytes(uc.mem_read(ds + 0x1FE8, 2), "little")
+        open(os.path.join(out_dir, "crater.bin"), "wb").write(
+            bytes(uc.mem_read(mseg * 16 + 0xC60, 528)))
+
         cseg = int.from_bytes(uc.mem_read(ds + 0x1FEA, 2), "little")
         open(os.path.join(out_dir, "cursor_store.bin"), "wb").write(
             bytes(uc.mem_read(cseg * 16, 0x900)))

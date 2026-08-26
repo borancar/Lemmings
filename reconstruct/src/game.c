@@ -3019,6 +3019,82 @@ static void lem_hoist(lemming *a)
     a->y = (int16_t)(a->y - 2);                     /* image 0x0264A */
 }
 
+/* THE CRATER - transcribed from image 0x05DF8, its shape MEASURED out of the
+ * original's own memory.
+ *
+ * Image 0x05E17 clears twenty-two rows and image 0x05E1F starts them thirty
+ * above the lemming; image 0x05E41 takes the byte from (x - 8) >> 3 and image
+ * 0x05E60 the shift from the low three bits of x - 8. The masks live at
+ * offset 0xC60 of the resource at ds:0x1FE8, indexed shift * 66 + row * 3 -
+ * eight shifts of twenty-two rows of three bytes, 528 in all.
+ *
+ * They are in no .dat: the table is BUILT at run time, pre-shifted, the way
+ * the cursor's store is. So the shape below was dumped out of the guest and
+ * only shift 0 is kept - the port writes bytes rather than planes and has no
+ * use for the other seven, which are this one moved along.
+ *
+ * The clear goes through the Set/Reset path with all four planes enabled
+ * (image 0x05DFD and image 0x05E05), so it removes terrain outright, the way
+ * image 0x05EBA does for the digger.
+ *
+ * IT IS NOT RIGHT YET, and the measurement says by how much. Placing the
+ * mask at (x - 8, y - 30) clears 27 pixels where the original clears 343,
+ * and the original's leftmost cleared column is about eight to the LEFT of
+ * the port's - roughly a byte. So either the window starts at the byte
+ * BEFORE the one holding x - 8, or the shift is being applied the other way
+ * round. What the port draws is therefore a smaller crater in almost the
+ * right place, and the record comparison still diverges at frame 207 - not
+ * on the bomber, which is exact, but on ANOTHER lemming that falls through
+ * the original's hole and walks over the port's.
+ *
+ * The next measurement to make is the obvious one: clear at (x - 16, y - 30)
+ * and see whether 343 comes back. It is one number and it has not been made,
+ * so the code says what it does rather than what it might.
+ */
+#define CRATER_ROWS  22         /* image 0x05E17: cx = 0x16 */
+#define CRATER_UP    0x1E       /* image 0x05E1F */
+#define CRATER_BACK  8          /* image 0x05E41 */
+static const uint16_t CRATER[CRATER_ROWS] = {
+    0x07C0,   /* .....#####...... */
+    0x0FF0,   /* ....########.... */
+    0x1FF8,   /* ...##########... */
+    0x1FF8,   /* ...##########... */
+    0x3FFC,   /* ..############.. */
+    0x3FFC,   /* ..############.. */
+    0x7FFE,   /* .##############. */
+    0x7FFE,   /* .##############. */
+    0x7FFE,   /* .##############. */
+    0x7FFF,   /* .############### */
+    0xFFFF,   /* ################ */
+    0xFFFF,   /* ################ */
+    0xFFFF,   /* ################ */
+    0xFFFF,   /* ################ */
+    0xFFFF,   /* ################ */
+    0xFFFF,   /* ################ */
+    0x7FFE,   /* .##############. */
+    0x7FFE,   /* .##############. */
+    0x7FFE,   /* .##############. */
+    0x3FFC,   /* ..############.. */
+    0x1FF0,   /* ...#########.... */
+    0x07E0,   /* .....######..... */
+};
+
+static void lem_crater(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    int32_t x0 = (int32_t)a->x - CRATER_BACK - LEMMING_DX;
+    int32_t y0 = (int32_t)a->y - CRATER_UP - LEMMING_DY;
+    for (uint8_t r = 0; r < CRATER_ROWS; r++) {
+        int32_t y = y0 + r;
+        if (y < 0 || y >= (int32_t)chh) continue;
+        for (uint8_t c = 0; c < 16; c++) {
+            if (!((CRATER[r] >> (15 - c)) & 1u)) continue;
+            int32_t x = x0 + c;
+            if (x < 0 || x >= (int32_t)cw) continue;
+            lvl[(size_t)y * cw + x] = 0;            /* image 0x05E90 */
+        }
+    }
+}
+
 /* THE SPLAT - transcribed from image 0x022DF. Sixteen frames and the lemming
  * is gone; image 0x022EE sets [si+0x26]. Image 0x02250 is what sends it here:
  * a fall counter over 0x3C, and image 0x02273 also clears the direction and
@@ -3191,14 +3267,17 @@ static void lem_boom(lemming *a)
  */
 #define CLOUD_FRAMES  0x34      /* image 0x02358 */
 
-static void lem_cloud(lemming *a)
+static void lem_cloud(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     a->anim = (uint8_t)(a->anim + 1);               /* image 0x02353 */
     if (a->anim == CLOUD_FRAMES) {                  /* image 0x02358 */
         a->alive = 0xFF;                            /* image 0x020E2 */
         return;
     }
-    /* image 0x0235F: the crater, on the frame after the cloud appears */
+    if (a->anim != 1) return;                       /* image 0x0235F */
+    /* Image 0x023A6 reads the cell under it and refuses on 9 and 5 - steel. */
+    if ((a->tcell & 0x0F) == 9 || (a->tcell & 0x0F) == 5) return;
+    lem_crater(a, lvl, cw, chh);                    /* image 0x023B9 */
 }
 
 /* THE TWO PERMANENT ABILITIES - image 0x0329B and image 0x03557.
@@ -3563,7 +3642,7 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_walk(a, lvl, cw, chh);               /* image 0x2047 */
         }
         else if (f & 0x0002)
-            lem_cloud(a);                            /* image 0x2350 */
+            lem_cloud(a, lvl, cw, chh);              /* image 0x2350 */
         else if (f & 0x0004)
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
         else if (f & 0x2000)
