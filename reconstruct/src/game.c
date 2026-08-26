@@ -1385,11 +1385,20 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
 #define DIG_HOT_Y      (-12)
 /* Image 0x02424: past this row it has dug its way out of the level. */
 #define DIG_FLOOR      0xB4
-/* Image 0x0242D: 0x0FF8 is nine bits, and image 0x02432 shifts it by the
- * low three of the x it probes - which is x + hot_x. So the span cleared
- * runs from that + 3, nine pixels wide: x-5 to x+3. */
+/* Image 0x0242D loads 0x0FF8 and image 0x02432 shifts it by the low three of
+ * the x it probes, which is x + hot_x.
+ *
+ * 0x0FF8 has its VALUE bits 3..11 set, and in a bit mask the leftmost pixel
+ * is the most significant bit - so pixel i is bit 15 - i, and bits 3..11 are
+ * PIXELS 4..12. The span is therefore (x + hot_x) + 4, nine wide: x-4 to
+ * x+4 with hot_x at -8.
+ *
+ * Reading those as pixels 3..11 instead put the whole shaft one column left.
+ * It is invisible in the lemming's state and in every frame comparison -
+ * what showed it was laying the original's dug map beside the port's, where
+ * one is ########.........####### and the other ends #######..........####. */
 #define DIG_WIDTH      9
-#define DIG_FROM       (-5)
+#define DIG_FROM       (-4)
 
 /* Transcribed from image 0x0320D. The mask it clears is 0xF57F - every state
  * a digger may not also be in - and the bit it sets is 0x10, whose handler is
@@ -1442,10 +1451,42 @@ int lem_dig_start(lemming *a)
  * frame it is parked on when assigned, 0x11, is not one of the sixteen and
  * image 0x023F7 sends it straight to the digging path, which is why the very
  * next frame is both anim 0 AND a dig. */
+/* One row of the shaft, at `dy` from the lemming. Image 0x0242D loads 0x0FF8
+ * - nine bits - and image 0x02432 shifts it by the low three of the x it
+ * probes, which is x + hot_x; so the span is that plus three, nine wide.
+ * Returns whether anything was there. */
+static int dig_row(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh,
+                   int32_t dy)
+{
+    int had = 0;
+    int32_t cy = (int32_t)a->y + dy - LEMMING_DY;
+    for (uint8_t i = 0; i < DIG_WIDTH; i++) {
+        int32_t cx = (int32_t)a->x + DIG_FROM + i - LEMMING_DX;
+        if (cx < 0 || cx >= (int32_t)cw || cy < 0 || cy >= (int32_t)chh)
+            continue;
+        if (lvl[(size_t)cy * cw + cx] & 8) had = 1;
+        lvl[(size_t)cy * cw + cx] = 0;        /* image 0x05EBA */
+    }
+    return had;
+}
+
 static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     if (a->anim == DIG_ANIM_START) {
-        a->anim = 0;                          /* image 0x0250C */
+        /* THE FIRST FRAME CUTS THREE ROWS, not one. Image 0x0250C drops y
+         * by two, probes, and clears - then image 0x02541 adds ds:4, the
+         * row stride, and clears AGAIN - before falling into the ordinary
+         * dig at image 0x0240F, which does the row it is standing on. So a
+         * digger opens y-2, y-1 and y on the frame it starts.
+         *
+         * Cutting only the last of those leaves the top of the shaft
+         * capped, and it is invisible in the lemming's own state: y and the
+         * animation come out the same either way. What showed it was
+         * comparing the TERRAIN - 34 pixels, all in the two rows above the
+         * start. */
+        dig_row(a, lvl, cw, chh, -2);
+        dig_row(a, lvl, cw, chh, -1);
+        a->anim = 0;
     } else {
         a->anim = (uint8_t)((a->anim + 1) & 0x0F);   /* image 0x023FF */
         if (a->anim != 0 && a->anim != 8)
@@ -1458,7 +1499,7 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
      * there - so the clear at image 0x05EBA lands on the old row. Doing it
      * the other way round starts the shaft one row low, which is visible as
      * a lip of terrain left under the lemming's feet. */
-    int32_t cy = (int32_t)a->y - LEMMING_DY;
+    int32_t dy_back = -1;                     /* the row it stood on */
 
     a->y = (int16_t)(a->y + 1);               /* image 0x0241D */
     if (a->y >= DIG_FLOOR) {                  /* image 0x02424 */
@@ -1475,14 +1516,7 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
      * wrong at the moment it matters - digging through the last row of a
      * ledge, where the row dug is the last solid one and the row below is
      * already open. */
-    int had = 0;
-    for (uint8_t i = 0; i < DIG_WIDTH; i++) {
-        int32_t cx = (int32_t)a->x + DIG_FROM + i - LEMMING_DX;
-        if (cx < 0 || cx >= (int32_t)cw || cy < 0 || cy >= (int32_t)chh)
-            continue;
-        if (lvl[(size_t)cy * cw + cx] & 8) had = 1;
-        lvl[(size_t)cy * cw + cx] = 0;        /* image 0x05EBA */
-    }
+    int had = dig_row(a, lvl, cw, chh, dy_back);
     if (!had) {
         /* image 0x0244E: it dug nothing, so there is nothing to stand on. */
         a->flags = (uint16_t)((a->flags & ~(uint16_t)DIG_BIT) | 4);

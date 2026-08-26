@@ -375,12 +375,16 @@ def install(m):
         for yy in rows:
             line = []
             for xx in cols:
-                off = (yy - 0x10) * 0xD0 + (xx >> 3)
+                # Image 0x05DEA adds 0x4A40: the solidity map does not
+                # start at the segment, it sits after the display page.
+                # Leaving it out reads 19,008 bytes too early and gives
+                # whole rows uniformly solid or empty, which no dug shaft
+                # looks like - that is what the first attempt saw.
+                off = (yy - 0x10) * 0xD0 + (xx >> 3) + 0x4A40
                 if off < 0 or off >= 0x10000:
                     line.append(0)
                     continue
-                line.append([(m.planes[pl][off] >> (7 - (xx & 7))) & 1
-                             for pl in range(4)])
+                line.append((m.planes[3][off] >> (7 - (xx & 7))) & 1)
             out_map.append(line)
         return dict(x0=r0["x"] - 12, y0=r0["y"] - 4, map=out_map)
 

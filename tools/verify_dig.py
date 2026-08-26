@@ -130,10 +130,9 @@ def main():
             if first is None:
                 first = (r, want_dy, got_dy, L[0].anim, L[0].flags)
 
-    # AND THE SHAFT - NOT YET. See the note at the top of this file: the
-    # reference read is wrong, so this is off until it is right rather than
-    # reporting a difference that is the instrument's.
-    sh = None if os.environ.get("LEM_DIG_SHAFT") is None else tr.get("shaft")
+    # AND THE SHAFT, which is the half that can actually catch a digger
+    # cutting the wrong rows - see the note at the top of this file.
+    sh = tr.get("shaft")
     sagree = sdiffer = 0
     sfirst = None
     if sh:
