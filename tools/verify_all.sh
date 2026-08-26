@@ -79,6 +79,19 @@ else
     uv run python tools/compare_run.py --ref "$REF" \
         --port-dir out/verify_port --panel-dir out/verify_panel --every 1 \
         2>/dev/null | tail -5
+
+    # And THE GAME'S OWN SCREEN, which is a different claim: the above scores
+    # a canvas and a panel composed separately by lemdev, and for a long time
+    # that passed while ./lemmings showed an empty cave. This runs the window
+    # path headlessly and scores the 320x200 it actually displays.
+    say ""
+    say "  the game's own screen (the window path, not the harness):"
+    rm -rf out/verify_screen; mkdir -p out/verify_screen
+    SDL_VIDEODRIVER=dummy LEM_FRAMES="$n" LEM_SCREEN_DIR=out/verify_screen \
+        ./reconstruct/lemdev --data lemming1.pc --rating fun --number 1 \
+        --show >/dev/null 2>&1
+    uv run python tools/compare_screen.py --ref "$REF" \
+        --dir out/verify_screen 2>/dev/null | tail -4
 fi
 
 say ""

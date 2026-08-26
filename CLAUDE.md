@@ -253,6 +253,81 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
+## A capture holds one palette, and the screen has two
+
+The level is EGA mode 0x0D in sixteen colours and the game **swaps the upper
+eight part-way down the screen**: the play area keeps the terrain's browns,
+the panel below gets greens and greys. `tools/record_level.py` dumps the DAC
+once a frame, so a capture holds *one* of those palettes - and the port
+rendered the whole 320x200 from it, putting the terrain's oranges through the
+status line while **every index matched the original**.
+
+Both halves of that were true at once, and the index comparison could never
+have caught it. So:
+
+- **Matching indices is not matching colours.** `tools/compare_frame.py`
+  compares indices, and should - it is what makes the check independent of a
+  palette sampled at one moment. But a screen that scores 100.00% can still be
+  the wrong colour, and nothing in the pipeline says so.
+- **Measure the palette over TIME, not at a point.** `tools/probe_dac.py`
+  samples the emulator's palette every 512 instructions between two of the
+  game's own end-of-frame points at image 0x018F. Every settled frame holds
+  exactly two, DAC 16..23 alternating and ending on the terrain's.
+- The panel's eight are image `0x0C080`, and `--pc high|compat` selects
+  whether the swap happens at all - image 0x055B7 branches on `ds:0x1F7C`,
+  which the adapter letter sets.
+
+**The original DOES take a command line.** This file and `main.c` both said it
+does not. `LEMMINGS.BAT` never runs `VGALEMMI.EXE` directly - it runs
+`lemvga.com /v` for VGA and `/e` for EGA - and the parser at image `0x012E0`
+reads that letter.
+
+## Wrapping a method the emulator already registered records nothing
+
+`probe_dac.py`'s first version replaced `m._on_out` to watch port writes. It
+reported "no port writes" for every frame of a level, which read as a finding.
+Unicorn was handed the **bound method** when the machine was built, so
+reassigning the attribute leaves the original registered and the wrapper is
+never called.
+
+Sample state from a `UC_HOOK_CODE` callback instead, the way
+`tools/verify_level.py` installs its hooks. And treat a probe that finds
+*nothing at all* as a probe to check before it is a result to report.
+
+## Run the game's own path, not a second arrangement of it
+
+Every frame-by-frame number here came from `lemdev`, which composed the canvas
+and the panel separately and re-simulated from zero for each frame. The window
+path was a different arrangement of the same calls, and `lemdev --show` was a
+**third** - a 320x160 window of a static canvas with no panel, no lemmings and
+no stepping. All 5,100 frames matched while `./lemmings` showed an empty cave.
+
+The per-frame order now lives in `game.c` (`level_play_step`,
+`level_play_draw`, `level_panel_build`) and both callers use it; `--show`
+calls `level_show`, the same entry `main.c` uses; and `LEM_SCREEN_DIR` makes
+the game write the 320x200 screen it actually displays so *that* can be
+scored. Being able to run it turned up three faults in one afternoon: the
+viewport centred on `start_x` instead of using it as the left edge, edge
+scrolling that could not tell "pointer at the left edge" from "no pointer"
+and walked off the level, and a first frame drawn after a step that put the
+whole game one frame ahead.
+
+**A sequence written out twice is a sequence that will differ.**
+
+## RUSSELL.DAT must start from RUSSELL.VAR
+
+`RUSSELL.DAT` is a working file the game rewrites, and its state decides what
+happens at start-up: drifted, the game takes its floppy path at image `0x0062B`
+and quits with "Lemmings Disk 1 Not found" before drawing anything. The
+packaging knows it - `LEMMI.BAT` is three lines and two of them copy
+`RUSSELL.VAR` over it.
+
+`LemmingsVga` now seeds the overlay from `RUSSELL.VAR`, so every run starts
+shipped-clean without touching the host directory. If runs suddenly report
+"never reached mode 10h", something ran the game **outside** this emulator -
+which does not intercept the write - and `git checkout` will not necessarily
+fix it, because the committed copy is itself a used one.
+
 ## Compare against what the original composes, not what it displays
 
 The strongest check here is not a screenshot. A screen carries sprites, a
@@ -403,6 +478,8 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/probe_protected.py` | record the protected instruction stream as it runs |
 | `tools/probe_desync.py` | find a single-step desynchronisation, if the decryptor ever loses step |
 | **`tools/probe_rating.py`** | the rating plate, watching `ds:0x1F6E` rather than the plate's pixels - and refusing a key the control socket would not deliver |
+| **`tools/compare_screen.py`** | **the game's own 320x200 screen** against the original's, frame by frame - the window path, not the harness. A different claim from `compare_run.py`, which scores a canvas and a panel `lemdev` composed separately: every frame of that matched while `./lemmings` showed an empty cave. Play area and panel scored SEPARATELY, and the cursor's 28 pixels named rather than averaged away |
+| **`tools/probe_dac.py`** | **is the palette changed part-way down the screen?** Samples the emulator's palette every 512 instructions between the game's own end-of-frame points at image 0x018F. It is a sampler and not a port hook on purpose: wrapping `m._on_out` records nothing, because Unicorn holds the bound method from construction - and "no port writes" reads as a finding |
 | **`tools/compare_frame.py`** | one level frame, the original beside the port. Mode 0x0D is two things stacked - the play area at rows 0..159 and the panel at 176..199 - and they are scored SEPARATELY, because an average hides which one is missing. Fits the scroll if you do not give one, and says which it used |
 | **`tools/probe_writes.py`** | who writes to video memory, and from where - every write into the EGA window attributed to the instruction that made it, `--rows` filtering by destination row and `--stride` telling it the mode's width. Use it when a screen is drawn by something OTHER than the shared blitter: the level's panel is mode 0x0D and touches 0x8822 not once, so probe_blits.py reported nothing and this found it in one run |
 | **`tools/probe_blits.py`** | every blit into a chosen band of rows, **and who called it** - it reads the far return address off the stack at the blitter's entry, which is what turns a list of rectangles into a call graph. `--driven` rides along with play.py, `--play` goes on past the briefing into the level, `--seconds` sets how long that run lasts |

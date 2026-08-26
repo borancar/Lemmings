@@ -29,6 +29,7 @@ numbers, re-measured on the current build:
 
 | | |
 | --- | --- |
+| **the game's own screen**, all 5,100 frames of the expiration timer | play area **exactly 28 differing — the mouse cursor — on 5,100 of 5,100**; panel exact on 5,099 (frame 0 is the fade-in). This is the WINDOW path, what a player sees, not the harness (`tools/compare_screen.py`) |
 | the original's composed **level terrain** vs the port | **100.00%** — 49,741 pixels, 0 differing (`tools/prove.sh`) |
 | the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
@@ -39,7 +40,7 @@ numbers, re-measured on the current build:
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
-| tests | `make test` 80 checks across two binaries, `make sanitize` clean under ASan + UBSan |
+| tests | `make test` 82 checks across two binaries, `make sanitize` clean under ASan + UBSan |
 
 **Transcription is a different claim from any of the above, and it is 33 of
 211 call targets** — counted by `reconstruct/tests/provenance.py`, which reads
