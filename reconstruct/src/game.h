@@ -482,6 +482,13 @@ void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x);
 typedef enum { LEM_PC_COMPATIBLE = 0, LEM_PC_HIGH = 1 } lem_pc;
 extern lem_pc lem_machine;
 
+/* THE LEVEL'S FRAME RATE, image 0x0418 and image 0x041D: ds:0x85 and ds:0x86
+ * both start at 0x11, and the clock steps a second every time the counter
+ * runs out - which is what makes 5,100 frames exactly the five minutes of the
+ * expiration timer. It is the game's rate, not the display's: the level runs
+ * at seventeen frames a second, not seventy. */
+#define LEVEL_FPS 0x11
+
 void level_play_step(level_anim *st, const level *lv, lemming *lem,
                      uint8_t *released, uint8_t *terrain,
                      uint16_t w, uint16_t h);

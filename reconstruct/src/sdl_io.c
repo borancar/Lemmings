@@ -460,6 +460,22 @@ static int level_run(struct level_frame *A, const canvas *c,
     int grabbed = 1;
     SDL_SetWindowRelativeMouseMode(g_win, true);
 
+    /* PACE ON THE GAME'S RATE, and on an absolute clock.
+     *
+     * The level runs at LEVEL_FPS - seventeen frames a second, image 0x0418's
+     * own number, which is what makes 5,100 frames exactly the five minutes
+     * of the expiration timer. This loop used to sleep 16 milliseconds a
+     * frame, which is sixty, so the game ran three and a half times too fast
+     * and the clock visibly fell down its own display.
+     *
+     * The deadline is absolute rather than a sleep per frame: a sleep is at
+     * the mercy of the host scheduler and of however long the frame took to
+     * compose, which would make the game's speed a property of the machine
+     * rather than of the game. Falling behind resets the deadline instead of
+     * building a debt the loop would then sprint to repay. */
+    const Uint64 period = SDL_NS_PER_SECOND / LEVEL_FPS;
+    Uint64 due = SDL_GetTicksNS();
+
     int running = 1;
     while (running) {
         SDL_Event e;
@@ -626,7 +642,12 @@ static int level_run(struct level_frame *A, const canvas *c,
         SDL_RenderClear(ren);
         SDL_RenderTexture(ren, tex, NULL, NULL);
         SDL_RenderPresent(ren);
-        SDL_Delay(16);
+        if (!sink) {
+            due += period;
+            Uint64 now = SDL_GetTicksNS();
+            if (now < due) SDL_DelayNS(due - now);
+            else due = now;          /* behind: start again from here */
+        }
         if (budget && --budget == 0) running = 0;
     }
     /* Never leave the pointer captured by a window that is going away. */

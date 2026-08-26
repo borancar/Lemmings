@@ -253,6 +253,37 @@ sweep also watched the plate's *pixels* from Fun, where Down is supposed to do
 nothing — a correct key looks inert from the floor. Watching `ds:0x1F6E`
 instead settles it in one byte.
 
+## The level runs at seventeen frames a second, not seventy
+
+The clock fell down its own display in the playable game while every frame
+matched, and the two facts are not in tension: the frame-by-frame comparison
+scores frame N against frame N, and says nothing about how long a frame is
+meant to LAST.
+
+`LEVEL_FPS` is the game's own number - image 0x0418 and image 0x041D start
+`ds:0x85` and `ds:0x86` at 0x11, and the clock steps a second every time that
+counter runs out, which is exactly what makes 5,100 frames the five minutes of
+the expiration timer. The display loop was sleeping 16 milliseconds, so the
+level ran at sixty and the game was three and a half times too fast.
+
+Two things follow, and the second is the one that bites:
+
+- **The play loop's rate is the GAME's, not the display's.** 70 Hz is what the
+  emulator's guest measures off the CRTC, and the port has no business
+  borrowing it: the original waits five ticks a frame and lands on seventeen.
+- **A frame-for-frame match cannot see this.** Nothing in
+  `tools/compare_screen.py` or `compare_run.py` would ever have caught it -
+  they compare pictures, not durations. It took someone watching the clock.
+  If the port ever grows a check for pace, it has to be a wall-clock one:
+  N frames should take N/LEVEL_FPS seconds, and that is measurable
+  (`LEM_FRAMES=170` takes 10.0 s).
+
+Pace on an **absolute deadline**, not a sleep per frame. A sleep is at the
+mercy of the host scheduler and of however long the frame took to compose,
+which makes the game's speed a property of the machine rather than of the
+game; and falling behind must reset the deadline rather than build a debt the
+loop then sprints to repay.
+
 ## A capture holds one palette, and the screen has two
 
 The level is EGA mode 0x0D in sixteen colours and the game **swaps the upper

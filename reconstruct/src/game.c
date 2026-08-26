@@ -985,8 +985,9 @@ static uint8_t g_tick_load;   /* ds:0x86 */
 
 const char *level_status_line(void) { return g_status; }
 
-/* Image 0x0418 and 0x041D: ds:0x85 and ds:0x86 both start at 0x11. */
-#define LEVEL_FRAMES_PER_SECOND 0x11
+/* Image 0x0418 and 0x041D: ds:0x85 and ds:0x86 both start at 0x11. The same
+ * number paces the display - see LEVEL_FPS in game.h. */
+#define LEVEL_FRAMES_PER_SECOND LEVEL_FPS
 
 /* Image 0x0418 and 0x041D set ds:0x85 and ds:0x86 to 0x11 - seventeen frames
  * to a second - and image 0x040E and 0x0413 put '0' in both seconds cells.
