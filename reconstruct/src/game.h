@@ -401,6 +401,13 @@ void        level_timer_step(void);
 /* How many got out, and whether the level is over - see level_over in
  * game.c. ds:0x46 counts them and image 0x02335 is what increments it; the
  * two end conditions are at image 0x001E7 and image 0x001FA. */
+/* Has this lemming reached an exit, and the state it enters - images
+ * 0x02F3B and 0x02F42. The trigger rectangle's units are four pixels,
+ * measured rather than assumed; see level_at_exit in game.c. */
+void level_triggers_set(const level *lv, const ground *g);
+int level_at_exit(const lemming *a, const level *lv, const ground *g);
+void lem_exit_start(lemming *a);
+
 extern uint8_t level_saved;
 void level_saved_reset(void);
 void level_lemming_saved(void);

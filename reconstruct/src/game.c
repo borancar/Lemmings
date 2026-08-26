@@ -1249,6 +1249,96 @@ void level_start_step(void)
  * What it is a percentage OF is not established here: nothing counts the
  * saved lemmings yet, so this is called with zero, which is what the whole of
  * the first seven hundred frames of "Just dig!" shows anyway. */
+/* HAS THIS LEMMING REACHED AN EXIT? - image 0x02F3B.
+ *
+ * The trigger rectangle lives in GROUNDxO beside the effect byte, and its
+ * UNITS are the whole difficulty: the exit's reads left 6, top 4, 1 by 2,
+ * and pixels, four-pixel units and eight are all superficially plausible.
+ * Guessing is what this project keeps getting caught by, so it is measured.
+ *
+ * tools/probe_exit.py drives the original into digging a way down and then
+ * watches for the frame a lemming's state becomes 0x2000. Six of them did,
+ * every one at record (888, 147) - and the exit object of "Just dig!" sits
+ * at (848, 116). A record position is sixteen more than the canvas one, so
+ * that is canvas (872, 131), and
+ *
+ *     848 + 6 * 4 = 872      the x, exactly
+ *     116 + 4 * 4 = 132      the y, one row below where they were caught
+ *
+ * so the units are FOUR PIXELS, and the rectangle is four wide and eight
+ * tall. The one row is the lemming being tested before it steps down into
+ * the box rather than after; the box is therefore taken as starting a row
+ * higher, which is what makes the measured entries land inside it.
+ *
+ * Image 0x02F3B also refuses a lemming that is falling - `test [si+8], 4` -
+ * so you cannot be saved on the way past.
+ */
+#define TRIGGER_UNIT 4
+
+/* The level and its object table, for the trigger test. The original has
+ * them in fixed places; this port passes them around, and lemmings_step
+ * does not carry them - so they are set once when the level starts rather
+ * than threaded through every caller of it. */
+static const level  *trig_lv;
+static const ground *trig_g;
+
+/* THE PORT'S OWN: the original keeps these in fixed places and has no need
+ * to be handed them. */
+void level_triggers_set(const level *lv, const ground *g)
+{
+    trig_lv = lv;
+    trig_g = g;
+}
+
+/* Transcribed from image 0x02F3B - the trigger test, whose rectangle units
+ * are measured; see the note above. */
+int level_at_exit(const lemming *a, const level *lv, const ground *g)
+{
+    if (a->flags & 4) return 0;            /* image 0x02F3B: not while falling */
+    int32_t lx = (int32_t)a->x - LEMMING_DX;
+    int32_t ly = (int32_t)a->y - LEMMING_DY;
+
+    for (uint16_t i = 0; i < lv->num_objects; i++) {
+        const level_object *o = &lv->objects[i];
+        if (o->id >= GROUND_OBJECTS) continue;
+        const ground_object *go = &g->objects[o->id];
+        if (go->trigger_effect != TRIGGER_EXIT) continue;
+
+        int32_t x0 = (int32_t)o->x + (int32_t)go->trigger_left * TRIGGER_UNIT;
+        int32_t y0 = (int32_t)o->y + (int32_t)go->trigger_top * TRIGGER_UNIT;
+        int32_t w = (int32_t)go->trigger_width * TRIGGER_UNIT;
+        int32_t h = (int32_t)go->trigger_height * TRIGGER_UNIT;
+        if (lx >= x0 && lx < x0 + w && ly >= y0 - 1 && ly < y0 + h)
+            return 1;
+    }
+    return 0;
+}
+
+/* Image 0x02F42: the whole state word becomes 0x2000 - assigned, not OR-ed -
+ * and the animation restarts. Image 0x02326 then counts eight frames and
+ * hands it to level_lemming_saved. */
+#define EXIT_BIT 0x2000
+#define EXIT_FRAMES 8
+
+/* Transcribed from image 0x02F42. */
+void lem_exit_start(lemming *a)
+{
+    a->flags = EXIT_BIT;
+    a->anim  = 0;
+    a->hot_x = -8;                         /* image 0x02F5F */
+    a->hot_y = -13;                        /* image 0x02F64 */
+    a->state = 0;
+}
+
+/* Transcribed from image 0x02326: eight frames, then saved and gone. */
+static void lem_exiting(lemming *a)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 7);
+    if (a->anim) return;
+    level_lemming_saved();                 /* image 0x02335 */
+    a->alive = 0xFF;                       /* image 0x02339 */
+}
+
 /* HOW MANY GOT OUT, and whether the level is over.
  *
  * ds:0x46 is the saved count and ds:0x47 the total - image 0x03ACE divides
@@ -1720,6 +1810,12 @@ void lemmings_step(lemming *lem, uint8_t n,
         lemming *a = &lem[k];
         if (a->alive == 0xFF) continue;            /* image 0x1F3C */
 
+        /* An exit underfoot beats whatever it was doing - image 0x02F3B is
+         * reached from the object scan, not from the state chain. */
+        if (trig_lv && trig_g && !(a->flags & EXIT_BIT)
+                && level_at_exit(a, trig_lv, trig_g))
+            lem_exit_start(a);
+
         /* THE STATE DISPATCH, image 0x01F5E - and it is a PRIORITY CHAIN,
          * not a jump table. It tests the bits of [si+8] one at a time, in an
          * order that is not the order of the bits, and takes the first that
@@ -1743,7 +1839,7 @@ void lemmings_step(lemming *lem, uint8_t n,
          *     0x0200  0x287D
          *     0x0800  0x2B35
          *     0x1000  0x22F5
-         *     0x2000  0x2326
+         *     0x2000  0x2326  leaving          transcribed
          *     0x4000  0x2340
          *     else    0x2EC0  (called, not jumped to)
          *
@@ -1764,6 +1860,8 @@ void lemmings_step(lemming *lem, uint8_t n,
         else if (f & 0x8000) { /* image 0x2D0F, not read */ }
         else if (f & 0x0004)
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
+        else if (f & 0x2000)
+            lem_exiting(a);                          /* image 0x2326 */
         else if (f & 0x0010)
             lem_dig(a, lvl, cw, chh);                /* image 0x23F3 */
         else if (f & 0x0400) { /* image 0x2A6D, not read */ }

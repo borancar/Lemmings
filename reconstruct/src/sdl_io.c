@@ -1298,6 +1298,7 @@ int level_show(const char *dir, const char *file, uint32_t which,
         A.skill = 0;
         A.over = 0;
         level_saved_reset();
+        level_triggers_set(&A.lv, &g);
         A.diggers = (uint8_t)lv->skills[7];   /* the digger's slot */
         A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
 
