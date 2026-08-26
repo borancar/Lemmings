@@ -35,6 +35,12 @@ DIG_BTN_Y = 190
 WAIT = 90               # frames to let some lemmings walk out first
 
 
+def r_anim_ok(r):
+    # Only the frames image 0x023F3 does NOT dig on: the counter is on 1..7,
+    # so the terrain is frozen and anything that moves is the lemming.
+    return 1 <= r["anim"] <= 7
+
+
 def install(m):
     from unicorn import UC_HOOK_CODE
     from unicorn.x86_const import UC_X86_REG_DS
@@ -111,6 +117,42 @@ def install(m):
                               (0x14, "?0x14"), (0x1F, "?0x1F")):
                 out.write(f"      +{off:#04x} {name:12s} = "
                           f"{w(ARRAY + off) & 0xffff:#06x}\n")
+
+        # THE SPRITE, separated from the terrain by holding still.
+        #
+        # Image 0x023F3 digs only on the two animation frames where the
+        # counter comes round to 0 and to 8; on 1..7 it just animates. So
+        # across those the terrain does not change and the lemming does -
+        # and a pixel that varies is the sprite while one that does not is
+        # the level. That is what makes the shape readable: dumping a single
+        # frame gives a digger tangled up in the earth it is removing.
+        if WAIT + 15 <= st["n"] <= WAIT + 21 and n and r_anim_ok(rec(0)):
+            fb = m.framebuffer()
+            r = rec(0)
+            sx = r["x"] - w(SCROLL)
+            st.setdefault("shots", []).append(
+                (st["n"], r["anim"], r["y"],
+                 [fb[y * 320 + x]
+                  for y in range(r["y"] - 22, r["y"] + 4)
+                  for x in range(sx - 16, sx + 16)]))
+
+        if st["n"] == WAIT + 23 and st.get("shots"):
+            shots = st["shots"]
+            W2, H2 = 32, 26
+            out.write(f"\n  the sprite, from {len(shots)} frames that do not "
+                      f"dig (anims {[a for _, a, _, _ in shots]}):\n")
+            for yy in range(H2):
+                line = ""
+                for xx in range(W2):
+                    i = yy * W2 + xx
+                    vals = {sh[3][i] for sh in shots}
+                    if len(vals) == 1:
+                        line += "."          # never changed: the level
+                    else:
+                        v = shots[0][3][i]
+                        line += "%x" % v if v < 16 else "#"
+                out.write(f"    {line}\n")
+            out.flush()
 
         # The SCREEN while it digs. The sprite's size is the open question -
         # its record says 112 bytes a frame, which is neither the walker's

@@ -1754,11 +1754,32 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  *
  * Applied to the digger's 112 and 84, the ratio 112/84 gives PLANES = 3, and
  * the mask's 28 bytes give rows * (bpr + 1) = 28. That leaves five shapes,
- * of which only 7 rows of 3 bytes is anywhere near what the screen shows.
- * Decoding section 0 at every offset as a 24x7 sprite in three planes finds
- * 87 places with a plausible ink count and none of them is a lemming - they
- * are noise. So that is tested and failed, and the sprite is somewhere or
- * something other than a 63-byte frame in section 0.
+ * and the screen picks one of them OUTRIGHT.
+ *
+ * tools/probe_digger.py separates the sprite from the ground it is standing
+ * in by holding still: image 0x023F3 digs only when the counter comes round
+ * to 0 and to 8, so across anims 1..7 the terrain does not change and the
+ * lemming does. Take seven such frames, and a pixel that varies is the
+ * sprite while one that never does is the level. What comes out is
+ *
+ *     ..........100000000.0..1........
+ *     ............0000220.3...........
+ *     .............00222030...........
+ *     ..........3...3222300..3........
+ *     ..........3..0322200...3........
+ *     ..............3.0......2........
+ *     ..........22333.11..3322........
+ *
+ * SEVEN ROWS, about fourteen columns of content. So it is rows = 7, and with
+ * rows * (bpr + 1) = 28 that fixes bpr = 3 - a 24-pixel frame with margins,
+ * in three planes, 63 bytes of source.
+ *
+ * What is still not found is WHERE. Decoding section 0 at every byte offset
+ * as a 24x7 sprite in three planes, laid out plane-major the way the walker
+ * is, finds 87 places with a plausible ink count and not one of them is a
+ * lemming - they are noise. So the digger's frames are not in section 0 in
+ * the walker's layout, and the next place to look is the other sections, or
+ * the store itself at the ink base the record carries.
  *
  * One of the two candidates was ruled out earlier, by looking. probe_digger.py dumps
  * the original's own framebuffer while a lemming digs, printing anything
