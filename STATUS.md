@@ -1434,6 +1434,40 @@ all.** `level_panel_build` was the other - there the original had no such
 routine, here it has one and it is DOS. Neither could be settled without going
 and reading the address that was already written down beside the marker.
 
+### Sweep the flag, do not wait for a case to expose it
+
+Finding the pause bug by having a pause case is luck; finding the OTHER seven
+by enumerating them is a method. `tools/xref.py` lists every instruction in the
+image that names one DGROUP offset directly, and `ds:0x2B` has nine:
+
+    image 0x0020C  the clock                    the port guards it
+    image 0x01F19  the lemmings walk            the port guards it
+    image 0x030A6  the release                  the port guards it
+    image 0x03150  the SKILL ASSIGNMENT         the port guards it
+    image 0x03944  the object animations        THE ONE THAT WAS MISSING
+    image 0x03F52  selecting a skill            the port guards it
+    image 0x03FEF  the nuke's double-click      the port guards it
+    image 0x04028  the toggle itself            image 0x04018's `xor`
+    image 0x04032  the release-rate buttons     moot: image 0x03F27 refuses
+                                                every button below 2 and the
+                                                rate is not transcribed
+
+So pause is now COMPLETE rather than one-bug-fixed, and that is a different
+claim. Image `0x03150` is worth naming while it is here: it is the skill
+assignment, dispatching `ds:0x82` to the eight handlers - image `0x03598` in
+it is the miner, the same address `lem_mine_start` carries - and it lives in
+the play LOOP, not on the click.
+
+**And the tool had to be checked on a known answer first.** Its first version
+matched only the accumulator short forms and a hand-written list of
+`op [x],imm`, and it reported `ds:0x4D` - the debris count - as having ONE
+reference, the store at image `0x0042C`. The read at image `0x06ECC` is
+`mov cl,[0x4d]`, a modrm form, and was invisible. A sweep that under-reports
+reads exactly like a sweep that found everything. It matches any modrm opcode
+with mod 00 and rm 110 now, and still cannot see an access made through a
+register - so a count of zero means "no direct reference", not "never
+touched".
+
 ### PAUSE stops the objects too, and the port's kept turning
 
 A real fault in the port, and the pause case is the only thing in this
