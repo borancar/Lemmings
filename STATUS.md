@@ -1468,6 +1468,28 @@ with mod 00 and rm 110 now, and still cannot see an access made through a
 register - so a count of zero means "no direct reference", not "never
 touched".
 
+### ds:0x84 is the panel's auto-repeat divider
+
+Nothing here had a name for `ds:0x84`, and it gates the panel. Image `0x03EF9`
+decides what a click landed on: below `ds:0x12 + 8 = 0xC0` it is not the panel
+at all; at `ds:0x10 - 8 >= 0xD0` it is the minimap; and otherwise - the button
+strip - image `0x03F15` refuses the click outright unless `ds:0x84` is zero.
+
+That byte cycles. Image `0x03B53` increments it once a frame from the panel's
+own drawing, and image `0x03B3F` catches it at 2, copies `ds:0x82` into
+`ds:0x83` and puts it back to 0xFF so the next increment wraps it to zero. So
+a HELD button fires one frame in three, which is what gives the release-rate
+buttons their ramp - and the minimap, which is a drag rather than a press, is
+deliberately outside the divider.
+
+The port is not affected and it is worth saying why rather than just that: it
+acts on the button-down EDGE, so a skill selection lands once whatever frame
+it arrives on, and buttons 0 and 1 - the only ones the divider exists for -
+are refused at image `0x03F27` and not transcribed. The two agree for every
+button the port implements, by different means again.
+
+Yield: five flags swept, one bug.
+
 ### Two more flags swept, and both came back clean
 
 The sweep is only worth having if its negative answers are recorded too,
