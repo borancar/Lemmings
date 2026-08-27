@@ -6137,10 +6137,16 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
     panel_highlight(pp, PANEL_LINE_W, PANEL_ART_H, sel);
     panel_minimap(pp, PANEL_LINE_W, PANEL_ART_H, terrain, tw, th,
                   MINIMAP_AT_X, MINIMAP_AT_Y);
-    panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, view_x,
-                   MINIMAP_AT_X, VIEWPORT_AT_Y);
+    /* THE DOTS FIRST, THE FRAME OVER THEM. A lemming standing where the
+     * viewport's edge runs put a dot through it in the port and does not in
+     * the original: at frame 186 of "Watch out, there`s traps about" the
+     * original holds 3 at (266, 183) - the edge's own colour - where the port
+     * held 2, on every frame a lemming passed that cell. One pixel, and it
+     * was the whole of that level's panel score. */
     panel_minimap_dots(pp, PANEL_LINE_W, PANEL_ART_H, lem, nlem,
                        MINIMAP_DOT_X, MINIMAP_AT_Y);
+    panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, view_x,
+                   MINIMAP_AT_X, VIEWPORT_AT_Y);
 }
 
 /* Image 0x07BB8.

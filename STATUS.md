@@ -1224,6 +1224,23 @@ were overridden; n = 39 and n = 43 do not and kept their own numbers.
 and cannot know which PLATE it is; the original decides from the level index,
 which `--file` does not have.
 
+### The minimap's dots go UNDER the viewport's frame
+
+`level002.dat --level 4` scored its panel 891 of 1,100, and the whole of the
+difference was ONE PIXEL: at frame 186 the original holds 3 at (266, 183) -
+the colour of the viewport rectangle's own left edge, which runs down that
+column on every row - and the port held 2, the dot's colour, on every frame a
+lemming passed that cell.
+
+The port drew the frame and then the dots; the original draws the dots and
+then the frame over them. Swapping two calls took the panel to **1,099 of
+1,100**.
+
+Worth keeping as a shape: a difference of one pixel on two hundred frames
+looks like nothing and is a whole missing ordering. The way to see it was to
+print the neighbourhood rather than the pixel - the column of 3s above and
+below said at once that something was drawn THROUGH.
+
 ### Sprites: where a group lives, and how to find one
 
 `tools/find_sprite.py` scores a candidate offset against the ORIGINAL's own
