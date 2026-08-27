@@ -1366,9 +1366,23 @@ it, exactly as this file says about fitting - and to find what actually draws
 those three pixels, which is still unknown. It is not the objects (a trace of
 `level_anim_draw` writes nothing in rows 36..45), not the cursor (suppressing
 it changes nothing), and not the terrain (the canvas at 863,37 is zero on
-every frame). It IS a lemming sprite - suppressing them clears it - and no
-write site in `lemming_draw` reaches canvas x 863. Those two facts have not
-been reconciled and the port should not be changed again until they are.
+every frame). It IS a lemming sprite: at frame 136 a walker sits at x 880,
+which puts its sprite at screen 312..327 with only 312..319 on screen.
+
+And the original draws that sprite - the port and the original AGREE on
+columns 312 to 318. Only column 319 differs. **Two clipping rules have now
+been tried and both made it worse**, which is the useful part:
+
+- the blitter's byte-wise trim, image 0x09997, against a limit of 320:
+  1,071 exact down to **875**
+- never writing the last visible column at all: down to **1,015**
+
+A byte trim cannot produce a one-column difference, and a blanket last-column
+rule is refuted by every other lemming that reaches 319 and matches. So the
+rule is conditional on something not yet identified, and guessing at it has
+cost two rounds. The next step is to READ `ds:0x66F2` out of a running level
+and then read the sprite path that actually consumes it, not to try a third
+shape.
 
 ### ODDTABLE.DAT: half the game's plates play under another name
 
