@@ -647,7 +647,7 @@ int main(int argc, char **argv)
         level_status_reset(&lv2);
         ck("a fresh level has not run out of time",
            !level_out_of_time(), "5:00 read as out of time");
-        for (uint32_t i = 0; i < 5u * 60u * LEVEL_FPS + 4 * LEVEL_FPS; i++)
+        for (uint32_t i = 0; i < 5u * 60u * LEVEL_CLOCK_FRAMES + 4 * LEVEL_CLOCK_FRAMES; i++)
             level_timer_step();
         ck("and one whose clock reads 0:00 has",
            level_out_of_time(), "the clock ran down and it said otherwise");

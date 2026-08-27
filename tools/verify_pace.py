@@ -10,7 +10,7 @@ own display.
 
 So this is a wall-clock check, and it is the only one:
 
-    N frames of the level should take N / 17 seconds   (image 0x0418)
+    N frames of the level should take N / 14 seconds   (image 0x00186)
     N passes of the menu  should take N / 70 seconds   (image 0x01550, a
                                                         retrace wait)
 
@@ -30,9 +30,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 LEMDEV = os.path.join(ROOT, "reconstruct", "lemdev")
 
-# The two rates, and where each comes from.
-LEVEL_FPS = 17          # image 0x0418: ds:0x85 and ds:0x86 start at 0x11
-MENU_HZ = 70            # image 0x01550 waits a retrace; the VGA modes are 70
+# The two rates, and where each comes from. THEY ARE ONE NUMBER, divided.
+#
+# The game's INT 8 handler at image 0x017C7 is paced by the display - image
+# 0x017FE waits a vertical retrace before reloading the PIT - so a tick is a
+# retrace, 70 a second on this adapter. Image 0x00186 then waits FIVE ticks
+# to a level frame.
+#
+# This said 17, from image 0x0418's ds:0x85. That byte is how many frames the
+# game counts before stepping its DISPLAYED clock, not how fast frames
+# arrive, and taking it for the frame rate gave the port a second clock that
+# disagreed with its first.
+MENU_HZ  = 70                       # image 0x01550's retrace wait
+TICKS_PER_FRAME = 5                 # image 0x00186's `cmp al, 4`
+LEVEL_FPS = MENU_HZ // TICKS_PER_FRAME
 
 TOLERANCE = 0.08        # 8%: a scheduler is not a crystal
 

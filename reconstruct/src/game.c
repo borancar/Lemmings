@@ -1060,8 +1060,8 @@ static uint8_t g_tick_load;   /* ds:0x86 */
 const char *level_status_line(void) { return g_status; }
 
 /* Image 0x0418 and 0x041D: ds:0x85 and ds:0x86 both start at 0x11. The same
- * number paces the display - see LEVEL_FPS in game.h. */
-#define LEVEL_FRAMES_PER_SECOND LEVEL_FPS
+ * number paces the display - see LEVEL_CLOCK_FRAMES in game.h. */
+#define LEVEL_FRAMES_PER_SECOND LEVEL_CLOCK_FRAMES
 
 /* Image 0x0418 and 0x041D set ds:0x85 and ds:0x86 to 0x11 - seventeen frames
  * to a second - and image 0x040E and 0x0413 put '0' in both seconds cells.
@@ -1837,6 +1837,44 @@ uint8_t sound_enabled(uint8_t bits)
 {
     return (uint8_t)((g_snd_bits & bits) != 0);
 }
+
+/* ======================================================================
+ * THE GAME'S OWN TIMER - image 0x017C7, installed on INT 8 at image 0x01646.
+ *
+ * Everything the game paces comes from here, and the handler is paced by the
+ * DISPLAY: image 0x017FE waits for a vertical retrace before image 0x01815
+ * reloads the PIT from ds:0x1FC9. A tick is a retrace.
+ * ====================================================================== */
+static uint8_t g_tick_pending;      /* ds:0x1FCD */
+
+/* image 0x017C7. The port has none of the handler's video work - the page
+ * flip at image 0x017E5 and the PIT reload at image 0x01815 are things the
+ * CRTC and the 8253 did, and sdl_io.c owns their replacements - so what is
+ * left is what the handler does to the GAME. */
+void timer_isr(void)
+{
+    /* image 0x01872: the driver's tick, every interrupt and not every
+     * frame. image 0x0185F's INT 60h twin runs on odd ticks only (image
+     * 0x0184A's `and al,1`), which this port does not have a path for. */
+    sound_tick_now();
+    g_tick_pending++;               /* image 0x018A3 */
+}
+
+/* image 0x00186's `cmp al, 4 / jle` and image 0x0018F's clear. FIVE ticks to
+ * a frame, which with a 70 Hz retrace is fourteen frames a second - not the
+ * seventeen this port used to pace at, and the difference is why its clock
+ * ran 1.22x fast against DOSBox. */
+int timer_frame_due(void)
+{
+    if (g_tick_pending <= 4) return 0;      /* image 0x0018B */
+    g_tick_pending = 0;                     /* image 0x0018F */
+    return 1;
+}
+
+/* THE PORT'S OWN. The original's ds:0x1FCD is cleared by the wipe at image
+ * 0x0044F along with everything else at a level start; this is that, on its
+ * own, so a test can start a level's timing from a known tick. */
+void timer_reset(void) { g_tick_pending = 0; }
 
 /* ds:0x2010, which image 0x005A4 sets when the detect answers. THE PORT'S
  * OWN only in how it learns the answer - sdl_io.c asks the driver whether it

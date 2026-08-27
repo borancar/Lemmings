@@ -677,18 +677,24 @@ static int level_run(struct level_frame *A, const canvas *c,
 
     /* PACE ON THE GAME'S RATE, and on an absolute clock.
      *
-     * The level runs at LEVEL_FPS - seventeen frames a second, image 0x0418's
-     * own number, which is what makes 5,100 frames exactly the five minutes
-     * of the expiration timer. This loop used to sleep 16 milliseconds a
-     * frame, which is sixty, so the game ran three and a half times too fast
-     * and the clock visibly fell down its own display.
+     * A frame is FIVE ticks of the game's own timer - image 0x00186 waits
+     * for ds:0x1FCD to exceed 4 - and a tick is a vertical retrace, because
+     * image 0x017FE waits for one before reloading the PIT. So the level
+     * runs at TIMER_HZ/5, fourteen frames a second on a 70 Hz adapter.
+     *
+     * It used to pace at 17, on the reading that ds:0x85's 0x11 was the frame
+     * rate. It is not: that counter is how many frames the game counts before
+     * stepping its DISPLAYED clock, so a level's five minutes takes rather
+     * more than five real ones - which is what DOSBox does and what this did
+     * not. Before that it slept 16 ms a frame, which was sixty.
      *
      * The deadline is absolute rather than a sleep per frame: a sleep is at
      * the mercy of the host scheduler and of however long the frame took to
      * compose, which would make the game's speed a property of the machine
      * rather than of the game. Falling behind resets the deadline instead of
      * building a debt the loop would then sprint to repay. */
-    const Uint64 period = SDL_NS_PER_SECOND / LEVEL_FPS;
+    const Uint64 period =
+        (Uint64)(SDL_NS_PER_SECOND / LEVEL_FRAME_HZ);
     Uint64 due = SDL_GetTicksNS();
 
     int held = 0;          /* the button is down - a rate button repeats */
@@ -1174,14 +1180,15 @@ uint32_t sound_fill_bytes(int queued, int target)
  * and it had never been run by anything but the game. */
 void sound_build_chunk(int16_t *buf, uint32_t frames)
 {
-    const double per_tick = (double)OPL_SAMPLE_RATE / ADLIB_TICK_HZ;
+    /* One tick is one of the game's own INT 8 handlers - see TIMER_HZ. */
+    const double per_tick = (double)OPL_SAMPLE_RATE / TIMER_HZ;
     uint32_t done = 0;
     while (done < frames) {
         /* One driver tick buys per_tick samples. The accumulator carries the
          * fraction, so the rate stays 97.08 Hz over time rather than being
          * rounded to 512 and running sharp. */
         if (g_tick_acc < 1.0) {
-            adlib_tick();                   /* driver +0x0115 */
+            timer_isr();                    /* image 0x017C7 */
             g_tick_acc += per_tick;
         }
         uint32_t want = (uint32_t)g_tick_acc;

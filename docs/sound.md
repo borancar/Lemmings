@@ -819,3 +819,60 @@ wrong and the two free to drift apart again.
 The fix is to pace the driver off the level's own clock, as image 0x0019D
 does, and to settle the timer's rate from image 0x1602's measurement rather
 than from ours. Neither is a constant to tune.
+
+## One clock, transcribed - the port had two and invented both
+
+The port paced the driver at `ADLIB_TICK_HZ` and the level at `LEVEL_FPS`, and
+neither came from the game: the first was a measurement of OUR emulator
+(97.08 Hz) and the second was a misreading. They were wrong by DIFFERENT
+factors - 1.9 and 1.22 against DOSBox - and that they differed at all was the
+real fault, because the original cannot have two rates disagree.
+
+It has one, and it is readable:
+
+    image 0x017C7   the INT 8 handler, installed at image 0x01646
+    image 0x017FE   which waits a VERTICAL RETRACE before image 0x01815
+                    reloads the PIT - so a tick is a retrace
+    image 0x01872   int 61h AH=0, the driver's tick, EVERY interrupt
+    image 0x018A3   inc ds:0x1FCD
+    image 0x00186   the play loop waits for ds:0x1FCD to exceed 4, and
+                    image 0x0018F clears it - FIVE ticks to a frame
+
+So the sound runs at the tick and the level at a fifth of it, and neither is
+a number anybody chose. `timer_isr` and `timer_frame_due` are those routines;
+`TIMER_HZ` and `LEVEL_FRAME_HZ` are what is left of the two constants.
+
+**ds:0x85's 0x11 is not the frame rate.** It is how many frames the game
+counts before stepping its DISPLAYED clock, and the old note here argued in a
+circle: 5,100 frames is five minutes, therefore seventeen a second. 5,100
+frames is 300 game-seconds *by that counter* and says nothing about how long a
+frame lasts. It is `LEVEL_CLOCK_FRAMES` now.
+
+### It predicts DOSBox
+
+A tick is 70 Hz, a frame is five ticks - fourteen a second - and the clock
+steps a game-second every seventeen frames, so a game-second takes **1.21
+real seconds** and a five-minute level takes about six.
+
+DOSBox's own clock, read off its TIME display across two runs at different
+CPU speeds, ran at 0.81x and 0.81x real time. 1/1.21 is 0.83. The port now
+derives from the game's routines the rate DOSBox was measured at, having
+previously insisted a game-second was a real one.
+
+### And the tempo measurement was the instrument again
+
+Changing the tick rate from 97.08 to 70 Hz measured as NO CHANGE - still
+1.9x. `lemdev --adlib-live` stamps its log with a hard-coded divisor of
+12291, the figure our emulator once measured, so the replay rendered every
+stream at 97.08 Hz whatever the port actually ticked at. It derives the
+divisor from TIMER_HZ now.
+
+With that fixed the envelope correlations fall to 0.2 and the two DOSBox
+references stop agreeing with each other on a ratio - so that method is spent
+and the remaining tempo question needs DOSBox's register stream, not more
+audio.
+
+    all seven levels        exact, both halves
+    prove.sh                100.00%
+    verify_pace  the level  170 at 14/s: want 12.14s got 12.66s  ok
+                 the menu   350 at 70/s: want  5.00s got  5.05s  ok

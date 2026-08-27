@@ -657,7 +657,13 @@ static void adlib_log_write(uint8_t reg, uint8_t val)
     /* In the live path the tick advances INSIDE the chunk, so ask the driver
      * rather than use whatever was stamped before it started. */
     uint32_t t = g_adlib_live ? adlib_tick_count() : g_adlib_tick;
-    fprintf(g_adlib_log, "%u 12291 %02X %02X\n", t, reg, val);
+    /* The divisor a tick is WORTH, derived from the port's own clock rather
+     * than written down. It was hard-coded at 12291 - the figure our
+     * emulator happened to measure - so a stream logged after the port's
+     * tick rate changed still RENDERED at the old rate, and a tempo fix
+     * measured as no change at all. */
+    fprintf(g_adlib_log, "%u %u %02X %02X\n",
+            t, (unsigned)(1193182.0 / TIMER_HZ + 0.5), reg, val);
 }
 
 /* Feed the transcribed driver the same requests the ORIGINAL was given, at
@@ -739,7 +745,7 @@ static int adlib_live(const char *data, uint32_t seconds, const char *out)
     uint32_t total = seconds * OPL_SAMPLE_RATE;
     uint32_t made = 0;
     double frame_acc = 0.0;
-    const double per_frame = (double)OPL_SAMPLE_RATE / LEVEL_FPS;
+    const double per_frame = (double)OPL_SAMPLE_RATE / LEVEL_FRAME_HZ;
     while (made < total) {
         if (frame_acc < 1.0) { level_start_step(); frame_acc += per_frame; }
         /* The DRIVER's own tick count, not one derived from the sample

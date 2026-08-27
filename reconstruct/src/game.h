@@ -832,18 +832,56 @@ extern lem_pc lem_machine;
  * which is the figure tools/lemmings.py hands the emulator, and the figure
  * the game's own measurement at image 0x1602 arrives at.
  *
- * The LEVEL does not run at this. It waits several retraces a frame and
- * lands on LEVEL_FPS below, which is the game's number and not the
- * display's. Reading one rate off the other is how the level came to run
- * three and a half times too fast. */
+ * The LEVEL does not run at this either. Image 0x00186 waits FIVE ticks of
+ * the game's timer to a frame, and image 0x017FE paces that timer off this
+ * same retrace - so the level is TIMER_HZ/5 and the menu is TIMER_HZ. One
+ * clock, divided twice; see TIMER_HZ below. */
 #define VIEW_REFRESH_HZ 70
 
-/* THE LEVEL'S FRAME RATE, image 0x0418 and image 0x041D: ds:0x85 and ds:0x86
- * both start at 0x11, and the clock steps a second every time the counter
- * runs out - which is what makes 5,100 frames exactly the five minutes of the
- * expiration timer. It is the game's rate, not the display's: the level runs
- * at seventeen frames a second, not seventy. */
-#define LEVEL_FPS 0x11
+/* ds:0x85 and ds:0x86, image 0x0418 and image 0x041D, both start at 0x11.
+ *
+ * THIS IS NOT THE FRAME RATE, and reading it as one was a mistake that cost
+ * this port two independent clocks. It is how many frames the game counts
+ * before stepping its displayed CLOCK by a second - the game's own reckoning
+ * of a second, which is only a real second if the frames happen to arrive
+ * seventeen a second.
+ *
+ * The old note here argued 5,100 frames is five minutes, so seventeen a
+ * second. That is circular: 5,100 frames is 300 game-seconds by this very
+ * counter, and says nothing about how long a frame lasts. */
+#define LEVEL_CLOCK_FRAMES 0x11
+
+/* THE ONE CLOCK. Everything the game paces comes from its INT 8 handler at
+ * image 0x017C7, and the handler is paced by the DISPLAY: image 0x017FE
+ * waits for bit 3 of the status register to go high and image 0x01809 for it
+ * to go low, which is one vertical retrace, before it reloads the PIT from
+ * ds:0x1FC9. So a tick is a retrace.
+ *
+ * Two things divide it, and they are the only rates the game has:
+ *
+ *   the SOUND     image 0x01872 asks the driver for a tick EVERY interrupt
+ *   the LEVEL     image 0x00186 waits for ds:0x1FCD to exceed 4 and image
+ *                 0x0018F clears it - FIVE ticks to a frame
+ *
+ * They cannot disagree, because they are one number divided two ways. The
+ * port had them as two independent constants - a measured 97.08 Hz for the
+ * driver and a misread 17 for the level - and they were wrong by different
+ * factors, 1.9 and 1.22 against DOSBox. That two rates DIFFERED was the
+ * finding; fitting either to its ratio would have left the structure wrong.
+ *
+ * image 0x01882 corroborates the rate: every fourth tick the handler chains
+ * to the BIOS's own INT 8 so DOS's clock keeps time, which only works if a
+ * tick is four times 18.2 Hz - 72.8, and a 70 Hz retrace is that within a
+ * frame's rounding. */
+#define TIMER_TICKS_PER_FRAME 5        /* image 0x00186's `cmp al, 4` */
+#define TIMER_HZ  VIEW_REFRESH_HZ      /* image 0x017FE's retrace wait */
+#define LEVEL_FRAME_HZ ((double)TIMER_HZ / TIMER_TICKS_PER_FRAME)
+
+/* image 0x017C7 - one tick of the game's own handler. */
+void timer_isr(void);
+/* image 0x00186 and image 0x0018F - has a frame's worth of ticks arrived? */
+int  timer_frame_due(void);
+void timer_reset(void);
 
 void level_play_step(level_anim *st, const level *lv, lemming *lem,
                      uint8_t *released, uint8_t *terrain,

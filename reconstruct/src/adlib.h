@@ -67,9 +67,13 @@ void adlib_music(uint8_t id);
 void adlib_effect(uint8_t id);
 void adlib_slot5(uint8_t id);
 
-/* The rate the tick must be called at is the GAME's, not this file's: the
- * game programs the PIT and calls the driver from IRQ 0. Measured off the
- * original at 97.08 Hz (divisor 12291) - see docs/sound.md. */
-#define ADLIB_TICK_HZ 97.08
+/* The rate the tick must be called at is the GAME's, not this file's, and it
+ * is TIMER_HZ in game.h: image 0x01872 asks for a tick once per INT 8, and
+ * image 0x017FE paces INT 8 off the display's retrace.
+ *
+ * This used to be a constant here - 97.08 Hz, MEASURED OFF OUR OWN EMULATOR
+ * rather than read out of the game - and it made the music 1.9x too fast
+ * while the level, paced by a separate constant, was 1.22x too fast. Two
+ * clocks that the original does not have. */
 
 #endif /* ADLIB_H */
