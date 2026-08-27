@@ -66,6 +66,19 @@ def main():
                    cwd=ROOT, stdout=subprocess.DEVNULL,
                    stderr=subprocess.DEVNULL)
 
+    # AND THE SAME LEVEL WITHOUT THEM, so the object pixels can be scored on
+    # their own. The whole bitmap is 243,936 pixels and barely 800 of them are
+    # an object, so "everything agrees" would still read as a pass with
+    # render_objects broken outright - a 0.3% fall. That is the shape of
+    # failure this file has hit three times in three passes: a plausible
+    # number from a check that never established it exercised the thing it
+    # names. Differencing the two renders gives the footprint for free.
+    bare = os.path.join(ROOT, "out", "vo_port_bare.raw")
+    subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
+                    "--data", "lemming1.pc", "--no-objects", "--raw", bare],
+                   cwd=ROOT, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL)
+
     from compare_screen import read_raw
     d = open(dump, "rb").read()
     planes = [d[p * STRIDE * ROWS:(p + 1) * STRIDE * ROWS] for p in range(4)]
@@ -79,22 +92,40 @@ def main():
         return v
 
     w, h, pix = read_raw(raw)
+    bw, bh, bare_pix = read_raw(bare)
     diff = same = 0
+    odiff = osame = 0
     first = []
     for y in range(6, min(ROWS, h)):
         row = pix[y * w:(y + 1) * w]
+        brow = bare_pix[y * bw:(y + 1) * bw]
         for x in range(MARGIN, MARGIN + w):
-            if guest(x, y) == row[x - MARGIN]:
+            ok = guest(x, y) == row[x - MARGIN]
+            if ok:
                 same += 1
             else:
                 diff += 1
                 if len(first) < 6:
                     first.append((x, y))
+            if row[x - MARGIN] != brow[x - MARGIN]:
+                if ok:
+                    osame += 1
+                else:
+                    odiff += 1
     total = same + diff
+    otot = osame + odiff
     print(f"  the composed level WITH objects, against the original's own "
           f"bitmap at image 0x07EB2:")
-    print(f"    {same} of {total} pixels agree, {diff} differ"
+    print(f"    whole bitmap    {same} of {total} agree, {diff} differ"
           f"  ({100.0 * same / total:.4f}%)")
+    if otot:
+        print(f"    OBJECT pixels   {osame} of {otot} agree, {odiff} differ"
+              f"  ({100.0 * osame / otot:.4f}%)")
+    else:
+        print("    OBJECT pixels   NONE - the two renders are identical, so "
+              "this run scored no object at all and the figure above is "
+              "terrain. That is a failed check, not a pass.")
+        return 2
     if diff:
         print(f"    first at level {first}")
     return 1 if diff else 0

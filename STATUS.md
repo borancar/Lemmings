@@ -1762,6 +1762,33 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### Score the thing under test, not the picture it sits in
+
+Three passes running, the fault was my own instrument: a check comparing two
+different routines, a sweep that exercised none, and a sweep against a stale
+binary. Each produced a clean plausible number. The common shape is a check
+that never established it reached what it names.
+
+`verify_objects.py` had it too. It compared 243,936 pixels of which barely 800
+are an object, so **`render_objects` could break outright and the headline
+would fall 0.3%**. It now renders the level a second time with `--no-objects`
+and differences the two, which gives the object footprint for nothing, and
+scores that separately:
+
+    whole bitmap    243936 of 243936 agree, 0 differ  (100.0000%)
+    OBJECT pixels      815 of    815 agree, 0 differ  (100.0000%)
+
+**And it was checked against a fault it should catch**, which is the step the
+last three passes skipped. Shifting every object one pixel right:
+
+    whole bitmap    243479 of 243936 agree, 457 differ  (99.8127%)
+    OBJECT pixels      458 of    817 agree, 359 differ  ( 56.0588%)
+
+99.81% reads as a rounding error; 56% does not. A run whose two renders come
+out identical now reports that it scored **no object at all** and returns a
+failure, because that is what every one of this session's instrument faults
+looked like from the outside: a number, with nothing behind it.
+
 ### The digger's panel had scored 0 of 676 and nobody was shown the number
 
 `verify_skills` prints one line per case and it was the PLAY AREA's. The
