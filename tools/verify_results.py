@@ -121,6 +121,14 @@ def install(m):
         # this ends at 0xC60, where the crater's begins.
         open(os.path.join(out_dir, "mine.bin"), "wb").write(
             bytes(uc.mem_read(mseg * 16 + 0x780, 0x4E0)))
+        # THE BOMBER'S COUNTDOWN DIGITS, in the same resource further along.
+        # Image 0x07147 adds 0x1070 to (0x40 - (fuse & 0xF0)) * 8 and image
+        # 0x0714A adds the sub-byte shift times sixteen, so a digit is 128
+        # bytes of eight shifts of sixteen. The fuse runs 0x4F down to 0 and
+        # it is the HIGH NIBBLE that is shown, which is why the original's
+        # lemmings all wear a "4" for the first sixteen frames.
+        open(os.path.join(out_dir, "digits.bin"), "wb").write(
+            bytes(uc.mem_read(mseg * 16 + 0x1070, 5 * 128)))
 
         cseg = int.from_bytes(uc.mem_read(ds + 0x1FEA, 2), "little")
         open(os.path.join(out_dir, "cursor_store.bin"), "wb").write(

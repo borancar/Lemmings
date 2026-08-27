@@ -4920,6 +4920,58 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
 
 /* One lemming, at its own coordinates - image 0x070F9 puts the top row at
  * `y + hot_y`, and the canvas sits 16 along and 16 down from those. */
+/* THE BOMBER'S COUNTDOWN, five digits of eight rows.
+ *
+ * Image 0x07147 makes the source offset `(0x40 - (fuse & 0xF0)) * 8 +
+ * 0x1070` and image 0x0714A adds the sub-byte shift times sixteen, so a
+ * digit is 128 bytes of eight shifts of sixteen and only shift 0 is kept -
+ * this port works in whole pixels. The resource is ds:0x1FE8, the same one
+ * the crater's and the basher's masks come out of, and these were dumped
+ * by tools/verify_results.py rather than read off a screen.
+ *
+ * It is the fuse's HIGH NIBBLE that is shown, counting 5 4 3 2 1 as the
+ * fuse runs 0x4F down to 0 - which is why every lemming wears a 5 for the
+ * first sixteen frames and the numbers change together. */
+#define FUSE_DIGIT_ROWS 8
+static const uint8_t FUSE_DIGIT[5][FUSE_DIGIT_ROWS] = {
+    { 0x00, 0x00, 0x00, 0xF0, 0x80, 0xF0, 0x10, 0xF0 },   /* "5" */
+    { 0x00, 0x00, 0x00, 0x90, 0x90, 0xF0, 0x10, 0x10 },   /* "4" */
+    { 0x00, 0x00, 0x00, 0xF0, 0x10, 0x70, 0x10, 0xF0 },   /* "3" */
+    { 0x00, 0x00, 0x00, 0xF0, 0x10, 0xF0, 0x80, 0xF0 },   /* "2" */
+    { 0x00, 0x00, 0x00, 0x60, 0x20, 0x20, 0x20, 0x70 },   /* "1" */
+};
+
+/* Image 0x070F3 loads the fuse into the BLIT ITSELF - it is not a separate
+ * call - and image 0x0711A skips the digit when it is zero. Image 0x0714E
+ * takes 0x15F off the destination, which for a 44-byte row is eight rows up
+ * and one byte along: measured against the original's own frame 430, the
+ * digit sits at (+8, -8) from the sprite's origin in colour 3, and all ten
+ * of its ink pixels agree on all three lemmings that wear one. */
+#define FUSE_DIGIT_DX     8
+#define FUSE_DIGIT_DY   (-8)
+#define FUSE_DIGIT_INK    3
+
+static void lem_draw_fuse(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                          const lemming *a)
+{
+    if (!a->fuse) return;                           /* image 0x07118 */
+    uint8_t slot = (uint8_t)(4 - (a->fuse >> 4));   /* image 0x0713B */
+    if (slot > 4) return;
+    int32_t x0 = (int32_t)a->x + a->hot_x - LEMMING_DX + FUSE_DIGIT_DX;
+    int32_t y0 = (int32_t)a->y + a->hot_y - LEMMING_DY + FUSE_DIGIT_DY;
+    for (uint8_t r = 0; r < FUSE_DIGIT_ROWS; r++) {
+        int32_t py = y0 + r;
+        if (py < 0 || py >= (int32_t)dst_h) continue;
+        uint8_t bits = FUSE_DIGIT[slot][r];
+        for (uint8_t c = 0; c < 8; c++) {
+            if (!((bits >> (7 - c)) & 1u)) continue;
+            int32_t px = x0 + c;
+            if (px < 0 || px >= (int32_t)dst_w) continue;
+            dst[(size_t)py * dst_w + px] = FUSE_DIGIT_INK;
+        }
+    }
+}
+
 void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                   const uint8_t *sec, uint32_t sec_len, const lemming *a)
 {
@@ -4928,6 +4980,9 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     int32_t x0, y0;
 
     if (a->alive == 0xFF) return;
+
+    /* Before the sprite, because the sprite's own branches all return. */
+    lem_draw_fuse(dst, dst_w, dst_h, a);
 
     /* One leaving through the exit, image 0x02326's eight frames. */
     if (a->flags & 0x2000) {
