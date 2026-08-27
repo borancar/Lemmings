@@ -1762,6 +1762,33 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### What "owed" means for screen_start, now that the four calls are read
+
+Reading them turned a vague debt into a specific decision. The port's
+`screen_start` and the original's set-up sequence are not the same four
+things:
+
+    image 0x04DEF  clear the page       -> the port's calloc, which is not the
+                                          same act - the original clears VIDEO
+                                          MEMORY it already owns
+    image 0x04BF5  declare the surface  -> NOTHING. The port has no blitter to
+                                          bound, so ds:0x66F0/2/4 have no
+                                          counterpart
+    image 0x0531E  the palette          -> the MENU_PAL6 loop. The one thing
+                                          that lines up
+    image 0x05017  the level preview    -> draw_preview, a different routine
+
+and the port does two things the original's sequence does not contain: loading
+main.dat, which is DOS's work through image `0x01D2E`, and tiling the
+background.
+
+So the debt is not "write out four calls". It is a decision about where the
+port's boundary goes, and transcribing it means restructuring around the
+original's split. `level_panel_build` and `dat_load` raised the same question
+and answered it - no such routine, and IO. This one is neither: the original's
+sequence exists and the port's is a different four things. Worth doing
+deliberately or not at all, and now it can be.
+
 ### All five owed routines have an address now
 
 The provenance tool's list is unchanged at five, and that is right - none of

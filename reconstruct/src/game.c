@@ -7696,9 +7696,32 @@ static const char S_INPUT_3[]     = "3. Keyboard";         /* image 0x0E8F1 */
  *   image 0x05017  THE LEVEL PREVIEW - `xor bx,bx / jmp 0x7E76`. See
  *                  draw_preview, which carries that whole chain.
  *
- * What is still owed is the transcription, not the reading: this routine
- * does the same four things in the same order and none of them carries an
- * address yet.
+ * AND THE PORT'S DECOMPOSITION IS NOT THE ORIGINAL'S, which is the useful
+ * thing to know and was hidden while the four calls were unread. Set them
+ * beside what this routine actually does:
+ *
+ *   image 0x04DEF  clear the page      -> the calloc below, which is not the
+ *                                        same act: the original clears VIDEO
+ *                                        MEMORY it already owns
+ *   image 0x04BF5  declare the surface -> nothing. The port has no blitter to
+ *                                        bound, so ds:0x66F0/2/4 have no
+ *                                        counterpart at all
+ *   image 0x0531E  the palette         -> the MENU_PAL6 loop below. THE ONE
+ *                                        THING THAT LINES UP
+ *   image 0x05017  the level preview   -> draw_preview, a different routine
+ *
+ * and the two things this routine does that the original's sequence does not
+ * contain at all: loading main.dat, which is DOS's work through image
+ * 0x01D2E, and tiling the background.
+ *
+ * So the debt here is not "write out four calls". It is a DECISION about
+ * where the port's boundary goes, and transcribing this routine means
+ * restructuring around the original's split rather than filling in addresses.
+ * That is worth doing deliberately or not at all - see level_panel_build and
+ * dat_load, where the same question came up and the answer was that the
+ * original had no such routine, and IO respectively. This one is neither:
+ * the original's set-up sequence exists, and the port's is a different four
+ * things.
  */
 static int screen_start(const char *dir, menu_screen *m, dat_file *d,
                         const uint8_t **sec, const uint8_t **font,
