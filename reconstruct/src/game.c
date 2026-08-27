@@ -6875,10 +6875,43 @@ void level_play_draw(level_anim *st, const level *lv,
 
 /* THE CONTROL PANEL, one frame of it.
  *
- * NOT TRANSCRIBED. Every piece it calls is transcribed and carries its own
- * address, but the routine that calls them in order has not been found, so
- * the SEQUENCE here is measured - the same standing as menu_build_rating had
- * before image 0x04401 turned up, and it should be chased the same way.
+ * The port's own arrangement, and now for a reason rather than for want of
+ * looking: THE ORIGINAL HAS NO SUCH ROUTINE. It splits the panel across a
+ * set-up that draws it once and a loop that touches only the parts that
+ * change, and the port rebuilds the whole line each frame instead. Both put
+ * the same picture on the screen.
+ *
+ * The set-up, image 0x00495 onward, runs once before the loop is entered:
+ *
+ *     0x00495  0x3944   the play area
+ *     0x00498  0x7BB8   the objects
+ *     0x0049B  0x7900   the MINIMAP'S TERRAIN, copied from 0xD320 to
+ *                       ds:0x1F76 + 0x2172 + 2
+ *     0x0049E  0x3AC8   the percentage, so the first frame already has it
+ *
+ * and the play loop at image 0x001B0 runs, every pass:
+ *
+ *     0x001B0  0x30A6   the release
+ *     0x001B3  0x1F19   the lemmings walk
+ *     0x001B6  0x3944   the play area
+ *     0x001B9  0x7BB8   the objects
+ *     0x001BC  0x3634   the lemmings, and the OUT count at image 0x03684
+ *     0x001BF  0x3CDE   what the pointer is over, into ds:0x2083
+ *     0x001C2  0x3AC8   the minimap's DOTS (0x796F), then its VIEWPORT BOX
+ *                       (0x7A5A), then the IN percentage into ds:0x209D
+ *     0x001C5  0x3150
+ *
+ * Which settles the order the port had only MEASURED. The dots go under the
+ * box because image 0x03AC8 calls 0x796F before 0x7A5A - the one pixel that
+ * was level002/4's whole panel score - and the pointer's name is written
+ * before any of it.
+ *
+ * ONE THING THIS RAISES AND DOES NOT ANSWER: image 0x7900 draws the minimap's
+ * terrain and the loop never calls it again, so the original's thumbnail does
+ * NOT follow a digger's changes. The port redraws it every frame from the
+ * live terrain. Every panel scored here is exact, so nothing has caught it,
+ * but the two disagree by construction the moment enough terrain goes - and
+ * a level nobody plays removes none.
  *
  * It is here rather than in a caller because the order is the game's
  * whichever way it was arrived at. It had been written out once in devmain.c
