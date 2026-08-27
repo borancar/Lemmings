@@ -1249,12 +1249,38 @@ of "terrain-coloured pixels still present" was the wrong one twice over, and
 this is the comparison that separates them: not how MANY pixels, but whether
 they are the SAME pixels.
 
-Two mechanisms are ruled out and need not be checked again. The dirty-block
-repaint at image `0x080FD` drains EVERY marked run each frame - image
-`0x08199`'s `jcxz`/`jmp` loops back rather than budgeting - so the screen
-never lags its map. And `[si+0x22]`, set to fifteen by image `0x02D4F` and the
-obvious candidate for a particle count, is written in four places and read in
-none.
+Two mechanisms were ruled out by reading and need not be checked again. The
+dirty-block repaint at image `0x080FD` drains EVERY marked run each frame -
+image `0x08199`'s `jcxz`/`jmp` loops back rather than budgeting - so the
+screen never lags its map. And `[si+0x22]`, set to fifteen by image `0x02D4F`
+and the obvious candidate for a particle count, is written in four places and
+read in none.
+
+**And then it was found by WATCHING rather than reading.**
+`tools/probe_debris.py` buckets every write into the EGA window by the
+instruction that made it, over two windows of ONE run - frames 400..450 with
+nothing exploding, and 505..545 with the debris thinning. One instruction
+writes 23,431 times in the second and **not once** in the first:
+
+| | |
+| --- | --- |
+| image `0x06F6D` | `mov es:[di], ah` - one pixel |
+| image `0x06E83` | the routine: `bx = 0x2788 + (anim - 1) * 160` |
+| image `0x06ECC` | `cl = ds:0x4D` - the count, set to **80** at image `0x0042C` |
+| image `0x06F5B` | the colour: `ss:0x2778 + (cx & 0x0F)`, sixteen entries `04 02 06 07 08 09 0a 0b 08 09 0a 0b 0c 0d 0e 0f` |
+| image `0x06ED2` | the loop: signed `(dx, dy)` pairs, `0x80` ends the row |
+| image `0x06EF2` | clipped to `x < 0x150` and `y < 0xA0` |
+
+So the debris is EIGHTY pixels a frame, positioned from a row of eighty signed
+offsets and coloured by a countdown through sixteen. That is why it is in the
+terrain's colours - half that table is.
+
+**The table at `ds:0x2788` is filled at RUN TIME.** In the image, row 0 holds
+eighty real offsets and every row after it begins with the `0x80` that ends
+the row - so it is a working buffer the game computes into, not a static
+trajectory table, and the next thing to find is what writes it. That is a much
+smaller question than the one this started as, and it is the right shape for
+the same probe: watch the writes to `ds:0x2788` instead of to the screen.
 
 ### ODDTABLE.DAT: half the game's plates play under another name
 
