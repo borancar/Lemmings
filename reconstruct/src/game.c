@@ -5659,7 +5659,7 @@ void level_frame_step(level_anim *st, const level *lv)
 {
     level_start_step();
     level_release_step();
-    level_anim_step(st, lv);
+    (void)st; (void)lv;
     level_timer_step();
     level_status_out(level_released());
     /* Image 0x03ACE: the saved count over the total, as a percentage. */
@@ -6068,6 +6068,14 @@ void level_play_step(level_anim *st, const level *lv, lemming *lem,
         *released = level_released();
     }
     lemmings_step(lem, *released, terrain, w, h);
+    /* THE OBJECTS ADVANCE AFTER THE LEMMINGS, because in the original they
+     * advance inside the DRAW - image 0x07C1E - and image 0x0019D calls the
+     * lemming walk at 0x1F19 before the drawing at 0x3944. A trap triggered
+     * during the walk therefore shows its second frame on the very frame it
+     * fires; stepping the objects first showed its first, one frame late.
+     * Measured: the port's trap region matched the original's shifted by
+     * exactly +1 on 19 of 33 frames and by nothing at any other shift. */
+    level_anim_step(st, lv);                    /* image 0x07C1E */
     /* level_frame_step wrote the RELEASED count; the panel wants the LIVE
      * one, so this goes after the simulation has had its say. */
     level_status_out(lemmings_live(lem, *released));
