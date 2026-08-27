@@ -1393,6 +1393,25 @@ either of them was written.
 That leaves the three pixels genuinely open, but far better fenced: whatever
 stops the original drawing there, it is not the blitter's limit.
 
+And looking at the PICTURE rather than the count sharpens it to one line.
+The walker responsible is at screen x0 **311** on frame 135 and **312** on
+frame 136, and:
+
+- at 311 the original draws it, and the port matches it pixel for pixel -
+  columns 318 and 319 across rows 37 to 44, nine columns of sprite visible
+- at 312 the original draws **none of it** - columns 308 to 319 are empty in
+  every row above the terrain - while the port still draws its three lit
+  pixels
+
+312 is exactly a byte boundary (39 x 8 on screen, 41 x 8 in the page), and 311
+is not. So the original refuses the whole sprite the moment its left edge
+becomes byte-ALIGNED at the last visible byte column, and draws it happily one
+pixel earlier when it is not. That is a strange enough rule to be a real one
+rather than a guess, and it is a fact about two frames rather than an
+inference from a score. The routine to read is the one that turns a sprite's x
+into the blit's byte count and shift - not the limit test, which has now been
+measured and is innocent.
+
 ### ODDTABLE.DAT: half the game's plates play under another name
 
 The port was missing a whole data file, and the panel is how it showed.
