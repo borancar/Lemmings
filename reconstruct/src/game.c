@@ -1750,6 +1750,12 @@ void level_object_trigger(uint8_t i)
 void level_triggers_build(const level *lv, const ground *g)
 {
     memset(g_trigger, 0, sizeof g_trigger);
+    /* level_triggers_set(NULL, NULL) is how a caller says "no level", and
+     * clearing the map IS the whole of that. Without this the loop below
+     * dereferenced the null and the sanitizer build died on it - which is
+     * what a sanitizer is for, and why a claim that it passes has to be
+     * re-run rather than carried forward. */
+    if (!lv || !g) return;
     for (uint16_t i = 0; i < lv->num_objects; i++) {
         const level_object *o = &lv->objects[i];
         if (o->id >= GROUND_OBJECTS) continue;
