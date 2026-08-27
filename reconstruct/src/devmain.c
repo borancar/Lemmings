@@ -158,6 +158,28 @@ static int render_level(const char *data, const char *file, uint32_t which,
     printf("\n  graphics set %u, start x %u\n", lv.graphics_set, lv.start_x);
     printf("  %u terrain pieces, %u objects, %u steel areas\n",
            lv.num_terrain, lv.num_objects, lv.num_steel);
+    /* WHAT THE OBJECTS DO, which is not visible from the level's header at
+     * all: the effect is a field of the GROUND file's object record, image
+     * 0x037E3's [si+0x14]. Three faults reported from playing - a missing
+     * death scene, no drowning, no trap - were all effects 4, 5 and 6 of
+     * image 0x02F0F's dispatch, and there was no way to ask a level which
+     * of them it uses. */
+    {
+        char gp[256];
+        ground gg;
+        const char *ge = NULL;
+        snprintf(gp, sizeof(gp), "%s/ground%uo.dat", data,
+                 (unsigned)(lv.graphics_set & 0x0F));
+        if (ground_load(gp, &gg, &ge) == 0) {
+            printf("  object effects:");
+            for (uint16_t i = 0; i < lv.num_objects; i++) {
+                uint8_t id = lv.objects[i].id;
+                if (id >= GROUND_OBJECTS) continue;
+                printf(" [%u]id%u=%u", i, id, gg.objects[id].trigger_effect);
+            }
+            printf("\n");
+        }
+    }
 
     ground g;
     snprintf(path, sizeof(path), "%s/ground%uo.dat", data, lv.graphics_set);

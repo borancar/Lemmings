@@ -814,11 +814,11 @@ static int level_run(struct level_frame *A, const canvas *c,
         }
         if (statef) {
             fprintf(statef, "{\"frame\":%ld,\"released\":%u,\"live\":%u,"
-                    "\"saved\":%u,\"over\":%u,\"tick\":%u,\"lem\":[", frame_no,
+                    "\"saved\":%u,\"over\":%u,\"tick\":%u,\"view_x\":%d,\"lem\":[", frame_no,
                     (unsigned)A->released,
                     (unsigned)lemmings_live(A->lem, A->released),
                     (unsigned)level_saved, (unsigned)A->over,
-                    (unsigned)level_tick_now());
+                    (unsigned)level_tick_now(), (int)A->view_x);
             for (uint8_t k = 0; k < A->released && k < LEMMING_MAX; k++) {
                 const lemming *a = &A->lem[k];
                 /* The FUSE and the direction are in here because the nuke

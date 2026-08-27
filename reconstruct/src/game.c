@@ -1673,6 +1673,12 @@ static uint8_t g_trigger[TRIG_ROWS][TRIG_COLS];
 
 /* Image 0x0381B: dh cells across, dl rows down, stepping the destination by
  * 0x1A0 between rows. */
+/* Image 0x03808 builds the byte as `ax = bp << 4 / or al, [si+0x14]` - the
+ * OBJECT'S INDEX in the high nibble and the effect in the low. The port
+ * stamped the effect alone, which is why it could tell that a trap had been
+ * touched and never WHICH trap: image 0x02FB6 indexes the object records at
+ * ds:0x17CB by that high nibble. With every index zero the two are the same
+ * byte, so nothing here ever noticed. */
 static void trig_stamp(int32_t col, int32_t row, int32_t w, int32_t h,
                        uint8_t v)
 {
@@ -1701,9 +1707,19 @@ void level_trigger_put(int32_t col, int32_t row, uint8_t v)
 }
 
 /* Image 0x037CB, stamping each object in turn - later ones overwrite. */
+/* Bit 1 of the object's record at ds:0x17CB, image 0x02FC5 and image
+ * 0x02FCE. The port keeps the levels' objects in a const table the drawing
+ * shares, so the one bit that CHANGES lives here beside the trigger map it
+ * belongs with. */
+static uint8_t g_obj_busy[16];
+
+uint8_t level_object_busy(uint8_t i) { return g_obj_busy[i & 0x0F]; }
+void level_object_trigger(uint8_t i) { g_obj_busy[i & 0x0F] = 1; }
+
 void level_triggers_build(const level *lv, const ground *g)
 {
     memset(g_trigger, 0, sizeof g_trigger);
+    memset(g_obj_busy, 0, sizeof g_obj_busy);
     for (uint16_t i = 0; i < lv->num_objects; i++) {
         const level_object *o = &lv->objects[i];
         if (o->id >= GROUND_OBJECTS) continue;
@@ -1716,7 +1732,8 @@ void level_triggers_build(const level *lv, const ground *g)
         int32_t r0 = (int32_t)o->y / TRIG_CELL
                      + (int32_t)go->trigger_top - TRIG_ROW_UP;  /* 0x037F9 */
         trig_stamp(c0, r0, go->trigger_width, go->trigger_height,
-                   go->trigger_effect);
+                   (uint8_t)(((i & 0x0F) << 4)          /* image 0x03808 */
+                             | (go->trigger_effect & 0x0F)));
     }
 }
 
@@ -1747,7 +1764,7 @@ uint8_t level_trigger_at(lemming *a, const level *lv, const ground *g)
 int level_at_exit(lemming *a, const level *lv, const ground *g)
 {
     if (a->flags & 4) return 0;            /* image 0x02F3B: not while falling */
-    return level_trigger_at(a, lv, g) == TRIGGER_EXIT;
+    return (level_trigger_at(a, lv, g) & 0x0F) == TRIGGER_EXIT;
 }
 
 /* Image 0x02F42: the whole state word becomes 0x2000 - assigned, not OR-ed -
@@ -4104,6 +4121,40 @@ static void lem_walk(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
     if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;
 }
 
+/* ======================================================================
+ * THE TWO DEATHS THE PORT DID NOT HAVE.
+ *
+ * Image 0x01F5E's chain has seventeen entries and two of them stood in this
+ * file with an address and nothing else - 0x1000 at image 0x22F5 and 0x4000
+ * at image 0x2340. They are reached only from the trigger dispatch at image
+ * 0x02F0F, whose effects 4, 5 and 6 the port did not have either, so nothing
+ * could ever set the bits and there was nothing to check a transcription
+ * against. Three separate reports from playing - a missing death scene, no
+ * drowning, no trap - are all this one gap.
+ * ====================================================================== */
+
+/* Image 0x022F5: DROWNING. Sixteen frames and then dead, and while they run
+ * it drifts one pixel a frame in the direction it was facing - but only
+ * while the water EIGHT ahead is clear, image 0x02306 multiplying the
+ * direction by eight before the probe. */
+static void lem_drown(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    a->anim = (uint8_t)((a->anim + 1) & 0x0F);      /* image 0x022FA */
+    if (!a->anim) {                                 /* image 0x022FF */
+        a->alive = 0xFF;                            /* image 0x02323 -> 0x20E2 */
+        return;
+    }
+    if (!lem_solid(lvl, cw, chh, (int16_t)(a->x + a->dir * 8), a->y))
+        a->x = (int16_t)(a->x + a->dir);            /* image 0x0231E */
+}
+
+/* Image 0x02340: fourteen frames and then dead, and it does not move. */
+static void lem_burn(lemming *a)
+{
+    a->anim = (uint8_t)(a->anim + 1);               /* image 0x02340 */
+    if (a->anim == 0x0E) a->alive = 0xFF;           /* image 0x02346 */
+}
+
 /* Image 0x23BF - what image 0x2169 turns a walker into when the step up is
  * four rows or more. It climbs one row a frame while there is still terrain
  * above, and the frame it finds air it clears bit 3 and hands back to the
@@ -4367,7 +4418,10 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
         else if (f & 0x0800)
             lem_mine(a, lvl, cw, chh);               /* image 0x2B35 */
-        /* 0x1000 0x22F5, 0x4000 0x2340 - neither read. */
+        else if (f & 0x1000)
+            lem_drown(a, lvl, cw, chh);              /* image 0x22F5 */
+        else if (f & 0x4000)
+            lem_burn(a);                             /* image 0x2340 */
 
         /* THE TRIGGER IS TESTED AFTER THE MOVE, NOT BEFORE IT.
          *
@@ -4393,7 +4447,9 @@ void lemmings_step(lemming *lem, uint8_t n,
          * 0x0A is the blocker's own middle, which nothing dispatches - it is
          * there for image 0x0336E to refuse a second blocker by. */
         if (trig_lv && trig_g) {
-            uint8_t eff = level_trigger_at(a, trig_lv, trig_g);
+            uint8_t cell = level_trigger_at(a, trig_lv, trig_g);
+            uint8_t eff = (uint8_t)(cell & 0x0F);
+            uint8_t obj = (uint8_t)(cell >> 4);       /* image 0x02FB8 */
             if (eff == TRIGGER_EXIT) {
                 if (!(a->flags & EXIT_BIT) && !(a->flags & 4))
                     lem_exit_start(a);               /* image 0x02F3B */
@@ -4401,6 +4457,39 @@ void lemmings_step(lemming *lem, uint8_t n,
                 if (a->dir != -1) a->dir = (int8_t)-a->dir;   /* 0x02FA2 */
             } else if (eff == 3) {
                 if (a->dir != 1) a->dir = (int8_t)-a->dir;    /* 0x02FAC */
+            } else if (eff == 4) {
+                /* A TRAP, image 0x02FB6. It kills OUTRIGHT - image 0x02FD1
+                 * writes 0xFF straight into [si+0x26] with no animation of
+                 * the lemming's own - and image 0x02FCE sets bit 1 of the
+                 * object's record so the TRAP plays its sequence. One at a
+                 * time: image 0x02FC5 refuses while that bit is still set. */
+                if (!level_object_busy(obj)) {
+                    level_object_trigger(obj);       /* image 0x02FCE */
+                    a->alive = 0xFF;                 /* image 0x02FD1 */
+                }
+            } else if (eff == 5) {
+                /* WATER, image 0x02FF8. The flag word is ASSIGNED 0x1000,
+                 * not OR-ed, so everything else it was doing stops. */
+                if (!(a->flags & 0x1000)) {
+                    a->flags = 0x1000;               /* image 0x03002 */
+                    a->anim  = 0;                    /* image 0x0301B */
+                    a->hot_x = -8;                   /* image 0x0301F */
+                    a->hot_y = -10;
+                    a->state = 0;                    /* image 0x03029 */
+                    a->extra &= 1;                   /* image 0x03037 */
+                }
+            } else if (eff == 6) {
+                /* Image 0x0304F, the other one - fourteen frames and gone.
+                 * Its hot spot is (-8, -14), four rows deeper than anything
+                 * else here, and its frame is 0x70 = 112 bytes. */
+                if (!(a->flags & 0x4000)) {
+                    a->flags = 0x4000;               /* image 0x03059 */
+                    a->anim  = 0;                    /* image 0x03072 */
+                    a->hot_x = -8;                   /* image 0x03076 */
+                    a->hot_y = -14;                  /* image 0x0307B: fff2 */
+                    a->state = 0;                    /* image 0x03080 */
+                    a->extra &= 1;                   /* image 0x0308E */
+                }
             }
         }
     }

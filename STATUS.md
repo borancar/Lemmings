@@ -1054,6 +1054,56 @@ copies the ones it has over the ones it has not: none gives four of
 three repeats entry 1. All four entries are always valid, which is why
 `and bx,3` needs no further check.
 
+### The three deaths the trigger dispatch never reached
+
+Reported from playing, all three within a few minutes of each other, and all
+three are ONE gap:
+
+| | |
+| --- | --- |
+| `level001.dat --level 3` | a death scene is missing |
+| `level002.dat --level 4` | drowning in the water is missing |
+| `level002.dat --level 6` | trap activation is missing |
+
+Image `0x02F0F` dispatches **seven** trigger effects and the port had three.
+
+| | | |
+| --- | --- | --- |
+| 0 | - | nothing |
+| 1 | image `0x02F3B` | the exit |
+| 2, 3 | image `0x02FA2`, `0x02FAC` | a blocker's two columns |
+| **4** | image `0x02FB6` | **a trap** |
+| **5** | image `0x02FF8` | **water** |
+| **6** | image `0x0304F` | **the other death** |
+
+Effects 5 and 6 set flags `0x1000` and `0x4000`, and those are exactly the two
+entries of image `0x01F5E`'s chain that stood in `game.c` with an address and
+nothing else. Nothing could set the bits, so nothing ever ran the handlers,
+so there was nothing to check a transcription against - a closed loop that
+looked like a decision.
+
+**The trap**, image `0x02FB6`, kills OUTRIGHT: image `0x02FD1` writes `0xFF`
+into `[si+0x26]` with no animation of the lemming's own. What animates is the
+TRAP: image `0x02FCE` sets bit 1 of the object's record at `ds:0x17CB`, and
+image `0x02FC5` refuses while that bit is still set, so one lemming at a time.
+
+**And the trigger map carries which object.** Image `0x03808` builds the cell
+as `ax = bp << 4 / or al, [si+0x14]` - the object's index in the high nibble,
+the effect in the low - and the port stamped the effect alone. It could tell
+that a trap had been touched and never WHICH, because image 0x02FB8 indexes
+those records by that nibble. With every index zero the two bytes are the
+same, which is why nothing here noticed.
+
+**Drowning**, image `0x022F5`: sixteen frames and then dead, drifting one
+pixel a frame in the direction it was facing while the water EIGHT ahead is
+clear - image `0x02306` multiplies the direction by eight before the probe.
+The flag word is ASSIGNED `0x1000` rather than OR-ed, so whatever it was
+doing stops.
+
+**The other death**, image `0x02340`: fourteen frames, no movement. Its hot
+spot is `(-8, -14)`, four rows deeper than anything else here, and its frame
+is `0x70` = 112 bytes against the drowner's `0x3C` = 60.
+
 ### Sprites: where a group lives, and how to find one
 
 `tools/find_sprite.py` scores a candidate offset against the ORIGINAL's own

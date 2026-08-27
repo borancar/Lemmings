@@ -513,6 +513,9 @@ void level_triggers_set(const level *lv, const ground *g);
 /* The trigger byte under a lemming, image 0x02EC0 - a lookup into the map
  * image 0x037CB stamps, in four-pixel cells. Zero is nothing. */
 uint8_t level_trigger_at(lemming *a, const level *lv, const ground *g);
+/* A trap's "already going" bit - image 0x02FC5. */
+uint8_t level_object_busy(uint8_t i);
+void    level_object_trigger(uint8_t i);
 /* The map image 0x037CB builds and image 0x03348 writes into. Four pixels a
  * cell both ways. */
 void    level_triggers_build(const level *lv, const ground *g);
