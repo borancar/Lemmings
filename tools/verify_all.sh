@@ -165,6 +165,45 @@ for case in "won 100 10 0" "timeup 30 10 1" "lost 0 10 1"; do
     fi
 done
 
+# THE THREE FURTHER LEVELS, which until now were only ever checked by hand.
+#
+# Each carries what a comparison of it needs and cannot work out for itself:
+# the reference's ds:0x1F6B index is a permutation away from the file and
+# section lemdev takes, and half the plates play their level under ODDTABLE's
+# numbers instead of the file's. The park script aims the port's cursor at the
+# guest's own; two cross-hairs in different places is 56 differing pixels on
+# every frame and compare_screen.py excuses 28, which is one.
+say ""
+say "=== three further levels, frame by frame ==="
+for case in "level001.dat 3 ref_i8 530 10" \
+            "level002.dat 4 ref_i61 1100 -1" \
+            "level002.dat 6 ref_i63 1100 -1"; do
+    set -- $case
+    lfile=$1 lsec=$2 lref=$3 lframes=$4 lodd=$5
+    if [ ! -f "out/$lref/manifest.json" ]; then
+        line "$lfile level $lsec" "NO REFERENCE at out/$lref - not a pass"
+        fail=1
+        continue
+    fi
+    rm -rf out/va_shot; mkdir -p out/va_shot
+    oddarg=""
+    [ "$lodd" != "-1" ] && oddarg="--odd $lodd"
+    SDL_VIDEODRIVER=dummy LEM_FRAMES=$lframes LEM_SCREEN_DIR="$PWD/out/va_shot" \
+        LEM_INPUT_SCRIPT="$PWD/out/park.txt" \
+        ./reconstruct/lemdev --data lemming1.pc --file "$lfile" --level "$lsec" \
+        $oddarg --show >/dev/null 2>&1 || true
+    got=$(uv run python tools/compare_screen.py --ref "out/$lref" \
+          --dir out/va_shot 2>/dev/null | grep -E "play area|panel" \
+          | sed 's/^ *//' | tr '\n' ' ')
+    if [ -z "$got" ]; then
+        line "$lfile level $lsec" "NOTHING SCORED - that is a failure"
+        fail=1
+    else
+        say "  $lfile level $lsec:"
+        say "    $got"
+    fi
+done
+
 say ""
 if [ $fail = 0 ]; then
     say "  everything above ran. Read the numbers, not this line."
