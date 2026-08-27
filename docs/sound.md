@@ -670,3 +670,51 @@ claim:
     A  our emulator's register stream, through ymfm
     B  the port's own stream, through ymfm         A vs B tests the DRIVER
     C  DOSBox, its own OPL, its own game           C vs B tests the CHIP
+
+## The missing output capacitor
+
+Comparing the port against DOSBox by SPECTRUM rather than by ear found a real
+defect, and it is not in the driver.
+
+An OPL2's three added waveforms are RECTIFIED - half-sine, absolute sine,
+quarter-pulse - so every voice using one carries a positive offset
+proportional to its envelope. Nine channels' offsets swell and decay together
+and the sum wanders at a few hertz.
+
+**43.3% of the port's total audio power was in 0-4 Hz.** DOSBox had 0.0%.
+
+A real AdLib never emits that: the YM3014B feeds an op-amp through a coupling
+capacitor and the card's output is AC. ymfm models the CHIP and hands back the
+raw sum, offset and all, which is correct of it. One pole at about 5 Hz in
+`opl_render` takes 0-4 Hz from 43.3% to 2.2% and leaves everything above 20 Hz
+alone to within a hundredth of a decibel.
+
+Inaudible on its own. What it did was ride the music up and down on a slow
+swell, eating the headroom - the port's RMS was a quarter of DOSBox's at a
+similar peak.
+
+## The DOSBox reference is not trustworthy YET
+
+Three instrument failures in a row, each of which produced a plausible file:
+
+- **The raw is 32-bit FLOAT.** dosbox-staging's mixer asks SDL for
+  AUDIO_F32SYS. Read as s16 it gave a five-second RMS of 18,900, flat to four
+  digits for four minutes, one channel a slow waveform and the other noise.
+- **The master compressor is ON by default** and flattens exactly the loudness
+  envelope every comparison here was correlating. `compressor=off`.
+- **`SDL_DISKAUDIODELAY=0` drains the mixer faster than the guest fills it.**
+  The first run produced 350 seconds of audio in about 180 of wall clock.
+
+After all three, DOSBox's recording still has a nearly constant RMS -
+1863..2097 over two minutes - which music does not, and it correlates 0.13
+with the port at any lag. Meanwhile:
+
+    A our emulator vs B port    0.674   the same music, aligned at zero
+    A our emulator vs C dosbox  0.068
+    B port         vs C dosbox  0.044
+
+**So the port matches our emulator and both differ from DOSBox.** Which of the
+two emulators is right is NOT established here, and the fourth instrument
+failure is at least as likely as a fourth finding. What would settle it is
+DOSBox's own register stream, which needs a build that can log port writes -
+not another recording.

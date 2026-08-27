@@ -45,6 +45,12 @@ cycles=fixed 8000
 rate=48000
 blocksize=1024
 prebuffer=25
+# The master compressor is ON by default and it FLATTENS THE DYNAMICS. The
+# first recording had a five-second RMS of 1870..2112 for the whole two
+# minutes, which is not what music does, and every comparison against it by
+# loudness envelope was measuring the compressor. Off, so this is what the
+# chip produced.
+compressor=off
 [sblaster]
 sbtype=none
 oplmode=opl2
@@ -57,25 +63,42 @@ CONF
 export SDL_VIDEODRIVER=x11
 export SDL_AUDIODRIVER=disk
 export SDL_DISKAUDIOFILE="$RAW"
-export SDL_DISKAUDIODELAY=0
+# NO SDL_DISKAUDIODELAY. Unset, SDL's disk driver waits one buffer's worth
+# between writes and so records in REAL TIME. Setting it to 0 makes it consume
+# as fast as it can: the first run here produced 350 seconds of audio in about
+# 180 of wall clock, which is not a recording of anything - the mixer is
+# drained faster than the emulated machine fills it, and what comes out is
+# time-mangled. It still looks like music, and its spectrum still looks like
+# an OPL, which is why it took three rounds to catch.
 
 xvfb-run -a -s "-screen 0 1024x768x24" bash -c '
   set -e
   dosbox -conf "'"$WORK"'/dosbox.conf" >"'"$OUT"'/dosbox.log" 2>&1 &
   DP=$!
   sleep 8
+  # SCREENSHOTS AT EVERY STAGE. Without them a capture is a WAV with no way
+  # to say what was on screen when it was made - and the first run of this
+  # produced audio that correlated 0.046 with the port, which could equally
+  # have been a different tune, a different screen or a different level. A
+  # recording nobody can place is not a reference.
+  import -window root "'"$OUT"'/00-adapter-menu.png" || true
   # 1 = VGA, then 2 = High Performance PCs.
   xdotool key --clearmodifiers 1; sleep 3
+  import -window root "'"$OUT"'/01-machine-menu.png" || true
   xdotool key --clearmodifiers 2; sleep 22
+  import -window root "'"$OUT"'/02-title.png" || true
   # F1 starts a game; the title drops keys during its fade, so press more
   # than once rather than betting on one moment.
   for i in 1 2 3; do xdotool key --clearmodifiers F1; sleep 4; done
+  import -window root "'"$OUT"'/03-briefing.png" || true
   # The briefing wants a real button, HELD - a tap between two of its polls
   # is invisible to it.
   for i in 1 2 3; do
     xdotool mousemove 320 240 mousedown 1; sleep 1; xdotool mouseup 1; sleep 5
   done
+  import -window root "'"$OUT"'/04-level.png" || true
   sleep '"$SECS"'
+  import -window root "'"$OUT"'/05-end-of-recording.png" || true
   kill $DP 2>/dev/null || true
   sleep 2
 ' || true
