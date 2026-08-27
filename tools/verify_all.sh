@@ -214,9 +214,14 @@ if uv run python tools/verify_objects.py 2>&1 | sed 's/^/  /'; then :; else fail
 
 say ""
 say "=== three further levels, frame by frame ==="
+# level004.dat 3 is here because tools/coverage.py said the other three carry
+# no one-way wall between them: object ids 3 and 4 and the only_on_terrain
+# flag were measured by NOTHING. This one has twelve, and it found a
+# difference on its first run.
 for case in "level001.dat 3 ref_i8 530 10" \
             "level002.dat 4 ref_i61 1100 -1" \
-            "level002.dat 6 ref_i63 1100 -1"; do
+            "level002.dat 6 ref_i63 1100 -1" \
+            "level004.dat 3 ref_i77 1100 -1"; do
     set -- $case
     lfile=$1 lsec=$2 lref=$3 lframes=$4 lodd=$5
     if [ ! -f "out/$lref/manifest.json" ]; then

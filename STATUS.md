@@ -1790,6 +1790,47 @@ measures is not a bug, and pretending otherwise would make the suite cry wolf.
 It is the list of places a bug can sit unseen, which is the thing to have
 before reading a run of 100.00% as "correct".
 
+### A fourth level, chosen by the coverage gap, found a bug on its first run
+
+`tools/coverage.py` said object ids 3 and 4 and the `only_on_terrain` flag
+were measured by NOTHING. So level004.dat section 3 - "Tribute to M.C.Escher",
+twelve one-way walls - was recorded and added to the suite. Its
+`ds:0x1F6B` index is **77**; the file's own header at the recording confirms
+it, `0032004b00410005` on both sides.
+
+Its **panel is 1,100 of 1,100 exact**. Its play area is **0**, and the
+difference is exactly one thing:
+
+    1,409 pixels, every one of them (original DAC 5, port attribute 1),
+    and only where the one-way arrows are. The terrain around them agrees
+    to the pixel.
+
+DAC 1 is blue and DAC 5 is red, so **the original's arrows are red and the
+port's are blue**. It is the same objects a player photographed for the
+clipping, one layer further in.
+
+What is ruled out, each measured rather than argued:
+
+- **the sprite.** At the port's ink base the arrow decodes uniformly to
+  attribute 1, 200 pixels, on every one of its eight frames. Colour 1 is what
+  the port draws, so the port reads it correctly.
+- **the offsets.** Image 0x07BEF sets `di = [si+8]` and image 0x07BF2 sets
+  `si = [si+0x17]`, so SI is the ink at 24600 and DI the mask at 25112 - the
+  port's `frames_base_loc` and `mask_offset` exactly.
+- **the plane arrangement.** Four planes at 128 apart with the mask at +512 is
+  the only reading that decodes to a coherent sprite; mask-first gives 8 and
+  five planes give noise. No base within +-1280 gives 5.
+- **the terrain and the comparison's attribute map.** Terrain attributes 8..15
+  map to DAC 16..23 here exactly as `compare_screen.py` assumes, and every
+  terrain pixel agrees.
+
+So the shape is right, the attribute the port uses is what the sprite says,
+and the original still lands on a different DAC entry. What is left is the
+attribute-to-DAC path for the LOW eight attributes on this graphics set -
+`compare_screen.py`'s map is one measurement, "attr_pal reads 00..07 then
+10..17", taken on one level, and `ground2o.dat` carries its own palette at
+offset 960. That is the next thing to read, and it is one file.
+
 ### Sound: the asking is transcribed, the timbre is not
 
 `docs/sound.md` has the interface, read out of the binary. The short of it:

@@ -36,7 +36,8 @@ GAME = os.path.join(ROOT, "lemming1.pc")
 # skills and the nuke and pause cases all use level 1 and level 2, which are
 # level009.dat sections 1 and 2 by the game's own order.
 MEASURED = {("level009.dat", 1), ("level009.dat", 2),
-            ("level001.dat", 2), ("level002.dat", 3), ("level002.dat", 5)}
+            ("level001.dat", 2), ("level002.dat", 3), ("level002.dat", 5),
+            ("level004.dat", 2)}   # added for its twelve one-way walls
 
 FLAGS = [(0x80, "no_overwrite"), (0x40, "only_on_terrain")]
 
