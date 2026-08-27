@@ -1566,6 +1566,12 @@ static uint8_t level_rate_step(uint8_t rate)
     return (uint8_t)(((99u - (uint16_t)rate) >> 1) + 4u);
 }
 
+static uint8_t g_rate_div;       /* ds:0x69 */
+/* ds:0x68 - the rate the PANEL is showing, which image 0x03B86 compares with
+ * ds:0x67 to decide whether anything needs redrawing. Modelled as a flag
+ * rather than a value because only "does it match" is ever asked. */
+static uint8_t g_rate_shown = 1;
+
 /* THE RELEASE-RATE BUTTONS, image 0x04032. `up` is non-zero for the plus.
  *
  * These had done nothing at all, because image 0x03F27 was read as refusing
@@ -1583,12 +1589,24 @@ static uint8_t level_rate_step(uint8_t rate)
  * ds:0x84 has for the skill strip - image 0x03B8C catches it at 2, sets it
  * 0xFF, and the `inc` at image 0x03B9C wraps it to zero - so a HELD button
  * steps the rate one frame in three. The
- * divider is applied by level_rate_held below rather than inside this
- * routine, because the port's click arrives as an EDGE: see sdl_io.c, which
- * calls that once a frame while a rate button is down. */
+ * divider is tested HERE, where image 0x0403D and image 0x0406C test it, and
+ * turned by level_rate_tick below from the panel's redraw. sdl_io.c calls
+ * this once on the press and once a frame while the button stays down, which
+ * is what the original's own poll amounts to. */
 uint8_t level_rate_click(uint8_t up)
 {
     if (level_paused() == 0xFF) return 0;       /* image 0x04032 */
+    /* THE DIVIDER GATES THE PRESS ITSELF, and this used to be outside the
+     * routine. Image 0x0403D tests ds:0x69 for the plus and image 0x0406C for
+     * the minus, BEFORE either bound is looked at - so a press while the
+     * divider is turning does nothing at all.
+     *
+     * The port had the test in level_rate_held instead, so the press arrived
+     * as an edge and stepped once for free, and then the very next frame the
+     * held path found the divider at rest and stepped AGAIN. One click moved
+     * the rate by two where the original moves it by one. A player noticed
+     * the amount was wrong. */
+    if (g_rate_div != 0) return 0;              /* 0x0403D, 0x0406C */
     if (up) {
         if (g_rate >= 99) return 0;             /* image 0x04046 */
         g_rate++;                               /* image 0x0404F */
@@ -1597,6 +1615,9 @@ uint8_t level_rate_click(uint8_t up)
         g_rate--;                               /* image 0x0407F */
     }
     g_release_step = level_rate_step(g_rate);   /* image 0x04053 */
+    /* The number on the panel is now stale, which is what starts the divider
+     * turning - see level_rate_tick. */
+    g_rate_shown = 0;                           /* ds:0x68 != ds:0x67 */
     return 1;
 }
 
@@ -1608,23 +1629,38 @@ uint8_t level_rate_click(uint8_t up)
  * click whenever it is not zero, so a button held down steps the rate one
  * frame in three rather than every frame.
  *
- * The port drives this from level_rate_held rather than from a poll of the
- * button inside the handler, because its click arrives as an edge - see
- * sdl_io.c. Same three-frame pace, reached the other way round. */
-static uint8_t g_rate_div;       /* ds:0x69 */
+ * The port reaches the same pace by calling level_rate_click once a frame
+ * while the button is down and letting that routine's own test of ds:0x69
+ * refuse it - which is what the original's poll does. */
 
-/* One frame with a rate button held down - image 0x0403D's test of ds:0x69,
- * with image 0x03B8C's three-frame cycle driving it. Non-zero if the rate
- * moved. */
-uint8_t level_rate_held(uint8_t up)
+/* ONE FRAME OF THE DIVIDER - image 0x03B8C, and it is part of the panel's
+ * redraw rather than of the button.
+ *
+ * Image 0x03B86 compares ds:0x68, the value the panel currently SHOWS, with
+ * ds:0x67, the rate in force, and skips the whole block when they agree. So
+ * the divider only turns while the drawn number is stale: image 0x03B8C
+ * catches it at 2, image 0x03B93 marks the number drawn, image 0x03B97 puts
+ * the divider to 0xFF and image 0x03B9C's `inc` wraps it to zero.
+ *
+ * The effect is a rate button that steps once and then waits three frames,
+ * because image 0x0403D refuses every press until the divider comes back to
+ * zero - and it only comes back once the panel has caught up.
+ *
+ * At rest the divider is zero and the number is drawn, so the FIRST press of
+ * a button always takes. */
+void level_rate_tick(void)
 {
-    uint8_t fire = (g_rate_div == 0);           /* image 0x0403D */
-    g_rate_div = (uint8_t)((g_rate_div + 1) % 3);
-    return fire ? level_rate_click(up) : 0;
+    if (level_paused() == 0xFF) return;         /* image 0x03944 */
+    if (g_rate_shown) return;                   /* image 0x03B86 */
+    if (g_rate_div == 2) {                      /* image 0x03B8C */
+        g_rate_shown = 1;                       /* image 0x03B93 */
+        g_rate_div = 0xFF;                      /* image 0x03B97 */
+    }
+    g_rate_div++;                               /* image 0x03B9C */
 }
 
 /* Image 0x039EE clears ds:0x69 when the level starts. */
-void level_rate_div_reset(void) { g_rate_div = 0; }
+void level_rate_div_reset(void) { g_rate_div = 0; g_rate_shown = 1; }
 
 /* ds:0x67 and ds:0x64 - the rate in force and the level's own, which the
  * panel draws as its first two numbers (image 0x036C1, image 0x036C4). */
@@ -7261,6 +7297,12 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
                        const lemming *lem, uint8_t nlem,
                        uint16_t view_x, uint8_t sel)
 {
+    /* THE RATE DIVIDER TURNS HERE, because image 0x03B8C is part of this
+     * redraw rather than of the button - see level_rate_tick. It is in this
+     * routine rather than in the callers for the reason the next paragraph
+     * gives about the pointer: a sequence written out twice will differ. */
+    level_rate_tick();                          /* image 0x03B8C */
+
     /* What the pointer is over goes into the line BEFORE the line is drawn -
      * image 0x03CE9 runs in the play loop ahead of the panel. It lives here
      * rather than in the callers because the order is the game's, and a

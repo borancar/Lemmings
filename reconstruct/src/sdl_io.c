@@ -723,7 +723,7 @@ static int level_run(struct level_frame *A, const canvas *c,
         if (held) {
             level_hit rh = level_pointer_hit();
             if (rh.what == LEVEL_HIT_BUTTON && rh.button < 2)
-                level_rate_held(rh.button);     /* image 0x0403D */
+                level_rate_click(rh.button);    /* image 0x04032 */
         }
 
         SDL_Event e;

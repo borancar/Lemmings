@@ -2088,6 +2088,38 @@ written into `game.c` claiming it had been measured. See the note in
 `CLAUDE.md` about fixed output paths. The reading survived only because it was
 re-derived from the level's records afterwards, where no run could corrupt it.
 
+### The rate buttons stepped TWICE per press
+
+Reported from playing: the plus and minus move the rate by the wrong amount.
+
+The step itself was never wrong - image 0x0404F is `inc byte [0x67]` and image
+0x0407F is `dec`, one either way, and the port did the same. It FIRED TWICE.
+
+The divider was tested in `level_rate_held`, outside the handler, so a press
+arrived as an edge and stepped for free; the very next frame the held path
+found the divider at rest and stepped again. One click, two steps.
+
+The original tests ds:0x69 **inside** the handler - image 0x0403D for the plus
+and image 0x0406C for the minus, BEFORE either bound is looked at - and image
+0x03B8C turns it from the PANEL'S REDRAW rather than from the button. Image
+0x03B86 compares ds:0x68, the value the panel is showing, against ds:0x67, and
+skips the whole block when they agree, so the divider only turns while the
+drawn number is stale. That is what makes the first press always take and the
+next two frames refuse.
+
+The port now has that shape: the test is in `level_rate_click`, and
+`level_rate_tick` turns the divider from `level_panel_build`, with ds:0x68
+modelled as a "is the drawn number stale" flag because only that question is
+ever asked of it.
+
+**Why the check that exists did not catch it.** `tools/verify_rate.py` agrees
+with the original on 240 of 240 clicks - and pokes ds:0x69 to zero before every
+one, on BOTH sides. It scores the step arithmetic and its two bounds and says
+nothing whatever about the pacing. `reconstruct/tests/screens.c` now tests that
+frame by frame, and `--rate-probe` clears the divider before each click the way
+the guest side does, so the two halves of that comparison still make the same
+claim.
+
 ### The level bitmap was eighty columns too narrow
 
 Found by a SEVENTH level, level009 section 1 - "Rendezvous at the Mountain",

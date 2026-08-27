@@ -262,11 +262,19 @@ static int render_level(const char *data, const char *file, uint32_t which,
          * the panel would show and the interval the release counts from. */
         level_release_reset(&lv);
         printf("floor %u\n", level_rate_floor());
+        /* THE DIVIDER IS CLEARED BEFORE EACH CLICK, exactly as
+         * tools/verify_rate.py pokes ds:0x69 to 0 before each call on the
+         * guest side. Both sides are then testing the STEP arithmetic and its
+         * two bounds with the pacing held out of the way - the same claim on
+         * each, which is the whole point of the comparison. The pacing itself
+         * is level_rate_tick's, and screens.c tests that. */
         for (int k = 0; k < 120; k++) {
+            level_rate_div_reset();
             level_rate_click(1);
             printf("up %u %u\n", level_rate(), level_release_interval());
         }
         for (int k = 0; k < 120; k++) {
+            level_rate_div_reset();
             level_rate_click(0);
             printf("down %u %u\n", level_rate(), level_release_interval());
         }

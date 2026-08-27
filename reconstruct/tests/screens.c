@@ -1153,6 +1153,59 @@ int main(int argc, char **argv)
     ck("menu_hotspots fills its array",
        spots[MENU_HOTSPOTS - 1].w == MENU_W, "last hotspot not written");
 
+    /* THE RATE BUTTONS STEP ONCE PER PRESS AND ONCE PER THREE FRAMES HELD.
+     *
+     * tools/verify_rate.py drives image 0x04032 itself and agrees on 240 of
+     * 240 clicks - but it pokes ds:0x69 to zero before every one, on BOTH
+     * sides, so it scores the step arithmetic and its two bounds and says
+     * nothing about the PACING. That is where the fault was: the divider was
+     * tested in level_rate_held rather than in the click, so a press stepped
+     * once as an edge and the very next frame's held path found the divider
+     * at rest and stepped again. One click moved the rate by two. A player
+     * noticed the amount was wrong.
+     *
+     * Image 0x0403D and image 0x0406C test ds:0x69 before either bound is
+     * looked at, and image 0x03B8C turns it from the panel's redraw - only
+     * while the drawn number is stale, which is what makes the FIRST press
+     * always take and the next two frames refuse. */
+    {
+        char pr[1024];
+        dat_file lvr;
+        level Lr;
+        const char *er = "unknown error";
+        snprintf(pr, sizeof pr, "%s/level009.dat", dir);
+        if (dat_load(pr, &lvr, &er) == 0 && lvr.count > 0
+                && level_parse(lvr.sections[0].data, lvr.sections[0].size,
+                               &Lr, &er) == 0) {
+            level_release_reset(&Lr);
+            level_rate_div_reset();
+            uint8_t r0 = level_rate();
+
+            /* A FRAME is a click while the button is down, then the
+             * panel's redraw - which is the order sdl_io.c runs them in and
+             * the order image 0x04032 and image 0x03B8C sit in the loop. */
+            ck("a rate press steps once", level_rate_click(1) == 1
+               && level_rate() == (uint8_t)(r0 + 1),
+               "the press did not take, or moved by the wrong amount");
+            level_rate_tick();
+
+            ck("holding it, the next frame does not step",
+               level_rate_click(1) == 0 && level_rate() == (uint8_t)(r0 + 1),
+               "the divider is not gating the press - one press moves the "
+               "rate by two");
+            level_rate_tick();
+
+            ck("nor the frame after", level_rate_click(1) == 0,
+               "the divider let a press through after two frames");
+            level_rate_tick();
+
+            ck("but the third steps again", level_rate_click(1) == 1
+               && level_rate() == (uint8_t)(r0 + 2),
+               "a held button did not step one frame in three");
+            dat_free(&lvr);
+        }
+    }
+
     /* THE NUKE IS A DOUBLE CLICK, AND IT HAS TO STAY ONE ACROSS LEVELS.
      *
      * Nothing here tested it, and it broke: the four bytes image 0x00438,

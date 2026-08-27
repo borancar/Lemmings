@@ -418,7 +418,8 @@ void lemmings_step(lemming *lem, uint8_t n,
 uint8_t level_rate_click(uint8_t up);
 /* One frame with a rate button HELD - image 0x0403D's divider, so it steps
  * one frame in three the way the original's does. */
-uint8_t level_rate_held(uint8_t up);
+/* One frame of the divider - image 0x03B8C, part of the panel redraw. */
+void    level_rate_tick(void);
 void level_rate_div_reset(void);
 uint8_t level_rate(void);        /* ds:0x67, the rate in force */
 uint8_t level_rate_floor(void);  /* ds:0x64, the level's own */
