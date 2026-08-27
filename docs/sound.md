@@ -10,17 +10,32 @@ tables around +0x2BEA.
 So a port cannot "play the samples": there are none. What it can do is
 implement the two INTERFACES, which are small and completely readable.
 
-## The two vectors
+## One driver, two vectors - and NOT one vector per card
 
-    INT 60h    the AdLib driver, adlib.dat
-    INT 61h    the other one, tandysnd.dat
+A first reading here said INT 60h was AdLib and INT 61h the other card. That
+is wrong, and the load sequence settles it. Image `0x00589` puts
+`ds:0x2573` - "adlib.dat" - in DX, image `0x0058D` loads it, and image
+`0x0059D` then does `ah = 1 / int 0x61` to ask whether the hardware is there.
+`tandysnd.dat` is loaded the same way at image `0x005CA` and called on **the
+same vector** at image `0x005E1`. Whichever driver is loaded owns INT 61h.
 
-`AH` is the function and `AL` the argument:
+So INT 60h is a SECOND INTERFACE of the same driver, not a second card.
 
-    AX = 0x0100 / 0x0200   start up (INT 60h uses 1, INT 61h uses 2)
-    AX = 0x0000            shut down
-    AH = 3, AL = n         INT 60h: play n
-    AH = 4, AL = n         INT 61h: play n
+The driver's own dispatcher, at the head of the decompressed blob, is a chain
+on AH:
+
+    AH = 0   -> +0x115    shut down
+    AH = 1   -> +0x0A3    start up, and it ANSWERS - image 0x0059F tests AL,
+                          and a zero sends the game on to the next device
+    AH = 2   -> +0x03A
+    AH = 3   -> +0x022    `mov cs:[0xED], al`
+    AH = 4   -> +0x02A    `mov cs:[0xF0], al`
+    AH = 5   -> +0x032
+    else     -> iret
+
+**AH=3 and AH=4 do not play anything.** Each stores its AL in a byte the
+driver's own timer ISR reads: `cs:0xED` and `cs:0xF0`. They are two REQUEST
+SLOTS, and the port's job is to notice a write to either.
 
 ## The two gates
 
@@ -30,19 +45,20 @@ Every call site tests the same two bytes:
                 bits 0-1 together gate the INT 61h ones, so bit 1 is a second
                 switch - music against effects is the obvious reading and is
                 NOT yet established.
-    ds:0x2010   which driver is loaded. 0xFF selects INT 61h: image 0x02F8E
-                skips the INT 61h path when it is not 0xFF, and image 0x03F7C
-                skips the INT 60h path when it is.
+    ds:0x2010   0xFF once a driver answered. Image 0x005A4 sets it when the
+                AdLib detect returns non-zero and image 0x005CE sets it for
+                the other; image 0x02F8E skips the INT 61h path when it is not
+                0xFF, and image 0x03F7C skips the INT 60h path when it is.
 
 ## What the game asks for
 
-INT 60h, three sounds only:
+INT 60h - `cs:0xED` - three only:
 
     0x0C   image 0x02377   the bomber's cloud - image 0x02350's first frame
     0x13   image 0x026C0, image 0x031F6, image 0x03F8D
     0x02   image 0x02F8C
 
-INT 61h, eighteen:
+INT 61h - `cs:0xF0` - eighteen, and these are the gameplay events:
 
     0x01   image 0x03F7A   a panel button - image 0x03E6F's click handler
     0x04   image 0x03209   in image 0x03150, the SKILL ASSIGNMENT
