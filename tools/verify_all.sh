@@ -220,8 +220,14 @@ say "=== the TRIGGER MAP, which no picture can show ==="
 # cannot reach this and neither can a screenshot.
 #
 # level004/3 because it has all three kinds of cell in it - twelve one-way
-# walls, five steel areas and an exit. It drives the emulator to a level, so
-# it is minutes rather than seconds.
+# walls, five steel areas and an exit, and because it is the level that found
+# the effect-0 fault. It drives the emulator to a level, so it is minutes
+# rather than seconds, which is why only one is run here.
+#
+# The other one worth running BY HAND is --level 63, level002/6, the trap
+# level: it is what exercises the INDEX nibble, since level004/3 has only two
+# cells that are neither steel nor one-way wall. Both scored 16,040 of 16,040
+# on the whole byte when this was written.
 if uv run python tools/verify_triggers.py --level 77 2>&1 | sed 's/^/  /'; then :; else fail=1; fi
 
 say ""

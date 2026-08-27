@@ -2044,19 +2044,28 @@ justified by READING image 0x03839 and by the port's own render, and nothing
 checked it against the original - and because no frame comparison or
 screenshot can reach this map at all.
 
-On level004 section 3, which carries all three kinds of cell:
+Two levels, chosen so that between them they exercise both halves of the
+byte:
 
-    the trigger map, 16040 cells (rows 0..39, cols 0..400)
+    level004/3 - twelve one-way walls, five steel areas, an exit
       effect nibble   16040 agree, 0 differ
-      whole byte      16039 agree, 1 differ
+      whole byte      16040 agree, 0 differ    (16039 before the effect-0 fix)
       STEEL cells     original 479, port 479
 
-The one byte is row 27, column 208: the original carries object 2's index
-with effect 0, the port carries 0 with effect 0. It is inert either way -
-every reader masks with 0x0F, image 0x023A6 and image 0x034DC both - and it
-is reported rather than rounded away because the tool scores the index and
-the effect separately on purpose. A port that agreed on the effect and not
-the index would be right about steel and wrong about which trap fired.
+    level002/6 - "Lend a helping hand....", the TRAP level
+      effect nibble   16040 agree, 0 differ
+      whole byte      16040 agree, 0 differ
+      STEEL cells     original 422, port 422
+
+The second one matters for the INDEX nibble, which the first barely touches:
+level004/3 has two cells that are not steel or one-way wall, where level002/6
+is full of traps and the index is what decides WHICH trap fires. A port that
+agreed on the effect and not the index would be right about steel and wrong
+about that, which is why the tool scores them separately.
+
+The one byte that used to differ on level004/3 - row 27, column 208 - was a
+real fault and is fixed; see the entry above it. Reporting it rather than
+rounding it away is what led to it.
 
 **Two instrument faults on the way, and both were caught before anything was
 reported.** They are in `CLAUDE.md` because both generalise:
