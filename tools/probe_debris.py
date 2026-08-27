@@ -64,8 +64,16 @@ def install(m):
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame)
     m.uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
+    # BOTH: the frame trigger ends the run as soon as the answer is in, and
+    # the exit handler catches a run that ends some other way. Either alone
+    # has already lost a report here - a SystemExit from inside a Unicorn
+    # callback does not reliably reach the interpreter, and a run killed at
+    # its ceiling never reaches the trigger.
+    import atexit
+    atexit.register(lambda: report() if not st.get("said") else None)
 
     def report():
+        st["said"] = True
         # TO A FILE, and flushed. A SystemExit raised inside a Unicorn
         # callback does not always reach the interpreter, and stdout
         # redirected to a file is block-buffered, so a report printed and then

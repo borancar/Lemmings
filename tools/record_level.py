@@ -109,6 +109,17 @@ def install(m):
                                [int(v) for v in f[2:]]))
         script.sort(key=lambda a: a[0])
         print(f"  [rec] {len(script)} scripted actions from {sp}")
+    # A second hook, riding along with this one - see the note by LEM_HOOK
+    # in main(). Installed FIRST so its own frame counting starts with ours.
+    extra = os.environ.get("LEM_EXTRA_HOOK")
+    if extra:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("lem_extra", extra)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.install(m)
+        print(f"  [rec] extra hook installed: {extra}", flush=True)
+
     all_lem = os.environ.get("LEM_REC_ARRAY") == "1"
     want_level = os.environ.get("LEM_REC_LEVEL")
     stock = int(os.environ.get("LEM_REC_SKILLS", "0"))
@@ -341,6 +352,12 @@ def main():
     # for.
     seconds = a.seconds or int(90 + a.frames / 1.4)
 
+    # THIS FILE IS ITSELF THE HOOK, which is why a caller cannot just set
+    # LEM_HOOK to ride along - it would be overwritten here and install
+    # nothing, silently. LEM_EXTRA_HOOK is the way in: install() below loads
+    # it too. Two probes were run against this before the emptiness of their
+    # reports gave it away, and both looked like slow runs rather than absent
+    # ones.
     env = dict(os.environ, LEM_HOOK=os.path.abspath(__file__),
                LEM_REC_DIR=out_dir, LEM_REC_FRAMES=str(a.frames))
     if a.script:
