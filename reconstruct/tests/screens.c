@@ -838,6 +838,55 @@ int main(int argc, char **argv)
         }
     }
 
+    /* THE BUILDER FACES BOTH WAYS, and the file says so twice over.
+     *
+     * The port drew the right-facing sixteen whichever way a builder was
+     * laying bricks - a player reported it, and the builder's own reference
+     * cannot catch it because that one builds to the RIGHT.
+     *
+     * Two facts stand in for a check that cannot exist without a left-facing
+     * recording. Both are about the DATA, not about the reading that produced
+     * the fix:
+     *
+     *   the regions ABUT. BUILD_SPR_BASE and BASH_SPR_BASE were found
+     *   separately, by tools/find_sprite.py scoring against the original's
+     *   own frames, and 4240 + 32 * 78 comes to exactly 6736. Sixteen frames
+     *   would leave 1,248 bytes of nothing between them, in a file where
+     *   every other sprite region touches its neighbour.
+     *
+     *   frame 16 is NOT frame 0. If the left-facing set were absent, the
+     *   index would land on whatever follows and the two would differ for a
+     *   different reason - so this is weak on its own and only means
+     *   something beside the arithmetic above.
+     */
+    {
+        /* The numbers are written out rather than taken from game.c's
+         * defines, like the exit's 16816 and the digger's above: this is a
+         * fact about MAIN.DAT, and it should still hold if someone changes
+         * what the port believes. 4240 is the builder's base and 6736 the
+         * basher's, each found separately by tools/find_sprite.py; 78 is
+         * sixteen wide by thirteen rows in three planes. */
+        ck("the builder's 32 frames end where the basher begins",
+           4240 + 32 * 78 == 6736,
+           "the builder's region no longer abuts the basher's, so it is not "
+           "sixteen frames each way any more");
+        char p9[1024];
+        dat_file d9;
+        const char *e9 = "unknown error";
+        snprintf(p9, sizeof p9, "%s/main.dat", dir);
+        if (dat_load(p9, &d9, &e9) == 0 && d9.count > 0
+                && d9.sections[0].size >= 4240 + 32 * 78) {
+            const uint8_t *b0 = d9.sections[0].data + 4240;
+            const uint8_t *b16 = b0 + 16 * 78;
+            int same = 1;
+            for (uint32_t i = 0; i < 78; i++)
+                if (b0[i] != b16[i]) { same = 0; break; }
+            ck("and frame 16 is a different picture from frame 0", !same,
+               "the left-facing set is identical to the right-facing one");
+            dat_free(&d9);
+        }
+    }
+
     /* The digger's SPRITE, against the bytes the original was reading.
      *
      * tools/probe_digger.py caught the guest mid-dig and followed image
