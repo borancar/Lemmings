@@ -1569,14 +1569,21 @@ removing them from the port takes the preview from 0 pixels differing to
 established that the original never composes objects into it; `prove.sh`
 compares against that bitmap with `--no-objects` and gets 100.00%.
 
-Three of the five passes after the terrain loop walk the object list at
-`ds:0x0FEB` and none is the drawer: image `0x0378A` copies the records into
-the animation array, image `0x037C2` builds the TRIGGER MAP (its `mul 0x1a0`
-and `add bx, 0x12` are image `0x03808`, which `level_triggers_build` already
-carries), and image `0x0389F` collects the entrances. So the objects reach the
-preview by a route not yet found, and the place to look is `0xA0000 + 0x4A40`
-during the BRIEFING - `prove.sh` breaks at image `0x0376A`, before those five
-passes, and cannot see anything they do. The routines stay owed - found is a step short of read - but the
+All five passes after the terrain loop are identified now, and none draws an
+object: image `0x0378A` copies the records into the animation array, image
+`0x03839` is the STEEL list at `ds:0x172B` (its `dl = dh & 0xf` and `dh >>= 3`
+unpack the nibbles `level_parse` reads), image `0x037C2` is the TRIGGER MAP
+(image `0x03808`), image `0x0389F` is the ENTRANCES (image `0x038A3`), and
+image `0x036AD` is a clear.
+
+So image `0x03789`'s conclusion stands and the preview still shows the
+objects. **Both are measured and they do not fit**, which is the honest state.
+Everything cheap is spent: the five passes read, a write probe over the
+bitmap's own rows at stride 208 finding only the shared blitter's stores, and
+both halves of `ds:0x1FEE`'s segment holding nothing but the decompressor's
+output. What is left is to compare the BITMAP ITSELF at image `0x0376A`
+against the same bytes when the briefing draws its preview - two dumps of one
+run, and `prove.sh` already takes one of those two. The routines stay owed - found is a step short of read - but the
 marker can say where now, which is the difference between nobody having read
 it and nobody having found it.
 

@@ -8103,17 +8103,30 @@ static char *put_num2(char *dst, uint8_t v);
  * composes objects into that - tools/prove.sh compares against it with
  * --no-objects and gets 100.00%.
  *
- * Three of the five passes after the terrain loop walk the object list at
- * ds:0x0FEB, and NONE of them is the drawer: image 0x0378A copies the records
- * into the animation array at ds:0x17CB, image 0x037C2 builds the TRIGGER MAP
- * (its `mul 0x1a0` and `add bx, 0x12` are image 0x03808, which
- * level_triggers_build already carries), and image 0x0389F collects the
- * entrances (level_entrances, image 0x038A3).
+ * ALL FIVE of the passes after the terrain loop are now identified, and none
+ * of them draws an object:
  *
- * So the objects reach the preview by a route not yet found, and the next
- * step is to watch 0xA0000 + 0x4A40 during the BRIEFING rather than during
- * the level - prove.sh's break at image 0x0376A is before those five passes
- * and cannot see anything they do.
+ *     image 0x0378A  copies the object records into the animation array at
+ *                    ds:0x17CB - level_anim_init's input
+ *     image 0x03839  the STEEL list at ds:0x172B, 32 entries of four, with
+ *                    `dl = dh & 0xf` and `dh >>= 3` unpacking the width and
+ *                    height nibbles level_parse already reads
+ *     image 0x037C2  the TRIGGER MAP - its `mul 0x1a0` and `add bx, 0x12`
+ *                    are image 0x03808, which level_triggers_build carries
+ *     image 0x0389F  the ENTRANCES - image 0x038A3, which level_entrances
+ *                    carries
+ *     image 0x036AD  a clear: di = 0xCC40, cx = 0x340
+ *
+ * So image 0x03789's conclusion stands - nothing composes objects into the
+ * level bitmap - and the preview still shows them. The two facts are both
+ * measured and they do not fit, which is the honest state of this routine.
+ * Everything cheap has been tried: the five passes are read, a write probe
+ * over the bitmap's own rows at stride 208 finds only the shared blitter's
+ * stores, and both halves of ds:0x1FEE's segment hold nothing but the
+ * decompressor's output. What is left is to compare the BITMAP ITSELF at
+ * image 0x0376A against the same bytes when the briefing draws its preview -
+ * two dumps of one run, which is the sort of thing tools/prove.sh already
+ * does for one of the two moments.
  */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,
