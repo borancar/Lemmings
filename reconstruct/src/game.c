@@ -1652,6 +1652,10 @@ void level_release_step(void)
     if (--g_release_wait) return;               /* image 0x30BA */
     g_release_wait = g_release_step;            /* image 0x30C3 */
     if (g_released == g_to_release) return;     /* image 0x30CC */
+    /* ONE MORE COMES OUT, and the trapdoor is heard: image 0x0309C tests
+     * ds:0x25A7 bits 0-1 and image 0x030A0 asks for sound 0x0D with AH=4. */
+    if (sound_enabled(3))                       /* image 0x0309C */
+        sound_request(4, 0x0D);                 /* image 0x030A0 */
     g_released++;
 }
 
@@ -4104,6 +4108,11 @@ static void lem_cloud(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         return;
     }
     if (a->anim != 1) return;                       /* image 0x0235F */
+    /* THE BANG. Image 0x02372 tests ds:0x25A7 bit 0 and image 0x02374 asks
+     * for sound 0x0C with AH=3 - see docs/sound.md. It sits here, on the one
+     * frame the counter is 1, because that is where the original's is. */
+    if (sound_enabled(1))                           /* image 0x02372 */
+        sound_request(3, 0x0C);                     /* image 0x02374 */
     /* Image 0x023A6 reads the cell under it and refuses on 9 and 5 - steel. */
     if ((a->tcell & 0x0F) == 9 || (a->tcell & 0x0F) == 5) return;
     lem_crater(a, lvl, cw, chh);                    /* image 0x023B9 */

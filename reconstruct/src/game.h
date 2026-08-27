@@ -243,6 +243,23 @@ extern terrain_mode g_terrain_mode;
  * than assumed, since it interacts with the no-overwrite flag. */
 extern uint8_t g_terrain_reverse;
 
+/* SOUND - see docs/sound.md.
+ *
+ * The game does not play samples: it loads a driver (adlib.dat) onto INT 61h
+ * and asks it for a numbered sound. The driver's dispatcher does not play
+ * either - AH=3 stores AL in cs:0xED and AH=4 stores AL in cs:0xF0, two
+ * request slots its own timer ISR reads.
+ *
+ * So this mirrors the ASK, which is the part that is the game's: `fn` is the
+ * AH the original loads, 3 or 4, and `id` the AL. What a given id sounds like
+ * is the driver's and lives in sdl_io.c, which says there what it can and
+ * cannot reproduce.
+ *
+ * Both gates are the caller's, as they are in the original: ds:0x25A7 bit 0
+ * for an AH=3 call and bits 0-1 for an AH=4 one. */
+void sound_request(uint8_t fn, uint8_t id);
+uint8_t sound_enabled(uint8_t bits);   /* ds:0x25A7 */
+
 /* Implemented in sdl_io.c - see "WHAT THE HARDWARE USED TO DO" there. */
 uint8_t widen6(uint8_t v);
 /* The whole of a file in memory. DOS did this a section at a time through

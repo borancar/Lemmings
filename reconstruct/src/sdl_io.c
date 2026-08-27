@@ -68,12 +68,17 @@ static SDL_Texture  *g_tex;
 static uint16_t      g_w, g_h;
 static uint8_t       g_scale;
 
+static void sound_open(void);
+static void sound_pump(void);
+static void sound_close(void);
+
 static void view_shutdown(void)
 {
     if (g_tex) SDL_DestroyTexture(g_tex);
     if (g_ren) SDL_DestroyRenderer(g_ren);
     if (g_win) SDL_DestroyWindow(g_win);
     g_tex = NULL; g_ren = NULL; g_win = NULL;
+    sound_close();
     SDL_Quit();
 }
 
@@ -91,10 +96,14 @@ static int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
         SDL_DestroyWindow(g_win);
         g_tex = NULL; g_ren = NULL; g_win = NULL;
     }
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         SDL_Log("SDL_Init: %s", SDL_GetError());
         return -1;
     }
+    /* The game asks a loaded driver for its sounds - see sound_request. A
+     * machine with no audio device is not an error: the port stays silent and
+     * everything else runs, which is what a DOS box with no card did. */
+    sound_open();
     if (!registered) { atexit(view_shutdown); registered = 1; }
     if (!SDL_CreateWindowAndRenderer(title, w * scale, h * scale, 0,
                                      &g_win, &g_ren)) {
@@ -175,6 +184,7 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
         if (scroll_y < 0) scroll_y = 0;
         if (scroll_y > max_y) scroll_y = max_y;
 
+        sound_pump();
         if (g_show_tick && g_show_pix)
             g_show_tick(g_show_ctx, g_show_pix);
 
@@ -493,6 +503,10 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          * level header's instead, which never moves. */
         /* Image 0x03180 dispatches the selected button to its handler, and
          * each opens by testing its own count - see level_skill_left. */
+        /* AND AN ASSIGNMENT DOES TOO - image 0x03202 tests the same bits and
+         * image 0x03205 asks for sound 0x04, inside image 0x03150. */
+        if (level_skill_left(A->skill) && sound_enabled(3))
+            sound_request(4, 0x04);       /* image 0x03205 */
         if (level_skill_left(A->skill)) {
             int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
             if (k >= 0) {
@@ -545,6 +559,11 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          *
          * They also skip the latch at image 0x03F2E that the skill buttons
          * take, which is what lets a held one repeat in the original. */
+        /* A BUTTON MAKES A NOISE whichever one it is - image 0x03F75 tests
+         * ds:0x25A7 bits 0-1 and image 0x03F77 asks for sound 0x01 with
+         * AH=4, before the dispatch below sorts out which button it was. */
+        if (sound_enabled(3))             /* image 0x03F75 */
+            sound_request(4, 0x01);       /* image 0x03F77 */
         if (h.button < 2) {               /* image 0x03F27 */
             level_rate_click(h.button);   /* image 0x04032: 0 down, 1 up */
             return;
@@ -781,6 +800,7 @@ static int level_run(struct level_frame *A, const canvas *c,
         A->view_x = (uint16_t)scroll_x;
 
         /* One frame of the game, then one of the panel. */
+        sound_pump();
         if (g_show_tick && g_show_pix) g_show_tick(g_show_ctx, g_show_pix);
         if (A->panel && A->pan_sec) {
             memset(A->panel, 0, (size_t)PANEL_LINE_W * PANEL_ART_H);
@@ -968,6 +988,134 @@ int io_read_file(const char *path, uint8_t **out, long *len, const char **err)
     *out = blob;
     *len = n;
     return 0;
+}
+
+/* SOUND, and what this can and cannot claim.
+ *
+ * docs/sound.md has the interface: the game loads adlib.dat onto INT 61h and
+ * asks it for a numbered sound, and the driver's AH=3 and AH=4 do nothing but
+ * store AL in cs:0xED and cs:0xF0 for its own timer ISR to pick up.
+ *
+ * WHAT IS TRANSCRIBED is the asking - every call site, its id, and the two
+ * gate bytes - and that lives in game.c beside the routine that asks.
+ *
+ * WHAT IS NOT is the timbre. This game ships NO DIGITISED SAMPLES: adlib.dat
+ * decompresses to 22,125 bytes of 8086 code with a flat 5.6-6.8 entropy and
+ * no PCM block anywhere in it, so there is nothing to play back. The sound an
+ * id makes is FM register writes the driver performs, and reproducing those
+ * exactly means an OPL2 synthesiser - which is emulating the card.
+ *
+ * So the voices below are THE PORT'S OWN: a pitch and an envelope per id,
+ * chosen to be distinguishable, not measured off anything. They are a
+ * placeholder that makes the game audible and the call sites checkable, and
+ * they should not be mistaken for the original's sound. Replacing them means
+ * either reading the driver's instrument tables - the 32-byte runs at
+ * +0x2BEA - and synthesising two-operator FM, or accepting an OPL core.
+ */
+#define SND_RATE   22050
+#define SND_VOICES 4
+
+typedef struct {
+    int      active;
+    double   phase, step;
+    uint32_t left;        /* samples remaining */
+    uint32_t total;
+} snd_voice;
+
+static SDL_AudioStream *g_snd_stream;
+static snd_voice g_snd[SND_VOICES];
+static uint8_t g_snd_bits = 3;         /* ds:0x25A7 - both switches on */
+
+/* ds:0x25A7, image 0x00591 sets 1 and image 0x005A9 sets 3. The caller tests
+ * it exactly as the original does, so a site that asks with the wrong mask
+ * differs from the game whether or not anything is audible. */
+uint8_t sound_enabled(uint8_t bits) { return (uint8_t)((g_snd_bits & bits) != 0); }
+
+/* The port's own voice table - see the note above. Pitch in Hz and length in
+ * milliseconds, one row per id the game asks for; docs/sound.md lists which
+ * site asks for which. */
+static void snd_voice_for(uint8_t fn, uint8_t id, double *hz, uint32_t *ms)
+{
+    static const struct { uint8_t fn, id; uint16_t hz, ms; } V[] = {
+        { 4, 0x01,  880,  40 },   /* a panel button, image 0x03F7A */
+        { 4, 0x04,  660,  60 },   /* a skill assigned, image 0x03209 */
+        { 4, 0x05,  520,  90 },
+        { 4, 0x08,  300, 220 },   /* water, image 0x0229E */
+        { 4, 0x0A,  420, 120 },
+        { 4, 0x0C,  240, 200 },
+        { 4, 0x0D,  700,  80 },   /* the release, image 0x030A3 */
+        { 4, 0x10,  180, 260 },
+        { 4, 0x11,  980,  70 },
+        { 4, 0x12,  560, 100 },
+        { 3, 0x02,  330, 150 },
+        { 3, 0x0C,  140, 320 },   /* the bomber's cloud, image 0x02377 */
+        { 3, 0x13,  620,  60 },
+    };
+    for (size_t i = 0; i < sizeof V / sizeof V[0]; i++)
+        if (V[i].fn == fn && V[i].id == id) { *hz = V[i].hz; *ms = V[i].ms; return; }
+    *hz = 440; *ms = 60;           /* an id with no row still makes a noise */
+}
+
+void sound_request(uint8_t fn, uint8_t id)
+{
+    if (!g_snd_stream) return;
+    double hz; uint32_t ms;
+    snd_voice_for(fn, id, &hz, &ms);
+    for (int i = 0; i < SND_VOICES; i++) {
+        if (g_snd[i].active) continue;
+        g_snd[i].active = 1;
+        g_snd[i].phase  = 0.0;
+        g_snd[i].step   = hz / (double)SND_RATE;
+        g_snd[i].total  = g_snd[i].left = ms * SND_RATE / 1000u;
+        return;
+    }
+}
+
+/* Mix what is playing and hand it to SDL. Called once a frame from the level
+ * and menu loops; a frame is 1/17 or 1/70 of a second, so the buffer is small
+ * and the latency is a frame. */
+static void sound_pump(void)
+{
+    if (!g_snd_stream) return;
+    if (SDL_GetAudioStreamQueued(g_snd_stream) > (int)(SND_RATE / 4))
+        return;                     /* already a quarter second ahead */
+    int16_t buf[SND_RATE / 30];
+    size_t n = sizeof buf / sizeof buf[0];
+    for (size_t s = 0; s < n; s++) {
+        double acc = 0.0;
+        for (int i = 0; i < SND_VOICES; i++) {
+            if (!g_snd[i].active) continue;
+            /* A square wave with a linear decay - the port's own. */
+            double env = (double)g_snd[i].left / (double)g_snd[i].total;
+            acc += (g_snd[i].phase < 0.5 ? 0.25 : -0.25) * env;
+            g_snd[i].phase += g_snd[i].step;
+            if (g_snd[i].phase >= 1.0) g_snd[i].phase -= 1.0;
+            if (--g_snd[i].left == 0) g_snd[i].active = 0;
+        }
+        if (acc >  1.0) acc =  1.0;
+        if (acc < -1.0) acc = -1.0;
+        buf[s] = (int16_t)(acc * 32767.0);
+    }
+    SDL_PutAudioStreamData(g_snd_stream, buf, (int)sizeof buf);
+}
+
+static void sound_open(void)
+{
+    SDL_AudioSpec want;
+    SDL_zero(want);
+    want.freq = SND_RATE;
+    want.format = SDL_AUDIO_S16;
+    want.channels = 1;
+    g_snd_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+                                             &want, NULL, NULL);
+    if (g_snd_stream)
+        SDL_ResumeAudioStreamDevice(g_snd_stream);
+}
+
+static void sound_close(void)
+{
+    if (g_snd_stream) SDL_DestroyAudioStream(g_snd_stream);
+    g_snd_stream = NULL;
 }
 
 #define GROUND_SIZE 1056

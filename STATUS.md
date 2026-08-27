@@ -1790,6 +1790,42 @@ measures is not a bug, and pretending otherwise would make the suite cry wolf.
 It is the list of places a bug can sit unseen, which is the thing to have
 before reading a run of 100.00% as "correct".
 
+### Sound: the asking is transcribed, the timbre is not
+
+`docs/sound.md` has the interface, read out of the binary. The short of it:
+
+- **The game ships no digitised samples.** `adlib.dat` decompresses to 22,125
+  bytes of 8086 CODE - a loadable driver - with a flat 5.6-6.8 entropy across
+  every 4 KB and no PCM block in it. There is nothing to play back.
+- The driver owns **INT 61h**, and the game asks it for numbered sounds. Image
+  0x00589 loads adlib.dat and image 0x0059D does `ah = 1 / int 0x61` to ask
+  whether the hardware is there; `tandysnd.dat` goes on the SAME vector. INT
+  60h is a second interface of whichever driver is loaded, not a second card.
+- **AH=3 and AH=4 do not play.** The driver's dispatcher stores AL in
+  `cs:0xED` and `cs:0xF0` - two request slots its own timer ISR reads.
+- Two gates at every site: `ds:0x25A7` (bit 0 for an AH=3 call, bits 0-1 for
+  AH=4) and `ds:0x2010`.
+
+The port now mirrors the ASK, which is the half that is the game's:
+`sound_request(fn, id)` with the original's own AH and AL, and
+`sound_enabled(bits)` for the gate. Four sites are wired with their addresses:
+the bomber's bang (image 0x02374, AH=3 id 0x0C), the trapdoor releasing one
+(image 0x030A0, AH=4 id 0x0D), a panel button (image 0x03F77, id 0x01) and a
+skill assignment (image 0x03205, id 0x04). The rest are listed in the doc with
+their sites.
+
+**What is NOT reproduced, and says so in `sdl_io.c`:** the timbre. An id's
+sound is FM register writes the driver performs, and getting those right means
+an OPL2 synthesiser - which is emulating the card. The voices in the port are
+its own, a pitch and an envelope each, chosen to be distinguishable and
+measured off nothing. They make the game audible and the call sites checkable
+and they are not the original's sound. Replacing them means reading the
+driver's instrument tables - the 32-byte runs at +0x2BEA - and synthesising
+two-operator FM.
+
+Nothing visual moved: the three levels are still exact in both halves,
+`prove.sh` 100.00%, `verify_rate` 240 of 240.
+
 ### The one-way arrows were drawn over the black beside their wall
 
 Reported from playing, with screenshots of level004/3 and level005/8: arrows
