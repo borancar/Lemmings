@@ -226,11 +226,17 @@ say "=== three further levels, frame by frame ==="
 # draws and the port was erasing. 116 such pieces across 9 of the 80 levels.
 # Two levels chosen by a coverage gap, two bugs; that is the argument for
 # choosing them that way rather than by which level looks interesting.
+#
+# level007.dat 1 closes the last of them - the two TERRAIN flag combinations
+# nothing exercised, upside_down + erase and all three together. It was exact
+# on its first run, which is the other outcome a coverage gap can have and
+# worth having either way: it turns "we have never looked" into "we looked".
 for case in "level001.dat 3 ref_i8 530 10" \
             "level002.dat 4 ref_i61 1100 -1" \
             "level002.dat 6 ref_i63 1100 -1" \
             "level004.dat 3 ref_i77 1100 -1" \
-            "level006.dat 3 ref_i95 1100 -1"; do
+            "level006.dat 3 ref_i95 1100 -1" \
+            "level007.dat 1 ref_i101 1100 -1"; do
     set -- $case
     lfile=$1 lsec=$2 lref=$3 lframes=$4 lodd=$5
     if [ ! -f "out/$lref/manifest.json" ]; then

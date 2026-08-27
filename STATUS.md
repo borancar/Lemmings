@@ -1914,6 +1914,27 @@ Two levels chosen by a coverage gap, two bugs, and neither of them in the
 thing the gap was about. That is the argument for choosing the next reference
 by what nothing measures rather than by what looks interesting.
 
+### A sixth level closes the last coverage gap, and was exact first time
+
+`tools/coverage.py` grew terrain-flag counting after the erase bug, and named
+two combinations nothing exercised: `upside_down + erase` (89 pieces) and all
+three together (17). level007.dat section 1, "The Far Side", is the only level
+carrying both - one of the first and six of the second - and its `ds:0x1F6B`
+index is **101**. Its header confirms the recording,
+`0032004b004b0004**0002**0001`, where level006 section 3 has `000a0000` in the
+same place and the two agree for their first eight bytes.
+
+**1,100 of 1,100 exact, play area and panel, on the first run.**
+
+That is the other thing a coverage gap can turn into, and it is worth having
+either way: it converts "nothing here has ever looked" into "this was looked
+at and agreed". It also generalises the erase precedence fix, since these are
+erase pieces carrying a second flag and the port draws them correctly.
+
+Six levels are now compared frame by frame, and `coverage.py` reports **0 of
+10 object ids, 0 of 2 object flags and 0 of 7 terrain flag combinations
+unexercised**.
+
 ### OPEN: do the one-way arrows land on a builder's bricks?
 
 Reported from playing, with a screenshot: the arrows appear over bricks a
