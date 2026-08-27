@@ -1374,6 +1374,36 @@ Note also what the frame-by-frame score could not see. Both of these agreed on
 show it was the one the port draws before it has stepped - which is exactly
 the frame a comparison is most tempted to excuse as the fade-in.
 
+### The terrain flags were inherited; now they are read
+
+`level_parse` decoded a terrain entry's three flags as word bits 15, 14 and 13
+and said so with the comment "word bit 15" - which came from the published
+description of the LVL format, not from the binary. This file already
+distinguishes the two: a third-party description is a hypothesis, and which
+claims were confirmed against the bytes and which were inherited unverified
+are different kinds of knowledge.
+
+They are read now, out of image `0x07C67` - the blitter the composition loop
+at image `0x03752` hands each entry to. It is given the same two words and
+unpacks them into its own flag word: image `0x07C6C` shifts AX right by seven
+and keeps `0xC0`, putting AX bit 14 in bit 7 and AX bit 13 in bit 6; image
+`0x07C75` tests that bit 6 and ORs in `0xF00`; image `0x07C7F` rotates AX left
+so bit 15 falls into carry and ORs in `0x8000`. So **bit 15 is no-overwrite,
+bit 14 upside down, bit 13 erase** - and bit 15 is the same bit
+`level_anim_draw` already knew from the object side as bp bit 15, "not drawn
+where there is terrain", which is two independent routines agreeing.
+
+The coordinates agree to the instruction as well: image `0x07C95`'s
+`and ax, 0x1fff` is the port's `(e[0] & 0x1F) << 8 | e[1]`, and image
+`0x07C90`'s `sar bx, 7` on the signed word is exactly the port's `sign9` of
+the top nine bits.
+
+So `render_terrain`'s debt is narrower than it was, and the comment now says
+where the line runs: the UNPACKING is transcribed, the COMPOSITION is still
+the port's own - the original programs the card and blits a byte at a time
+where this walks pixels. `tools/prove.sh` still reports 49,741 pixels, zero
+differing.
+
 ### dat_load was not a debt, it was IO in the wrong file
 
 `dat_load` carried a NOT TRANSCRIBED marker and the note that "the original

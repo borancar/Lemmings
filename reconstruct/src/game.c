@@ -471,9 +471,27 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
         t->x = (int16_t)((int32_t)(((e[0] & 0x1F) << 8) | e[1]) - 16);
         t->y = (int16_t)(sign9((uint16_t)((e[2] << 1) | (e[3] >> 7))) - 4);
         t->id = (uint8_t)(e[3] & 0x3F);
-        t->no_overwrite = (uint8_t)((e[0] & 0x80) != 0);   /* word bit 15 */
-        t->upside_down  = (uint8_t)((e[0] & 0x40) != 0);   /* word bit 14 */
-        t->erase        = (uint8_t)((e[0] & 0x20) != 0);   /* word bit 13 */
+        /* THE THREE FLAGS, read out of image 0x07C67 rather than taken
+         * from the published description of the format - which is what they
+         * rested on until now, and this project's note about inherited
+         * claims says those are a different kind of knowledge.
+         *
+         * The blitter is handed the same two words and unpacks them into its
+         * own flag word: image 0x07C6C shifts AX right by seven and keeps
+         * 0xC0, which puts AX bit 14 in bit 7 and AX bit 13 in bit 6; image
+         * 0x07C75 tests that bit 6 and ORs in 0xF00; and image 0x07C7F
+         * rotates AX left so bit 15 falls into carry and ORs in 0x8000. So
+         * bit 15 is no-overwrite - the same bit level_anim_draw already knew
+         * as bp bit 15, "not drawn where there is terrain" - bit 14 upside
+         * down, bit 13 erase.
+         *
+         * The X and Y arithmetic agrees to the instruction too: image
+         * 0x07C95's `and ax, 0x1fff` is this line's 0x1F<<8, and image
+         * 0x07C90's `sar bx, 7` on the signed word is exactly sign9 of the
+         * top nine bits. */
+        t->no_overwrite = (uint8_t)((e[0] & 0x80) != 0);   /* image 0x07C7F */
+        t->upside_down  = (uint8_t)((e[0] & 0x40) != 0);   /* image 0x07C6C */
+        t->erase        = (uint8_t)((e[0] & 0x20) != 0);   /* image 0x07C75 */
     }
 
     /* Steel: 32 entries of 4 bytes at 0x760, all-zero means absent.
@@ -524,10 +542,17 @@ uint8_t g_msb_first = 1;
 terrain_mode g_terrain_mode = TERRAIN_REPLACE;
 uint8_t g_terrain_reverse = 0;
 
-/* NOT TRANSCRIBED, but PROVEN equivalent. The original's loop is at image
- * 0x03752..0x03768, calling a blitter at image 0x07C67; this composes the
- * same picture without being a transcription of it. tools/prove.sh compares
- * against what the original composes: 49,741 pixels, zero differing. */
+/* NOT TRANSCRIBED, but PROVEN equivalent - and the boundary is now narrower
+ * than it was. The original's loop is at image 0x03752..0x03768: four bytes
+ * at a time from a table at ds:0x10EB, stopping on the first WORD being
+ * 0xFFFF, each entry handed to a blitter at image 0x07C67.
+ *
+ * That blitter's UNPACKING is transcribed now - level_parse's terrain entries
+ * carry its addresses, and the x, the y and all three flags agree with it to
+ * the instruction. What is still the port's own is the COMPOSITION below:
+ * the original programs the card and blits a byte at a time, and this walks
+ * pixels. tools/prove.sh compares against what the original composes: 49,741
+ * pixels, zero differing. */
 int render_terrain(canvas *c, const level *lv, const ground *g,
                    const uint8_t *sec, uint32_t sec_len, const char **err)
 {
