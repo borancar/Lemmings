@@ -665,6 +665,7 @@ static int level_run(struct level_frame *A, const canvas *c,
     const Uint64 period = SDL_NS_PER_SECOND / LEVEL_FPS;
     Uint64 due = SDL_GetTicksNS();
 
+    int held = 0;          /* the button is down - a rate button repeats */
     int running = 1;
     while (running) {
         /* The script speaks first, so a scripted frame behaves the same
@@ -677,9 +678,28 @@ static int level_run(struct level_frame *A, const canvas *c,
                 lem_mouse_move(act->x + 8, act->y + 8);
                 seen_motion = 1;
             } else if (act->what == SCRIPT_DOWN) {
+                held = 1;
                 level_click(A, &scroll_x);
+            } else if (act->what == SCRIPT_UP) {
+                held = 0;
             }
-            /* SCRIPT_UP: the port acts on the press, as image 0x03EF9 does. */
+        }
+
+        /* A HELD RATE BUTTON REPEATS. The original polls the button from the
+         * panel's own per-frame update (image 0x03B3F) and divides with
+         * ds:0x69, so holding the minus or plus walks the rate one frame in
+         * three. The port takes the press as an edge, which is right for the
+         * skills - image 0x03170's latch gives them one assignment however
+         * long the button is down - but it left the rate buttons doing a
+         * single step per click.
+         *
+         * So only these two repeat, which is also what the original's own
+         * split says: buttons from 2 up go through the latch at image
+         * 0x03F2E and 0 and 1 never touch it. */
+        if (held) {
+            level_hit rh = level_pointer_hit();
+            if (rh.what == LEVEL_HIT_BUTTON && rh.button < 2)
+                level_rate_held(rh.button);     /* image 0x0403D */
         }
 
         SDL_Event e;
@@ -712,8 +732,12 @@ static int level_run(struct level_frame *A, const canvas *c,
                     grabbed = 1;
                     SDL_SetWindowRelativeMouseMode(g_win, true);
                 } else {
+                    held = 1;
                     level_click(A, &scroll_x);
                 }
+            }
+            else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                held = 0;
             }
             else if (e.type == SDL_EVENT_KEY_DOWN) {
                 /* Ctrl+Alt gives the pointer back, which is the gesture

@@ -1762,6 +1762,26 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### And a held rate button ramps, the way the original's does
+
+The rate buttons stepped once per click and stopped. The original's ramp when
+one is held down, and `ds:0x69` is how: image `0x03B8C` runs it from the
+panel's own per-frame update in exactly the shape `ds:0x84` has for the skill
+strip - caught at 2 it is put to 0xFF and the `inc` at image `0x03B9C` wraps
+it to zero - and image `0x0403D` refuses a click whenever it is not zero. So a
+held button walks the rate **one frame in three**.
+
+The port takes a press as an EDGE, which is right for the skills: image
+`0x03170`'s latch gives them one assignment however long the button is down.
+So the repeat is driven the other way round - `sdl_io.c` calls
+`level_rate_held` once a frame while a rate button is held, and the divider
+lives in `game.c` where it belongs. Same three-frame pace, reached from the
+opposite direction, and the split is the original's own: buttons from 2 up go
+through the latch at image `0x03F2E` and 0 and 1 never touch it.
+
+`verify_rate.py` still reports **240 of 240**, `prove.sh` 100.00%, the three
+levels exact, and every skill's record 0 of n differing.
+
 ### The rate now has a check, and it is checked against a fault
 
 `tools/verify_rate.py` drives image `0x04032` itself - the rate is a pure

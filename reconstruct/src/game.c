@@ -1558,9 +1558,10 @@ static uint8_t level_rate_step(uint8_t rate)
  * 0x0403D and image 0x0406C. It is a divider of exactly the shape
  * ds:0x84 has for the skill strip - image 0x03B8C catches it at 2, sets it
  * 0xFF, and the `inc` at image 0x03B9C wraps it to zero - so a HELD button
- * steps the rate one frame in three. The port acts on the button-down edge
- * instead, so one press is one step and holding does not ramp. Applying the
- * divider to an edge would drop clicks rather than pace them. */
+ * steps the rate one frame in three. The
+ * divider is applied by level_rate_held below rather than inside this
+ * routine, because the port's click arrives as an EDGE: see sdl_io.c, which
+ * calls that once a frame while a rate button is down. */
 uint8_t level_rate_click(uint8_t up)
 {
     if (level_paused() == 0xFF) return 0;       /* image 0x04032 */
@@ -1574,6 +1575,32 @@ uint8_t level_rate_click(uint8_t up)
     g_release_step = level_rate_step(g_rate);   /* image 0x04053 */
     return 1;
 }
+
+/* ds:0x69, image 0x0403D - the divider that paces a HELD rate button.
+ *
+ * Image 0x03B8C runs it from the panel's own per-frame update in exactly the
+ * shape ds:0x84 has for the skill strip: caught at 2 it is put to 0xFF and
+ * the `inc` at image 0x03B9C wraps it to zero. Image 0x0403D then refuses a
+ * click whenever it is not zero, so a button held down steps the rate one
+ * frame in three rather than every frame.
+ *
+ * The port drives this from level_rate_held rather than from a poll of the
+ * button inside the handler, because its click arrives as an edge - see
+ * sdl_io.c. Same three-frame pace, reached the other way round. */
+static uint8_t g_rate_div;       /* ds:0x69 */
+
+/* One frame with a rate button held down - image 0x0403D's test of ds:0x69,
+ * with image 0x03B8C's three-frame cycle driving it. Non-zero if the rate
+ * moved. */
+uint8_t level_rate_held(uint8_t up)
+{
+    uint8_t fire = (g_rate_div == 0);           /* image 0x0403D */
+    g_rate_div = (uint8_t)((g_rate_div + 1) % 3);
+    return fire ? level_rate_click(up) : 0;
+}
+
+/* Image 0x039EE clears ds:0x69 when the level starts. */
+void level_rate_div_reset(void) { g_rate_div = 0; }
 
 /* ds:0x67 and ds:0x64 - the rate in force and the level's own, which the
  * panel draws as its first two numbers (image 0x036C1, image 0x036C4). */
@@ -1592,6 +1619,7 @@ void level_release_reset(const level *lv)
      * header's rate in ds:0x64 and image 0x036C4 puts the SAME value in
      * ds:0x67, and only the second moves: the panel's two buttons walk
      * ds:0x67 between ds:0x64 and 99. */
+    g_rate_div = 0;                             /* image 0x039EE */
     g_rate_min = (uint8_t)lv->release_rate;     /* image 0x036C1 */
     g_rate     = (uint8_t)lv->release_rate;     /* image 0x036C4 */
     g_release_step = level_rate_step(g_rate);

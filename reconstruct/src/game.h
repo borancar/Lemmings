@@ -372,6 +372,10 @@ void lemmings_step(lemming *lem, uint8_t n,
  * if the rate moved. The plus stops at 99 and the minus at the level's own
  * rate, which is a floor rather than a starting point. */
 uint8_t level_rate_click(uint8_t up);
+/* One frame with a rate button HELD - image 0x0403D's divider, so it steps
+ * one frame in three the way the original's does. */
+uint8_t level_rate_held(uint8_t up);
+void level_rate_div_reset(void);
 uint8_t level_rate(void);        /* ds:0x67, the rate in force */
 uint8_t level_rate_floor(void);  /* ds:0x64, the level's own */
 uint8_t level_release_interval(void); /* ds:0x49, image 0x04053's interval */
