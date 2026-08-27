@@ -1762,6 +1762,34 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### What "exact on every frame" covers, measured
+
+Five of the six real port bugs found in one session were in code paths no
+reference here touches. That is not an argument against the frame-by-frame
+numbers - they are exact and they are real - it is an argument for knowing
+what they cover, which nothing here said until now.
+
+`tools/coverage.py` reads all 80 levels and marks which features the five
+levels this repository compares actually reach:
+
+    object id 3          45 in the game,   0 measured
+    object id 4          21 in the game,   0 measured
+    only_on_terrain      66 in the game,   0 measured
+
+Ids 3 and 4 are the ONE-WAY ARROWS, and `only_on_terrain` is the flag whose
+missing test drew them over the black. **The tool would have predicted that
+bug**: three rows of zero, in the feature a player reported a week of frames
+later.
+
+Two of ten object ids and one of two object flags are never exercised. That is
+the honest shape of the claim - `exact on every frame` over five levels, out
+of eighty, covering eight of ten object kinds.
+
+It is reported by `verify_all.sh` and does not fail it. A feature nobody
+measures is not a bug, and pretending otherwise would make the suite cry wolf.
+It is the list of places a bug can sit unseen, which is the thing to have
+before reading a run of 100.00% as "correct".
+
 ### The one-way arrows were drawn over the black beside their wall
 
 Reported from playing, with screenshots of level004/3 and level005/8: arrows

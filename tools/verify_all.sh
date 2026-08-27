@@ -192,6 +192,14 @@ done
 # tile MAIN.DAT's first section exactly, so a wrong base or frame count shows
 # up as a gap or an overlap. It found the shrug facing one way before any
 # player did.
+# WHAT THE NUMBERS ABOVE COVER. Every level compared here scores exact, and
+# that is narrower than it sounds: five of six real bugs found in one session
+# were in paths no reference touches. This is informational - a feature nobody
+# measures is not a bug - but it is the list of places one could sit unseen.
+say ""
+say "=== what these comparisons exercise ==="
+uv run python tools/coverage.py 2>&1 | tail -6 | sed 's/^/  /'
+
 say ""
 say "=== the sprite regions tile the file ==="
 if uv run python tools/tile_sprites.py 2>&1 | tail -2 | sed 's/^/  /'; then :; else fail=1; fi
