@@ -7065,11 +7065,25 @@ void level_anim_draw(const level_anim *st, const level *lv,
     (void)st;
 }
 
-/* NOT TRANSCRIBED, and NOT what the original does. Breaking at image
- * 0x03789 - the final `ret` after all five composition passes - shows the
- * original never composes objects into the level bitmap at all: it draws the
- * entrance and the exit as animated sprites at display time. This bakes them
- * in, which is why tools/prove.sh passes --no-objects. */
+/* NOT TRANSCRIBED - and the evidence recorded here answers a different
+ * question from the one the marker is about, which is worth untangling.
+ *
+ * What was established, by breaking at image 0x03789 - the final `ret` after
+ * all five composition passes - is that the original never composes objects
+ * into the LEVEL bitmap: it draws the entrance and the exit as animated
+ * sprites at display time. That is why tools/prove.sh passes --no-objects,
+ * and it is a fact about the level, not about this routine.
+ *
+ * But this routine's caller inside the game is draw_preview, the briefing's
+ * little map - and the original's briefing does show the objects on it. So
+ * there IS an original routine that puts objects into a composed picture;
+ * it just is not in the level's composition, which is the only place anyone
+ * has looked. The debt is real and it is pointed at the wrong address.
+ *
+ * The briefing scores 100.00% against the original's own, so what is owed
+ * here is provenance and not correctness. draw_preview is owed for the same
+ * screen and probably the same routine; tools/probe_writes.py is the thing
+ * that would find it, being built for "who writes these rows". */
 int render_objects(canvas *c, const level *lv, const ground *g,
                    const uint8_t *sec, uint32_t sec_len,
                    uint8_t frame, const char **err)
