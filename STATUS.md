@@ -1374,6 +1374,42 @@ Note also what the frame-by-frame score could not see. Both of these agreed on
 show it was the one the port draws before it has stepped - which is exactly
 the frame a comparison is most tempted to excuse as the fade-in.
 
+### One pixel of the miner's tunnel, and four things it is not
+
+`verify_skills` scores the miner's SCREEN at 262 of 400 frames, the worst of
+the eight, and 137 of those 138 differing frames are a **single pixel** - the
+same one, at screen (159, 81) on "Just dig!" driven by `out/s8.txt`. The
+original holds it and the port clears it.
+
+It is TERRAIN, and it matters slightly more than a pixel of picture: the port
+has a one-pixel hole in its solidity map that the original does not.
+
+What it is not, each checked rather than argued:
+
+- **not the mask.** `tools/probe_mine.py` reads the miner's masks back out of
+  the original's own sprite store at `ds:0x1FE8:0x780` (image `0x06085`) from
+  inside a running level. All four - two directions, two slices, thirteen rows
+  each - are byte-identical to `MINE_MASK` in `game.c`.
+- **not the pre-shifting.** The port keeps only shift 0 and applies it at
+  pixel granularity; the original picks one of eight pre-shifted variants by
+  `x & 7` (image `0x060E6`). That is only equivalent if nothing falls off the
+  end of the three bytes, so it was checked: shift *k* equals shift 0 shifted
+  right by *k* for all 91 combinations. Nothing is lost.
+- **not the position.** A misplaced mask differs along a whole edge. This is
+  one pixel on one row, with every other pixel of the tunnel identical.
+- **not a stale pixel from the original's incremental display**, which was the
+  first guess because the nuke's residue is exactly that. The pixel reads 22
+  on both sides through frame 137 and then goes to **2** in the original and
+  **0** in the port on frame 138, the frame the first slice is cut. A stale
+  pixel would have stayed 22.
+
+What the values say, and it is the lead worth following: DAC 22 is attribute
+14 (`1110`) and DAC 2 is attribute 2 (`0010`), so the original cleared planes
+2 and 3 at that pixel and **left plane 1 standing**, where the port writes a
+plain zero. And screen x 159 is the LAST PIXEL OF A BYTE. So the next thing to
+read is how image `0x060A8`'s clear drives the sequencer's map mask across the
+mask's three bytes - not the mask, which is now known good.
+
 ### Two cross-hairs in different places is not a residue, it is a harness
 
 All three of the levels being chased now score their play area **exact on
