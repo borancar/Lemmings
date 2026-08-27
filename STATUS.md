@@ -1493,9 +1493,28 @@ composed into a buffer and put up in ONE blit.** Nothing draws the preview to
 the screen piece by piece, which is why a probe watching the EGA window can
 only ever see the clear and the blit.
 
-So the routine that is owed writes to `ds:0x1FEE:0x2080`, not to `0xA000`, and
-that is where to point the next probe - `probe_writes.py` watches
-`0xA0000..0xB0000` and would have to be told a different range.
+So the routine that is owed writes to `ds:0x1FEE:0x2080`, not to `0xA000`.
+`tools/probe_preview.py` watches there, and **found it**:
+
+    image 0x04639 -> image 0x05017 -> image 0x07E76      the builder
+    image 0x07EC5 .. image 0x080F8                       a 4:1 packer
+    image 0x04434 -> image 0x04EEF -> image 0x04F0A      the blit
+
+The builder copies `ds:0x1FEE` into `ds:0x1FE4` and blits the level through
+the shared blitter four times, then falls into the packer: `cx = 0x34` at
+image `0x07F04` is **52 destination bytes a row**, and it reads FOUR source
+bytes at image `0x07F1D` and scatters their bits into one output byte per
+plane - which is `draw_preview`'s `PV_SCALE` of 4, read out of the original
+rather than fitted. Its four unrolled plane writes are image `0x07F7B`,
+`0x07FF1`, `0x08067` and `0x080DD` at **2,028 bytes each**, and 52 x 39 is
+2,028 - so 39 rows, which is `PV_H`. The blit then puts 632 x 94 up at y = 20,
+`PV_Y` exactly.
+
+Every constant `draw_preview`'s comment said was "measured against the
+original's screen, not read from its code" is now read from its code, and they
+all agree. The routines stay owed - found is a step short of read - but the
+marker can say where now, which is the difference between nobody having read
+it and nobody having found it.
 
 **And one caveat about the instrument**, because it produced 31 rows of
 plausible nonsense: `probe_blits.py` works the destination row out from the

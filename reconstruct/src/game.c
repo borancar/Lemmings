@@ -7081,9 +7081,12 @@ void level_anim_draw(const level_anim *st, const level *lv,
  * has looked. The debt is real and it is pointed at the wrong address.
  *
  * The briefing scores 100.00% against the original's own, so what is owed
- * here is provenance and not correctness. draw_preview is owed for the same
- * screen and probably the same routine; tools/probe_writes.py is the thing
- * that would find it, being built for "who writes these rows". */
+ * here is provenance and not correctness. And the routine has now been
+ * FOUND, which is a step short of read: image 0x07E76 builds the preview by
+ * blitting the level four times and packing it 4:1, and draw_preview above
+ * carries the whole chain. Whether the objects reach it through those blits
+ * or are drawn separately is the question this routine's own transcription
+ * turns on. */
 int render_objects(canvas *c, const level *lv, const ground *g,
                    const uint8_t *sec, uint32_t sec_len,
                    uint8_t frame, const char **err)
@@ -8024,9 +8027,31 @@ static char *put_num2(char *dst, uint8_t v);
 #define PV_SAMPLE   2      /* which pixel of each 4x4 block is taken */
 #define PV_TOP      4      /* the first level row the preview shows
  *
- * NOT TRANSCRIBED, address unknown. The geometry is measured against the
- * original's screen, not read from its code; no blit in screen coordinates
- * was ever found for it.
+ * NOT TRANSCRIBED - but the address is no longer unknown, and the reason no
+ * blit in screen coordinates was ever found is that there is not one.
+ *
+ * The preview is built into a BUFFER and put up with the rest of the
+ * briefing's upper panel in a single blit:
+ *
+ *   image 0x04639 -> image 0x05017 (`xor bx,bx / jmp`) -> image 0x07E76
+ *          the builder. It copies ds:0x1FEE into ds:0x1FE4 and blits the
+ *          level through the shared blitter four times, then falls into
+ *   image 0x07EC5..0x080F8
+ *          a 4:1 packer. `cx = 0x34` at image 0x07F04 is 52 destination
+ *          bytes a row; it reads FOUR source bytes at image 0x07F1D..0x07F25
+ *          and scatters their bits into one output byte per plane, which is
+ *          this file's PV_SCALE of 4. Its four unrolled plane writes are
+ *          image 0x07F7B, 0x07FF1, 0x08067 and 0x080DD, 2,028 bytes each -
+ *          52 x 39, which is PV_H.
+ *   image 0x04434 -> image 0x04EEF -> image 0x04F0A
+ *          the blit: `bx = 0x14` (y = 20, this file's PV_Y), `dx = 0x278`
+ *          (632 wide), `cl = 0x5E` (94 rows), `si = 0x2080`, through
+ *          `lcall 0x1010:0x8822` from the segment in ds:0x1FEE.
+ *
+ * Found by tools/probe_preview.py, which watches ds:0x1FEE:0x2080 rather than
+ * the EGA window - a probe pointed at the screen can only ever see the page
+ * being cleared and that one blit landing, which is what every earlier
+ * attempt saw.
  */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,
