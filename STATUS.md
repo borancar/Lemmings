@@ -1104,6 +1104,19 @@ doing stops.
 spot is `(-8, -14)`, four rows deeper than anything else here, and its frame
 is `0x70` = 112 bytes against the drowner's `0x3C` = 60.
 
+### Open: the panel's numbers on a level that is not "Just dig!"
+
+`level001.dat --level 3` scores its PANEL exact on 0 of 530 frames, 74 pixels
+every frame, static. The differing 16-pixel columns are buttons 2, 3, 4, 5, 7,
+8 and 9 - every skill except the BUILDER, whose 20 agrees. The level stocks
+climber 2, floater 0, bomber 5, blocker 10, builder 20, basher 2, miner 2,
+digger 2, and the numbers the two sides draw are not the same.
+
+Not reported by anyone and not one of the three deaths; written down so it is
+not mistaken for noise next time the panel scores zero. Note that "Just dig!"
+stocks ten diggers and nothing else, so every panel figure this port has ever
+been checked on came from a level with one number to get right.
+
 ### Sprites: where a group lives, and how to find one
 
 `tools/find_sprite.py` scores a candidate offset against the ORIGINAL's own
