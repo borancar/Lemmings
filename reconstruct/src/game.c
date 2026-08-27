@@ -7170,17 +7170,12 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                  * is already there'". Two sites, one rule, and only one of
                  * them had been corrected.
                  *
-                 * UNVERIFIABLE, and that is measured rather than assumed.
-                 * The two rules differ only where an object pixel lands on an
-                 * attribute of 1..7 - non-zero with bit 3 clear - and a sweep
-                 * of ALL 120 PLATES of this game finds that happening zero
-                 * times. Level 1 alone has 2,400 no-overwrite object pixels
-                 * and not one of them discriminates.
-                 *
-                 * So the rule this replaced was never wrong on anything that
-                 * ships, and no check ever built from these levels could tell
-                 * the two apart. Kept because it is what image 0x0953E does;
-                 * recorded as untestable so nobody looks for the test. */
+                 * UNVERIFIED, and measured to be so: with this rule and with
+                 * the old one, tools/verify_objects.py scores the same
+                 * 243,936 of 243,936. "Just dig!" has no object pixel over an
+                 * attribute of 1..7, which is the only place the two can
+                 * disagree, so nothing here can tell them apart. Kept because
+                 * it is what image 0x0953E does. */
                 if (o->no_overwrite && (*dst & 8))
                     continue;
                 *dst = pix[si];
