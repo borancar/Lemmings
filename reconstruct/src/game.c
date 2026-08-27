@@ -4882,14 +4882,22 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * and a mask - the 40-bit row being a 32-wide sprite with eight bits of
  * pre-shift. Columns 32..39 are the wrap and are dropped.
  *
- * WHERE IT GOES IS MEASURED, NOT READ, and that is worth saying plainly.
- * Scored against the original's own five bursts - frames 496, 498, 500,
- * 502 and 504 - store index 7 placed at (x - scroll - 7, y + hot_y - 18)
- * agrees on 2,086 of 2,125 pixels, 98%, and the trend over the eight
- * indices is monotonic so 7 is not a coincidence. What is NOT read is why
- * the index is a constant 7 when the five lemmings have five different
- * x & 7. Until that is read this is a fit, and a fit that is 98% right is
- * still a fit. */
+ * WHY INDEX 7. The store's pre-shift ROTATES within the 40-bit row rather
+ * than shifting into it, and the sprite is 32 wide: index i carries it at
+ * columns i..i+31 with the part that runs off the end coming back at the
+ * start. Checked cell by cell, index i agrees with index 0 on 1011 of the
+ * 1024 cells of that window, for every one of the eight. So 7 is not an
+ * animation frame and not a sub-pixel shift - it is the rotation that brings
+ * the sprite's 32 columns together in one run, and its columns 0..6 are the
+ * sprite's own 33..39, which is why they belong SEVEN PIXELS LEFT of the
+ * origin rather than thirty-three right.
+ *
+ * That is what makes (x - scroll - 7, y + hot_y - 18) the placement rather
+ * than a fitted constant. Scored over the original's five bursts - frames
+ * 496, 498, 500, 502 and 504 - it agrees on 2,086 of 2,125 pixels. Drawing
+ * index 0's own columns 0..31 at the origin instead scores 1,400 of 1,785,
+ * and index 7 at the origin 463 of 2,125, so the two halves of the reading
+ * check each other. */
 #define CLOUD_SPR_W 32
 #define CLOUD_SPR_H 32
 #define CLOUD_DX   (-7)   /* measured; see above */

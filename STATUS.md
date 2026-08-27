@@ -1175,40 +1175,19 @@ monotonic - 7 beats 6 beats 5 - so the choice is not a coincidence, and the
 40-bit row turns out to be a 32-wide sprite with eight bits of pre-shift, the
 wrap being the last 39 of those differences.
 
-**What is fitted rather than read**, and it should not be forgotten: why the
-index is a constant 7 when the five lemmings have five different `x & 7`. A
-fit that is 98% right is still a fit.
+**And why the index is 7 - which is a reading now, not a fit.** The store's
+pre-shift **rotates** within the 40-bit row rather than shifting into it, and
+the sprite is 32 wide: index `i` carries it at columns `i..i+31` with the part
+that runs off the end coming back at the start. Cell by cell, index `i` agrees
+with index 0 on **1,011 of the 1,024** cells of that window, for every one of
+the eight. So 7 is neither an animation frame nor a sub-pixel shift - it is
+the rotation that brings the sprite's thirty-two columns into one run, and its
+columns 0..6 are the sprite's own 33..39, which is why they belong SEVEN
+PIXELS LEFT of the origin rather than thirty-three right.
 
-There is a plausible reading of the monotonic trend that would explain it
-away, and it is worth writing down so it can be tested rather than believed:
-index `i` scores better than `i - 1` at an offset of `-i`, which is exactly
-what would happen if all eight are the SAME picture at the same place and the
-higher ones simply keep more of it inside the 40-bit row. On that reading 7 is
-not the original's index at all - it is the one that survives this port's
-decision to drop columns 32..39. Which of the two it is decides whether the
-constant is a finding or an artefact, and neither has been shown.
-
-**And what is left of the nuke is the explosion's AFTER-EFFECT.** Counting
-terrain-coloured pixels in a box around one lemming's crater, frame by frame:
-
-```
-  frame  506 507 508 511 515 519 523 527 529
-  original 113 111 106 103  92  86  77  68  66
-  port      60  60  60  60  60  60  60  60  60
-```
-
-The port punches the crater once, at image 0x023B9's cloud anim 1, and never
-touches it again. The original goes on removing terrain for twenty-five frames
-after the blast, arriving at the same place - the two agree exactly by frame
-556. So the crater is not the wrong SIZE; something eats it gradually and the
-port has none of it.
-
-Image 0x02D4F sets `[si+0x22]` to fifteen when the cloud starts, which is the
-obvious candidate for a particle count, but nothing in the image reads that
-byte - a scan of every `mod r/m` form addressing `+0x22` off SI or DI finds
-four writes and no read. So the next step is not another reading: it is
-`tools/probe_writes.py` over the frames after a blast, which attributes each
-write into the EGA window to the instruction that made it.
+The two halves check each other: index 7's columns 0..31 at `x - scroll - 7`
+score 2,086 of 2,125, index 0's own columns 0..31 at the origin score 1,400 of
+1,785, and index 7 at the origin 463 of 2,125.
 
 The nuke's worst frame went from 1,081 differing to 672. What remains at
 frames 520..540 is TERRAIN - 198 pixels where both sides have ink of
