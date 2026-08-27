@@ -796,20 +796,32 @@ the reference moved, not the port.
   and stay out of the verifier's dispatch — comparing a no-op against the
   original reports a decision as a difference.
 
-## The two sides number the levels differently
+## The level index is a PERMUTATION, not an offset
 
-`tools/record_level.py --level N` pokes **ds:0x1F6B**, which is the original's
-own index and **zero-based**. `lemdev --number N` is the number on the menu
-plate, **one-based** within a rating. So `--level 4` and `--number 4` are
-different levels, and `--level N` is `--number N+1`.
+`tools/record_level.py --level N` pokes **ds:0x1F6B**, the index into the
+game's own running order - `rating * 30 + (number - 1)`, the plate on the
+menu. `lemdev --file X --level S` names a **file and a section** directly.
+Neither is the other plus anything.
 
-Using the same integer for both records one level and replays another. It does
-not look like a mix-up in the output: it reads as the port getting the very
-first lemming wrong and never recovering - 365 of 420 frames differing, with
-the entrance in a different place. A whole recording went that way here.
+`LEVEL_ORDER` in `game.c` maps the first to the second: `n = LEVEL_ORDER[i]`,
+file `(n - 1) >> 4`, section `((n - 1) >> 1) & 7`. It is a genuine
+permutation, so no arithmetic relates them and the table has to be read:
 
-When a comparison is wrong from the FIRST frame that has a lemming in it,
-check that both sides are on the same level before reading any of it.
+| | |
+| --- | --- |
+| `level000.dat` section 1 | `--level 74` (Taxing 15) |
+| `level001.dat` section 3 | `--level 21` (Fun 22) |
+| `level002.dat` section 4 | `--level 15` (Fun 16) |
+| `level002.dat` section 6 | `--level 64` (Taxing 5) |
+
+Getting it wrong does not look like a mix-up. Both sides run the same
+SIMULATION - the same lemmings in the same places, the panel's OUT, IN and
+TIME agreeing to the character - while the terrain is a different graphics
+set entirely. It scored **0 of 535 frames exact** and read as the port being
+comprehensively broken; two pictures side by side settled it in a minute.
+
+**When a comparison is total but the moving parts agree, check that both
+sides are on the same level before reading anything else.**
 
 ## Two `static` definitions of one name in a file are one variable
 
