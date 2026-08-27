@@ -1371,6 +1371,16 @@ took it to **1,015**. Then `ds:0x66F2` was READ from a running level -
 during a level there is no right-edge trim to apply at all and the limit was
 innocent from the start.
 
+**And the table was then read back to check the transcription.**
+`tools/probe_clip.py` dumps it every frame from inside a level: on level 1,
+whose scroll is 640, the marked run is byte columns **78..118, 41 of them** -
+which is `(640 >> 3) - 2 = 78` through `+ 40 = 118`, exactly what image
+`0x04125` and image `0x0412B` say it should be. The first attempt at that dump
+read only 44 bytes, on the assumption that the table was indexed by the
+*page's* byte column, and got 44 zeros - a table that looks like nothing fills
+it. It is 208 bytes (`0x68` words, image `0x04116`) and indexed by the
+*level's*.
+
 Three things worth keeping from it:
 
 - **A byte trim cannot produce a one-column difference.** The residue was one

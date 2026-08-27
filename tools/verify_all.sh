@@ -146,12 +146,19 @@ for case in "won 100 10 0" "timeup 30 10 1" "lost 0 10 1"; do
     rm -rf "out/vr_$name"
     LEM_HOOK=tools/verify_results.py LEM_RESULTS_OUT="out/vr_$name" \
         LEM_RES_SAVED=$saved LEM_RES_NEEDED=$needed LEM_RES_LEVEL=1 \
-        ${timed:+LEM_RES_TIMEUP=$timed} \
+        LEM_RES_TIMEUP=$timed \
         uv run python tools/play.py --auto -- --run-seconds 90 \
         >"out/vr_$name.log" 2>&1 || true
     if [ -f "out/vr_$name/results.scrn" ]; then
         say "    $name: captured"
     else
+        # KEEP THE LOG, and this is the second time it earned its keep. The
+        # three cases reported NOTHING CAPTURED again, and the log's last line
+        # was `LEM_RES_TIMEUP=0: command not found` - the assignment was
+        # written `${timed:+LEM_RES_TIMEUP=$timed}`, and a shell decides what
+        # is an assignment BEFORE it expands anything, so what came out was a
+        # command name. Without the log this reads as three broken screens.
+        #
         # KEEP THE LOG. This reported NOTHING CAPTURED for all three cases
         # once and the reason was gone with the output: both ran perfectly
         # when tried by hand a minute later, so the failure was the runs being
