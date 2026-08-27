@@ -8136,6 +8136,35 @@ static char *put_num2(char *dst, uint8_t v);
  * claim "the original never composes objects into the level bitmap" was a
  * fact about one instant read as a fact about the program.
  *
+ * AND THE ROUTINE IS FOUND: image 0x03981.
+ *
+ *     di = ds:0x0FEB, cx = 0x20      the object list, 32 of them
+ *     ds:0x1FE4 = ds:0x1FF0          the objects' graphics segment, which is
+ *                                    NOT the terrain's - the blit probe sees
+ *                                    srcseg 0x02900 here against 0x07272 for
+ *                                    a terrain piece, which is what tells the
+ *                                    two apart in one line of its output
+ *     ah,al = [di],[di+1]            x, and zero ends the list
+ *     bh,bl = [di+2],[di+3]          y
+ *     dh,dl = [di+6],[di+7]          the LVL's modifier bytes, and image
+ *                                    0x039A8's `bp = dx & 0xFFFE` makes them
+ *                                    the blit's flags - bit 15 is e[6] & 0x80,
+ *                                    the no-overwrite level_parse reads, and
+ *                                    the probe caught bp = 0x800E
+ *     dl,cl = [si+4],[si+5]          width and rows from the definition
+ *     di = [si+8] + [si+0x17]        the graphic
+ *     ch = 4                         four planes
+ *     image 0x039BD                  the blit
+ *
+ * Found by asking tools/probe_blits.py for rows 36..37 - the level's first
+ * object is at (720, 36) - which listed three blits: two terrain pieces from
+ * image 0x07CB5 and this one from a different caller and a different source
+ * segment.
+ *
+ * It sits in a SECOND composition path at image 0x0394F, which is why
+ * tools/prove.sh has never seen it: that breaks at image 0x0376A, inside the
+ * first.
+ *
  * Still open, and much smaller: nineteen pixels around (861, 108) and
  * (886, 108) where the port and the bitmap disagree WITH objects drawn - the
  * exit's edge. That is what this routine owes now.

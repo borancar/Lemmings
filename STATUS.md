@@ -1596,9 +1596,26 @@ all run after that break, and the briefing comes after all of it. "The
 original never composes objects into the level bitmap" was too strong, and it
 had stood here long enough to make a correct routine look like a wrong one.
 
+**And the routine is found: image `0x03981`.** Asking
+`tools/probe_blits.py` for rows 36..37 - the level's first object is at
+(720, 36) - lists three blits, two terrain pieces from image `0x07CB5` and one
+from image `0x039BD` with a different source segment (`0x02900` against
+`0x07272`), which is what tells an object from a terrain piece in one line.
+
+The loop walks `ds:0x0FEB`, 32 entries; takes x from bytes 0..1 with zero
+ending the list, y from 2..3, and the LVL's modifier bytes from 6..7 - image
+`0x039A8`'s `bp = dx & 0xFFFE` makes them the blit's flags, bit 15 being
+`e[6] & 0x80`, the no-overwrite `level_parse` reads, and the probe caught
+`bp = 0x800E`. Width, rows and the graphic come from the object definition,
+four planes, blitted at image `0x039BD`.
+
+It sits in a **second composition path at image `0x0394F`**, which is exactly
+why `prove.sh` has never seen it: that breaks at image `0x0376A`, inside the
+first. Two composition paths, one break, and a claim about the program drawn
+from it.
+
 What is left is nineteen pixels around (861, 108) and (886, 108) - the exit's
-edge - where the port and the bitmap disagree with objects drawn. That is a
-much smaller thing than the question it replaces.
+edge - where the port and the bitmap disagree with objects drawn.
 
 Getting there needed a hook rather than the control socket: `break i+0x7eb2`
 halts the guest while the menus are still up and every F1 the driver sends is
