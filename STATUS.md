@@ -1762,6 +1762,36 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### The one-way arrows were drawn over the black beside their wall
+
+Reported from playing, with screenshots of level004/3 and level005/8: arrows
+floating outside the block they belong to.
+
+`only_on_terrain` - the LVL's `e[6] & 0x40` - was tested in exactly ONE place,
+`render_objects`, and **`level_anim_draw` never applied it**. That second
+routine is the one the game actually displays, so a one-way wall's arrows went
+down wherever the object's rectangle reached.
+
+Image `0x09709` is the rule and it mirrors the no-overwrite one directly: a
+blit with `bp` bit 14 reaches image `0x0969C`, which sets the graphics
+controller to READ MODE 1 comparing plane 3 alone and then does
+`and ah, [bx]` - the destination's terrain AND the object's own mask. The
+arrows go down only where plane 3 is already set.
+
+Measured: **432 pixels** on level004/3 and **101** on level005/8, every one of
+them arrow-blue becoming black.
+
+**This is the second time the same split has bitten.** Two routines draw
+objects here - the composition and the per-frame draw - and a rule added to
+one is not added to the other. The no-overwrite tests had drifted apart the
+same way, and that one was invisible because the two rules happen to agree on
+every shipped level. This one was not invisible; it was just never looked at.
+
+And nothing here could have found it: **none of the three levels this loop
+measures has a single `only_on_terrain` object.** level004/3 has twelve.
+Frame-by-frame comparison of three levels says nothing about a flag none of
+them carries, however many frames it runs for.
+
 ### Tiling the sprite file found a second builder-shaped bug, unreported
 
 The builder's fix rested on its region abutting the basher's. That argument

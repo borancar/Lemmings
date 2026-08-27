@@ -7186,11 +7186,30 @@ void level_anim_draw(const level_anim *st, const level *lv,
                  * 49 of 49 did not. Terrain is the only thing with bit 3
                  * set, which is what makes the test exact rather than
                  * "something is already there". */
-                if (o->no_overwrite
-                        && (dst[(size_t)y * dst_w + (uint16_t)x] & 8))
+                /* AND ITS COMPANION, `e[6] & 0x40` - ONLY ON TERRAIN. This
+                 * routine tested no_overwrite and not this one, so a ONE-WAY
+                 * WALL's arrows were drawn wherever the object's rectangle
+                 * reached, including out over the black beside the block they
+                 * belong to. A player sent two screenshots of it, on
+                 * level004/3 and level005/8.
+                 *
+                 * render_objects had the test all along and this did not,
+                 * which is the same split that hid the two no-overwrite
+                 * rules: two routines draw objects here, and a flag added to
+                 * one of them is not added to the other.
+                 *
+                 * Image 0x09709 is the rule, and it is the mirror of the one
+                 * below: a blit with bp bit 14 reaches image 0x0969C, which
+                 * sets the graphics controller to READ MODE 1 comparing plane
+                 * 3 alone and then does `and ah, [bx]` - the destination's
+                 * terrain AND the object's own mask. So the arrows go down
+                 * only where plane 3 is already set. */
+                uint8_t *px = &dst[(size_t)y * dst_w + (uint16_t)x];
+                if (o->only_on_terrain && (*px & 8) == 0)  /* image 0x09709 */
                     continue;
-                dst[(size_t)y * dst_w + (uint16_t)x] =
-                    planar(object_sec, ink, plane, stride, 4, c, r);
+                if (o->no_overwrite && (*px & 8))
+                    continue;
+                *px = planar(object_sec, ink, plane, stride, 4, c, r);
             }
         }
     }
