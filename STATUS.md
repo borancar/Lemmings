@@ -1127,6 +1127,46 @@ from the two cursors' own pixels put it at 488. `tools/compare_screen.py`
 excuses "exactly 28", which is one cursor; two in different places is 56 and
 excused by nothing.
 
+### The explosion's sprite, found; its animation, not
+
+The cloud is **not in MAIN.DAT at all** - three searches of all seven sections
+found nothing, and that is not a mystery: image `0x02D45` gives it a segment
+from `ds:0x3C` where the walker's relatives take theirs from `ds:0x2E`, and
+what the blitter reads is the PRE-SHIFTED STORE, not the file.
+
+**The store, and how to read it.** Image `0x07112` takes `ds:0x1FE6` as the
+segment and image `0x07116` adds `bp`, which image `0x070C6` has divided by
+SIXTEEN - so `[si+0x0c]` and the frame index are PARAGRAPH counts, not byte
+offsets. Reading them as bytes gives dense noise that looks exactly like a
+sprite decoded with the wrong geometry, and cost three attempts.
+
+**And `[si+0x12]` is the MASK'S OFFSET inside the store frame**, not a file
+size. That is what makes the geometry fall out, and it checks on every sprite
+whose base is already known:
+
+| | `[si+0x10]` | `[si+0x12]` | so |
+| --- | --- | --- | --- |
+| basher | 80 | 60 | 2 bytes x 10 rows x 3 ink, mask 20 |
+| miner | 104 | 78 | 2 x 13 x 3 ink, mask 26 |
+| faller | 90 | 60 | **3** x 10 x 2 ink, mask 30 - pre-shifted |
+| cloud | 640 | 480 | **5** x 32 x 3 ink, mask 160 - pre-shifted |
+
+The three that are not pre-shifted have `[si+0x2a] = 0xFF`, image `0x070B0`'s
+test; the two that are have 0.
+
+**The proof it is right**: decoding the store at the FALLER's own paragraph
+`0x0A42` with 3 x 10 x 2 gives a falling lemming, and decoding at the cloud's
+`0x180B` with 5 x 32 x 3 gives a starburst in colours 3, 4 and 5 - the exact
+colours the original's screen holds.
+
+**What is still open is the animation.** The store holds ONE picture in eight
+shifts at indices 0..7 and nothing at 8..31, so the index cannot be image
+`0x070B6`'s `anim * 8 + shift`: the cloud's counter runs to 0x34. Scored
+against the original's own frames, the burst is barely present at anim 0, 2
+and 5 and best at anim 9 with 258 of 510 - half, which is a blob overlapping a
+blob and not a match. Something between the counter and the index is not read
+yet, and until it is this draws nothing rather than something wrong.
+
 ### Open: the panel's numbers on a level that is not "Just dig!"
 
 `level001.dat --level 3` scores its PANEL exact on 0 of 530 frames, 74 pixels
