@@ -1104,6 +1104,29 @@ doing stops.
 spot is `(-8, -14)`, four rows deeper than anything else here, and its frame
 is `0x70` = 112 bytes against the drowner's `0x3C` = 60.
 
+### The fire death, and "I have a cunning plan" matched
+
+`level001.dat --level 3`, frame by frame: **play area exact on 488 of 530**,
+and the 42 that are not are the CURSOR during the level's opening and nothing
+else. Before the fire death was drawn it was 42 of 530 with a worst of 139;
+before the level indices were right it was 0 of 535 with a worst of 25,954.
+
+**The sprite.** Effect 6's file frame is image `0x0306D`'s `[si+0x12]` = `0x70`
+= 112, which for sixteen wide and fourteen rows is **four planes** - the only
+sprite in this port that uses all four, and the colours in it run to `0x0D`.
+Base **17232**, found against the original's own frames: 204 and 205 score 32
+of 32 and 31 of 31 with nothing differing, and 209 and 212 pick indices 1 and
+0 of the same base with 31 of 31 and 32 of 32 - a second lemming arriving at
+the same fire and starting its own animation. Frame 0 is a lemming standing
+and 4, 8 and 12 are scattered ash, so `lem_burn` is what it is.
+
+**And park the cursor.** The two cross-hairs sat ten pixels apart on every
+frame - 56 pixels of pure noise that hid everything else, and the score read
+42 of 530 while the level was already exact. One line of input script aimed
+from the two cursors' own pixels put it at 488. `tools/compare_screen.py`
+excuses "exactly 28", which is one cursor; two in different places is 56 and
+excused by nothing.
+
 ### Open: the panel's numbers on a level that is not "Just dig!"
 
 `level001.dat --level 3` scores its PANEL exact on 0 of 530 frames, 74 pixels

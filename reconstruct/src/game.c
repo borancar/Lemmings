@@ -4854,6 +4854,23 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * bytes a frame and image 0x035FF gives the miner 0x4E = 78, and image
  * 0x0352B and image 0x03604 give the states that index the left-facing
  * halves. */
+/* THE FIRE DEATH, image 0x0304F's effect 6 - fourteen frames of a lemming
+ * coming apart into ash, which is what the sprites show: frame 0 is a
+ * lemming standing, 4, 8 and 12 are scattered particles. Its file frame is
+ * image 0x0306D's [si+0x12] = 0x70 = 112, which for sixteen wide and
+ * fourteen rows is FOUR planes - the only sprite here that uses all four,
+ * and the colours in it go up to 0x0D.
+ *
+ * Found against the original's own frames of "I have a cunning plan":
+ * frames 204 and 205 score 32 of 32 and 31 of 31 with nothing differing at
+ * base + anim * 112, and frames 209 and 212 pick out indices 1 and 0 of the
+ * same base with 31 of 31 and 32 of 32 - a second lemming arriving at the
+ * same fire and starting its own animation. */
+#define BURN_SPR_BASE   17232
+#define BURN_SPR_H      14
+#define BURN_SPR_PLANES 4
+#define BURN_SPR_FRAMES 14
+
 #define BASH_SPR_BASE   6736
 #define BASH_SPR_H      10
 #define BASH_SPR_STATE  0x20    /* image 0x0352B */
@@ -5036,7 +5053,12 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
          * way the crater's and the basher's masks were. Until it is, this
          * draws nothing rather than something wrong. */
         if (a->flags & 0x0002) return;              /* image 0x02350 */
-        if (a->flags & 0x0400) { sb = FLOAT_SPR_BASE; sh = 16; sp = 3; sf = 8; }
+        /* The fire death - image 0x02340's fourteen frames. Four planes,
+         * which is why it does not share the three-plane arithmetic the
+         * others here use. */
+        if (a->flags & 0x4000) { sb = BURN_SPR_BASE; sh = BURN_SPR_H;
+                                 sp = BURN_SPR_PLANES; sf = BURN_SPR_FRAMES; }
+        else if (a->flags & 0x0400) { sb = FLOAT_SPR_BASE; sh = 16; sp = 3; sf = 8; }
         else if (a->flags & 0x0001) { sb = SPLAT_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x8000) { sb = BLAST_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x0004) { sb = FALL_SPR_BASE; sh = 10; sp = 2; sf = 4; }
