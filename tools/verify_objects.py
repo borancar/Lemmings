@@ -50,8 +50,19 @@ def main():
         return 2
 
     raw = os.path.join(ROOT, "out", "vo_port.raw")
+    # --baked, because the thing being compared is the original's
+    # COMPOSITION of the objects into the level bitmap - image 0x03981 - and
+    # only render_objects is that. Plain --raw draws them the display-time
+    # way, through level_anim_draw and image 0x07BB8, which is a different
+    # routine with different rules; comparing that against a composed bitmap
+    # scores two things that were never meant to agree.
+    #
+    # The first version of this file did exactly that, so three rules
+    # transcribed into render_objects from image 0x0953E moved the score by
+    # nothing - not because they were unverifiable, but because the check did
+    # not reach them.
     subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
-                    "--data", "lemming1.pc", "--raw", raw],
+                    "--data", "lemming1.pc", "--baked", "--raw", raw],
                    cwd=ROOT, stdout=subprocess.DEVNULL,
                    stderr=subprocess.DEVNULL)
 

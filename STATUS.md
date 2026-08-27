@@ -1614,60 +1614,34 @@ why `prove.sh` has never seen it: that breaks at image `0x0376A`, inside the
 first. Two composition paths, one break, and a claim about the program drawn
 from it.
 
-What is left is **nineteen pixels**, in two clusters twenty-six apart at level
-x 874..878 and 901..905, rows 108..112, and they have two shapes: eleven are
-`guest 5, port 0` - the port skipping a pixel the original drew - and the rest
-are `guest 4, port 5` at one x with `guest 5, port 4` at the next, the port's
-content one pixel to the right.
+**And the nineteen pixels were the check's, not the port's.** With the check
+corrected the composed level with its objects is **243,936 of 243,936, zero
+differing**.
 
-The no-overwrite rule was the lead, and it is **refuted** - the port's test is
-exactly the original's, read rather than assumed. Image `0x093DB` sends a blit
-with `bp` bit 15 to image `0x0953E`, and image `0x09573`..`0x09586` programs
-the graphics controller for it: Mode (index 5) = 8, so **read mode 1**; Color
-Compare (index 2) = 8; Color Don't Care (index 7) = 8. A read then returns a
-byte with a bit set wherever that pixel's **plane 3** is 1, nothing else
-compared. Image `0x09592` reads it, image `0x09595` inverts it, and image
-`0x09599` makes it the GC's bit mask - the object is written only where plane
-3 is clear.
+`verify_objects.py` rendered the port with plain `--raw`, which draws objects
+the DISPLAY-TIME way - `level_anim_draw`, image `0x07BB8` - and compared that
+against the original's COMPOSITION of them, image `0x03981`. Two different
+routines with different rules, scored against each other, and the difference
+read as the port's. `--baked` is the flag that calls `render_objects`, and
+with it the same run is exact.
 
-Plane 3 is bit 3 of the attribute, and `level_anim_draw` refuses a pixel where
-`dst & 8`. Same rule.
+So a residue that three separate leads were chased through - the no-overwrite
+rule, a pre-shifted byte blit, an edge offset - **never existed**. Two of those
+reads changed the code and all three were worth having, but what they were
+aimed at was a harness comparing the wrong pair. This is the fifth harness
+fault this session and the first one that was mine, written the pass before.
 
-**But `render_objects` had a different one, and reading the blit is what
-showed it.** It tested `*dst != 0` - "anything is already there" - where the
-original tests plane 3 alone, and the two disagree on every pixel whose
-attribute is 1..7. `level_anim_draw`'s own comment had said why that matters
-years' worth of commits ago: *terrain is the only thing with bit 3 set, which
-is what makes the test exact rather than "something is already there"*. Two
-sites, one rule, and only one of them corrected.
+The rule it does establish is the one this project keeps relearning in new
+places: **a comparison is only as good as the claim that the two sides are the
+same thing.** `prove.sh` gets this right and says so - it compares the
+original's composed buffer against the port's composed buffer. The new check
+did not, and nothing about its output looked wrong.
 
-The companion flag came out of the same read. Image `0x09709` - the
-only-on-terrain path, `bp` bit 14 - does `and ah, [bx]`: the destination's
-plane 3 AND the object's own mask. So that one is `dst & 8` too, and the port
-had `*dst == 0`. And the two paths differ in one more way worth transcribing:
-the no-overwrite blit at image `0x09592` has **no** AND with the object's
-mask, so its whole rectangle goes down wherever plane 3 is clear, transparent
-pixels included.
-
-All three are now the original's rules rather than the port's guesses, and
-**none of them changes a single number here** - the nineteen stay nineteen,
-`prove.sh` stays 100.00%, the briefing stays 0, the three levels stay exact.
-That is worth saying rather than hiding: they are transcription, not repair,
-and no check in this repository can tell them from what they replaced. They
-are kept because a read rule beats a fitted one that happens to agree, which
-is this project's whole method - but the honest label is unverified.
-
-So the nineteen are something else again, and the suspect left is the one the
-miner's single pixel raised: the original blits whole BYTES through a
-pre-shifted source with a bit mask where the port walks pixels, and both
-shapes here sit at an object's edge.
-
-**And none of them shows on any screen scored here**: the briefing's preview
-is 0 pixels differing and the three levels are exact frame by frame. It is a
-difference in the COMPOSED BITMAP that no comparison in this repository
-currently reaches, which is worth keeping for that reason as much as for its
-size - `prove.sh` compares the bitmap at image `0x0376A`, before the objects
-are in it, and nothing compares it afterwards.
+And the three transcribed rules are still unverified, now measurably: with
+them and without them the score is the same 243,936 of 243,936, because
+"Just dig!" has no object pixel over an attribute of 1..7 - the only place the
+old rule and the new one can disagree. They are kept because they are what
+image `0x0953E` does, not because anything here can tell.
 
 Getting there needed a hook rather than the control socket: `break i+0x7eb2`
 halts the guest while the menus are still up and every F1 the driver sends is

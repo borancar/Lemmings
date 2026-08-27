@@ -7168,7 +7168,14 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                  * own comment - "terrain is the only thing with bit 3 set,
                  * which is what makes the test exact rather than 'something
                  * is already there'". Two sites, one rule, and only one of
-                 * them had been corrected. */
+                 * them had been corrected.
+                 *
+                 * UNVERIFIED, and measured to be so: with this rule and with
+                 * the old one, tools/verify_objects.py scores the same
+                 * 243,936 of 243,936. "Just dig!" has no object pixel over an
+                 * attribute of 1..7, which is the only place the two can
+                 * disagree, so nothing here can tell them apart. Kept because
+                 * it is what image 0x0953E does. */
                 if (o->no_overwrite && (*dst & 8))
                     continue;
                 *dst = pix[si];
@@ -8193,35 +8200,22 @@ static char *put_num2(char *dst, uint8_t v);
  * tools/prove.sh has never seen it: that breaks at image 0x0376A, inside the
  * first.
  *
- * Still open, and much smaller: NINETEEN pixels, in two clusters twenty-six
- * apart at level x 874..878 and 901..905, rows 108..112. Two shapes in them:
+ * AND IT IS EXACT: 243,936 of 243,936 pixels, 0 differing, against the
+ * original's own bitmap - tools/verify_objects.py.
  *
- *   guest 5, port 0     the port SKIPPED a pixel the original drew - eleven
- *                       of the nineteen
- *   guest 4, port 5 at one x and guest 5, port 4 at the next
- *                       the port's content one pixel to the RIGHT
+ * It scored NINETEEN differing until the check was fixed, and the nineteen
+ * were the check's. It rendered the port with plain --raw, which draws the
+ * objects the DISPLAY-TIME way through level_anim_draw and image 0x07BB8,
+ * and compared that against the original's COMPOSITION of them, image
+ * 0x03981. Two different routines with different rules, scored against each
+ * other and the difference read as the port's. --baked is the one that calls
+ * this routine, and with it the same run is exact.
  *
- * THE NO-OVERWRITE RULE WAS THE LEAD AND IT IS REFUTED - the port's test is
- * exactly the original's, read rather than assumed. Image 0x093DB sends a
- * blit with bp bit 15 to image 0x0953E, and image 0x09573..0x09586 programs
- * the graphics controller for it: Mode (index 5) = 8, so READ MODE 1; Color
- * Compare (index 2) = 8; Color Don't Care (index 7) = 8. A read then returns
- * a byte with a bit set wherever that pixel's PLANE 3 is 1 and nothing else
- * compared. Image 0x09592 takes that byte, image 0x09595 inverts it, and
- * image 0x09599 makes it the GC's bit mask - so the object is written only
- * where plane 3 is CLEAR.
- *
- * Plane 3 is bit 3 of the attribute, and this port refuses a pixel where
- * `dst & 8`. Same rule. So the nineteen are something else, and the next
- * suspect is the one the miner's single pixel raised: the original blits
- * whole BYTES through a pre-shifted source with a bit mask, where the port
- * walks pixels, and both of these shapes are at an object's edge.
- *
- * None of them shows on any screen scored so far: the briefing's preview is
- * 0 pixels differing and the three levels are exact frame by frame. So this
- * is a difference in the COMPOSED BITMAP that no comparison in this
- * repository currently reaches - worth keeping for that reason as much as
- * for its size.
+ * So the residue that three separate leads were chased through - the
+ * no-overwrite rule, the pre-shifted byte blit, an edge offset - never
+ * existed. Each of those reads was still worth having and two of them
+ * changed the code below, but the thing they were aimed at was a harness
+ * comparing the wrong pair.
  */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,
