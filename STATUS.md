@@ -1468,6 +1468,44 @@ with mod 00 and rm 110 now, and still cannot see an access made through a
 register - so a count of zero means "no direct reference", not "never
 touched".
 
+### The briefing's preview is one blit from a prepared buffer
+
+`draw_preview` and `render_objects` are two of the five routines still owed,
+and both are about the briefing's little map. The search for the original's
+version is now narrowed to one address rather than a screen.
+
+`tools/probe_writes.py --rows 20 58 --stride 80` finds twelve instructions
+writing into the preview's band, and the biggest - 9,360 bytes at image
+`0x04E34` - is a red herring: it is the `rep stosb` of image `0x04DEF`, which
+clears `cx = 0x6D60` = 28,000 bytes, the whole 640x350 page. The rest are the
+shared blitter's own stores.
+
+`tools/probe_blits.py --driven --rows 20 58` then names the caller, and there
+is exactly one for that band:
+
+    x=0  y=20  632 wide  94 rows  4 planes   from image 0x04F0A
+
+Image `0x04EEF` sets it up - `bx = 0x14` for y, `dx = 0x278` for 632,
+`cl = 0x5E` for 94 rows, `si = 0x2080`, `bp = 0xF42` - and image `0x04F0A` is
+`lcall 0x1010:0x8822`, the shared blitter, reading from the segment in
+`ds:0x1FEE`. So **the briefing's whole upper area, the preview inside it, is
+composed into a buffer and put up in ONE blit.** Nothing draws the preview to
+the screen piece by piece, which is why a probe watching the EGA window can
+only ever see the clear and the blit.
+
+So the routine that is owed writes to `ds:0x1FEE:0x2080`, not to `0xA000`, and
+that is where to point the next probe - `probe_writes.py` watches
+`0xA0000..0xB0000` and would have to be told a different range.
+
+**And one caveat about the instrument**, because it produced 31 rows of
+plausible nonsense: `probe_blits.py` works the destination row out from the
+offset at the stride it is given, and the other 31 blits it listed have x of
+642, 867, 951 and so on - level coordinates. They are the LEVEL's terrain
+composition, whose stride is 208 and not the 80 the briefing uses, landing in
+"rows 20..58" by arithmetic rather than by being there. A row filter is only
+as good as the stride it is handed, and this file has the same warning about
+`--stride` one screen up.
+
 ### ds:0x84 is the panel's auto-repeat divider
 
 Nothing here had a name for `ds:0x84`, and it gates the panel. Image `0x03EF9`
