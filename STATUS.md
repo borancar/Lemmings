@@ -1620,11 +1620,21 @@ x 874..878 and 901..905, rows 108..112, and they have two shapes: eleven are
 are `guest 4, port 5` at one x with `guest 5, port 4` at the next, the port's
 content one pixel to the right.
 
-The first points at the NO-OVERWRITE rule rather than at geometry. The blit
-probe caught this object going up with `bp = 0x800E`, bit 15 being the LVL's
-`e[6] & 0x80`, and the port refuses a pixel where `dst & 8` - terrain's bit 3.
-If the original's test is not that, the two differ exactly at an object's edge
-against terrain, which is where all nineteen are.
+The no-overwrite rule was the lead, and it is **refuted** - the port's test is
+exactly the original's, read rather than assumed. Image `0x093DB` sends a blit
+with `bp` bit 15 to image `0x0953E`, and image `0x09573`..`0x09586` programs
+the graphics controller for it: Mode (index 5) = 8, so **read mode 1**; Color
+Compare (index 2) = 8; Color Don't Care (index 7) = 8. A read then returns a
+byte with a bit set wherever that pixel's **plane 3** is 1, nothing else
+compared. Image `0x09592` reads it, image `0x09595` inverts it, and image
+`0x09599` makes it the GC's bit mask - the object is written only where plane
+3 is clear.
+
+Plane 3 is bit 3 of the attribute, and the port refuses a pixel where
+`dst & 8`. Same rule. So the nineteen are something else, and the suspect left
+is the one the miner's single pixel raised: the original blits whole BYTES
+through a pre-shifted source with a bit mask where the port walks pixels, and
+both shapes here sit at an object's edge.
 
 **And none of them shows on any screen scored here**: the briefing's preview
 is 0 pixels differing and the three levels are exact frame by frame. It is a
