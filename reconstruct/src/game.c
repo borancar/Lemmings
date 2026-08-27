@@ -4874,6 +4874,61 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * bytes a frame and image 0x035FF gives the miner 0x4E = 78, and image
  * 0x0352B and image 0x03604 give the states that index the left-facing
  * halves. */
+/* THE BOMBER'S CLOUD - 32 x 32, lifted from the original's own
+ * pre-shifted store rather than from any file: it is not in MAIN.DAT at
+ * all. Image 0x02D24's [si+0x0c] = 0x180B is a PARAGRAPH offset into the
+ * store at ds:0x1FE6 (image 0x07112), and image 0x02D29's 0x280 with
+ * image 0x02D2E's 0x1E0 says 5 bytes a row, 32 rows, three ink planes
+ * and a mask - the 40-bit row being a 32-wide sprite with eight bits of
+ * pre-shift. Columns 32..39 are the wrap and are dropped.
+ *
+ * WHERE IT GOES IS MEASURED, NOT READ, and that is worth saying plainly.
+ * Scored against the original's own five bursts - frames 496, 498, 500,
+ * 502 and 504 - store index 7 placed at (x - scroll - 7, y + hot_y - 18)
+ * agrees on 2,086 of 2,125 pixels, 98%, and the trend over the eight
+ * indices is monotonic so 7 is not a coincidence. What is NOT read is why
+ * the index is a constant 7 when the five lemmings have five different
+ * x & 7. Until that is read this is a fit, and a fit that is 98% right is
+ * still a fit. */
+#define CLOUD_SPR_W 32
+#define CLOUD_SPR_H 32
+#define CLOUD_DX   (-7)   /* measured; see above */
+#define CLOUD_DY   (-18)
+static const uint8_t CLOUD_SPR[CLOUD_SPR_H][CLOUD_SPR_W] = {
+    {0,0,0,0,0,0,0,0,1,3,2,0,0,0,0,0,0,0,0,1,2,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,5,5,4,5,5,0,0,0,0,0,0,5,5,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,5,5,5,4,5,5,5,5,0,0,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,0,0,5,5,5,5,4,4,5,5,5,5,5,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,5,5,5,5,5,5,4,4,4,5,5,5,5,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,5,5,5,5,5,5,4,4,4,4,4,4,5,5,5,4,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,4,4,5,5,5,4,4,4,3,4,4,4,4,4,4,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,3,4,4,4,4,4,4,3,3,4,4,4,3,4,4,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,4,3,4,4,4,4,3,3,3,3,3,3,4,4,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,4,4,3,3,3,3,3,3,3,3,3,3,4,4,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,4,4,3,3,3,3,3,3,3,3,3,4,4,4,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,4,4,4,3,3,3,3,3,3,3,3,4,4,4,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,5},
+    {4,4,4,4,3,3,3,3,3,3,3,3,3,4,4,4,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,4,3,3,3,3,3,3,3,3,3,3,3,4,4,4,5,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0},
+    {5,4,4,4,4,3,3,3,3,3,3,3,3,3,3,4,4,4,5,5,5,5,5,0,0,0,0,0,0,0,0,0},
+    {5,4,4,4,3,3,3,3,3,3,3,3,3,4,4,4,5,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,4,4,3,3,4,3,3,3,3,3,3,4,4,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,4,3,4,4,4,4,4,3,4,4,3,3,4,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,4,4,4,4,4,4,4,3,4,4,4,3,4,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,4,4,4,5,5,4,4,4,3,4,4,4,4,4,4,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,4,5,5,5,5,5,5,4,4,4,5,5,5,4,4,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {4,5,5,5,5,5,5,5,5,4,5,5,5,5,5,5,4,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,5,0,0,0,5,5,5,4,5,5,5,5,5,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,0,0,0,0,0,0,5,5,5,5,5,5,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,5,5,5,5,0,0,0,0,0,0,5,5,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,5,5,5,5,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0},
+};
+
 /* THE DROWNER, image 0x02FF8's effect 5 - sixteen frames of 16 x 10 in two
  * planes, 40 bytes each, the walker's own geometry. Found against the
  * original's frames of "Watch out, there`s traps about": frames 140, 141 and
@@ -5061,28 +5116,39 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
      * these follow it. */
     {
         uint32_t sb = 0; uint8_t sh = 0, sp = 0, sf = 0;
-        /* THE CLOUD IS ASKED FIRST, and it draws NOTHING yet.
+        /* THE CLOUD IS ASKED FIRST. Image 0x01F5E's chain tests 0x0002
+         * before 0x8000 and so must this: a lemming in the cloud state has
+         * BOTH bits, and asking 0x8000 first drew the blast's pose - a
+         * standing lemming with its arms out - at the cloud's hot spot of
+         * (-16, -25), fifteen rows above where it had been standing, so
+         * every nuked lemming appeared to leap into the air and go off a
+         * second time. A player reported exactly that.
          *
-         * Image 0x01F5E's chain tests 0x0002 before 0x8000 and so must this:
-         * a lemming in the cloud state has BOTH bits, and the port asked
-         * 0x8000 first and drew the blast's pose - a standing lemming with
-         * its arms out - at the cloud's hot spot of (-16, -25). That is
-         * fifteen rows above where it had been standing, so every nuked
-         * lemming appeared to jump into the air and go off a second time.
-         * A player reported exactly that; the record comparison agreed on
-         * all 557 frames while it was happening, because the fault is
-         * entirely in what is DRAWN.
-         *
-         * The cloud's own pixels are not in the port yet. Image 0x02D1F
-         * gives it sprite index 8 of group 0x180B, 0x1E0 = 480 bytes a frame
-         * - 32 wide, 40 rows, three planes, which is what the original's
-         * screen shows: a starburst of colours 3, 4 and 5 spanning 28x28.
-         * It is not in MAIN.DAT section 0 with the walker's relatives and a
-         * byte search of the other six found nothing, so it comes from the
-         * PRE-SHIFTED store at ds:0x3C and has to be lifted from there the
-         * way the crater's and the basher's masks were. Until it is, this
-         * draws nothing rather than something wrong. */
-        if (a->flags & 0x0002) return;              /* image 0x02350 */
+         * ONE FRAME ONLY, and that is measured: scanning the original's
+         * frames 492..528 for dense runs of colours 3, 4 and 5 finds exactly
+         * one burst on screen at a time - 496, 498, 500, 502, 504 - and the
+         * lemming beside it is at anim 0 every time. The store agrees: it
+         * holds one picture and nothing at the indices anim 1 upward would
+         * reach. */
+        if (a->flags & 0x0002) {                    /* image 0x02350 */
+            if (a->anim == 0) {
+                int32_t cx0 = (int32_t)a->x - LEMMING_DX + CLOUD_DX;
+                int32_t cy0 = (int32_t)a->y + a->hot_y - LEMMING_DY
+                            + (CLOUD_DY + 18) - 2;
+                for (uint8_t r = 0; r < CLOUD_SPR_H; r++) {
+                    int32_t py = cy0 + r;
+                    if (py < 0 || py >= (int32_t)dst_h) continue;
+                    for (uint8_t c = 0; c < CLOUD_SPR_W; c++) {
+                        uint8_t v = CLOUD_SPR[r][c];
+                        if (!v) continue;
+                        int32_t px = cx0 + c;
+                        if (px < 0 || px >= (int32_t)dst_w) continue;
+                        dst[(size_t)py * dst_w + px] = v;
+                    }
+                }
+            }
+            return;
+        }
         /* The fire death - image 0x02340's fourteen frames. Four planes,
          * which is why it does not share the three-plane arithmetic the
          * others here use. */

@@ -1168,14 +1168,21 @@ screen at a time, at frames 496, 498, 500, 502 and 504, and the lemming
 beside it is at **anim 0** every time - lemmings 1, 3, 5, 7 and 9 in turn.
 Each burst is about 430 pixels and lasts a single frame.
 
-So the picture is right, the frame is anim 0, and what is left is the ORIGIN.
-Scoring the store picture freely over the screen gives 417 of 510 at index 7
-placed (148, 53), and the shifts behave exactly as they should - index 6 wants
-149, index 5 wants 150, each one pixel along - so the geometry is certainly
-right. But (148, 53) is nine right and two up from where the lemming's own
-sprite origin is, and nothing read so far explains those nine pixels. Drawing
-it at the lemming's origin scores 77 of 510. Until that is read this still
-draws nothing rather than something nine pixels wrong.
+**And it is drawn now**, at 98%. Scored over all five bursts at once, store
+index 7 with columns 32..39 dropped, placed at `(x - scroll - 7,
+y + hot_y - 18)`, agrees on **2,086 of 2,125 pixels**. The eight indices are
+monotonic - 7 beats 6 beats 5 - so the choice is not a coincidence, and the
+40-bit row turns out to be a 32-wide sprite with eight bits of pre-shift, the
+wrap being the last 39 of those differences.
+
+**What is fitted rather than read**, and it should not be forgotten: why the
+index is a constant 7 when the five lemmings have five different `x & 7`. A
+fit that is 98% right is still a fit.
+
+The nuke's worst frame went from 1,081 differing to 672. What remains at
+frames 520..540 is TERRAIN - 198 pixels where both sides have ink of
+different values, spread over the whole screen, converging to zero by frame
+556. That is a separate question from the picture.
 
 ### Open: the panel's numbers on a level that is not "Just dig!"
 
