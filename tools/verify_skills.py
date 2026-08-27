@@ -36,16 +36,36 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-# button -> (name, reference directory, script, level number for the port)
+# button -> (name, reference directory, script, level number, --skills poke)
+#
+# THE POKE IS PER REFERENCE, not per harness. record_level.py --skills sets
+# the guest's eight counts, and both sides have to get the SAME one or the
+# panel compares twenty of everything against the level's own. Getting this
+# wrong is silent in the play area and total in the panel: the digger's row
+# scored its panel 0 of 676 frames for as long as it has existed, and 666 the
+# moment the poke came off.
+#
+# tools/record_skills.sh is what records ref_s2..ref_s9, and it passes
+# --skills 20 - so anything it made needs 20. The rows below that it did NOT
+# make were each tried both ways against their own reference, and the answer
+# is never ambiguous:
+#
+#   ref_s2b   20 -> 399 of 400      0 -> 1
+#   ref_s6b   20 -> 398 of 400      0 -> 1
+#   ref_l2f   20 -> 479 of 482      0 -> 1
+#   refplay_full   20 -> 0 of 676   0 -> 666      <- the odd one out
+#
+# refplay_full predates the poke: it is the original full playthrough of
+# "Just dig!", which stocks only diggers and needs no help to assign one.
 SKILLS = [
-    (2, "climber", "ref_s2b", "out/s2.txt", 1),
-    (3, "floater", "ref_l2f", "out/l2_float.txt", 2),
-    (4, "bomber",  "ref_s4",  "out/s4.txt", 1),
-    (5, "blocker", "ref_s5",  "out/s5.txt", 1),
-    (6, "builder", "ref_s6b", "out/s6.txt", 1),
-    (7, "basher",  "ref_s7",  "out/s7.txt", 1),
-    (8, "miner",   "ref_s8",  "out/s8.txt", 1),
-    (9, "digger",  "refplay_full", "out/dig.txt", 1),
+    (2, "climber", "ref_s2b", "out/s2.txt", 1, 20),
+    (3, "floater", "ref_l2f", "out/l2_float.txt", 2, 20),
+    (4, "bomber",  "ref_s4",  "out/s4.txt", 1, 20),
+    (5, "blocker", "ref_s5",  "out/s5.txt", 1, 20),
+    (6, "builder", "ref_s6b", "out/s6.txt", 1, 20),
+    (7, "basher",  "ref_s7",  "out/s7.txt", 1, 20),
+    (8, "miner",   "ref_s8",  "out/s8.txt", 1, 20),
+    (9, "digger",  "refplay_full", "out/dig.txt", 1, 0),
 ]
 UNTOUCHED = [("level 2, nobody touching it", "ref_l2", None, 2),
              # THE NUKE is not a skill and does not belong in the table
@@ -61,15 +81,26 @@ UNTOUCHED = [("level 2, nobody touching it", "ref_l2", None, 2),
 
 
 def screens(ref, shots):
-    """The port's own screen against the original's, via compare_screen.py."""
+    """The port's own screen against the original's, via compare_screen.py.
+
+    BOTH HALVES. This used to return the play area alone, and the digger's
+    PANEL sat at 0 of 676 frames unseen behind it - the half that was being
+    reported was already exact. A harness that shows one of two numbers will
+    eventually be showing the wrong one.
+    """
     out = subprocess.run(
         [sys.executable, os.path.join(HERE, "compare_screen.py"),
          "--ref", os.path.join(ROOT, "out", ref), "--dir", shots],
         cwd=ROOT, capture_output=True, text=True)
+    play = panel = None
     for line in out.stdout.splitlines():
         if "play area" in line:
-            return line.split("play area")[1].strip()
-    return None
+            play = line.split("play area")[1].strip()
+        elif "panel" in line:
+            panel = line.split("panel")[1].strip()
+    if play is None:
+        return None
+    return play if panel is None else f"{play}\n{'':16s}panel {panel}"
 
 
 def park_script(ref):
@@ -171,14 +202,14 @@ def compare(ref, script, number, frames, skills=20):
 def main():
     print("\n  every skill's RECORD against the original's own:\n")
     worst = 0
-    for _, name, ref, script, number in SKILLS:
+    for _, name, ref, script, number, poke in SKILLS:
         d = os.path.join(ROOT, "out", ref)
         if not os.path.exists(os.path.join(d, "manifest.json")):
             print(f"    {name:9s} NO REFERENCE at out/{ref} - not a pass")
             worst = 1
             continue
         n = len(json.load(open(os.path.join(d, "manifest.json"))))
-        bad, shared, pic = compare(ref, script, number, n + 20)
+        bad, shared, pic = compare(ref, script, number, n + 20, skills=poke)
         if bad is None:
             print(f"    {name:9s} the port wrote no state - not a pass")
             worst = 1

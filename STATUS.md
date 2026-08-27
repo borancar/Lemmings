@@ -1434,6 +1434,42 @@ all.** `level_panel_build` was the other - there the original had no such
 routine, here it has one and it is DOS. Neither could be settled without going
 and reading the address that was already written down beside the marker.
 
+### The digger's panel had scored 0 of 676 and nobody was shown the number
+
+`verify_skills` prints one line per case and it was the PLAY AREA's. The
+digger's play area is exact on 658 of 676 frames, which reads as a case in
+good shape; its PANEL was exact on **0**, and had been for as long as the case
+has existed.
+
+Two faults, and they protected each other:
+
+- **The poke was per harness, not per reference.** `LEM_SKILLS=20` matches
+  what `tools/record_skills.sh` passes to `record_level.py --skills`, so the
+  references it made need it. `refplay_full` is not one of them - it is the
+  original full playthrough of "Just dig!", which stocks only diggers and
+  needs no help - so the port was drawing twenty of everything beside a panel
+  showing the level's own counts. Taking the poke off that row: **0 to 666**.
+- **Only one of the two numbers was printed.** The half being reported was the
+  half that was already exact.
+
+The other three rows that `record_skills.sh` did not make were each tried both
+ways rather than assumed, and none is ambiguous: `ref_s2b` 399 against 1,
+`ref_s6b` 398 against 1, `ref_l2f` 479 against 1 - all three do need the poke.
+The table now carries the answer per row with that evidence beside it.
+
+**This is the fourth harness fault this session**, after `out/park.txt`'s
+single parked pointer, `LEM_SKILLS=20` on the nuke, and `verify_all`'s
+expanded env assignment. Every one of them scored the reconstruction as wrong,
+and none of them was findable from the number - only from asking what the
+harness fed each side.
+
+And printing the panel immediately showed something else: nearly every skill
+case has **168 pixels differing at frame 0** and nowhere else. That is the
+poke landing after the level record is read, so the guest's first frame still
+shows the level's own counts while the port already shows twenty. A harness
+artefact, not the port - the three levels, which take no poke, are exact at
+frame 0 in both halves.
+
 ### One pixel of the miner's tunnel, and four things it is not
 
 `verify_skills` scores the miner's SCREEN at 262 of 400 frames, the worst of
