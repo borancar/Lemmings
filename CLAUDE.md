@@ -870,6 +870,53 @@ names things after what they do, and two different bytes doing similar jobs
 will collide.
 
 
+## A check must say what it exercised
+
+Five faults in one session were the CHECK, not the port, and every one of them
+produced a clean plausible number:
+
+- `out/park.txt` parked the port's pointer at one measured spot, so 42 frames
+  of level001/3 carried two cross-hairs - 56 pixels, where `compare_screen.py`
+  excuses 28. Written off as "the opening's cursor" for several rounds.
+- `verify_skills.py` handed `LEM_SKILLS=20` to a reference recorded without
+  it, and the digger's PANEL scored **0 of 676** for as long as the case had
+  existed. Its play area was 658 of 676, and only the play area was printed.
+- `verify_all.sh` passed `${timed:+LEM_RES_TIMEUP=$timed}`. A shell decides
+  what is an assignment BEFORE it expands anything, so all three results cases
+  died on `command not found`.
+- `verify_objects.py` rendered the port with plain `--raw`, which draws
+  objects the DISPLAY-TIME way, and compared that against the original's
+  COMPOSITION of them. Two different routines, scored against each other, and
+  the difference read as the port's for two passes.
+- a sweep of every level reported zero for all eighty, from a binary that did
+  not have the counter compiled in. The zero was written up as a fact about
+  the code path.
+
+Four rules come out of that, and they are cheap:
+
+- **Score the thing under test, not the picture it sits in.** `verify_objects`
+  compares 243,936 pixels of which 815 are an object: `render_objects` could
+  break outright and the total would fall 0.3%. Scoring the objects separately
+  turns that into 56%. `compare_frame.py` already does this for the play area
+  and the panel and says why - an average hides which one is missing.
+- **Check the scorer against a fault it should catch.** Shift every object one
+  pixel and confirm the number moves. This is the same rule `find_sprite.py`
+  states for a sprite whose offset is already known, and it applies to every
+  check here, not just that one.
+- **A zero is a question about the instrument before it is an answer.** Count
+  what the routine SAW alongside what disagreed: `0 of 0` is not `0 of
+  303,085`, and only the second is a result. A check that scored nothing at
+  all should say so and FAIL rather than print a percentage.
+- **A comparison is only as good as the claim that the two sides are the same
+  thing.** `prove.sh` gets this right and says so in its own comment: the
+  original's composed buffer against the port's composed buffer. Say which two
+  things are being compared, in the tool, where the next reader will see it.
+
+And the one that ties them together: **the port has been exact on every screen
+this repository scores throughout all five.** A number that moves is not
+evidence the reconstruction moved. Ask what the harness fed each side before
+reading a residue as the port's.
+
 ## The emulator is shared, not ours
 
 `dos_emulator` is used by other games' reconstructions, and their verification
