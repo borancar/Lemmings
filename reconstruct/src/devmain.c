@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "opl.h"
+#include "adlib.h"
 
 #include "game.h"
 
@@ -627,6 +628,163 @@ static int opl_replay(const char *in_path, const char *wav_path)
 }
 
 
+
+/* Run the TRANSCRIBED driver and dump the register stream it emits, in the
+ * same format tools/probe_opl.py writes for the original. THE PORT'S OWN - a
+ * developer entry, not anything the original has.
+ *
+ * This is the comparison the whole sound port rests on: the original's
+ * driver and this one, asked for the same tune, must write the same
+ * registers in the same order at the same tick. No listening, no tolerance,
+ * and no picture - the register stream is to sound what prove.sh's composed
+ * buffer is to the screen.
+ */
+static FILE *g_adlib_log;
+static uint32_t g_adlib_tick;
+
+static void adlib_log_write(uint8_t reg, uint8_t val)
+{
+    if (g_adlib_log)
+        fprintf(g_adlib_log, "%u 12291 %02X %02X\n", g_adlib_tick, reg, val);
+}
+
+/* Feed the transcribed driver the same requests the ORIGINAL was given, at
+ * the same ticks, and dump what it writes to the chip.
+ *
+ * This is the input half of the comparison, and it is the half that is easy
+ * to leave out: the driver plays what it is asked for, so a capture of the
+ * original's register stream is only reproducible if the asking is captured
+ * too. tools/probe_opl.py writes the script; verify_adlib.py scores the two
+ * streams against each other.
+ */
+static int adlib_script(const char *data, const char *script,
+                        uint32_t ticks, const char *out)
+{
+    const char *err = "unknown error";
+    if (adlib_load(data, &err) != 0) {
+        fprintf(stderr, "adlib.dat: %s\n", err);
+        return 2;
+    }
+    FILE *in = fopen(script, "r");
+    if (!in) { fprintf(stderr, "cannot read %s\n", script); return 2; }
+
+    /* Read the whole script first: it has to be rebased on its own first
+     * tick, and a stream driven from tick 0 while the script starts at
+     * 1,500 would run in silence and score zero for a reason that has
+     * nothing to do with the transcription. */
+    typedef struct { uint32_t t; char kind[8]; uint32_t id; } req;
+    req *rq = NULL; uint32_t nrq = 0, cap = 0;
+    char line[256];
+    while (fgets(line, sizeof line, in)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        unsigned long t, d; char k[8]; unsigned id;
+        if (sscanf(line, "%lu %lu %7s %u", &t, &d, k, &id) != 4) continue;
+        if (nrq == cap) {
+            cap = cap ? cap * 2 : 64;
+            rq = realloc(rq, cap * sizeof *rq);
+            if (!rq) { fclose(in); return 2; }
+        }
+        rq[nrq].t = (uint32_t)t;
+        snprintf(rq[nrq].kind, sizeof rq[nrq].kind, "%s", k);
+        rq[nrq].id = id;
+        nrq++;
+    }
+    fclose(in);
+    if (!nrq) {
+        fprintf(stderr, "%s held no requests - nothing to drive the driver "
+                        "with, and a stream of silence is not a result\n",
+                script);
+        free(rq);
+        return 1;
+    }
+    uint32_t base = rq[0].t;
+
+    g_adlib_log = fopen(out, "w");
+    if (!g_adlib_log) { fprintf(stderr, "cannot write %s\n", out); free(rq); return 2; }
+    fprintf(g_adlib_log, "# tick divisor reg val   (PIT_HZ = 1193182)\n");
+
+    opl_set_trace(adlib_log_write);
+    uint32_t next = 0;
+    for (g_adlib_tick = 0; g_adlib_tick < ticks; g_adlib_tick++) {
+        /* Requests first, then the tick.
+         *
+         * Moving the tick ahead of them was tried, on the theory that the
+         * game's slot write lands between ticks and is picked up by the
+         * next one. It changed NOTHING: every request shifts equally, so
+         * the relative timing - which is all the comparison scores - came
+         * out identical to the write. The ordering here is therefore not
+         * evidence of anything, and a comment claiming it fixed the
+         * one-tick residue would have been a confident story about a
+         * change that moved no number.
+         *
+         * The residue itself is the INSTRUMENT. The requests are stamped
+         * with the emulator's PIT tick at the moment the guest stores the
+         * byte, and whether the driver's own tick for that count has
+         * already run is not something a tick counter can say. One tick of
+         * ambiguity, at exactly the writes where a request takes effect,
+         * is what that looks like. */
+        while (next < nrq && rq[next].t - base <= g_adlib_tick) {
+            if (!strcmp(rq[next].kind, "effect"))
+                adlib_effect((uint8_t)rq[next].id);
+            else if (!strcmp(rq[next].kind, "slot5"))
+                adlib_slot5((uint8_t)rq[next].id);
+            else
+                adlib_music((uint8_t)rq[next].id);
+            next++;
+        }
+        adlib_tick();
+    }
+    opl_set_trace(NULL);
+    uint32_t n = opl_writes();
+    fclose(g_adlib_log);
+    g_adlib_log = NULL;
+    free(rq);
+    printf("  %u requests over %u ticks -> %u register writes -> %s\n",
+           next, ticks, n, out);
+    if (next < nrq)
+        printf("  NOTE: %u of %u requests were past tick %u and never made\n",
+               nrq - next, nrq, ticks);
+    if (!n) {
+        fprintf(stderr, "THE DRIVER WROTE NOTHING.\n");
+        return 1;
+    }
+    return 0;
+}
+
+static int adlib_dump(const char *data, uint8_t id, uint32_t ticks,
+                      const char *out)
+{
+    const char *err = "unknown error";
+    if (adlib_load(data, &err) != 0) {
+        fprintf(stderr, "adlib.dat: %s\n", err);
+        return 2;
+    }
+    g_adlib_log = fopen(out, "w");
+    if (!g_adlib_log) { fprintf(stderr, "cannot write %s\n", out); return 2; }
+    fprintf(g_adlib_log, "# tick divisor reg val   (PIT_HZ = 1193182)\n");
+
+    opl_set_trace(adlib_log_write);
+    adlib_music(id);
+    for (g_adlib_tick = 0; g_adlib_tick < ticks; g_adlib_tick++)
+        adlib_tick();
+    opl_set_trace(NULL);
+
+    uint32_t n = opl_writes();
+    fclose(g_adlib_log);
+    g_adlib_log = NULL;
+    printf("  tune %u, %u ticks -> %u register writes -> %s\n",
+           id, ticks, n, out);
+    /* A tune that wrote nothing is a fact about this run, and it must not be
+     * reported as a stream. */
+    if (!n) {
+        fprintf(stderr, "THE DRIVER WROTE NOTHING. Either tune %u does not "
+                        "exist or the sequencer never ran.\n", id);
+        return 1;
+    }
+    return 0;
+}
+
+
 int main(int argc, char **argv)
 {
     /* The level the GAME calls "Level 1" is not the first level in the first
@@ -659,6 +817,8 @@ int main(int argc, char **argv)
      * terrain and nothing else. */
     int objects = 1;
     const char *opl_in = NULL, *wav_out = NULL;
+    int adlib_tune = -1; uint32_t adlib_ticks = 600;
+    const char *adlib_scr = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
@@ -776,6 +936,12 @@ int main(int argc, char **argv)
             else if (!strcmp(m, "hw")) g_terrain_mode = TERRAIN_HW;
             else { usage(); return 2; }
         }
+        else if (!strcmp(argv[i], "--adlib-script") && i + 1 < argc)
+            adlib_scr = argv[++i];
+        else if (!strcmp(argv[i], "--adlib-tune") && i + 1 < argc)
+            adlib_tune = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--adlib-ticks") && i + 1 < argc)
+            adlib_ticks = (uint32_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--opl-replay") && i + 1 < argc)
             opl_in = argv[++i];
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc)
@@ -788,6 +954,16 @@ int main(int argc, char **argv)
     if (opl_in) {
         if (!wav_out) { usage(); return 2; }
         return opl_replay(opl_in, wav_out);
+    }
+    lem_set_data_dir(data);
+
+    if (adlib_scr) {
+        if (!raw) { usage(); return 2; }
+        return adlib_script(data, adlib_scr, adlib_ticks, raw);
+    }
+    if (adlib_tune >= 0) {
+        if (!raw) { usage(); return 2; }      /* --raw names the output */
+        return adlib_dump(data, (uint8_t)adlib_tune, adlib_ticks, raw);
     }
 
     const char *err = "unknown error";

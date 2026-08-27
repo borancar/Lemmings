@@ -24,6 +24,8 @@
 #include <SDL3/SDL.h>
 
 #include "game.h"
+#include "adlib.h"
+#include "opl.h"
 
 
 
@@ -1069,120 +1071,106 @@ int io_read_file(const char *path, uint8_t **out, long *len, const char **err)
     return 0;
 }
 
-/* SOUND, and what this can and cannot claim.
+/* SOUND.
  *
- * docs/sound.md has the interface: the game loads adlib.dat onto INT 61h and
- * asks it for a numbered sound, and the driver's AH=3 and AH=4 do nothing but
- * store AL in cs:0xED and cs:0xF0 for its own timer ISR to pick up.
+ * WHAT IS TRANSCRIBED and where it lives:
  *
- * WHAT IS TRANSCRIBED is the asking - every call site, its id, and the two
- * gate bytes - and that lives in game.c beside the routine that asks.
+ *   the asking      game.c, beside the routine that asks - every call site,
+ *                   its id, and the two gate bits of ds:0x25A7.
+ *   the driver      adlib.c, transcribed from adlib.dat, which is a separate
+ *                   program the game loads onto INT 61h and calls. It turns
+ *                   an id into OPL2 register writes over time, and it is
+ *                   checked against the ORIGINAL's own register stream by
+ *                   tools/verify_adlib.py - write for write, no listening.
+ *   the music       nowhere here. Twenty-one tunes and seventeen effects are
+ *                   data in the player's own adlib.dat and stay there.
+ *   the chip        opl.h over ymfm. An OPL2 is hardware; see that header.
  *
- * WHAT IS NOT is the timbre. This game ships NO DIGITISED SAMPLES: adlib.dat
- * decompresses to 22,125 bytes of 8086 code with a flat 5.6-6.8 entropy and
- * no PCM block anywhere in it, so there is nothing to play back. The sound an
- * id makes is FM register writes the driver performs, and reproducing those
- * exactly means an OPL2 synthesiser - which is emulating the card.
+ * WHAT THIS FILE DOES is the part SDL owns: open a device, keep it fed, and
+ * decide when the driver's tick happens.
  *
- * So the voices below are THE PORT'S OWN: a pitch and an envelope per id,
- * chosen to be distinguishable, not measured off anything. They are a
- * placeholder that makes the game audible and the call sites checkable, and
- * they should not be mistaken for the original's sound. Replacing them means
- * either reading the driver's instrument tables - the 32-byte runs at
- * +0x2BEA - and synthesising two-operator FM, or accepting an OPL core.
+ * THE TICK IS NOT A FRAME. The original's driver is called from the game's
+ * timer ISR at 97.08 Hz (the divisor it programs, measured - docs/sound.md),
+ * and that has nothing to do with the 17 Hz of a level or the 70 Hz of the
+ * menu. So the tick is driven off the AUDIO clock: one call every
+ * 49716/97.08 samples, wherever the frame boundaries happen to fall. Ticking
+ * once a frame would make the music's tempo a property of the display, which
+ * is the same mistake as pacing the level off the retrace - CLAUDE.md
+ * records that one already.
+ *
+ * There is no placeholder here any more. There used to be: a table of pitches
+ * and envelopes, "chosen to be distinguishable, not measured off anything".
+ * It made the game audible and it was not the game's sound.
  */
-#define SND_RATE   22050
-#define SND_VOICES 4
+/* THE PORT'S OWN - see game.h. Defaults to what main.c defaults to, so a
+ * caller that never sets it behaves as it always did. */
+static const char *g_data_dir = "lemming1.pc";
 
-typedef struct {
-    int      active;
-    double   phase, step;
-    uint32_t left;        /* samples remaining */
-    uint32_t total;
-} snd_voice;
+void lem_set_data_dir(const char *dir) { if (dir) g_data_dir = dir; }
+const char *lem_data_dir(void) { return g_data_dir; }
 
 static SDL_AudioStream *g_snd_stream;
-static snd_voice g_snd[SND_VOICES];
 static uint8_t g_snd_bits = 3;         /* ds:0x25A7 - both switches on */
+static double  g_tick_acc;             /* samples owed to the next tick */
 
 /* ds:0x25A7, image 0x00591 sets 1 and image 0x005A9 sets 3. The caller tests
  * it exactly as the original does, so a site that asks with the wrong mask
  * differs from the game whether or not anything is audible. */
 uint8_t sound_enabled(uint8_t bits) { return (uint8_t)((g_snd_bits & bits) != 0); }
 
-/* The port's own voice table - see the note above. Pitch in Hz and length in
- * milliseconds, one row per id the game asks for; docs/sound.md lists which
- * site asks for which. */
-static void snd_voice_for(uint8_t fn, uint8_t id, double *hz, uint32_t *ms)
-{
-    static const struct { uint8_t fn, id; uint16_t hz, ms; } V[] = {
-        { 4, 0x01,  880,  40 },   /* a panel button, image 0x03F7A */
-        { 4, 0x04,  660,  60 },   /* a skill assigned, image 0x03209 */
-        { 4, 0x05,  520,  90 },
-        { 4, 0x08,  300, 220 },   /* water, image 0x0229E */
-        { 4, 0x0A,  420, 120 },
-        { 4, 0x0C,  240, 200 },
-        { 4, 0x0D,  700,  80 },   /* the release, image 0x030A3 */
-        { 4, 0x10,  180, 260 },
-        { 4, 0x11,  980,  70 },
-        { 4, 0x12,  560, 100 },
-        { 3, 0x02,  330, 150 },
-        { 3, 0x0C,  140, 320 },   /* the bomber's cloud, image 0x02377 */
-        { 3, 0x13,  620,  60 },
-    };
-    for (size_t i = 0; i < sizeof V / sizeof V[0]; i++)
-        if (V[i].fn == fn && V[i].id == id) { *hz = V[i].hz; *ms = V[i].ms; return; }
-    *hz = 440; *ms = 60;           /* an id with no row still makes a noise */
-}
-
+/* The game asks through INT 60h (fn 3) or INT 61h (fn 4) - see docs/sound.md
+ * for which call site asks for which, and why the two are alternatives
+ * rather than two faces of one driver. */
 void sound_request(uint8_t fn, uint8_t id)
 {
-    if (!g_snd_stream) return;
-    double hz; uint32_t ms;
-    snd_voice_for(fn, id, &hz, &ms);
-    for (int i = 0; i < SND_VOICES; i++) {
-        if (g_snd[i].active) continue;
-        g_snd[i].active = 1;
-        g_snd[i].phase  = 0.0;
-        g_snd[i].step   = hz / (double)SND_RATE;
-        g_snd[i].total  = g_snd[i].left = ms * SND_RATE / 1000u;
-        return;
-    }
+    if (!adlib_ready()) return;
+    if (fn == 4) adlib_effect(id);          /* driver +0x002A */
+    else         adlib_music(id);           /* driver +0x0022 */
 }
 
-/* Mix what is playing and hand it to SDL. Called once a frame from the level
- * and menu loops; a frame is 1/17 or 1/70 of a second, so the buffer is small
- * and the latency is a frame. */
+/* Mix and hand to SDL. Called once a frame from the level and menu loops. */
+#define SND_CHUNK 1024
+
 static void sound_pump(void)
 {
-    if (!g_snd_stream) return;
-    if (SDL_GetAudioStreamQueued(g_snd_stream) > (int)(SND_RATE / 4))
-        return;                     /* already a quarter second ahead */
-    int16_t buf[SND_RATE / 30];
-    size_t n = sizeof buf / sizeof buf[0];
-    for (size_t s = 0; s < n; s++) {
-        double acc = 0.0;
-        for (int i = 0; i < SND_VOICES; i++) {
-            if (!g_snd[i].active) continue;
-            /* A square wave with a linear decay - the port's own. */
-            double env = (double)g_snd[i].left / (double)g_snd[i].total;
-            acc += (g_snd[i].phase < 0.5 ? 0.25 : -0.25) * env;
-            g_snd[i].phase += g_snd[i].step;
-            if (g_snd[i].phase >= 1.0) g_snd[i].phase -= 1.0;
-            if (--g_snd[i].left == 0) g_snd[i].active = 0;
+    if (!g_snd_stream || !adlib_ready()) return;
+    /* Keep about a quarter second queued. Less and the host's scheduler
+     * shows up as gaps; more and a sound effect is heard long after the
+     * click that asked for it. */
+    const int ahead = (int)(OPL_SAMPLE_RATE / 4) * (int)sizeof(int16_t);
+    if (SDL_GetAudioStreamQueued(g_snd_stream) > ahead) return;
+
+    const double per_tick = (double)OPL_SAMPLE_RATE / ADLIB_TICK_HZ;
+    int16_t buf[SND_CHUNK];
+    uint32_t done = 0;
+    while (done < SND_CHUNK) {
+        if (g_tick_acc <= 0.0) {
+            adlib_tick();                   /* driver +0x0115 */
+            g_tick_acc += per_tick;
         }
-        if (acc >  1.0) acc =  1.0;
-        if (acc < -1.0) acc = -1.0;
-        buf[s] = (int16_t)(acc * 32767.0);
+        uint32_t want = (uint32_t)g_tick_acc;
+        if (want > SND_CHUNK - done) want = SND_CHUNK - done;
+        if (want == 0) { g_tick_acc = 0.0; continue; }
+        opl_render(buf + done, want);
+        done += want;
+        g_tick_acc -= want;
     }
     SDL_PutAudioStreamData(g_snd_stream, buf, (int)sizeof buf);
 }
 
 static void sound_open(void)
 {
+    const char *err = "unknown error";
+    /* The driver's data is the player's own adlib.dat. No card and no file
+     * are the same thing to the game: silence, and it carries on. */
+    if (adlib_load(lem_data_dir(), &err) != 0)
+        fprintf(stderr, "no sound: adlib.dat: %s\n", err);
+
     SDL_AudioSpec want;
     SDL_zero(want);
-    want.freq = SND_RATE;
+    /* Ask for the CHIP's rate and let SDL convert. Resampling here would be a
+     * second place for the sound to be wrong. */
+    want.freq = (int)OPL_SAMPLE_RATE;
     want.format = SDL_AUDIO_S16;
     want.channels = 1;
     g_snd_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
@@ -1195,6 +1183,7 @@ static void sound_close(void)
 {
     if (g_snd_stream) SDL_DestroyAudioStream(g_snd_stream);
     g_snd_stream = NULL;
+    adlib_free();
 }
 
 #define GROUND_SIZE 1056

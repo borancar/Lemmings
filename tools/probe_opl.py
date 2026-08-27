@@ -56,8 +56,90 @@ def reg_name(r):
     return "?"
 
 
+REQ_OUT = os.environ.get("LEM_OPL_REQ")
+
+
+def _driver_segment(m):
+    """Where DOS put adlib.dat, read out of the vector the game installed.
+
+    The driver is called through INT 61h and its dispatcher is at offset 0 of
+    its own segment, so the vector's segment is the driver's base and the
+    three request slots - driver +0x00ED, +0x00EE, +0x00F0 - follow from it.
+    Reading the vector rather than assuming a segment is the same rule this
+    project already writes down for SS: ask the machine where a thing is.
+    """
+    import struct
+    off, seg = struct.unpack("<HH", bytes(m.uc.mem_read(0x61 * 4, 4)))
+    return seg, off
+
+
 def install(m):
+    """Log every OPL register write, and every SOUND THE GAME ASKS FOR.
+
+    The requests are the port's inputs. Capturing the register stream alone
+    would give something to compare against and no way to reproduce it: the
+    transcribed driver plays what it is asked for, so a comparison needs the
+    asking as well as the answer. `LEM_OPL_REQ` names where they go.
+
+    The slots are watched with a THREE-BYTE memory hook rather than a code
+    hook. A UC_HOOK_CODE callback costs so much throughput that the same run
+    reached 40 register writes instead of 10,109 - the guest never got near
+    the music, and the probe reported that as the music never starting.
+    """
+    state = {"armed": False, "reqs": []}
+
+    def arm(mm):
+        # The vector is only meaningful once the driver has answered, and the
+        # cheapest moment to know that is the first register write it makes.
+        if state["armed"]:
+            return
+        state["armed"] = True
+        mm.opl_on_write = None            # one-shot: stop paying for it
+        try:
+            from unicorn import UC_HOOK_MEM_WRITE
+            seg, off = _driver_segment(mm)
+            base = (seg << 4)
+            def on_slot(uc, access, address, size, value, user):
+                slot = address - base
+                kind = {0xED: "music", 0xEE: "slot5", 0xF0: "effect"}.get(slot)
+                if kind and value:
+                    state["reqs"].append((mm.timer_ticks,
+                                          mm.pit0_div or 0x10000, kind, value))
+            mm.uc.hook_add(UC_HOOK_MEM_WRITE, on_slot,
+                           begin=base + 0xED, end=base + 0xF0)
+            print("  [opl] driver at %04X:%04X; watching its request slots"
+                  % (seg, off))
+        except Exception as exc:
+            # An exception raised inside a Unicorn hook is SWALLOWED and stops
+            # emulation, which reads as a run that ended early and, with the
+            # log capped at exactly the trigger, as a plausible capture. Two
+            # runs were lost to that before the write count being exactly the
+            # threshold gave it away.
+            import traceback
+            print("  [opl] COULD NOT WATCH THE REQUEST SLOTS: %r" % (exc,))
+            traceback.print_exc()
+
+    m.opl_on_write = arm
+
     def report():
+        reqs = state["reqs"]
+        print()
+        print("  [opl] sounds the GAME asked for      : %d" % len(reqs))
+        for t, d, kind, v in reqs[:12]:
+            print("  [opl]     t%-6d %-6s %d" % (t, kind, v))
+        if len(reqs) > 12:
+            print("  [opl]     ... %d more" % (len(reqs) - 12))
+        if REQ_OUT and reqs:
+            with open(REQ_OUT, "w") as f:
+                f.write("# tick divisor kind id\n")
+                for t, d, kind, v in reqs:
+                    f.write("%d %d %s %d\n" % (t, d, kind, v))
+            print("  [opl] wrote %s" % REQ_OUT)
+        elif REQ_OUT:
+            print("  [opl] NO REQUESTS SEEN, so %s was not written - the port"
+                  % REQ_OUT)
+            print("  [opl] has nothing to be driven with and a comparison")
+            print("  [opl] would be of two silences.")
         log = getattr(m, "opl_log", [])
         print()
         print("  [opl] the detect at driver +0x00A3 : %s" %

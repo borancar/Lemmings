@@ -89,6 +89,10 @@ int main(int argc, char **argv)
     uint32_t number = 1;            /* the GAME's level number, 1..30 */
 
     menu_screen mm;
+    /* sdl_io.c loads adlib.dat when the audio device opens, which is
+     * after this point, so it has to be told where the files are. */
+    lem_set_data_dir(data);
+
     if (menu_build_rating(data, rating, &mm, &err) != 0) {
         fprintf(stderr, "PC Lemmings: %s\n"
                         "(looked in \"%s\"; pass the data directory as the "

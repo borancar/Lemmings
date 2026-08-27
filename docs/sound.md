@@ -242,3 +242,87 @@ composed buffer is to the screen.
 
 So the sequencer at +0x3AA is the next thing to read, and the three request
 slots (0xED, 0xEE, 0xF0) are its inputs.
+
+## The driver, transcribed - and checked write for write
+
+`reconstruct/src/adlib.c` is `adlib.dat`'s sequencer in C. It is about 1,200
+bytes of 8086 in six runs, and recursive descent from the dispatcher plus the
+**word table at +0x03EA** reaches all of it. That table is the command set:
+
+    0x80  +0x0415  next pattern; a zero entry means loop, via +0x03FA
+    0x81  +0x01C0  rest - key off, cancel the slide
+    0x82  +0x01B3  tie - hold, and suppress the note-off gate
+    0x83  +0x03AA  end of tune: stop every channel
+    0x84  +0x0430  transpose, from the next byte
+    0x85  +0x043A  end of this part: key off and go idle
+    0x86  +0x0447  slide up one semitone a tick
+    0x87  +0x044F  slide down
+
+and the ranges above it are 0xB0..0xBF volume, 0xC0..0xDF instrument,
+0xE0..0xFF note length. Anything below 0x80 is a note.
+
+Nine channel structures of 0x14 bytes sit at +0x05AC, **pre-initialised in the
+file** with the OPL2's operator pairs - (0,3) (1,4) (2,5) (8,11) (9,12)
+(10,13) (16,19) (17,20) (18,21). The port reads that mapping out of the driver
+rather than restating the datasheet, so a mistake there is a mistake about the
+file.
+
+Effects take channels 8, 7, 6 and 5, searched in that order (+0x051C), and are
+dropped rather than queued if all four are busy. They also advance EVERY tick
+where music channels wait for the tempo divider (+0x0182), which is what keeps
+an effect at one speed whatever the tune's tempo is.
+
+### The negative f-numbers
+
++0x0349 turns a note into a pitch through two 96-entry tables - +0x0AA7 gives
+the block, +0x0B07 the semitone - and the semitone indexes +0x0927 with a
+stride of SIXTEEN WORDS, hence the multiply by 32.
+
+Semitones 7..11 are stored **negative**: 0xFE05, 0xFE23, 0xFE44, 0xFE67,
+0xFE8B. That is not a f-number. It is a flag saying the value has already been
+halved and belongs one octave up, and +0x0371's `dec bl / jge / inc bl` is
+what decodes it. 0xFE05 masks to 517, and 517 in the next block is the same
+pitch as 1034 in this one - which is 690 x 2^(7/12), the seventh semitone.
+Transcribed in signed 16-bit, as written.
+
+### The score
+
+    LEM_HOOK=tools/probe_opl.py LEM_OPL_OUT=out/orig_stream.txt \
+        LEM_OPL_REQ=out/orig_reqs.txt \
+        uv run python tools/play.py --auto --start -- --run-seconds 240
+    grep -v ' slot5 ' out/orig_reqs.txt > out/orig_reqs_game.txt
+    ./reconstruct/lemdev --data lemming1.pc --adlib-script out/orig_reqs_game.txt \
+        --adlib-ticks 9200 --raw out/port_stream.txt
+    uv run python tools/verify_adlib.py out/orig_stream.txt out/port_stream.txt
+
+    register and value agree : 10333 of 10333  (100.00%)
+    the GAP between writes   : 10331 of 10332  (99.99%)
+    worst gap difference     : 1 tick, at write #106
+
+**The requests have to be captured too.** The driver plays what it is asked
+for, so a capture of the register stream alone gives something to compare
+against and no way to reproduce it. `probe_opl.py` watches the three slots
+with a three-byte memory hook and writes the asking beside the answer.
+
+Three things about that measurement are worth keeping:
+
+- **Drop the detect before comparing.** The original's first six writes are
+  +0x00A3 finding the card, and the port has no card to find. Left in, they
+  offset every later write by six and the comparison scored **5.04%** on a
+  stream that agrees completely.
+- **`slot5` in the request log is the DRIVER's own write**, not the game's:
+  +0x047F stores the tune id in +0x00EE itself. Feeding it back makes
+  `start_music` take the pending-request branch and refuse to start. It is
+  filtered out, and the honest fix is to record the writer's CS.
+- **A code hook is not free.** Watching for the right moment with
+  `UC_HOOK_CODE` cost so much throughput that the same run reached 40
+  register writes instead of 10,109 - the guest never got near the music, and
+  the probe reported that as the music never starting. The trigger moved into
+  the OPL write path, which costs nothing.
+
+And the residue is the instrument, not the port. Requests are stamped with the
+emulator's PIT tick at the moment the guest stores the byte, and whether the
+driver's tick for that count has already run is not something a tick counter
+can answer. Reordering the port's requests against its tick was tried and
+changed **nothing** - every request shifts equally, so the relative timing
+came out identical.

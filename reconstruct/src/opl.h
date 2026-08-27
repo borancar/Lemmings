@@ -51,6 +51,14 @@ void    opl_render(int16_t *out, uint32_t frames);
  * can say it exercised the chip rather than assuming it did. */
 uint32_t opl_writes(void);
 
+/* Watch every register write. This is how the port's own stream gets dumped
+ * for comparison against the original's, and it is deliberately here rather
+ * than inside the driver: what matters is what reaches the CHIP, so a write
+ * the driver makes twice, or makes through some path nobody remembered, is
+ * still counted. Pass NULL to stop. */
+typedef void (*opl_trace_fn)(uint8_t reg, uint8_t val);
+void opl_set_trace(opl_trace_fn fn);
+
 #ifdef __cplusplus
 }
 #endif

@@ -287,6 +287,13 @@ extern uint8_t g_terrain_reverse;
 void sound_request(uint8_t fn, uint8_t id);
 uint8_t sound_enabled(uint8_t bits);   /* ds:0x25A7 */
 
+/* Where the player's data files are. THE PORT'S OWN: the original ran in the
+ * directory its files were in and never had to be told. sdl_io.c needs it
+ * because the sound driver is one of those files - adlib.dat - and it is
+ * loaded when the audio device opens, long after main.c parsed its argument. */
+void lem_set_data_dir(const char *dir);
+const char *lem_data_dir(void);
+
 /* Implemented in sdl_io.c - see "WHAT THE HARDWARE USED TO DO" there. */
 uint8_t widen6(uint8_t v);
 /* The whole of a file in memory. DOS did this a section at a time through

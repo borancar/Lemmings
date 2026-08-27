@@ -22,6 +22,7 @@ struct adlib_interface : public ymfm::ymfm_interface
 adlib_interface g_intf;
 ymfm::ym3812    g_chip(g_intf);
 uint32_t        g_writes;
+opl_trace_fn    g_trace;
 
 }  /* namespace */
 
@@ -31,8 +32,14 @@ extern "C" void opl_reset(void)
     g_writes = 0;
 }
 
+extern "C" void opl_set_trace(opl_trace_fn fn)
+{
+    g_trace = fn;
+}
+
 extern "C" void opl_write(uint8_t reg, uint8_t val)
 {
+    if (g_trace) g_trace(reg, val);
     /* offset 0 is the address port (0x388), offset 1 the data port (0x389) */
     g_chip.write(0, reg);
     g_chip.write(1, val);

@@ -163,6 +163,7 @@ class LemmingsVga(VgaDos):
         self.opl_status = 0x00
         self.opl_log = []            # (n, reg, val) in the order written
         self.opl_detected = False
+        self.opl_on_write = None
 
     def _opl_write_reg(self, reg, val):
         # Stamped with the guest's own PIT tick, not with a sequence number.
@@ -180,6 +181,14 @@ class LemmingsVga(VgaDos):
         self.opl_regs[reg] = val
         self.opl_log.append((self.timer_ticks, self.pit0_div or 0x10000,
                              reg, val))
+        # A probe that wants to act once the driver is running hooks HERE
+        # rather than on every instruction. A UC_HOOK_CODE callback costs the
+        # emulator so much throughput that the same run reached 40 register
+        # writes instead of 10,109 - the instrument stopped the guest getting
+        # anywhere near the thing being measured, and reported that as the
+        # tune never starting.
+        if self.opl_on_write is not None:
+            self.opl_on_write(self)
         if reg == 0x04:                       # timer control
             if val & 0x80:                    # IRQ RESET clears both flags
                 self.opl_status = 0x00
