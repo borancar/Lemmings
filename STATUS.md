@@ -1866,6 +1866,54 @@ simply a different phase from a capture at frame 600. Sweeping `--obj-frame`
 found the match at 5, and the frame-by-frame comparison, which advances the
 animation itself, is exact.
 
+### A fifth level, chosen the same way, found a TERRAIN bug
+
+`tools/coverage.py` had one object id left that nothing measured - id 4, the
+mirrored one-way wall, 21 of them in the game. level006.dat section 3, "One
+way or another", carries two of those and two of id 3, in graphics set 0
+rather than set 2. Its `ds:0x1F6B` index is **95**; the level's own header
+confirms the recording picked the right one, `0032004b004b0004...000a0000`,
+which distinguishes it from level007 section 1 - the two agree for their first
+eight bytes.
+
+It found a difference on its first run, and not in objects at all:
+
+    814 pixels, on every one of 1,100 frames, all of them terrain the
+    ORIGINAL draws at the bottom of the play area and the port did not.
+
+The port was **erasing terrain the original keeps**. A terrain entry's first
+byte carries three flags, and 116 pieces in the game - across **9 of the 80
+levels** - carry both `erase` (0x20) and `no-overwrite` (0x80). The port
+tested erase first and blanked them.
+
+Image 0x07C67 unpacks that byte into the blitter's flag word and the erase bit
+sets **two** things there: `and dx, 0xc0` puts word bit 13 into bp bit 6, and
+image 0x07C7B ORs in 0x0F00 beside it. Image 0x08905 tests bp bit 6, jumps to
+image 0x0909C, and there image 0x090B8 sets Set/Reset to 0 while image 0x090BF
+sets Enable Set/Reset to bp bits 11..8 - the 0x0F - so all four planes are
+written as zero. That is the erase, and it is why the nibble exists.
+
+But **image 0x088F3 tests bp bit 15 first**, and jumps to image 0x08B42, an
+ordinary masked draw that never looks at the erase nibble. A piece carrying
+both flags is drawn, not erased. The port's two branches are now in that
+order, and level006/3 is **1,100 of 1,100 exact in both halves**.
+
+**A partial improvement came from a rule that was wrong.** The first
+hypothesis was that erase only works when the piece is byte-aligned, since the
+paths that read the nibble are reached by other dispatch arms. Wiring it in
+took 814 differing pixels to 459 - real progress by the only number on offer,
+and a different wrong answer. What the residue showed was that the port had
+stopped erasing two pieces that the original DOES erase, which is how the
+distinction between those pieces and the third one surfaced. The rule was then
+read out of image 0x07C67 rather than fitted, and went to zero.
+
+`tools/prove.sh` is untouched by this: its level, level009 section 2 - "Just
+dig!" - has no piece carrying both flags. That is checked rather than assumed.
+
+Two levels chosen by a coverage gap, two bugs, and neither of them in the
+thing the gap was about. That is the argument for choosing the next reference
+by what nothing measures rather than by what looks interesting.
+
 ### And the no-overwrite blit ORs, which nothing here can see yet
 
 Read while confirming the arrows: image 0x0956B sets the graphics

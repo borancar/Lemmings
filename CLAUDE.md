@@ -219,6 +219,17 @@ have been another candidate in the same family. No amount of it reaches zero,
 because the true rule (`mask ? ink : dst | (ink & 0x0E)`) was not in the
 family at all.
 
+**And a wrong rule can still improve the number.** The terrain erase bug on
+level006/3 sat at 814 differing pixels. The first hypothesis - that erase only
+applies to a byte-aligned piece - took it to **459**, which by the only
+measure available is progress and was a different wrong answer. The real rule
+came from reading image 0x07C67's flag unpack: the erase bit sets bp bit 6
+*and* the 0x0F00 nibble, and image 0x088F3 dispatches no-overwrite before
+image 0x08905 ever tests bit 6, so a piece with both flags is drawn rather
+than erased. That went to zero. A score that improves is evidence the change
+moved something in the right direction, and nothing at all about whether the
+reason is the real one.
+
 So: **when a comparison plateaus a little short, stop fitting and go read the
 routine.** The clue that this is the situation is a residue that is
 *structured* — here, 210 of the 326 were the single relation "sprite value 3

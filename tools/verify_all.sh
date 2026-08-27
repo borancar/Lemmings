@@ -218,10 +218,19 @@ say "=== three further levels, frame by frame ==="
 # no one-way wall between them: object ids 3 and 4 and the only_on_terrain
 # flag were measured by NOTHING. This one has twelve, and it found a
 # difference on its first run.
+#
+# level006.dat 3 was chosen the same way, for the LAST object id nothing
+# measured - id 4, the mirrored one-way wall, 21 of them in the game - and it
+# found a difference on its first run too, in TERRAIN rather than objects: a
+# piece carrying both the erase and the no-overwrite flag, which the original
+# draws and the port was erasing. 116 such pieces across 9 of the 80 levels.
+# Two levels chosen by a coverage gap, two bugs; that is the argument for
+# choosing them that way rather than by which level looks interesting.
 for case in "level001.dat 3 ref_i8 530 10" \
             "level002.dat 4 ref_i61 1100 -1" \
             "level002.dat 6 ref_i63 1100 -1" \
-            "level004.dat 3 ref_i77 1100 -1"; do
+            "level004.dat 3 ref_i77 1100 -1" \
+            "level006.dat 3 ref_i95 1100 -1"; do
     set -- $case
     lfile=$1 lsec=$2 lref=$3 lframes=$4 lodd=$5
     if [ ! -f "out/$lref/manifest.json" ]; then

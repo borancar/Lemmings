@@ -625,10 +625,32 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                     continue;       /* transparent */
 
                 uint8_t *dst = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
-                if (t->erase)
-                    *dst = 0;
-                else if (g_terrain_mode == TERRAIN_OR_ALL)
+                if (g_terrain_mode == TERRAIN_OR_ALL)
                     *dst = (uint8_t)(*dst | v);
+                /* NO-OVERWRITE IS TESTED BEFORE ERASE, and a piece can carry
+                 * both. Image 0x07C67 unpacks the LVL's first word into the
+                 * blitter's flag word, and the erase bit - e[0] & 0x20, which
+                 * is word bit 13 - sets TWO things there: `and dx, 0xc0` puts
+                 * it in bp bit 6, and image 0x07C7B ORs in 0x0F00 beside it.
+                 * Image 0x08905 then tests bp bit 6 and jumps to image
+                 * 0x0909C, where image 0x090B8 sets Set/Reset to 0 and image
+                 * 0x090BF sets Enable Set/Reset to bp bits 11..8 - the 0x0F -
+                 * so all four planes are written as zero. That is the erase.
+                 *
+                 * But image 0x088F3 tests bp bit 15 first and jumps to image
+                 * 0x08B42, an ordinary masked draw that never looks at the
+                 * erase nibble. So a piece with BOTH flags is drawn and not
+                 * erased, and the order of these two branches is that
+                 * dispatch order rather than a preference.
+                 *
+                 * level006 section 3 has three such pieces and the port
+                 * erased all of them: 814 pixels of terrain missing from the
+                 * bottom of the play area, on every one of 1,100 frames. Two
+                 * of the three carry erase alone and DO erase; the third
+                 * carries both. Suppressing erase for all three left 459
+                 * pixels wrong the other way, which is how the difference
+                 * between the two pieces was found - by measuring a wrong
+                 * rule, then going back and reading the unpack. */
                 else if (t->no_overwrite
                          && g_terrain_mode != TERRAIN_NOV_IGNORE) {
                     if (g_terrain_mode == TERRAIN_NOV_INVERT) {
@@ -636,7 +658,9 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                             *dst = v;
                     } else if (*dst == 0)
                         *dst = v;
-                } else switch (g_terrain_mode) {
+                } else if (t->erase)       /* image 0x08905, image 0x090BF */
+                    *dst = 0;
+                else switch (g_terrain_mode) {
                 case TERRAIN_OR:
                     *dst = (uint8_t)(*dst | v);
                     break;
