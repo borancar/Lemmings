@@ -1,8 +1,18 @@
 # PC Lemmings, reconstructed.
 CC      ?= cc
+CXX     ?= c++
 CFLAGS  ?= -O2 -g -std=c11 -Wall -Wextra -Wpedantic -Wshadow \
            -Wconversion -Wno-sign-conversion
 LDFLAGS ?=
+
+# The reconstruction is C. The ONE exception is the OPL2, because ymfm is C++
+# - see src/opl.h for why an OPL2 is not transcribed at all, and
+# vendor/README.md for what ymfm is. Vendored code is compiled without this
+# project's warning set: those warnings exist to catch mistakes in code we
+# write, and turning them on someone else's source produces noise nobody may
+# act on without editing a file the next update overwrites.
+CXXFLAGS ?= -O2 -g -std=c++14
+LDFLAGS  += -lstdc++
 
 # SDL3 is REQUIRED, not optional. The port shows a screen; it is not a bitmap
 # converter with a viewer bolted on, and it is not tied to one platform. See
@@ -25,12 +35,20 @@ CORE := src/game.c src/sdl_io.c
 BIN     := lemmings
 DEV_BIN := lemdev
 
+# The OPL2 and the ymfm units it needs. ymfm_opl.cpp implements the whole OPL
+# family, so it refers to the ADPCM, PCM and SSG units for the Y8950 and
+# YMF278B; this port uses none of them and cannot link without them.
+OPL_SRC := src/opl_ymfm.cpp \
+           vendor/ymfm/ymfm_opl.cpp vendor/ymfm/ymfm_adpcm.cpp \
+           vendor/ymfm/ymfm_pcm.cpp vendor/ymfm/ymfm_ssg.cpp
+OPL_OBJ := $(OPL_SRC:.cpp=.o)
+
 all: $(BIN) $(DEV_BIN)
 
-$(BIN): $(CORE:.c=.o) src/main.o
+$(BIN): $(CORE:.c=.o) $(OPL_OBJ) src/main.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(DEV_BIN): $(CORE:.c=.o) src/devmain.o
+$(DEV_BIN): $(CORE:.c=.o) $(OPL_OBJ) src/devmain.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # The headers are dependencies too. Without this line a change to game.h
@@ -43,11 +61,14 @@ HDRS := $(wildcard src/*.h)
 src/%.o: src/%.c $(HDRS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+%.o: %.cpp $(HDRS)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 # The menu's input, checked rather than eyeballed: the test pushes synthetic
 # SDL events and asserts what menu_run returns. SDL's dummy video driver means
 # it needs no display.
 TEST_BIN := tests/menu_input
-TEST_OBJ := src/game.o src/sdl_io.o
+TEST_OBJ := src/game.o src/sdl_io.o $(OPL_OBJ)
 
 $(TEST_BIN): tests/menu_input.c $(TEST_OBJ)
 	$(CC) $(CFLAGS) -Isrc -o $@ $< $(TEST_OBJ) $(LDFLAGS)
@@ -60,9 +81,16 @@ SCREEN_BIN := tests/screens
 $(SCREEN_BIN): tests/screens.c $(TEST_OBJ)
 	$(CC) $(CFLAGS) -Isrc -o $@ $< $(TEST_OBJ) $(LDFLAGS)
 
-test: $(TEST_BIN) $(SCREEN_BIN)
+# The OPL2 needs no game data and no display - it is the chip on its own.
+OPL_BIN := tests/opl
+
+$(OPL_BIN): tests/opl.c $(OPL_OBJ)
+	$(CC) $(CFLAGS) -Isrc -o $@ $< $(OPL_OBJ) -lstdc++ -lm
+
+test: $(TEST_BIN) $(SCREEN_BIN) $(OPL_BIN)
 	SDL_VIDEODRIVER=dummy ./$(TEST_BIN)
 	SDL_VIDEODRIVER=dummy ./$(SCREEN_BIN) $(DATA)
+	./$(OPL_BIN)
 	@# Every function must say where it came from. CLAUDE.md has said so all
 	@# along and it decayed anyway - 45 functions said nothing - so it is a
 	@# test now rather than a preference.
@@ -78,12 +106,12 @@ sanitize:
 	$(SAN_CC) -O1 -g -std=c11 -Wall -Wextra -Wno-sign-conversion \
 	    -fsanitize=address,undefined -fno-omit-frame-pointer \
 	    -Isrc -o tests/screens_asan tests/screens.c src/game.c src/sdl_io.c \
-	    $(SDL_CFLAGS) $(SDL_LIBS)
+	    $(OPL_SRC) -lstdc++ $(SDL_CFLAGS) $(SDL_LIBS)
 	SDL_VIDEODRIVER=dummy ASAN_OPTIONS=detect_leaks=1 \
 	    ./tests/screens_asan $(DATA)
 
 clean:
-	rm -f src/*.o $(BIN) $(DEV_BIN) $(TEST_BIN) $(SCREEN_BIN) \
-	      tests/screens_asan tests/menu_input_asan
+	rm -f src/*.o vendor/ymfm/*.o $(BIN) $(DEV_BIN) $(TEST_BIN) \
+	      $(SCREEN_BIN) $(OPL_BIN) tests/screens_asan tests/menu_input_asan
 
 .PHONY: all clean test sanitize

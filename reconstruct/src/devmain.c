@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "opl.h"
 
 #include "game.h"
 
@@ -482,6 +483,150 @@ static int render_level(const char *data, const char *file, uint32_t which,
     return 0;
 }
 
+
+/* Replay a captured OPL register stream to a WAV.  THE PORT'S OWN - a
+ * developer tool, not anything the original does.
+ *
+ * `tools/probe_opl.py` writes the stream the ORIGINAL's driver emits, one
+ * write per line, stamped with the guest's PIT tick and the divisor in force:
+ *
+ *     # tick divisor reg val
+ *     0 14552 04 60  timer control
+ *
+ * A register write only means anything at a MOMENT, so the tick is what makes
+ * this a tune rather than the right notes at the wrong times: one tick is
+ * divisor/1193182 seconds, and the samples between two writes are rendered at
+ * the chip's own 49716 Hz.
+ *
+ * What this checks is the CHIP, not the port: the stream is the original's,
+ * so anything wrong in the result is ymfm's or this file's.  When the port
+ * has a transcribed sequencer, the same WAV rendered from ITS stream is what
+ * settles whether the transcription is right - and the streams themselves
+ * compare exactly, with no listening involved.
+ */
+static void wav_u32(FILE *f, uint32_t v)
+{
+    fputc((int)(v & 0xFF), f);        fputc((int)((v >> 8) & 0xFF), f);
+    fputc((int)((v >> 16) & 0xFF), f); fputc((int)((v >> 24) & 0xFF), f);
+}
+
+static void wav_u16(FILE *f, uint16_t v)
+{
+    fputc((int)(v & 0xFF), f);        fputc((int)((v >> 8) & 0xFF), f);
+}
+
+static int opl_replay(const char *in_path, const char *wav_path)
+{
+    FILE *in = fopen(in_path, "r");
+    if (!in) { fprintf(stderr, "cannot read %s\n", in_path); return 2; }
+
+    int16_t *pcm = NULL;
+    uint32_t cap = 0, used = 0;
+    uint32_t writes = 0, skipped = 0;
+    double   now = 0.0;          /* seconds of audio already rendered */
+    double   prev_t = -1.0;      /* the previous line's tick, in seconds */
+    char     line[256];
+
+    opl_reset();
+    while (fgets(line, sizeof line, in)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        unsigned long tick, div;
+        unsigned reg, val;
+        if (sscanf(line, "%lu %lu %x %x", &tick, &div, &reg, &val) != 4) {
+            /* A line this cannot read is NOT a line to skip quietly. The
+             * first version did, and silently replayed 41 lines of a
+             * 10,147-line capture written in an older format - which came
+             * out as "the chip made no sound" and read like a fault in the
+             * chip. Count them, and refuse the file below. */
+            skipped++;
+            continue;
+        }
+        if (div == 0) div = 0x10000;
+        double t = (double)tick * (double)div / 1193182.0;
+        if (prev_t < 0.0) prev_t = t;
+
+        /* render the gap since the previous write, then apply this one */
+        if (t > now) {
+            uint32_t need = (uint32_t)((t - now) * OPL_SAMPLE_RATE);
+            if (used + need > cap) {
+                cap = (used + need) * 2 + OPL_SAMPLE_RATE;
+                pcm = realloc(pcm, cap * sizeof *pcm);
+                if (!pcm) { fclose(in); return 2; }
+            }
+            opl_render(pcm + used, need);
+            used += need;
+            now = t;
+        }
+        opl_write((uint8_t)reg, (uint8_t)val);
+        writes++;
+    }
+    fclose(in);
+
+    /* a little tail so the last note's release is audible */
+    uint32_t tail = OPL_SAMPLE_RATE / 2;
+    if (used + tail > cap) {
+        cap = used + tail;
+        pcm = realloc(pcm, cap * sizeof *pcm);
+        if (!pcm) return 2;
+    }
+    opl_render(pcm + used, tail);
+    used += tail;
+
+    if (!writes) {
+        fprintf(stderr, "%s held no register writes - that is a fact about "
+                        "the capture, not about the game\n", in_path);
+        free(pcm);
+        return 1;
+    }
+    if (skipped) {
+        fprintf(stderr, "%s: %u lines did not parse and %u did. A capture "
+                        "this tool only partly understands is not a capture "
+                        "to render - regenerate it with tools/probe_opl.py\n",
+                in_path, skipped, writes);
+        free(pcm);
+        return 2;
+    }
+
+    uint32_t nonzero = 0;
+    int32_t  peak = 0;
+    for (uint32_t i = 0; i < used; i++) {
+        if (pcm[i]) nonzero++;
+        int32_t a = pcm[i] < 0 ? -pcm[i] : pcm[i];
+        if (a > peak) peak = a;
+    }
+
+    FILE *w = fopen(wav_path, "wb");
+    if (!w) { fprintf(stderr, "cannot write %s\n", wav_path); free(pcm); return 2; }
+    uint32_t bytes = used * 2;
+    fwrite("RIFF", 1, 4, w); wav_u32(w, 36 + bytes); fwrite("WAVE", 1, 4, w);
+    fwrite("fmt ", 1, 4, w); wav_u32(w, 16);
+    wav_u16(w, 1); wav_u16(w, 1);
+    wav_u32(w, OPL_SAMPLE_RATE);
+    wav_u32(w, OPL_SAMPLE_RATE * 2);
+    wav_u16(w, 2); wav_u16(w, 16);
+    fwrite("data", 1, 4, w); wav_u32(w, bytes);
+    fwrite(pcm, 2, used, w);
+    fclose(w);
+    free(pcm);
+
+    printf("  register writes replayed : %u\n", writes);
+    printf("  samples rendered         : %u  (%.2f s at %u Hz)\n",
+           used, (double)used / OPL_SAMPLE_RATE, OPL_SAMPLE_RATE);
+    printf("  non-silent samples       : %u  (%.1f%%)\n",
+           nonzero, 100.0 * nonzero / (used ? used : 1));
+    printf("  peak amplitude           : %d of 32767\n", peak);
+    printf("  wrote %s\n", wav_path);
+    /* Silence is the failure this can actually have: every write applied and
+     * nothing came out. Say so rather than reporting a happy sample count. */
+    if (!peak) {
+        fprintf(stderr, "EVERY SAMPLE IS ZERO - the chip was written to %u "
+                        "times and made no sound\n", writes);
+        return 1;
+    }
+    return 0;
+}
+
+
 int main(int argc, char **argv)
 {
     /* The level the GAME calls "Level 1" is not the first level in the first
@@ -513,6 +658,7 @@ int main(int argc, char **argv)
      * lets the port match that, for a comparison that is terrain against
      * terrain and nothing else. */
     int objects = 1;
+    const char *opl_in = NULL, *wav_out = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
@@ -630,7 +776,18 @@ int main(int argc, char **argv)
             else if (!strcmp(m, "hw")) g_terrain_mode = TERRAIN_HW;
             else { usage(); return 2; }
         }
+        else if (!strcmp(argv[i], "--opl-replay") && i + 1 < argc)
+            opl_in = argv[++i];
+        else if (!strcmp(argv[i], "--wav") && i + 1 < argc)
+            wav_out = argv[++i];
         else { usage(); return 2; }
+    }
+
+    /* --opl-replay is a whole job on its own: it needs no data directory and
+     * renders no screen, so it answers here and returns. */
+    if (opl_in) {
+        if (!wav_out) { usage(); return 2; }
+        return opl_replay(opl_in, wav_out);
     }
 
     const char *err = "unknown error";

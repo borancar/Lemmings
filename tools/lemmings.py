@@ -96,6 +96,7 @@ class LemmingsVga(VgaDos):
         kw.setdefault("hsync_hz", 31469.0)
         super().__init__(*a, **kw)
         self._seed_config()
+        self._opl_init()
 
     # The game's config file starts every run from the SHIPPED copy.
     #
@@ -124,6 +125,84 @@ class LemmingsVga(VgaDos):
                 self.overlay["RUSSELL.DAT"] = bytearray(f.read())
         except OSError:
             pass          # no pristine copy: leave the host file to be read
+
+    # ---------------------------------------------------------- the AdLib
+    #
+    # An OPL2 (YM3812) is TWO ports and 244 write-only registers: write the
+    # register number to 0x388, the value to 0x389.  Reading 0x388 gives the
+    # status byte, and that read is the whole reason this exists.
+    #
+    # `adlib.dat`'s detect at driver +0x00A3 is the AdLib manual's own:
+    #
+    #     04=0x60   mask both timers
+    #     04=0x80   reset the IRQ flags
+    #     read      -> must mask to 0x00
+    #     02=0xFF   timer 1 preset
+    #     04=0x21   start timer 1 (bit 0), timer 2 masked (bit 5)
+    #     loop 0x12C
+    #     read      -> must mask to 0xC0
+    #
+    # The shared emulator answers 0x00 to both reads, so the second test fails
+    # and image 0x0059F concludes NO CARD - which is why every run of this
+    # game has been silent, and why nothing about the sound path has ever
+    # executed.  This makes it answer.
+    #
+    # Timer 1 expires IMMEDIATELY here rather than after its real 80 us.  The
+    # driver's own delay is 300 `loop` iterations, about a millisecond on a
+    # 4.77 MHz 8088, so it has always elapsed by the time the status is read -
+    # modelling the duration would change nothing and hide the assumption.
+    #
+    # Nothing here makes a sound.  It records the register stream, which is
+    # the reference the port's transcribed driver has to reproduce - the
+    # sound equivalent of prove.sh's composed buffer.
+    OPL_ADDR, OPL_DATA = 0x388, 0x389
+
+    def _opl_init(self):
+        self.opl_regs = bytearray(256)
+        self.opl_index = 0
+        self.opl_status = 0x00
+        self.opl_log = []            # (n, reg, val) in the order written
+        self.opl_detected = False
+
+    def _opl_write_reg(self, reg, val):
+        # Stamped with the guest's own PIT tick, not with a sequence number.
+        #
+        # A register write only means something at a MOMENT: the same stream
+        # replayed with the writes evenly spaced is not the tune, it is the
+        # notes in the right order at the wrong times. The game drives the
+        # driver from IRQ 0 and programs the divisor itself, so `timer_ticks`
+        # counts the driver's own calls and `pit0_div` says what one is worth
+        # in seconds - PIT_HZ / div, which probe_pace.py reports as 82.7 Hz
+        # during start-up and 39.3 Hz inside a level.
+        #
+        # Wall clock would be the emulator's throughput and not the game's,
+        # which CLAUDE.md already records as the wrong instrument for pace.
+        self.opl_regs[reg] = val
+        self.opl_log.append((self.timer_ticks, self.pit0_div or 0x10000,
+                             reg, val))
+        if reg == 0x04:                       # timer control
+            if val & 0x80:                    # IRQ RESET clears both flags
+                self.opl_status = 0x00
+            elif val & 0x01 and not val & 0x40:
+                # timer 1 started and not masked: bit 7 (IRQ) + bit 6 (T1)
+                self.opl_status = 0xC0
+                self.opl_detected = True
+
+    def _on_out(self, uc, port, size, value, user):
+        if port == self.OPL_ADDR:
+            self.opl_index = value & 0xFF
+            return
+        if port == self.OPL_DATA:
+            self._opl_write_reg(self.opl_index, value & 0xFF)
+            return
+        return super()._on_out(uc, port, size, value, user)
+
+    def _on_in(self, uc, port, size, user):
+        if port == self.OPL_ADDR:
+            return self.opl_status
+        if port == self.OPL_DATA:
+            return 0x00
+        return super()._on_in(uc, port, size, user)
 
 
 REC_MAGIC = b"LEMREC01"

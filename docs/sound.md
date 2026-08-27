@@ -88,3 +88,157 @@ blob or synthesising. The honest options are a synthesised approximation -
 which is the port's own, not the game's, and must say so - or reading the
 tone tables out of `tandysnd.dat`, whose square waves are what a PC speaker
 actually produced and need no card emulated.
+
+## The driver is an OPL2 sequencer, and this is settled from its own bytes
+
+Decompressed (`tools/dat.py`), `adlib.dat` is 22,125 bytes and names itself:
+
+    +0x0660  " Ad-Lib Music/FX Driver - (c) 1991 Sound Images   Tel. 061 773 4541"
+    +0x00F1  "AdLib Music by Sound Images (c) 1991"
+
+so it is bought-in middleware, not Psygnosis' own.
+
+**The register write is at +0x0559** and is the whole hardware interface:
+
+    push dx / mov dx,[0x8a3] / out dx,al   <- AL is the REGISTER
+    in al,dx  x12                          <- the address-write settle
+    mov al,ah / inc dx / out dx,al         <- AH is the VALUE
+    in al,dx  x8                           <- the data-write settle
+
+The base port is a variable at +0x08A3, loaded with 0x388 at +0x0045 and
++0x00A6. `inc dx` reaches 0x389. Nothing writes 0x38A, so this is an **OPL2
+(YM3812), nine channels** and not an OPL3.
+
+The twenty dummy reads are not a mistake. The YM3812 needs about 3.3 us after
+an address write and 23 us after a data write, and an ISA read takes roughly a
+microsecond, so reading the port back is how a 1991 driver waits. A port has
+no bus to wait on and should drop them - they carry no state.
+
+**The reset table at +0x006D** is 27 (reg,val) words and confirms the chip:
+
+    80=0F 8B=0F B0=00   81=0F 8C=0F B1=00   82=0F 8D=0F B2=00
+    83=0F 90=0F B3=00   84=0F 91=0F B4=00   85=0F 92=0F B5=00
+    88=0F 89=0F 8A=0F   93=0F 94=0F 95=0F   B6=00 B7=00 B8=00
+
+Eighteen operators' Sustain/Release set to the fastest release, nine channels'
+Key-On cleared. That is exactly an OPL2's complement.
+
+**The detect at +0x00A3 is the AdLib manual's own**, instruction for
+instruction: reset both timers (reg 04 = 0x60), reset the IRQ flag (04 = 0x80),
+read the status port; then preset timer 1 (02 = 0xFF), start it (04 = 0x21),
+spin `loop` 0x12C times, read the status again; reset twice more. The card is
+present iff the first read masks to 0x00 and the second to 0xC0. It returns
+AL=1 or AL=0, which is what image 0x0059F tests.
+
+## The dispatcher, read rather than summarised
+
+    AH = 0  -> +0x115   shut down
+    AH = 1  -> +0x0A3   detect; ANSWERS in AL
+    AH = 2  -> +0x03A   push ds,ax,di,si,cx,dx; call +0x3AA; then silence all
+                        nine channels and clear nine 0x14-byte structures at
+                        +0x05AC.  The working registers say sequencer; the
+                        unconditional silence afterwards says reset.  NOT YET
+                        SETTLED - read +0x3AA before naming it.
+    AH = 3  -> +0x022   mov cs:[0xED], al
+    AH = 4  -> +0x02A   mov cs:[0xF0], al
+    AH = 5  -> +0x032   mov cs:[0xEE], al     <- a THIRD slot; this file
+                                                 previously gave the address
+                                                 without saying what it does
+    else    -> iret
+
+So there are **three** request bytes, 0xED, 0xEE and 0xF0, not two.
+
+## The music is IN the driver, and it is named
+
+The built-in test program's menu is at +0x06AA and lists what the blob holds:
+
+    ~ Lemmings ~
+    A Awesome   B BeastI   C BeastII  D CanCan    E Doggie
+    F Lemming1  G Lemming2 H Lemming3 I Menace    J Mountain
+    K Ten Lemmings         L..U Tim1..Tim10
+    "Shifted A-Q for Sound Effects"
+    "No AdLib Card Connected"
+
+Twenty-one tunes and seventeen effects, as sequenced data from about +0x0C5F
+to +0x55EA. **The port does not have to synthesise the music - it has it.**
+What it lacks is the thing that turns that data into register writes, and the
+chip those writes go to.
+
+## Nothing in the driver hooks a timer
+
+There is no `out 0x40`, no `out 0x43`, no INT 21h at all, and no write into
+the interrupt vector table anywhere in the code region (+0x0000..+0x0660).
+The driver therefore cannot advance a tune on its own: **something must call
+it periodically**, and finding what is the next question. The game already
+programs the PIT (`ds:0x1FC9`, see `tools/probe_pace.py`), so its own ISR is
+the first place to look.
+
+This matters more than it sounds: if the tick is the game's, the port already
+paces it correctly - 17 Hz in a level, 70 Hz in the menu - and no timer needs
+emulating at all.
+
+## INT 60h and INT 61h are ALTERNATIVES, not two faces of one driver
+
+An earlier paragraph above says INT 60h is a second interface of the same
+driver. The gates say otherwise, and they are complementary. Image 0x00262:
+
+    cmp byte [0x2010], 0xff / je  skip     <- INT 60h runs only when NOT 0xff
+    test byte [0x25a7], 1   / je  skip
+    mov ax, 0x0100 / int 0x60
+
+against image 0x02F8E, which skips the INT 61h path when 0x2010 is *not* 0xFF.
+0x2010 is set to 0xFF when a loaded driver answered its detect. So:
+
+    0x2010 == 0xFF   a driver (AdLib or Tandy) answered  -> INT 61h
+    0x2010 != 0xFF   none did                            -> INT 60h
+
+which makes INT 60h the game's own fallback - the internal speaker is the
+obvious reading and is not yet established. Thirty-eight call sites in all,
+ten on INT 60h and twenty-eight on INT 61h, and every one is transcribable.
+
+## The card had to ANSWER before any of this could be read
+
+Every run of this game here has been silent, and not because the sound was
+unported: the shared emulator returned 0x00 from port 0x388, so the detect
+above could never see its 0xC0, image 0x0059F concluded "no card", and the
+game took its INT 60h fallback. **No part of the AdLib path had ever
+executed.** `LemmingsVga` now answers the detect and logs every register
+write, which is what turned an unreadable question into a capture:
+
+    10,109 register writes over 10,478 PIT ticks
+    74 distinct registers, all nine channels, rhythm mode used
+    divisor 12291 = 97.08 Hz for 10,103 of them
+
+Timer 1 is modelled as expiring immediately rather than after its real 80 us.
+The driver's own delay is 300 `loop` iterations - about a millisecond on a
+4.77 MHz 8088 - so it has always elapsed by the time the status is read.
+
+**Each write is stamped with the guest's PIT tick, not a sequence number.** A
+register write only means something at a moment: the same stream replayed
+evenly spaced is the right notes at the wrong times. One tick is
+`divisor / 1193182` seconds, and 97.08 Hz is the rate the game itself
+programmed. Wall clock would measure the emulator's throughput, which
+CLAUDE.md already records as the wrong instrument for pace.
+
+## What is checked, and what is not
+
+The chip is `reconstruct/src/opl.h` over **ymfm** (BSD-3-Clause, vendored -
+see `reconstruct/vendor/README.md`). An OPL2 is hardware, so there is no
+routine in the image to transcribe and nothing for the port to differ from;
+`tests/opl.c` checks it against the DATASHEET instead - that f-number 408 in
+block 4 sounds at 309.5 Hz, that one more block doubles it, that key-off
+releases, that total level attenuates. Those are facts about a YM3812, not
+about our reading of the game.
+
+The claim that IS the original's is the register stream, and it is exact:
+`tools/probe_opl.py` captures what the original emits, and a transcribed
+sequencer has to reproduce it write for write. That comparison needs no
+listening and has no tolerance in it - it is to sound what `prove.sh`'s
+composed buffer is to the screen.
+
+    LEM_HOOK=tools/probe_opl.py LEM_OPL_OUT=out/opl_play.txt \
+        uv run python tools/play.py --auto --start -- --run-seconds 240
+    ./reconstruct/lemdev --opl-replay out/opl_play.txt --wav out/opl_play.wav
+
+So the sequencer at +0x3AA is the next thing to read, and the three request
+slots (0xED, 0xEE, 0xF0) are its inputs.

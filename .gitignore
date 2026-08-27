@@ -8,9 +8,14 @@ build/
 !docs/reference/*.png
 !reconstruct/docs/*.png
 reconstruct/lemmings
+reconstruct/lemdev
 reconstruct/src/*.o
+# Vendored sources are committed; their objects are not.
+reconstruct/vendor/ymfm/*.o
 *.bmp
 reconstruct/tests/menu_input
+reconstruct/tests/screens
+reconstruct/tests/opl
 
 # Local-only scratch the tooling writes into the repo. `.local.` is the
 # convention for it; the ralph-loop plugin's iteration counter is one, and it
