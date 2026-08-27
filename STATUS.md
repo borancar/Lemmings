@@ -1637,11 +1637,24 @@ same thing.** `prove.sh` gets this right and says so - it compares the
 original's composed buffer against the port's composed buffer. The new check
 did not, and nothing about its output looked wrong.
 
-And the three transcribed rules are still unverified, now measurably: with
-them and without them the score is the same 243,936 of 243,936, because
-"Just dig!" has no object pixel over an attribute of 1..7 - the only place the
-old rule and the new one can disagree. They are kept because they are what
-image `0x0953E` does, not because anything here can tell.
+And the three transcribed rules are **unverifiable, measured across the whole
+game**. The old rule and the new one differ only where an object pixel lands
+on an attribute of 1..7 - non-zero with bit 3 clear - and a sweep of ALL 120
+PLATES finds that zero times. Level 1 alone has 2,400 no-overwrite object
+pixels and not one discriminates.
+
+So the rule that was replaced was never wrong on anything that ships, and no
+check built from these levels could ever have told the two apart. That is a
+better answer than "unverified": it says where the test would have to come
+from, and that it cannot come from here.
+
+Two things about the sweep are worth keeping. It first reported zero for every
+plate because it was driven with `--file`/`--level`, and **that path does not
+call `render_objects` at all** - `--baked` is silently ignored on it, and only
+the `--rating`/`--number` path reaches the routine. A sweep of eighty levels
+returning nothing looked exactly like an answer. What caught it was counting
+the pixels the routine SAW as well as the ones that disagreed: 0 of 0 is not
+0 of 2,400.
 
 Getting there needed a hook rather than the control socket: `break i+0x7eb2`
 halts the guest while the menus are still up and every F1 the driver sends is
