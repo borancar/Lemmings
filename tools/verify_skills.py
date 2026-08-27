@@ -72,6 +72,37 @@ def screens(ref, shots):
     return None
 
 
+def park_script(ref):
+    """Aim the port's pointer at the ORIGINAL's own.
+
+    A run with no input script leaves each side's cross-hair wherever it
+    happened to be, and two cross-hairs in different places is 56 differing
+    pixels on every frame - compare_screen.py excuses "exactly 28", which is
+    ONE cursor, so the score reads as the port being wrong when the play area
+    is already exact. It hid a matched level here for a whole pass.
+
+    The manifest reports the EMULATOR's pointer, and for a run recorded
+    without an input script that is ten pixels short of the guest's own -
+    the same ten CLAUDE.md records under the 5,100-frame run, where the
+    emulator sat at 160 and the game at 150. This is only ever called for a
+    reference that had no script, so the ten always applies; a reference
+    driven by a script needs none, because the port reads the same file.
+
+    Measured rather than assumed: with the port's pointer at 160 its
+    cross-hair lands on exactly the columns the original's does at a reported
+    150 - 145, 147, 149, 151-152, 154, to the pixel.
+    """
+    man = json.load(open(os.path.join(ROOT, "out", ref, "manifest.json")))
+    row = next((r for r in man if r.get("mx") is not None), None)
+    if row is None:
+        return None
+    path = os.path.join(ROOT, "out", "vs_park.txt")
+    with open(path, "w") as f:
+        f.write("# aimed at the original's own pointer, from its manifest\n")
+        f.write(f"0 move {row['mx'] + 10 - 8} {row['my'] - 8}\n")
+    return path
+
+
 def compare(ref, script, number, frames):
     state = os.path.join(ROOT, "out", "vs_state.jsonl")
     if os.path.exists(state):
@@ -84,6 +115,10 @@ def compare(ref, script, number, frames):
                LEM_SCREEN_DIR=shots)
     if script:
         env["LEM_INPUT_SCRIPT"] = os.path.join(ROOT, script)
+    else:
+        p = park_script(ref)
+        if p:
+            env["LEM_INPUT_SCRIPT"] = p
     subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
                     "--data", "lemming1.pc", "--rating", "fun",
                     "--number", str(number), "--show"],
