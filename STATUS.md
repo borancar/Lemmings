@@ -1179,6 +1179,28 @@ wrap being the last 39 of those differences.
 index is a constant 7 when the five lemmings have five different `x & 7`. A
 fit that is 98% right is still a fit.
 
+**And what is left of the nuke is the explosion's AFTER-EFFECT.** Counting
+terrain-coloured pixels in a box around one lemming's crater, frame by frame:
+
+```
+  frame  506 507 508 511 515 519 523 527 529
+  original 113 111 106 103  92  86  77  68  66
+  port      60  60  60  60  60  60  60  60  60
+```
+
+The port punches the crater once, at image 0x023B9's cloud anim 1, and never
+touches it again. The original goes on removing terrain for twenty-five frames
+after the blast, arriving at the same place - the two agree exactly by frame
+556. So the crater is not the wrong SIZE; something eats it gradually and the
+port has none of it.
+
+Image 0x02D4F sets `[si+0x22]` to fifteen when the cloud starts, which is the
+obvious candidate for a particle count, but nothing in the image reads that
+byte - a scan of every `mod r/m` form addressing `+0x22` off SI or DI finds
+four writes and no read. So the next step is not another reading: it is
+`tools/probe_writes.py` over the frames after a blast, which attributes each
+write into the EGA window to the instruction that made it.
+
 The nuke's worst frame went from 1,081 differing to 672. What remains at
 frames 520..540 is TERRAIN - 198 pixels where both sides have ink of
 different values, spread over the whole screen, converging to zero by frame
