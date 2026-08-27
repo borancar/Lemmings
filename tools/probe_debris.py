@@ -29,8 +29,14 @@ VGA_LO, VGA_HI = 0xA0000, 0xB0000
 # TIME, so the next question is who fills it, and it is the same question one
 # level down: point the same differencing at the TABLE instead of the screen.
 WATCH = os.environ.get("LEM_DEBRIS_WATCH", "screen")
+# DGROUP is a FIXED image offset - the same 0x9A90 every other tool here uses.
+# Taking the live DS instead put the window at 0xA2788 during a blit, because
+# DS is 0xA000 then, and the probe dutifully reported the screen writers as
+# table writers. A filter that names its range by a register whose value
+# depends on WHAT is running cannot be trusted to be watching what it says.
+DGROUP = 0x9A90
 TABLE_OFF, TABLE_LEN = 0x2788, 160 * 56
-QUIET = (400, 450)
+QUIET = (400, 450)   # nothing exploding
 BLAST = (505, 545)
 
 
@@ -62,8 +68,7 @@ def install(m):
             if not (VGA_LO <= address < VGA_HI):
                 return
         else:
-            from unicorn.x86_const import UC_X86_REG_DS
-            lo = uc.reg_read(UC_X86_REG_DS) * 16 + TABLE_OFF
+            lo = base + DGROUP + TABLE_OFF
             if not (lo <= address < lo + TABLE_LEN):
                 return
         n = st["n"]
