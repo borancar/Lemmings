@@ -1255,6 +1255,10 @@ void level_timer_step(void)
 /* Image 0x07BB8's set-up, as the original's own loader leaves it. The fields
  * are the graphics set's, so this is the port assembling what the original
  * assembles somewhere it has not been read - marked accordingly. */
+/* The array level_anim_init fills, kept so the trigger dispatch can reach an
+ * object's record - see level_object_trigger. */
+static level_anim *g_anim;
+
 void level_anim_init(level_anim *st, const level *lv, const ground *g)
 {
     memset(st, 0, sizeof(*st) * LEVEL_ANIM_MAX);
@@ -1273,6 +1277,8 @@ void level_anim_init(level_anim *st, const level *lv, const ground *g)
         a->base       = go->frames_base_loc;
         a->ink        = (uint16_t)(a->base + a->frame * a->frame_size);
     }
+    /* So the trigger dispatch can reach these - see level_object_trigger. */
+    g_anim = st;
 }
 
 /* ======================================================================
@@ -1707,19 +1713,33 @@ void level_trigger_put(int32_t col, int32_t row, uint8_t v)
 }
 
 /* Image 0x037CB, stamping each object in turn - later ones overwrite. */
-/* Bit 1 of the object's record at ds:0x17CB, image 0x02FC5 and image
- * 0x02FCE. The port keeps the levels' objects in a const table the drawing
- * shares, so the one bit that CHANGES lives here beside the trigger map it
- * belongs with. */
-static uint8_t g_obj_busy[16];
+/* THE TRAP'S OWN ANIMATION.
+ *
+ * Image 0x02FCE sets bit 1 of the object's record at ds:0x17CB and image
+ * 0x02FC5 refuses a second lemming while it is set - and bit 1 is the SAME
+ * bit level_anim_step already tests to decide whether an object advances a
+ * frame, image 0x07C1E's `flags & 2`. A trap is stored with that bit CLEAR
+ * and with bit 0 set, so it plays its frames once and stops itself.
+ *
+ * So the trigger does not need a flag of its own: it needs to reach the
+ * animation record. The port kept a separate busy array, which made the
+ * lemming die and left the trap standing still - 152 of 1,100 frames on
+ * "Lend a helping hand....", where the traps are most of what moves. */
+uint8_t level_object_busy(uint8_t i)
+{
+    if (!g_anim || i >= LEVEL_ANIM_MAX) return 0;
+    return (uint8_t)((g_anim[i].flags & 2) != 0);   /* image 0x02FC5 */
+}
 
-uint8_t level_object_busy(uint8_t i) { return g_obj_busy[i & 0x0F]; }
-void level_object_trigger(uint8_t i) { g_obj_busy[i & 0x0F] = 1; }
+void level_object_trigger(uint8_t i)
+{
+    if (!g_anim || i >= LEVEL_ANIM_MAX) return;
+    g_anim[i].flags |= 2;                           /* image 0x02FCE */
+}
 
 void level_triggers_build(const level *lv, const ground *g)
 {
     memset(g_trigger, 0, sizeof g_trigger);
-    memset(g_obj_busy, 0, sizeof g_obj_busy);
     for (uint16_t i = 0; i < lv->num_objects; i++) {
         const level_object *o = &lv->objects[i];
         if (o->id >= GROUND_OBJECTS) continue;
