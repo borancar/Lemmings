@@ -716,6 +716,45 @@ before believing it: rendering with the previous commit's binary and diffing
 the two raw outputs takes a minute and settles it. Byte-identical output means
 the reference moved, not the port.
 
+## A blit's colour need not be the sprite's
+
+The one-way arrows came out blue where the original draws them red, and the
+sprite was not the reason. Both one-way tiles in `ground2o.dat` decode to
+attribute 1 and nothing else - 200 pixels, one value, on every one of their
+eight frames - so no reading of the sprite could ever have produced the 5 the
+original's video memory holds.
+
+The colour is the **blitter's**. Image 0x096BA sets the graphics controller's
+Set/Reset to 4 and image 0x096C2 its Enable Set/Reset to 0x0E, so planes 1, 2
+and 3 come from that constant and only plane 0 comes from the ink. The sprite
+supplies a *shape*; the routine supplies the colour, and it clears plane 3
+while it is at it, so an arrow is not terrain afterwards.
+
+So when a shape is right and its colour is not, **the sprite is the wrong
+place to keep looking.** Two cheap things settle it:
+
+- **Ask whether the sprite could produce that value at all.** A one-colour
+  sprite and a two-colour result is a contradiction, and it is one line of
+  Python. That is now a unit test, because it is the premise the fix rests on
+  and it is a fact about the FILE - unlike an assertion about
+  `object_pixel_value`, which would only repeat the reading the code was
+  written from.
+- **Search the image for every Set/Reset load rather than following flags.**
+  There are eighteen in the whole program. Three rounds went into chasing
+  `bp` bit 14 to image 0x0969C when the blitter's own entry at image 0x088EA
+  sends it to image 0x08D66 instead - a routine that forces planes 1..3 to
+  zero and can only ever write 0 or 1. An exhaustive search over a small set
+  beats a chain of inferences over a big one.
+
+**And do not read a static render's animation phase as a bug.** The port's
+arrows sat six pixels left of the original's, which looked like a placement
+error stacked on the colour one. The tiles are animated - eight frames that
+march sideways - so a `--raw` render at frame 0 against a capture at frame 600
+is simply a different phase. `--obj-frame` swept it to a match in seconds, and
+the frame-by-frame comparison, which advances the animation itself, was exact
+once the colour was right. A one-frame comparison is a fine instrument, but
+every clock in the picture has to be set to the same time.
+
 ## Conventions
 
 - **SDL3 for the window, input and sound.** Never X11, Win32, Cocoa or SDL2;
@@ -974,6 +1013,7 @@ sweeps are the only thing that would catch a regression there. So:
 | **`tools/verify_hit.py`** | **the under-pointer test against the original's own answer**, frame by frame. The guest clears ds:0x1A at image 0x03DAF and sets it at image 0x03DE8 when its scan finds a lemming, so that byte settles it. Exists because the unit test for this passed while the code was sixteen pixels wrong - both were written from the same reading, and a test that shares the code's mistake agrees with it |
 | **`tools/verify_pace.py`** | **how long the port's loops take**, against the rates the original sets - the level at 17 a second (image 0x0418) and the menu at 70 (image 0x01550 waits a retrace). The ONLY check here that measures duration: every other one compares frame N against frame N and cannot see a port running at four times speed, which is exactly how the level shipped at sixty. Times the port's own loops on the host, never the guest's - the emulator's throughput answers between 3 and 8 a second and that is the instrument, not the game |
 | **`tools/compare_screen.py`** | **the game's own 320x200 screen** against the original's, frame by frame - the window path, not the harness. A different claim from `compare_run.py`, which scores a canvas and a panel `lemdev` composed separately: every frame of that matched while `./lemmings` showed an empty cave. Play area and panel scored SEPARATELY, and the cursor's 28 pixels named rather than averaged away |
+| **`tools/probe_attrpal.py`** | **the EGA attribute registers, per level** - the step between the attribute a routine writes and the DAC entry a capture holds. `compare_screen.py`'s map is one measurement taken on one level, and a per-level palette would make it right there and wrong everywhere else. It reports how many frames it sampled and says outright when it read nothing, because a run that never reached a level would otherwise report the menu's |
 | **`tools/probe_dac.py`** | **is the palette changed part-way down the screen?** Samples the emulator's palette every 512 instructions between the game's own end-of-frame points at image 0x018F. It is a sampler and not a port hook on purpose: wrapping `m._on_out` records nothing, because Unicorn holds the bound method from construction - and "no port writes" reads as a finding |
 | **`tools/compare_frame.py`** | one level frame, the original beside the port. Mode 0x0D is two things stacked - the play area at rows 0..159 and the panel at 176..199 - and they are scored SEPARATELY, because an average hides which one is missing. Fits the scroll if you do not give one, and says which it used |
 | **`tools/probe_writes.py`** | who writes to video memory, and from where - every write into the EGA window attributed to the instruction that made it, `--rows` filtering by destination row and `--stride` telling it the mode's width. Use it when a screen is drawn by something OTHER than the shared blitter: the level's panel is mode 0x0D and touches 0x8822 not once, so probe_blits.py reported nothing and this found it in one run |

@@ -1798,38 +1798,73 @@ twelve one-way walls - was recorded and added to the suite. Its
 `ds:0x1F6B` index is **77**; the file's own header at the recording confirms
 it, `0032004b00410005` on both sides.
 
-Its **panel is 1,100 of 1,100 exact**. Its play area is **0**, and the
-difference is exactly one thing:
+Its panel was 1,100 of 1,100 exact from the first run. Its play area was
+**0**, and the whole difference was one thing:
 
     1,409 pixels, every one of them (original DAC 5, port attribute 1),
     and only where the one-way arrows are. The terrain around them agrees
     to the pixel.
 
-DAC 1 is blue and DAC 5 is red, so **the original's arrows are red and the
-port's are blue**. It is the same objects a player photographed for the
-clipping, one layer further in.
+DAC 1 is blue and DAC 5 is red, so the original's arrows were red and the
+port's blue. It is the same objects a player photographed for the clipping,
+one layer further in.
 
-What is ruled out, each measured rather than argued:
+**It is fixed, and the level is now 1,100 of 1,100 exact in both halves.**
+
+The answer is that **an only-on-terrain object is not drawn in its sprite's
+colour at all.** Image 0x096BA sets the graphics controller's Set/Reset to 4
+and image 0x096C2 its Enable Set/Reset to 0x0E, so planes 1, 2 and 3 are
+written from that constant - 0, 1, 0 - and only plane 0 comes from the ink.
+An arrow pixel lands as attribute **5** whatever the sprite holds, and its
+plane 3 is CLEARED, so an arrow is not terrain afterwards. `game.c`'s
+`object_pixel_value` is that rule, and both drawing paths go through it.
+
+Four things were ruled out first, each measured rather than argued, and all
+four are worth keeping because each was a plausible answer that was wrong:
 
 - **the sprite.** At the port's ink base the arrow decodes uniformly to
-  attribute 1, 200 pixels, on every one of its eight frames. Colour 1 is what
-  the port draws, so the port reads it correctly.
+  attribute 1, 200 pixels, on every one of its eight frames - and so does the
+  other one-way tile. `reconstruct/tests/screens.c` now asserts that, because
+  it is the premise the fix rests on: a sprite of one colour cannot produce
+  two, so the second colour has to be the blitter's.
 - **the offsets.** Image 0x07BEF sets `di = [si+8]` and image 0x07BF2 sets
   `si = [si+0x17]`, so SI is the ink at 24600 and DI the mask at 25112 - the
   port's `frames_base_loc` and `mask_offset` exactly.
 - **the plane arrangement.** Four planes at 128 apart with the mask at +512 is
   the only reading that decodes to a coherent sprite; mask-first gives 8 and
   five planes give noise. No base within +-1280 gives 5.
-- **the terrain and the comparison's attribute map.** Terrain attributes 8..15
-  map to DAC 16..23 here exactly as `compare_screen.py` assumes, and every
-  terrain pixel agrees.
+- **the attribute-to-DAC path**, which was the leading hypothesis and had a
+  whole paragraph here proposing `ground2o.dat`'s palette at offset 960 as the
+  next thing to read. `tools/probe_attrpal.py` settled it in one run: the
+  attribute registers are the identity map `00..07 10..17` on this level in
+  **all 1,261 frames sampled**, so attribute 1 is DAC 1 and the port's palette
+  is right. The port's sixteen entries match the original's DAC exactly -
+  `palette[0..7]` against DAC 0..7 and `palette[8..15]` against DAC 16..23.
 
-So the shape is right, the attribute the port uses is what the sprite says,
-and the original still lands on a different DAC entry. What is left is the
-attribute-to-DAC path for the LOW eight attributes on this graphics set -
-`compare_screen.py`'s map is one measurement, "attr_pal reads 00..07 then
-10..17", taken on one level, and `ground2o.dat` carries its own palette at
-offset 960. That is the next thing to read, and it is one file.
+Two further things about how this went are worth recording.
+
+**A residue of one relation is a rule, and this one said so twice.** Every
+differing pixel was the same pair - port 1, original 5 - and 5 differs from 1
+in plane 2 alone. That is the shape `CLAUDE.md` already describes as "a rule
+you have not found", and it was pointing straight at a blit that forces a
+plane on.
+
+**The `bp` flag inference was wrong, and reading the entry corrected it.**
+The arrows carry `bp = 0x400E`, and bit 14 was recorded here as reaching image
+0x0969C. It does not from the blitter's own entry: image 0x088EA jumps to
+image 0x08D66, which forces planes 1..3 to zero and can only produce attribute
+0 or 1. Chasing that path was three rounds of reading a routine that draws
+something else. What ended it was giving up on the flags and searching the
+whole image for every Set/Reset load - eighteen of them - and finding the one
+that writes 4.
+
+**And the 6-pixel offset that looked like a second bug was not one.** The port
+drew its arrows six pixels left of the original's, which read as a placement
+error on top of the colour error. The tiles are **animated** - eight frames
+that march the arrows sideways - so a static `--raw` render at frame 0 is
+simply a different phase from a capture at frame 600. Sweeping `--obj-frame`
+found the match at 5, and the frame-by-frame comparison, which advances the
+animation itself, is exact.
 
 ### Sound: the asking is transcribed, the timbre is not
 

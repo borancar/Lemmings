@@ -1153,6 +1153,56 @@ int main(int argc, char **argv)
     ck("menu_hotspots fills its array",
        spots[MENU_HOTSPOTS - 1].w == MENU_W, "last hotspot not written");
 
+    /* THE ONE-WAY TILES CARRY ONE COLOUR, AND IT IS NOT THE ONE ON SCREEN.
+     *
+     * game.c's object_pixel_value says an only-on-terrain object lands as
+     * attribute 4 | plane 0, because image 0x096BA sets Set/Reset to 4 and
+     * image 0x096C2 sets Enable Set/Reset to 0x0E. A unit test asserting
+     * that against object_pixel_value would only repeat the reading the code
+     * was written from, which this project has been caught doing before.
+     *
+     * So this asserts the FILE instead, which no reading of the blitter can
+     * change: both one-way tiles in ground2o.dat decode to attribute 1 and
+     * nothing else. The original's video memory holds 5 where it draws them.
+     * A sprite of one colour cannot produce two, so the colour is the
+     * blitter's - and that is true whether or not image 0x096BA is read
+     * correctly. If this test ever fails, the premise is gone and
+     * object_pixel_value has to be re-argued rather than adjusted. */
+    {
+        char p8[1024];
+        dat_file gr;
+        const char *e8 = "unknown error";
+        snprintf(p8, sizeof p8, "%s/vgagr2.dat", dir);
+        if (dat_load(p8, &gr, &e8) == 0 && gr.count > 1) {
+            const uint8_t *sec = gr.sections[1].data;
+            uint32_t len = gr.sections[1].size;
+            /* id3 at 24600 and id4 at 29080, from ground2o.dat's own object
+             * records: 32x32, four ink planes of 128 bytes then a mask. */
+            const uint16_t base[2] = { 24600, 29080 };
+            uint16_t lit = 0, other = 0;
+            for (uint8_t k = 0; k < 2; k++) {
+                if ((uint32_t)base[k] + 640 > len) { other = 0xFFFF; break; }
+                for (uint16_t r = 0; r < 32; r++)
+                    for (uint16_t c = 0; c < 32; c++) {
+                        uint16_t byte = (uint16_t)(r * 4 + (c >> 3));
+                        uint8_t bit = (uint8_t)(7 - (c & 7));
+                        if (((sec[base[k] + 512 + byte] >> bit) & 1) == 0)
+                            continue;
+                        uint8_t v = 0;
+                        for (uint8_t pl = 0; pl < 4; pl++)
+                            if ((sec[base[k] + pl * 128 + byte] >> bit) & 1)
+                                v = (uint8_t)(v | (1u << pl));
+                        if (v == 1) lit++; else other++;
+                    }
+            }
+            ck("the one-way tiles are attribute 1 and nothing else",
+               lit == 400 && other == 0,
+               "a one-way tile decoded to some other attribute, so the "
+               "screen's 5 might come from the sprite after all");
+            dat_free(&gr);
+        }
+    }
+
     printf(fails ? "\n  %d FAILED\n" : "\n  all passed\n", fails);
     return fails ? 1 : 0;
 }
