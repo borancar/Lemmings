@@ -1762,6 +1762,38 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### All five owed routines have an address now
+
+The provenance tool's list is unchanged at five, and that is right - none of
+them is transcribed. But the heading it prints, *"game logic the original has
+a routine for, not yet read"*, is no longer true of any of them. Every one has
+been located:
+
+    render_terrain          image 0x03752's loop, blitter at image 0x07C67;
+                            the UNPACKING is transcribed already
+    render_objects          image 0x03981, in the second composition path at
+                            image 0x0394F
+    screen_start            image 0x04DEF, 0x04BF5, 0x0531E, 0x05017
+    draw_preview            image 0x04639 -> 0x05017 -> 0x07E76, packer at
+                            image 0x07EB2
+    menu_briefing_screen    image 0x04566, composition at image 0x045EF
+
+`menu_briefing_screen` was the last, and its own comment had listed what was
+missing: *"the clear at image 0x04DEF, the fade at image 0x05329, image
+0x0394F, image 0x07EB2, the page registers, and the draw at image 0x0463C"*.
+Four of those six were read this session for other questions entirely - the
+clear as the red herring in the preview's write probe, `0x0394F` while
+chasing where the objects come from, `0x07EB2` as the preview's packer. Only
+the fade and the text drawer needed looking at, and `0x0463C` turned out to
+pick its last line from `ds:0x25A6` - the input device - so the briefing says
+mouse, joystick or keyboard.
+
+**The distinction the tool draws is still the right one.** Found is not read
+and read is not transcribed, and the count stays at five until the C carries
+the addresses. But "nobody has looked" and "here is the address, nobody has
+written it out" are different debts, and only the second can be worked on
+directly.
+
 ### screen_start's four set-up calls, and what sets the blitter's bounds
 
 `screen_start` said "image 0x04967 and 0x04A01 both open with 0x04DEF,

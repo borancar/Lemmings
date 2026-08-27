@@ -8381,12 +8381,27 @@ static const uint8_t BRIEF_PAL6[7 * 3] = {
  *              centres it, padding and all
  *     0x045D5  the rating's name, six bytes from the table at ds:0x4C01
  *
- * What is still unread is the COMPOSITION that follows at image 0x045EF: the
- * clear at image 0x04DEF, the fade at image 0x05329, image 0x0394F, image
- * 0x07EB2, the page registers, and the draw at image 0x0463C. The port's
- * order is measured, the same standing menu_build_rating had before its
- * caller turned up - and that one was found by scanning for a near call to a
- * piece it drew, which is worth trying here too.
+ * THE COMPOSITION at image 0x045EF is read now, all six of it:
+ *
+ *   image 0x04DEF  clear the page - `di = 0`, `cx = 0x6D60`, which is
+ *                  28,000 bytes: the whole 640 x 350 at eight pixels a byte
+ *   image 0x05329  the palette, sixteen entries from 0x107 through image
+ *                  0x05569, with 0x100 read first
+ *   image 0x0394F  THE SECOND COMPOSITION PATH - the one that draws the
+ *                  objects into the level bitmap at image 0x03981, which
+ *                  render_objects owes and which tools/prove.sh's break at
+ *                  image 0x0376A sits before
+ *   image 0x07EB2  the level preview, packed 4:1 straight into the visible
+ *                  page - see draw_preview for the whole chain
+ *   image 0x0463C  the text: a descriptor at ds:0x4B0A through image 0x04D4D,
+ *                  then one of three more at ds:0x4BA0, ds:0x4BC3 or
+ *                  ds:0x4BE5 chosen by ds:0x25A6 - the input device, so the
+ *                  last line names the mouse, the joystick or the keyboard.
+ *                  Image 0x04660 then polls ds:0x14 for the button.
+ *
+ * So the port's measured order is now the original's read order, and they
+ * agree. What is still owed is the transcription: this routine does the same
+ * things and its steps carry no addresses.
  */
 int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
                          menu_screen *m, const char **err)
