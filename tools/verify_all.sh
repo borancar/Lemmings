@@ -148,11 +148,19 @@ for case in "won 100 10 0" "timeup 30 10 1" "lost 0 10 1"; do
         LEM_RES_SAVED=$saved LEM_RES_NEEDED=$needed LEM_RES_LEVEL=1 \
         ${timed:+LEM_RES_TIMEUP=$timed} \
         uv run python tools/play.py --auto -- --run-seconds 90 \
-        >/dev/null 2>&1 || true
+        >"out/vr_$name.log" 2>&1 || true
     if [ -f "out/vr_$name/results.scrn" ]; then
         say "    $name: captured"
     else
+        # KEEP THE LOG. This reported NOTHING CAPTURED for all three cases
+        # once and the reason was gone with the output: both ran perfectly
+        # when tried by hand a minute later, so the failure was the runs being
+        # starved rather than anything about the port. A check that can only
+        # say "it did not work" sends the next reader looking in the wrong
+        # place - see the note in CLAUDE.md about truncated runs.
         say "    $name: NOTHING CAPTURED - that is a failure, not a pass"
+        say "      (why: the tail of out/vr_$name.log)"
+        tail -3 "out/vr_$name.log" 2>/dev/null | sed 's/^/      /'
         fail=1
     fi
 done

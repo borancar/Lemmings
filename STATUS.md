@@ -1179,6 +1179,15 @@ wrap being the last 39 of those differences.
 index is a constant 7 when the five lemmings have five different `x & 7`. A
 fit that is 98% right is still a fit.
 
+There is a plausible reading of the monotonic trend that would explain it
+away, and it is worth writing down so it can be tested rather than believed:
+index `i` scores better than `i - 1` at an offset of `-i`, which is exactly
+what would happen if all eight are the SAME picture at the same place and the
+higher ones simply keep more of it inside the 40-bit row. On that reading 7 is
+not the original's index at all - it is the one that survives this port's
+decision to drop columns 32..39. Which of the two it is decides whether the
+constant is a finding or an artefact, and neither has been shown.
+
 **And what is left of the nuke is the explosion's AFTER-EFFECT.** Counting
 terrain-coloured pixels in a box around one lemming's crater, frame by frame:
 
