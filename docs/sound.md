@@ -876,3 +876,45 @@ audio.
     prove.sh                100.00%
     verify_pace  the level  170 at 14/s: want 12.14s got 12.66s  ok
                  the menu   350 at 70/s: want  5.00s got  5.05s  ok
+
+## DOSBox's own register stream, and what it confirms
+
+`tools/dro.py` decodes the `.dro` DOSBox writes with its `caprawopl` handler -
+4,158 register writes over 71.1 seconds of the first level, OPL2, in
+milliseconds. That is the reference every audio comparison here wanted and
+could not have.
+
+**The timing is confirmed, four ways:**
+
+    the entrance effect      channel 8, at 0.00 s on both
+    THE MUSIC STARTS         2.84 s on both  <- frames 15 to 55 at 14 fps
+                                                is 40/14 = 2.857 s
+    the effect's sweep       DOSBox steps A8 every 14 ms; a port tick is
+                             1/70 s = 14.29 ms
+    the note grid            71, 142 and 214 ms on both
+    key-ons a second         12.77 DOSBox, 13.36 port
+
+**And the content is the same tune.** Where the music begins, both write:
+
+    01=20 BD=C0 60=C4 63=E3 80=05 83=04 E0=03 E3=01 C0=01 20=01 23=01 A0=CF
+
+the same patch and the same first note.
+
+### Why there is no write-for-write score against a .dro
+
+Two properties of the FORMAT, neither of them a fact about either program:
+
+- **It records CHANGES, not writes.** DOSBox's `OplCapture` keeps a value
+  cache, so a write of a value the register already holds is absent. The
+  port's log has hundreds of them - `start_music`'s nine key-offs, `08=00`,
+  `04=21`, the volume writes - and reconstructing the prior state of DOSBox's
+  cache is not possible from the file.
+- **It SORTS within a time slot** through its codemap, so the order inside a
+  millisecond is the file's and not the game's.
+
+An in-order comparison therefore fails at write #0, and a slot-by-slot one
+founders on the resolution: DOSBox records milliseconds where the port emits
+everything at its tick boundary. Scoring it properly needs the port to log at
+finer resolution and the comparison to match sets within a tolerance - which
+is a harness job, and the timing question it was built to answer is already
+answered.
