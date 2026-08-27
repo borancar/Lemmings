@@ -53,6 +53,18 @@ def install(m):
         if ad - base != FRAME_END:
             return
         st["n"] += 1
+        # DUMP THE TABLE. Nothing writes it during play, so any frame inside
+        # a level holds the whole thing - fifty-two rows of eighty signed
+        # pairs, image 0x06E83's (anim - 1) * 160.
+        if WATCH == "dump" and st["n"] == 100:
+            raw = bytes(uc.mem_read(base + DGROUP + TABLE_OFF, 160 * 52))
+            path = os.environ.get("LEM_DEBRIS_OUT", "out/particles.bin")
+            with open(path, "wb") as f:
+                f.write(raw)
+            print(f"  [probe_debris] wrote {len(raw)} bytes to {path}",
+                  flush=True)
+            st["said"] = True
+            raise SystemExit(0)
         # STOP AS SOON AS THE WINDOW IS PAST. record_level runs on to its
         # --seconds ceiling after the last frame it wants, and with a hook on
         # every guest write that is a very long time for nothing. A probe

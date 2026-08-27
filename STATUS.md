@@ -1285,9 +1285,22 @@ has and the port does not, over the whole play area:
 
 It rises as the ten blasts accumulate - peaking near 589, which for ten
 lemmings is about 59 of the eighty each, the rest clipped or overlapping -
-and then falls away over fifty frames. That decline is what a computed
-trajectory looks like: image `0x06EF2` drops any particle that has flown past
-`x = 0x150` or `y = 0xA0`, so fewer survive the clip each frame.
+and then falls away over fifty frames.
+
+**That decline is NOT a trajectory, and an earlier note here said it was.**
+The table was dumped from a running level - `LEM_DEBRIS_WATCH=dump` - and
+holds what the image holds: **row 0 has eighty pairs and all fifty-one rows
+after it begin with the `0x80` that ends them**. Nothing writes it during play
+either, in a quiet window or a blast one. So the eighty particles are drawn
+ONCE per explosion, on the single frame where the cloud's counter is 1, from a
+STATIC pattern - image `0x06E83`'s `(anim - 1) * 160` reaching an empty row on
+every frame after.
+
+What declines, then, is not how many are drawn but how many SURVIVE on screen:
+they are left where they land and erased as the game repaints those pixels.
+The inference from the shape of the curve was reasonable and wrong, and the
+dump is what settles it - the same lesson as the crater, one level along: the
+count tells you how much, never what.
 
 **The table at `ds:0x2788` is filled at RUN TIME.** In the image, row 0 holds
 eighty real offsets and every row after it begins with the `0x80` that ends
