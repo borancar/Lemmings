@@ -1233,6 +1233,22 @@ terrain-coloured pixels made it look like terrain not yet removed. The same
 trap this file already records one level up: a frame diff cannot tell you what
 a pixel IS.
 
+**And that is measured, not asserted.** Comparing each still-inked pixel
+inside the crater against the value it held BEFORE the blast:
+
+```
+  frame              505  508  512  520
+  still inked        182   86   77   48
+  same as before it   79    1    1    1
+```
+
+From 508 onward exactly one pixel of eighty-six is the terrain that was there.
+The rest is new ink at those coordinates - so the crater IS cut and something
+is drawn over it, rather than the crater being cut slowly. The obvious reading
+of "terrain-coloured pixels still present" was the wrong one twice over, and
+this is the comparison that separates them: not how MANY pixels, but whether
+they are the SAME pixels.
+
 Two mechanisms are ruled out and need not be checked again. The dirty-block
 repaint at image `0x080FD` drains EVERY marked run each frame - image
 `0x08199`'s `jcxz`/`jmp` loops back rather than budgeting - so the screen
