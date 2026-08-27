@@ -27,6 +27,13 @@ import os
 FRAME_END = 0x018F
 DGROUP = 0x9A90          # fixed image offset, never the live DS
 WORDS = (0x66F0, 0x66F2, 0x66F4, 0x66FA, 0x66FC)
+# THE VISIBILITY TABLE. Image 0x07086 refuses to draw a lemming at all unless
+# ds:0x0EA8[byte column] is 1, where the byte column is (x + hot_x) >> 3 in
+# PAGE pixels - image 0x07070 wraps a negative x by the page's 0x160. 44 bytes,
+# one per byte column of the 352-wide page. This is what makes the original
+# drop a sprite whose left edge lands in the last visible byte column while
+# drawing it one pixel earlier.
+VIS_OFF, VIS_LEN = 0x0EA8, 44
 OUT = os.environ.get("LEM_CLIP_OUT", "out/clip.txt")
 
 
@@ -36,6 +43,7 @@ def install(m):
     base = m.load_seg * 16
     st = {"n": 0}
     seen = {a: collections.Counter() for a in WORDS}
+    vis = collections.Counter()
 
     def on_frame(uc, ad, size, _):
         if ad - base != FRAME_END:
@@ -44,6 +52,7 @@ def install(m):
         for a in WORDS:
             raw = bytes(uc.mem_read(base + DGROUP + a, 2))
             seen[a][raw[0] | (raw[1] << 8)] += 1
+        vis[bytes(uc.mem_read(base + DGROUP + VIS_OFF, VIS_LEN))] += 1
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame)
 
@@ -56,6 +65,9 @@ def install(m):
             vals = ", ".join(f"{v} (0x{v:04x}) x{c}"
                              for v, c in seen[a].most_common())
             lines.append(f"  ds:0x{a:04x} = {vals or 'never sampled'}")
+        lines.append(f"  ds:0x{VIS_OFF:04x} took {len(vis)} distinct values:")
+        for raw, c in vis.most_common(6):
+            lines.append("    x%-5d %s" % (c, " ".join("%d" % b for b in raw)))
         text = "\n".join(lines)
         try:
             with open(OUT, "w") as f:

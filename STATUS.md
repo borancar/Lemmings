@@ -1339,6 +1339,68 @@ problem, and they were the same run. A harness that feeds the two sides
 different inputs reports the difference as the port's, and there is no way to
 tell that from the score - only from asking what the harness set.
 
+### A lemming is on screen if a TABLE says so, not if its pixels are
+
+level002/4's last residue was three pixels in the screen's final column, x 319
+at y 37, 38 and 44, on 28 frames of 1,100. It is fixed, and the level now
+scores **1,099 of 1,100** with only frame 0 - the fade-in - left. Getting
+there took two wrong guesses and one reading, and the shape of that is the
+point.
+
+**The rule.** Image `0x07070` takes the lemming's `x + hot_x`, wraps a
+negative one by the page's `0x160`, takes its BYTE column, and image
+`0x07086` refuses to draw the sprite at all unless `ds:0x0EA8[column]` holds
+1. Image `0x04113` clears that table and image `0x0412B` marks exactly 41
+bytes of it (`cx = 0x29`) starting two byte columns left of the scroll, so the
+window is `(scroll >> 3) - 2 .. + 38`.
+
+Because it is keyed on the BYTE column, a sprite is refused the moment its
+left edge crosses into the first unmarked byte - not when its pixels leave the
+screen. At frame 135 the walker's `x + hot_x` is 871, byte column 108, the
+last marked one, and the original draws it; at frame 136 it is 872, column
+109, and the original draws none of it. The port drew the visible sliver both
+times.
+
+**The two guesses, and why they were guesses.** Both were about the blitter's
+own right-edge trim at image `0x09997`, which is real - it abandons a blit
+starting at or past `ds:0x66F2` and trims one that crosses it a byte at a time
+(image `0x099AC`). Applying it with the limit assumed to be the visible 320
+took the level from 1,071 exact to **875**; refusing the last column outright
+took it to **1,015**. Then `ds:0x66F2` was READ from a running level -
+`tools/probe_clip.py`, 2,109 frames - and it is **352**, the whole page, so
+during a level there is no right-edge trim to apply at all and the limit was
+innocent from the start.
+
+Three things worth keeping from it:
+
+- **A byte trim cannot produce a one-column difference.** The residue was one
+  column, and both candidates were byte-wise. That mismatch was visible before
+  either was tried and was not looked at.
+- **Look at the picture.** The counts said "three pixels at the right edge",
+  which invites an edge-case explanation. Printing columns 308..319 for rows
+  33..49 on two consecutive frames showed the whole sprite present at 311 and
+  wholly absent at 312, which is a completely different fact and points
+  straight at a per-sprite decision rather than a per-pixel clip.
+- **Read the caller.** The clipping was not in the blitter at all. The drawer
+  refuses the sprite before the blitter is ever reached.
+
+### A harness setting reported as a reconstruction failure
+
+The nuke run's PANEL scored **0 of 557 frames** and had for as long as the
+case has existed. Nothing was wrong with the panel: `verify_skills.py` sets
+`LEM_SKILLS=20` for every case it runs, because the eight skill references are
+recorded with `record_level.py --skills 20` and both sides must get the same
+poke - but the nuke and the pause references are recorded WITHOUT it, so the
+port was drawing twenty of everything beside an original showing level 1's own
+counts. Giving those two cases the level's own skills takes the nuke's panel
+to **540 of 557**.
+
+The play area was exact on 535 the whole time, which is what made this easy to
+leave alone: one number looked finished and the other looked like a hard
+problem, and they were the same run. A harness that feeds the two sides
+different inputs reports the difference as the port's, and there is no way to
+tell that from the score - only from asking what the harness set.
+
 ### The blitter's right-edge trim is NOT what clips a lemming
 
 level002/4's last residue is three pixels in the screen's final column, x 319

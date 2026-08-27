@@ -5772,6 +5772,36 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
 
     if (a->alive == 0xFF) return;
 
+    /* IS THIS LEMMING ON SCREEN AT ALL - image 0x07070, and it is a table
+     * lookup rather than a comparison.
+     *
+     * The drawer takes `x + hot_x`, wraps a negative one by the page's 0x160,
+     * takes its BYTE column and refuses the whole sprite unless
+     * ds:0x0EA8[column] holds 1 (image 0x07086). Image 0x04113 clears that
+     * table and image 0x0412B marks exactly 41 bytes of it starting two byte
+     * columns left of the scroll, so the window is
+     * (scroll >> 3) - 2 .. (scroll >> 3) + 38.
+     *
+     * Because it is keyed on the BYTE column, a sprite is refused the moment
+     * its left edge crosses into the first unmarked byte - not when its
+     * pixels leave the screen. That is why level002/4 showed the original
+     * drawing a walker at screen x0 311 and none of it at 312: 312 is a byte
+     * boundary, and the column it lands in is one past the last marked one.
+     *
+     * Two rules were guessed at before this was read - the blitter's own
+     * right-edge trim, and refusing the last column outright - and both made
+     * that level WORSE, 1,071 frames exact down to 875 and 1,015. The
+     * blitter's limit is innocent: measured from a running level it is 352,
+     * the whole page. */
+    {
+        int32_t col = (int32_t)a->x + a->hot_x;   /* image 0x07070 */
+        if (col < 0) col += 0x160;                /* image 0x07077 */
+        col >>= 3;                                /* image 0x0707D */
+        int32_t first = (((int32_t)view_x + 16) >> 3) - 2;  /* image 0x04125 */
+        if (col < first || col >= first + 41)     /* image 0x0412B: 0x29 */
+            return;                               /* image 0x0708B */
+    }
+
     /* Before the sprite, because the sprite's own branches all return. */
     lem_draw_fuse(dst, dst_w, dst_h, a);
 
