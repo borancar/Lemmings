@@ -66,17 +66,28 @@ def install(m):
     m.uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
 
     def report():
-        print(f"\n  [probe_debris] reached frame {st['n']}")
+        # TO A FILE, and flushed. A SystemExit raised inside a Unicorn
+        # callback does not always reach the interpreter, and stdout
+        # redirected to a file is block-buffered, so a report printed and then
+        # killed is a report that never existed. The first run of this probe
+        # captured all 550 frames and left an empty log.
+        out = open(os.environ.get("LEM_DEBRIS_OUT", "out/debris.txt"), "w")
+        def say(t):
+            print(t)
+            out.write(t + "\n")
+        say(f"\n  [probe_debris] reached frame {st['n']}")
         if st["n"] < BLAST[1]:
-            print("    THE RUN DID NOT REACH THE BLAST WINDOW - not a result.")
+            say("    THE RUN DID NOT REACH THE BLAST WINDOW - not a result.")
+            out.close()
             return
         keys = set(quiet) | set(blast)
         rows = sorted(keys, key=lambda k: -(blast[k] - quiet[k]))
-        print(f"    {'image':>9}  {'quiet':>8}  {'blast':>8}   difference")
+        say(f"    {'image':>9}  {'quiet':>8}  {'blast':>8}   difference")
         for k in rows[:14]:
-            print(f"    {k:#09x}  {quiet[k]:8d}  {blast[k]:8d}   {blast[k]-quiet[k]:+d}")
+            say(f"    {k:#09x}  {quiet[k]:8d}  {blast[k]:8d}   {blast[k]-quiet[k]:+d}")
         only = [k for k in rows if quiet[k] == 0 and blast[k]]
-        print("    writes ONLY in the blast window:",
-              ", ".join(f"{k:#07x}" for k in only[:10]) or "none")
+        say("    writes ONLY in the blast window: "
+            + (", ".join(f"{k:#07x}" for k in only[:10]) or "none"))
+        out.close()
 
     print("  [probe_debris] watching EGA writes in two windows")
