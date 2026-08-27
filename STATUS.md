@@ -1406,9 +1406,23 @@ What it is not, each checked rather than argued:
 What the values say, and it is the lead worth following: DAC 22 is attribute
 14 (`1110`) and DAC 2 is attribute 2 (`0010`), so the original cleared planes
 2 and 3 at that pixel and **left plane 1 standing**, where the port writes a
-plain zero. And screen x 159 is the LAST PIXEL OF A BYTE. So the next thing to
-read is how image `0x060A8`'s clear drives the sequencer's map mask across the
-mask's three bytes - not the mask, which is now known good.
+plain zero. And screen x 159 is the LAST PIXEL OF A BYTE.
+
+The obvious next thing was how image `0x060A8`'s clear drives the write across
+the mask's three bytes, and that has now been read as well, at image
+`0x06106`: thirteen rows of three bytes, every byte latched with a read of
+`es:[di]`, the GC's BIT MASK (index 8) set to the mask byte, the byte stored,
+and `di` advanced by 0xCD so each row steps the level bitmap's 0xD0. The
+arithmetic in front of it matches the port line for line - including the
+`inc di` and `add cx, ax` image `0x060AD` does only when the animation counter
+is 2, and the hot spot added at image `0x060BA` and image `0x060C9`. The one
+asymmetry is expected: the original subtracts 0x10 from Y only, its level
+bitmap's X being the lemming's own where the port's canvas is sixteen left.
+
+So the mask is right, the pre-shifts are right, the position is right and the
+write loop is right, and the pixel still differs. It is written down at that
+depth so the next attempt starts below all of it rather than repeating any of
+it.
 
 ### Two cross-hairs in different places is not a residue, it is a harness
 
