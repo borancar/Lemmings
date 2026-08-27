@@ -122,8 +122,15 @@ def objects(sec):
 # repository was set up to chase - a missing death scene, no drowning, no trap
 # - are effects 4, 5 and 6 of image 0x02F0F's dispatch, and until they were
 # reported nothing here could say which effects had ever been compared.
-EFFECT_NAME = {0: "none", 1: "exit", 2: "?", 3: "?", 4: "?", 5: "water",
-               6: "fire", 7: "one-way right", 8: "one-way left", 9: "steel"}
+# The names are the port's own transcription of image 0x02F0F's dispatch, so
+# each has an address behind it rather than a guess. Effects 2, 3 and 0x0A are
+# a BLOCKER's three columns, written into the map at run time rather than from
+# an object record, which is why they never appear in this table; 9 is steel,
+# stamped by image 0x03839 from the LVL's own list and likewise not an object.
+EFFECT_NAME = {0: "none", 1: "exit (0x02F3B)", 2: "blocker left (0x02FA2)",
+               3: "blocker right (0x02FAC)", 4: "TRAP (0x02FB6)",
+               5: "water (0x02FF8)", 6: "fire (0x0304F)",
+               7: "one-way right", 8: "one-way left", 9: "steel (0x03839)"}
 
 
 def ground_effects(gset):
