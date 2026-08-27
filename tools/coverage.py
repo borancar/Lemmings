@@ -114,8 +114,35 @@ def objects(sec):
         yield o, e[6]
 
 
+# THE EFFECT an object has, which is not in the LVL at all - it is a field of
+# the GROUND file's object record, image 0x037E3's [si+0x14], and the level
+# only names an id. So it needs the graphics set read alongside.
+#
+# It earns its place the same way the terrain flags did. The three faults this
+# repository was set up to chase - a missing death scene, no drowning, no trap
+# - are effects 4, 5 and 6 of image 0x02F0F's dispatch, and until they were
+# reported nothing here could say which effects had ever been compared.
+EFFECT_NAME = {0: "none", 1: "exit", 2: "?", 3: "?", 4: "?", 5: "water",
+               6: "fire", 7: "one-way right", 8: "one-way left", 9: "steel"}
+
+
+def ground_effects(gset):
+    """trigger_effect for each of a graphics set's sixteen object ids."""
+    path = os.path.join(GAME, "ground%do.dat" % (gset & 0x0F))
+    try:
+        with open(path, "rb") as f:
+            b = f.read()
+    except OSError:
+        return None
+    # Sixteen object records of 28 bytes at 0, the effect at +0x14 - the same
+    # layout game.c's ground_load reads.
+    return [b[i * 28 + 0x14] if (i * 28 + 0x14) < len(b) else 0
+            for i in range(16)]
+
+
 def main():
     seen_all, seen_measured = {}, {}
+    eff_all, eff_measured = {}, {}
     flag_all, flag_measured = {}, {}
     tf_all, tf_measured = {}, {}
     nlev = nmeas = 0
@@ -123,10 +150,21 @@ def main():
         nlev += 1
         meas = (name, i) in MEASURED
         nmeas += meas
+        # THE LOW BYTE. graphics_set is a big-endian WORD at 0x1A - game.c
+        # reads it with be16 - so sec[0x1A] is the high half and is always
+        # zero. Passing that scored every level against ground0o, whose ids
+        # carry no effect 6, and the table then said effect 6 does not exist
+        # in the game at all. It does: ground1o has three ids with it.
+        effs = ground_effects(sec[0x1B])
         for oid, mod in objects(sec):
             seen_all[oid] = seen_all.get(oid, 0) + 1
             if meas:
                 seen_measured[oid] = seen_measured.get(oid, 0) + 1
+            if effs and oid < 16:
+                e = effs[oid]
+                eff_all[e] = eff_all.get(e, 0) + 1
+                if meas:
+                    eff_measured[e] = eff_measured.get(e, 0) + 1
             for bit, fname in FLAGS:
                 if mod & bit:
                     flag_all[fname] = flag_all.get(fname, 0) + 1
@@ -148,6 +186,11 @@ def main():
         n, m = seen_all[oid], seen_measured.get(oid, 0)
         print(f"    id {oid:<3d}          {n:6d}      {m:6d}"
               f"{'' if m else '   <-- never measured'}")
+    print("\n  TRIGGER EFFECTS             in the game   in a measured level")
+    for e in sorted(eff_all):
+        n, m = eff_all[e], eff_measured.get(e, 0)
+        print(f"    {e} {EFFECT_NAME.get(e, '?'):<21s} {n:6d}      {m:6d}"
+              f"{'' if m else '   <-- never measured'}")
     print("\n  TERRAIN FLAGS               in the game   in a measured level")
     for fname in sorted(tf_all, key=lambda k: (" + " in k, k)):
         n, m = tf_all[fname], tf_measured.get(fname, 0)
@@ -161,12 +204,22 @@ def main():
     unseen = [o for o in seen_all if not seen_measured.get(o)]
     unseen_f = [f for _, f in FLAGS if not flag_measured.get(f)]
     unseen_t = [f for f in tf_all if not tf_measured.get(f)]
+    unseen_e = [e for e in eff_all if not eff_measured.get(e)]
     print(f"\n  {len(unseen)} of {len(seen_all)} object ids and "
           f"{len(unseen_f)} of {len(FLAGS)} object flags are never exercised "
           f"by a frame-by-frame comparison here.")
     # The terrain combinations are named rather than counted, because "2 of 7"
     # does not tell anyone which level to record next and the whole use of
     # this file is to answer that.
+    if unseen_e:
+        print(f"  {len(unseen_e)} of {len(eff_all)} trigger effects are never "
+              f"exercised:")
+        for e in sorted(unseen_e):
+            print(f"    effect {e} ({EFFECT_NAME.get(e, '?')}): "
+                  f"{eff_all[e]} objects")
+    else:
+        print(f"  and every one of the {len(eff_all)} trigger effects is "
+              f"exercised.")
     if unseen_t:
         print(f"  {len(unseen_t)} of {len(tf_all)} terrain flag combinations "
               f"are never exercised:")
