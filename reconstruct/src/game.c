@@ -7180,31 +7180,44 @@ static int object_pixel_allowed(uint8_t dst, const level_object *o)
     return 1;
 }
 
-/* AND WHAT VALUE GOES DOWN, which for an only-on-terrain object is NOT the
- * sprite's own colour.
+/* AND WHAT VALUE GOES DOWN. Neither path simply stores the sprite's pixel,
+ * and the two differ from each other in both halves.
  *
- * Image 0x096BA sets the graphics controller's Set/Reset to 4 and image
- * 0x096C2 its Enable Set/Reset to 0x0E, so planes 1, 2 and 3 are written
- * from that constant - 0, 1, 0 - and only plane 0 comes from the sprite's
- * ink. An arrow pixel therefore lands as attribute 5 whatever the sprite
- * holds, and its plane 3 is CLEARED, so an arrow is not terrain afterwards.
+ * THE COLOUR. Image 0x096BA sets the graphics controller's Set/Reset to 4 and
+ * image 0x096C2 its Enable Set/Reset to 0x0E, so on the ONLY-ON-TERRAIN path
+ * planes 1, 2 and 3 are written from that constant - 0, 1, 0 - and only plane
+ * 0 comes from the ink. An arrow pixel lands as attribute 5 whatever the
+ * sprite holds, and its plane 3 is CLEARED, so an arrow is not terrain
+ * afterwards. The no-overwrite path sets Enable Set/Reset to 0 instead (image
+ * 0x09563), so there all four planes are the sprite's own.
  *
- * That last part is why this cannot be dismissed as a recolour: `& 8` is how
- * every other rule here asks "is this terrain", and a routine that draws
- * arrows without clearing plane 3 leaves solid ground behind them.
- *
- * Both one-way tiles in ground2o.dat decode to attribute 1 and nothing else
- * - 200 pixels each, one value - so the sprite could never have produced the
- * 5 the original's video memory holds. The port drew them blue where the
+ * Both one-way tiles in ground2o.dat decode to attribute 1 and nothing else -
+ * 200 pixels each, one value - so the sprite could never have produced the 5
+ * the original's video memory holds. The port drew them blue where the
  * original draws them red, 1,409 pixels on level004 section 3, and a player
- * found it from a screenshot. Reading the blitter is what settled it; four
- * rounds of reasoning about palettes and attribute registers did not, and
- * the attribute registers turned out to be the identity map on this level in
- * all 1,261 frames tools/probe_attrpal.py sampled. */
-static uint8_t object_pixel_value(uint8_t ink, const level_object *o)
+ * found it from a screenshot. reconstruct/tests/screens.c asserts the tiles'
+ * one colour, because that is the premise this rests on.
+ *
+ * THE COMBINE. Image 0x0956B sets the Data Rotate/Function register to 0x10,
+ * whose bits 4:3 select the ALU function - and 0b10 is OR. So a NO-OVERWRITE
+ * blit ORs the sprite into what is already there. Image 0x096CA and image
+ * 0x08D98 both set that register to 0, so every other path replaces.
+ *
+ * The OR is invisible over black, which is everything a no-overwrite object
+ * has been drawn over in any comparison here: `x | 0` and `0 | x` are both
+ * x, and it only diverges where one object lands on another's pixels. It is
+ * transcribed rather than left as an assignment because "unreachable in the
+ * levels measured so far" is a fact about the measurements. It also settles
+ * what happens to the sprite's TRANSPARENT pixels, which the comment below
+ * says go down with the rectangle: they do, and they OR in a zero, so they
+ * change nothing. Assigning wrote black. */
+static uint8_t object_pixel_combine(uint8_t dst, uint8_t ink,
+                                    const level_object *o)
 {
     if (o->only_on_terrain)
-        return (uint8_t)(4 | (ink & 1));  /* image 0x096BA, image 0x096C2 */
+        return (uint8_t)(4 | (ink & 1));   /* image 0x096BA, image 0x096C2 */
+    if (o->no_overwrite)
+        return (uint8_t)(dst | ink);       /* image 0x0956B: function OR */
     return ink;
 }
 
@@ -7279,8 +7292,8 @@ void level_anim_draw(const level_anim *st, const level *lv,
                 uint8_t *px = &dst[(size_t)y * dst_w + (uint16_t)x];
                 if (!object_pixel_allowed(*px, o))
                     continue;
-                *px = object_pixel_value(
-                    planar(object_sec, ink, plane, stride, 4, c, r), o);
+                *px = object_pixel_combine(
+                    *px, planar(object_sec, ink, plane, stride, 4, c, r), o);
             }
         }
     }
@@ -7373,8 +7386,8 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                  * had drifted apart twice. */
                 if (!object_pixel_allowed(*dst, o))
                     continue;
-                /* AND THE SAME VALUE RULE - see object_pixel_value. */
-                *dst = object_pixel_value(pix[si], o);
+                /* AND THE SAME VALUE RULE - see object_pixel_combine. */
+                *dst = object_pixel_combine(*dst, pix[si], o);
             }
         }
     }

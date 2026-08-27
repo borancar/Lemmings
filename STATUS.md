@@ -1866,6 +1866,27 @@ simply a different phase from a capture at frame 600. Sweeping `--obj-frame`
 found the match at 5, and the frame-by-frame comparison, which advances the
 animation itself, is exact.
 
+### And the no-overwrite blit ORs, which nothing here can see yet
+
+Read while confirming the arrows: image 0x0956B sets the graphics
+controller's Data Rotate/Function register to 0x10. Bits 4:3 of that register
+select the ALU function and 0b10 is **OR**, so a no-overwrite blit ORs the
+sprite into what is already in video memory. Image 0x096CA and image 0x08D98
+both set the same register to 0, so every other path replaces.
+
+`object_pixel_combine` now does that. **No comparison in this repository can
+tell the difference**, and the reason is worth stating rather than leaving as
+a passing score: every no-overwrite object measured here has been drawn over
+black, and `x | 0` and `0 | x` are both `x`. It diverges only where one object
+lands on another's pixels. `verify_objects.py` still reports 815 of 815 object
+pixels agreeing, before and after.
+
+It is transcribed anyway, because "unreachable in the levels measured so far"
+is a fact about the measurements. It also settles what becomes of the
+sprite's TRANSPARENT pixels on that path - the no-overwrite blit consults no
+mask, so the whole rectangle goes down - they OR in a zero and change nothing,
+where assigning wrote black.
+
 ### Sound: the asking is transcribed, the timbre is not
 
 `docs/sound.md` has the interface, read out of the binary. The short of it:
