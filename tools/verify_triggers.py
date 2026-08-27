@@ -110,8 +110,15 @@ def main():
     lsec = ((k >> 1) & 7) + 1
     print("  index %d is %s section %d" % (a.level, lfile, lsec))
 
-    ref = os.path.join(ROOT, "out", "orig_trig.bin")
-    port = os.path.join(ROOT, "out", "port_trig.bin")
+    # PER-LEVEL FILENAMES, because two runs at once shared these and the
+    # second silently overwrote the first. Three measurements were then taken
+    # of level004/3's port map against level002/6's ORIGINAL map, and they
+    # looked like a regression the port had just acquired - 16,040 of 16,040
+    # agreeing, then 14,666, from a change that turned out to be innocent.
+    #
+    # A fixed output path is a shared mutable global with a slow writer.
+    ref = os.path.join(ROOT, "out", "orig_trig_%d.bin" % a.level)
+    port = os.path.join(ROOT, "out", "port_trig_%d.bin" % a.level)
     for f in (ref, port):
         if os.path.exists(f):
             os.unlink(f)

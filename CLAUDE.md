@@ -786,6 +786,34 @@ guest rather than working out which one it ought to be.** The tool now prints
 `SS` beside its result, so a wrong segment arrives as something visible
 rather than as a score.
 
+## A fixed output path is a shared global, and a slow writer makes it race
+
+`tools/verify_triggers.py` wrote the original's dump to `out/orig_trig.bin`
+whatever level it was given. Running it on one level in the background while
+measuring another in the foreground meant the background run **silently
+overwrote the dump**, and three measurements were then taken of one level's
+port map against a different level's original.
+
+They did not look like nonsense. They looked like a regression: 16,040 of
+16,040 cells agreeing, then 14,666, right after a change - so the change was
+reverted as refuted, and a comment was written into `game.c` saying the
+reading had been *measured and was worse*. That comment would have been a
+confident lie in the repository, resting on nothing.
+
+What caught it was reverting the revert and measuring AGAIN: still 14,666.
+A number that does not move when the code moves is a number about the
+instrument.
+
+So:
+
+- **name outputs after their input** - `orig_trig_77.bin`, not `orig_trig.bin`
+- **do not start a long background run that writes where a foreground
+  measurement reads.** This project runs the emulator for minutes at a time,
+  so the window for this is enormous.
+- and when a change makes a score worse, **check the change is the only thing
+  that moved** before writing the refutation down. Reverting and re-measuring
+  costs one run and is the difference between a fact and a plausible story.
+
 ## A comparison has to be bounded by what the program can read
 
 The same tool then reported **3,180 differing cells** on a map that agrees
