@@ -796,6 +796,21 @@ the reference moved, not the port.
   and stay out of the verifier's dispatch — comparing a no-op against the
   original reports a decision as a difference.
 
+## The two sides number the levels differently
+
+`tools/record_level.py --level N` pokes **ds:0x1F6B**, which is the original's
+own index and **zero-based**. `lemdev --number N` is the number on the menu
+plate, **one-based** within a rating. So `--level 4` and `--number 4` are
+different levels, and `--level N` is `--number N+1`.
+
+Using the same integer for both records one level and replays another. It does
+not look like a mix-up in the output: it reads as the port getting the very
+first lemming wrong and never recovering - 365 of 420 frames differing, with
+the entrance in a different place. A whole recording went that way here.
+
+When a comparison is wrong from the FIRST frame that has a lemming in it,
+check that both sides are on the same level before reading any of it.
+
 ## Two `static` definitions of one name in a file are one variable
 
 `g_tick` already meant `ds:0x85`, the clock's frames-per-second counter, when

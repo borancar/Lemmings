@@ -286,7 +286,14 @@ def main():
     ap.add_argument("--level", type=int, default=None,
                     help="poke ds:0x1F6B, the level index, before the "
                          "briefing reads it - play.py only reaches Fun 1. "
-                         "Level 2 is where lemmings fall far enough to die")
+                         "Level 2 is where lemmings fall far enough to die. "
+                         "THIS IS THE ORIGINAL'S OWN INDEX AND IT IS "
+                         "ZERO-BASED, so --level N is the port's --number "
+                         "N+1: lemdev --number 5 is this tool's --level 4. "
+                         "Using the same integer for both records one level "
+                         "and replays another, and the comparison then reads "
+                         "as the port getting everything wrong from the "
+                         "first frame a lemming exists")
     ap.add_argument("--skills", type=int, default=0,
                     help="stock every skill this many times - a POKE, so that "
                          "the seven \"Just dig!\" never offers can be driven "
