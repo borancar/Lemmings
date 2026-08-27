@@ -5763,7 +5763,7 @@ static void lem_draw_fuse(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 /* Image 0x070A2 onwards - the blit that draws one lemming, which the port
  * splits by state because it indexes MAIN.DAT rather than the pre-shifted
  * store the original blits from. */
-void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
                   const uint8_t *sec, uint32_t sec_len, const lemming *a)
 {
     uint16_t frame = a->anim;
@@ -5832,6 +5832,13 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                     if (ox == DEBRIS_GONE) continue;   /* image 0x06EDB */
                     int32_t px = (int32_t)a->x - LEMMING_DX + ox;
                     int32_t py = (int32_t)a->y - LEMMING_DY + row[i][1];
+                    /* Image 0x06EF2 clips these against the SCREEN, not the
+                     * level: bp is the page x and runs 0 .. 0x150, which is
+                     * the visible 320 with the page's 16-pixel left margin
+                     * in front of it. A particle is a pixel and not a blit,
+                     * so it is not byte-trimmed the way a sprite is. */
+                    int32_t sx = px - (int32_t)view_x;
+                    if (sx < -16 || sx >= LEVEL_VIEW_W) continue;
                     if (px < 0 || px >= (int32_t)dst_w) continue;
                     if (py < 0 || py >= (int32_t)dst_h) continue;
                     /* image 0x06F5B: the count runs DOWN from eighty. */
@@ -6797,12 +6804,12 @@ void level_play_draw(level_anim *st, const level *lv,
                      const uint8_t *obj_sec, uint32_t obj_len,
                      const uint8_t *lem_sec, uint32_t lem_len,
                      const lemming *lem, uint8_t released,
-                     uint8_t *pix, uint16_t w, uint16_t h)
+                     uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x)
 {
     level_anim_draw(st, lv, obj_sec, obj_len, pix, w, h, 0);
     if (!lem_sec) return;
     for (uint8_t k = 0; k < released && k < LEMMING_MAX; k++)
-        lemming_draw(pix, w, h, lem_sec, lem_len, &lem[k]);
+        lemming_draw(pix, w, h, view_x, lem_sec, lem_len, &lem[k]);
 }
 
 /* THE CONTROL PANEL, one frame of it.

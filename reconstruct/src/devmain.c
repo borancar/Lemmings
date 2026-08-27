@@ -314,7 +314,7 @@ static int render_level(const char *data, const char *file, uint32_t which,
 
                 level_play_draw(st, &lv, gfx.sections[1].data,
                                 gfx.sections[1].size, lemsec, lemlen,
-                                g_lem, was, c.pix, c.w, c.h);
+                                g_lem, was, c.pix, c.w, c.h, 0);
                 if (have_lem) dat_free(&mainf2);
             }
         }

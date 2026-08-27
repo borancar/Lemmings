@@ -1322,6 +1322,37 @@ and nothing writes it in a quiet window or a blast one. There is nothing left
 to find about where it comes from - it ships with the game, all 8,320 bytes of
 it, and the port transcribes it the way it transcribes a palette.
 
+### The blitter's right-edge trim is NOT what clips a lemming
+
+level002/4's last residue is three pixels in the screen's final column, x 319
+at y 37, 38 and 44, on 28 frames of 1,100 - the port draws them and the
+original does not. Image 0x09997 looked like the answer and is not, and the
+refutation is worth more than the guess was.
+
+The blitter really does trim: a blit starting at or past `ds:0x66F2` is
+abandoned, and one that merely crosses it loses a whole BYTE at a time -
+image 0x099AC's `sub dx,8`, looping at image 0x099A1 until the right edge
+fits, with a `jge` so a sprite ending exactly ON the edge is trimmed too.
+That is where the briefing background's 1,413 unwritten pixels come from.
+
+Assuming the limit was the visible 320 and applying it to every lemming
+sprite took level002/4 from **1,071 exact to 875** - it removes far more than
+those three pixels, and the frames it broke are ones the original draws. So
+either `ds:0x66F2` is not 320 while a level is up, or lemmings do not reach
+the blitter by that path. The change is reverted.
+
+What this cost was a round of chasing the wrong thing, and the reason is
+worth writing down: the residue was three pixels, which is small enough to
+look like an edge case and so invited an edge-case explanation. The right
+next step is to READ `ds:0x66F2` out of a running level rather than assume
+it, exactly as this file says about fitting - and to find what actually draws
+those three pixels, which is still unknown. It is not the objects (a trace of
+`level_anim_draw` writes nothing in rows 36..45), not the cursor (suppressing
+it changes nothing), and not the terrain (the canvas at 863,37 is zero on
+every frame). It IS a lemming sprite - suppressing them clears it - and no
+write site in `lemming_draw` reaches canvas x 863. Those two facts have not
+been reconciled and the port should not be changed again until they are.
+
 ### ODDTABLE.DAT: half the game's plates play under another name
 
 The port was missing a whole data file, and the panel is how it showed.

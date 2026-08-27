@@ -1427,7 +1427,7 @@ static int level_frame_tick(void *ctx, uint8_t *pix)
     a->stepped = 1;
     level_play_draw(a->st, &a->lv, a->sec, a->len,
                     a->lem_sec, a->lem_len, a->lem, a->released,
-                    pix, w, h);
+                    pix, w, h, a->view_x);
     return 1;
 }
 

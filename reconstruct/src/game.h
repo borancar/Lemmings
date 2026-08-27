@@ -426,10 +426,20 @@ int lem_mine_start(lemming *a);
 int lem_dig_start(lemming *a);
 uint8_t lemmings_live(const lemming *lem, uint8_t n);
 
+/* The play area the blitter clips against - ds:0x66F2 while a level is up.
+ * The page behind it is PANEL_LINE_W wide; this is the part on screen, and
+ * it is what image 0x09997's right-edge test uses. */
+#define LEVEL_VIEW_W  320
+
 /* One lemming's sprite, from main.dat section 0 - 40 bytes a frame, two
- * planes of ten rows. Transcribed from images 0x0706F, 0x059BB and 0x05B11. */
+ * planes of ten rows. Transcribed from images 0x0706F, 0x059BB and 0x05B11.
+ *
+ * `view_x` is where the play area has scrolled to. It is here because the
+ * blitter trims a sprite against the SCREEN's right edge (image 0x09997) and
+ * the port draws into the canvas, so it cannot work out on its own which
+ * sprites are crossing that edge. */
 #define LEM_SPRITE_SECTION 0
-void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
                   const uint8_t *sec, uint32_t sec_len, const lemming *a);
 
 /* Their dots on the minimap - image 0x06FE2. */
@@ -735,7 +745,7 @@ void level_play_draw(level_anim *st, const level *lv,
                      const uint8_t *obj_sec, uint32_t obj_len,
                      const uint8_t *lem_sec, uint32_t lem_len,
                      const lemming *lem, uint8_t released,
-                     uint8_t *pix, uint16_t w, uint16_t h);
+                     uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x);
 void level_status_out(uint8_t live);
 
 /* One pass of image 0x07BB8, onto a 320-wide viewport scrolled `scroll`
