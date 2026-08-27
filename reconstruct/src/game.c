@@ -1712,10 +1712,19 @@ void level_release_step(void)
     if (--g_release_wait) return;               /* image 0x30BA */
     g_release_wait = g_release_step;            /* image 0x30C3 */
     if (g_released == g_to_release) return;     /* image 0x30CC */
-    /* ONE MORE COMES OUT, and the trapdoor is heard: image 0x0309C tests
-     * ds:0x25A7 bits 0-1 and image 0x030A0 asks for sound 0x0D with AH=4. */
-    if (sound_enabled(3))                       /* image 0x0309C */
-        sound_request(4, 0x0D);                 /* image 0x030A0 */
+    /* ONE MORE COMES OUT, AND IT MAKES NO SOUND.
+     *
+     * This used to ask for 0x0D here, on the reading that image 0x030A0's
+     * request belonged to the routine at image 0x030A6. It does not: image
+     * 0x030A5 is a RET, so the release STARTS at 0x030A6 and that sound is
+     * the last act of the block above it - the fire death, reached by
+     * falling through image 0x0304F's effect 6. A player heard it fire once
+     * per lemming arriving and said the original does not.
+     *
+     * There is no int 60h or int 61h anywhere between image 0x030A6 and
+     * image 0x0314F. The release is silent, and adjacency is not provenance:
+     * the site sat four instructions above a routine it had nothing to do
+     * with, and the comment asserting otherwise read perfectly well. */
     g_released++;
 }
 
@@ -4940,6 +4949,12 @@ void lemmings_step(lemming *lem, uint8_t n,
                     a->hot_y = -14;                  /* image 0x0307B: fff2 */
                     a->state = 0;                    /* image 0x03080 */
                     a->extra &= 1;                   /* image 0x0308E */
+                    /* AND THE SOUND, which the port had attached to the
+                     * RELEASE instead - see level_release_step. It is the
+                     * next thing this routine does, at image 0x03092's
+                     * ds:0x2010 test and image 0x030A0's request. */
+                    if (g_snd_driver == 0xFF && sound_enabled(3))
+                        sound_request(4, 0x0D);      /* image 0x030A0 */
                 }
             }
         }

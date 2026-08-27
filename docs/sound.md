@@ -429,3 +429,36 @@ an effect would also make:
     no tune before frame 55                   ok
     the title starts a tune at frame 55       ok
     with no driver, nothing is asked for      ok
+
+## Adjacency is not provenance
+
+The port asked for sound 0x0D once per lemming leaving the entrance. The
+original never does: a player heard it and said so.
+
+The site was read as belonging to the release because it sits four
+instructions above it:
+
+    image 0x03092   cmp byte [0x2010], 0xff
+    image 0x03099   test byte [0x25a7], 3
+    image 0x030A0   mov ax, 0x40d
+    image 0x030A3   int 0x61
+    image 0x030A5   RET              <-- the routine ENDS here
+    image 0x030A6   cmp byte [0x2b], 0xff    <-- the release STARTS here
+
+That `ret` is the whole answer. The sound is the last act of the block above,
+which is reached by falling through image 0x0304F - **the fire death**, the
+trigger dispatch's effect 6. Sound 0x0D is a lemming burning.
+
+And the release is silent: there is no `int 60h` or `int 61h` anywhere
+between image 0x030A6 and image 0x0314F, which is one grep.
+
+The comment asserting otherwise read perfectly well and had an address
+against it, which is what makes this worth keeping. **An address proves where
+a line came from, not that the routine around it is the one you think.** The
+cheap check is the one that settles it here - find the routine's boundaries
+before attributing anything to it, and a `ret` between the site and the
+routine is decisive.
+
+`tests/screens.c` now asserts the release makes no sound. Nothing could have
+caught this before: the sound sites had never been scored against anything at
+all, only read.

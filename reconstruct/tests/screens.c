@@ -23,7 +23,7 @@ static int fails;
 /* Register 0xBD is written by the driver's start_music and by nothing else
  * (driver +0x0504), so it witnesses a TUNE beginning rather than merely a
  * noise - which an effect would also make. g_saw_any catches the noise. */
-static int g_saw_bd, g_saw_any;
+static int g_saw_bd, g_saw_any;   /* NOLINT: used by several cases below */
 static void saw_bd(uint8_t reg, uint8_t val)
 {
     (void)val;
@@ -380,6 +380,44 @@ int main(int argc, char **argv)
         }
         ck("and stop at the level's count",
            level_released() == 10, "it kept releasing");
+
+        /* AND THEY ARRIVE IN SILENCE.
+         *
+         * The port asked for sound 0x0D once per lemming, on the reading
+         * that image 0x030A0's request belonged to the release at image
+         * 0x030A6. Image 0x030A5 is a RET: the release starts AFTER that
+         * sound, which is the last act of the fire death above it. There is
+         * no int 60h or int 61h anywhere in image 0x030A6..0x0314F.
+         *
+         * A player heard it and said the original does not do that. Nothing
+         * here could have: the sound sites were never scored against
+         * anything, only read. */
+        {
+            const char *rerr = "unknown error";
+            if (adlib_load(dir, &rerr) == 0) {
+                sound_driver_present(1);
+                level_start_reset();
+                level_release_reset(&lv);
+                /* The entrance has to be OPEN or level_release_step returns
+                 * at image 0x30B0 and nothing comes out - which the first
+                 * version of this did, and then reported the empty run as
+                 * "the release made a noise". Two conditions behind one
+                 * message is how that happened; they are separate now. */
+                while (level_entrance_open() != 0xFF) level_start_step();
+                opl_reset();
+                g_saw_any = 0;
+                opl_set_trace(saw_bd);
+                for (uint16_t f = 1; f <= 400; f++) level_release_step();
+                opl_set_trace(NULL);
+                ck("ten lemmings really do come out",
+                   level_released() == 10, "none were released");
+                ck("and they arrive in silence",
+                   g_saw_any == 0, "the release made a noise");
+                adlib_free();
+            } else {
+                ck("and they arrive in silence", 0, rerr);
+            }
+        }
     }
 
     /* THE STATUS LINE'S NUMBERS, image 0x04B68 - left-aligned, leading zeros
