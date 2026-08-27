@@ -188,6 +188,14 @@ done
 # THE RELEASE RATE, driven through the original's own handler. Nothing else
 # here presses those buttons: no recorded run contains one, which is why they
 # did nothing at all for as long as they did.
+# THE SPRITE REGIONS, laid out from game.c's own constants. Sixteen of them
+# tile MAIN.DAT's first section exactly, so a wrong base or frame count shows
+# up as a gap or an overlap. It found the shrug facing one way before any
+# player did.
+say ""
+say "=== the sprite regions tile the file ==="
+if uv run python tools/tile_sprites.py 2>&1 | tail -2 | sed 's/^/  /'; then :; else fail=1; fi
+
 say ""
 say "=== the release rate, against image 0x04032 ==="
 if uv run python tools/verify_rate.py 2>&1 | grep -vE "^pygame|^ *\[vga\]" | sed 's/^/  /'; then :; else fail=1; fi

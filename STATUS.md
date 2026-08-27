@@ -1825,6 +1825,13 @@ holds for the drowner, the splatter, the burner and the blast.
 A sweep that finds nothing is worth having when it can say what it covered.
 This one covers 20,720 bytes and leaves none of them unexplained.
 
+`tools/tile_sprites.py` does it on demand now, reading the constants out of
+`game.c` so it checks what the PORT believes rather than a table here that
+could drift from it. It reports 16 regions and 0 gaps, it fails loudly if a
+constant it needs is missing rather than printing a partial answer, and it was
+checked against a fault it should catch: `BUILD_SPR_FRAMES` at 15 instead of
+16 comes back as one gap. Wired into `verify_all.sh`.
+
 ### And a held rate button ramps, the way the original's does
 
 The rate buttons stepped once per click and stopped. The original's ramp when
