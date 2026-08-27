@@ -641,3 +641,32 @@ effect sites are still unported**, and the code map places them exactly:
 
 A level with no splat, no "oh no" and no trap-object noises is a quieter level
 than the original, and none of that is the music.
+
+## An independent chip: DOSBox
+
+Every audio comparison here went through ymfm at both ends. Our emulator has
+no synthesiser - it logs register writes - so "the emulator's WAV" and "the
+port's WAV" are the same chip fed two streams. **That settles the DRIVER and
+says nothing about the CHIP.**
+
+`tools/reference_dosbox_audio.sh` records DOSBox playing the same level with
+its own OPL emulation and its own copy of the game, so it agrees with neither
+by construction. It reuses `reference_dosbox.sh`'s input script - xvfb plus
+xdotool for the adapter menu, the machine menu, F1 and the briefing's held
+mouse button - and captures with SDL2's `disk` audio driver, which writes
+exactly what the program sends to the device and needs no capture key.
+
+**The raw is 32-bit FLOAT, not signed 16-bit.** dosbox-staging's mixer works
+in float and asks SDL for AUDIO_F32SYS. Reading it as s16 does not fail, which
+is the trap: it produced a file whose every five-second RMS was 18,900 - flat
+to four digits for four minutes - with one channel a slow waveform and the
+other noise, which is what the two halves of a float look like. A flat RMS is
+not music, and that is what gave it away. `tools/dosbox_audio_wav.py` converts
+it properly and refuses a capture with less than five seconds of sound.
+
+So there are now three recordings of the same level and they are not the same
+claim:
+
+    A  our emulator's register stream, through ymfm
+    B  the port's own stream, through ymfm         A vs B tests the DRIVER
+    C  DOSBox, its own OPL, its own game           C vs B tests the CHIP
