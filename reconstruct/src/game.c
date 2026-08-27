@@ -4854,6 +4854,16 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * bytes a frame and image 0x035FF gives the miner 0x4E = 78, and image
  * 0x0352B and image 0x03604 give the states that index the left-facing
  * halves. */
+/* THE DROWNER, image 0x02FF8's effect 5 - sixteen frames of 16 x 10 in two
+ * planes, 40 bytes each, the walker's own geometry. Found against the
+ * original's frames of "Watch out, there`s traps about": frames 140, 141 and
+ * 142 are anim 1, 2 and 3 and every one of them matches base + anim * 40 with
+ * EVERY ink pixel agreeing - 24 of 24, 23 of 23 and 17 of 17, nothing
+ * differing at all, because nothing overlaps a lemming in the water. */
+#define DROWN_SPR_BASE  2832
+#define DROWN_SPR_H     10
+#define DROWN_SPR_FRAMES 16
+
 /* THE FIRE DEATH, image 0x0304F's effect 6 - fourteen frames of a lemming
  * coming apart into ash, which is what the sprites show: frame 0 is a
  * lemming standing, 4, 8 and 12 are scattered particles. Its file frame is
@@ -5058,6 +5068,8 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
          * others here use. */
         if (a->flags & 0x4000) { sb = BURN_SPR_BASE; sh = BURN_SPR_H;
                                  sp = BURN_SPR_PLANES; sf = BURN_SPR_FRAMES; }
+        else if (a->flags & 0x1000) { sb = DROWN_SPR_BASE; sh = DROWN_SPR_H;
+                                      sp = 2; sf = DROWN_SPR_FRAMES; }
         else if (a->flags & 0x0400) { sb = FLOAT_SPR_BASE; sh = 16; sp = 3; sf = 8; }
         else if (a->flags & 0x0001) { sb = SPLAT_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x8000) { sb = BLAST_SPR_BASE; sh = 10; sp = 2; sf = 16; }
