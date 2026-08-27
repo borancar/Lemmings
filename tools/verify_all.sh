@@ -195,8 +195,15 @@ for case in "level001.dat 3 ref_i8 530 10" \
     rm -rf out/va_shot; mkdir -p out/va_shot
     oddarg=""
     [ "$lodd" != "-1" ] && oddarg="--odd $lodd"
+    # AIM THE PORT'S POINTER AT THE ORIGINAL'S OWN, frame by frame. A constant
+    # park was right for level002's two sections, whose guest settles on frame
+    # 1, and wrong for level001 section 3, whose guest does not move until
+    # frame 42 - 42 frames of exactly 56 differing pixels, all of them the
+    # cursor. Generated per reference, so it cannot go stale against one.
+    uv run python tools/park_script.py "out/$lref" "out/park_$lref.txt" \
+        >/dev/null 2>&1
     SDL_VIDEODRIVER=dummy LEM_FRAMES=$lframes LEM_SCREEN_DIR="$PWD/out/va_shot" \
-        LEM_INPUT_SCRIPT="$PWD/out/park.txt" \
+        LEM_INPUT_SCRIPT="$PWD/out/park_$lref.txt" \
         ./reconstruct/lemdev --data lemming1.pc --file "$lfile" --level "$lsec" \
         $oddarg --show >/dev/null 2>&1 || true
     got=$(uv run python tools/compare_screen.py --ref "out/$lref" \

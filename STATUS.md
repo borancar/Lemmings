@@ -1339,6 +1339,32 @@ problem, and they were the same run. A harness that feeds the two sides
 different inputs reports the difference as the port's, and there is no way to
 tell that from the score - only from asking what the harness set.
 
+### Two cross-hairs in different places is not a residue, it is a harness
+
+All three of the levels being chased now score their play area **exact on
+every frame**: level001/3 at 530 of 530, level002/4 and /6 at 1,100 of 1,100.
+The last thing between them and that was not the port at all.
+
+`out/park.txt` was one hand-measured `move` that parked the port's pointer
+where the original leaves its own. That is right for level002's two sections,
+whose guest settles its pointer on frame 1, and wrong for level001 section 3,
+whose guest does not move it until frame **42**. Those 42 frames differed by
+exactly 56 pixels each - two cross-hairs, 28 apiece - and `compare_screen.py`
+excuses 28, not 56, so they scored as differences and had been written down
+here as "the opening's cursor, harness-side" for several rounds without anyone
+generating a script that matched.
+
+`tools/park_script.py` now writes the whole track out of the reference's own
+manifest, one `move` per change. It also removed the fade-in difference at
+frame 0 of all three, which had been recorded separately as a palette
+artefact: the cursor was in it too.
+
+**And the two harnesses disagreed about where the pointer is.** `park.txt`
+used `(mx - 8, my - 8)`; `verify_skills.py`'s `park_script()` uses
+`(mx + 2, my - 8)`. Ten pixels apart, for the same job, and both were excused
+as "the cursor" wherever they showed. The generator settles on the measured
+`-8` in both axes; `verify_skills.py` should be moved onto it.
+
 ### A lemming is on screen if a TABLE says so, not if its pixels are
 
 level002/4's last residue was three pixels in the screen's final column, x 319
