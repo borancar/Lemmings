@@ -22,7 +22,34 @@
 
 
 /* A level's terrain canvas. The original addresses x from -16 to 1583. */
-#define LEVEL_W 1584
+/* THE LEVEL BITMAP IS 1664 WIDE, not 1584. Image 0x05DC6 addresses it as
+ * `0x4A40 + y * 0xD0 + x/8`, and 0xD0 bytes is 1664 pixels - so terrain past
+ * column 1584 is real memory the original composes into and its lemmings walk
+ * on. This was 1584, the width the game SHOWS, and a lemming that walked past
+ * it fell through the floor: the port found no ground beyond its own array.
+ *
+ * 1664 is in RECORD coordinates and this canvas is offset by sixteen - the
+ * same sixteen tools/prove.sh prints - so it covers record 16..1663, which is
+ * 1648 columns. Setting it to 1664 made tools/compare_composed.py refuse to
+ * broadcast, (160,1648) against (160,1664), which is how the sixteen was
+ * caught rather than shipped.
+ *
+ * Found on level009 section 1, "Rendezvous at the Mountain", which places
+ * TWENTY-FIVE terrain pieces at x up to 1596. Its play area compared exact on
+ * all 1,100 frames while its OUT count was wrong for nine frames at a time,
+ * because the lemming doing the falling was off-screen the whole while.
+ *
+ * The DISPLAY is unchanged: image 0x040E8 clamps the scroll at 0x500, which
+ * is this port's view_x 1264 - see LEVEL_SCROLL_MAX - so those columns are
+ * never shown, only walked on. */
+#define LEVEL_W 1648            /* image 0x05DC6: 0xD0 bytes a row, less
+                                 * the sixteen the canvas is offset by */
+
+/* Image 0x040E8: the original refuses to scroll past 0x500, and its scroll is
+ * sixteen more than this port's view_x - the same sixteen tools/prove.sh
+ * prints as its offset. Derived from the canvas width before LEVEL_W grew,
+ * where it was right by coincidence. */
+#define LEVEL_SCROLL_MAX 0x4F0
 #define LEVEL_H 160
 
 /* One 16-colour palette entry, already widened from the file's 6 bits. */

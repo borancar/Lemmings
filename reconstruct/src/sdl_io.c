@@ -596,7 +596,12 @@ static int level_run(struct level_frame *A, const canvas *c,
     SDL_Renderer *ren = g_ren;
     SDL_Texture  *tex = g_tex;
 
-    int32_t max_x = (int32_t)c->w - LEVEL_SCREEN_W;
+    /* THE ORIGINAL'S OWN CEILING, not the canvas width: image 0x040E8 stops
+     * at 0x500 and this port's view_x is sixteen less. Deriving it from
+     * `c->w` was right only while the canvas was the displayed width. */
+    int32_t max_x = LEVEL_SCROLL_MAX;
+    if (max_x > (int32_t)c->w - LEVEL_SCREEN_W)
+        max_x = (int32_t)c->w - LEVEL_SCREEN_W;
     if (max_x < 0) max_x = 0;
     /* The level header's start_x IS the viewport's left edge, not its
      * centre. tools/compare_run.py fits 624 for "Just dig!" and the header

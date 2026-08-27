@@ -2088,6 +2088,54 @@ written into `game.c` claiming it had been measured. See the note in
 `CLAUDE.md` about fixed output paths. The reading survived only because it was
 re-derived from the level's records afterwards, where no run could corrupt it.
 
+### The level bitmap was eighty columns too narrow
+
+Found by a SEVENTH level, level009 section 1 - "Rendezvous at the Mountain",
+Mayhem 30, the last level of the game - recorded because the new trigger-effect
+axis showed effect 5, water, resting on a single object across the whole suite.
+
+Its play area was exact on all 1,100 frames. Its PANEL was 992, in twelve runs
+of exactly nine frames spaced 43 apart - and 43 is that level's release
+interval, `((99 - 20) >> 1) + 4`. Down to one character cell: the status line's
+OUT digit, the original showing 3 where the port showed 2.
+
+**Both sides agreed on `released` and disagreed on how many were ALIVE.** At
+frame 141 the port had killed lemming 1 - `alive=255`, x=1600, y=180, falling -
+and the original counted it for nine more frames. The rule is not the
+difference: image 0x02210 is `cmp bp, 0xb4 / jl`, so the original kills at
+`y >= 0xB4` exactly as the port does.
+
+The port got there early because **its level bitmap was 1584 wide and the
+original's is 1664**. Image 0x05DC6 addresses it as `0x4A40 + y * 0xD0 + x/8`,
+and 0xD0 bytes is 1664 pixels - so terrain past column 1584 is real memory the
+original composes into and walks on. 1584 is the width the game SHOWS. This
+level places TWENTY-FIVE terrain pieces at x up to 1596, and a lemming out
+there found no ground in the port's array and fell through the floor.
+
+`LEVEL_W` is now **1648**, and the sixteen matters: 1664 is in RECORD
+coordinates and the canvas is offset by sixteen, so it covers record 16..1663.
+Setting it to 1664 made `compare_composed.py` refuse to broadcast, (160,1648)
+against (160,1664) - which is how that was caught rather than shipped, and is
+the third coordinate system this project keeps tripping over.
+
+The DISPLAY is deliberately unchanged. Image 0x040E8 clamps the scroll at
+0x500, which is this port's `view_x` 1264, so those columns are never shown -
+only walked on. `max_x` had been derived from the canvas width, which was right
+only while the canvas WAS the displayed width; it is now `LEVEL_SCROLL_MAX`
+with that address against it.
+
+**What made this invisible for so long**, and it is the general point: the
+lemming was OFF-SCREEN the whole time. 1,100 frames of pixel-exact play area
+sat on top of a wrong count, and the only symptom anywhere was one digit in the
+panel. Scoring the panel separately from the play area is what made 44 pixels
+in 64,000 visible at all.
+
+    level009/1  play area 1,100 of 1,100   panel 992 of 1,100  before
+                play area 1,100 of 1,100   panel 1,100 of 1,100 after
+
+`tools/prove.sh` still reports offset 16, 100.00%, 0 differing - now over 1,648
+columns of the original's own composed bitmap rather than 1,584.
+
 ### The trigger map is now checked against the original's own
 
 `tools/verify_triggers.py` dumps the map the original builds and compares it

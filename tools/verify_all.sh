@@ -254,7 +254,8 @@ for case in "level001.dat 3 ref_i8 530 10" \
             "level002.dat 6 ref_i63 1100 -1" \
             "level004.dat 3 ref_i77 1100 -1" \
             "level006.dat 3 ref_i95 1100 -1" \
-            "level007.dat 1 ref_i101 1100 -1"; do
+            "level007.dat 1 ref_i101 1100 -1" \
+            "level009.dat 1 ref_i119 1100 -1"; do
     set -- $case
     lfile=$1 lsec=$2 lref=$3 lframes=$4 lodd=$5
     if [ ! -f "out/$lref/manifest.json" ]; then
