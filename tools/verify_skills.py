@@ -103,16 +103,26 @@ def park_script(ref):
     return path
 
 
-def compare(ref, script, number, frames):
+def compare(ref, script, number, frames, skills=20):
+    """Run the port over one case and score it against the reference.
+
+    `skills` is the poke record_level.py's --skills makes in the GUEST, and
+    both sides have to get the same one. The eight skill references are
+    recorded with --skills 20 (tools/record_skills.sh); the nuke and the pause
+    are not, and handing the port 20 of everything against a reference showing
+    the level's own counts scored their PANEL 0 of 557 frames - a harness
+    setting reported as a reconstruction failure."""
     state = os.path.join(ROOT, "out", "vs_state.jsonl")
     if os.path.exists(state):
         os.unlink(state)
     shots = os.path.join(ROOT, "out", "vs_screen")
     shutil.rmtree(shots, ignore_errors=True)
     os.makedirs(shots, exist_ok=True)
-    env = dict(os.environ, SDL_VIDEODRIVER="dummy", LEM_SKILLS="20",
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy",
                LEM_FRAMES=str(frames), LEM_STATE_FILE=state,
                LEM_SCREEN_DIR=shots)
+    if skills:
+        env["LEM_SKILLS"] = str(skills)
     if script:
         env["LEM_INPUT_SCRIPT"] = os.path.join(ROOT, script)
     else:
@@ -178,7 +188,7 @@ def main():
         if not os.path.exists(os.path.join(d, "manifest.json")):
             continue
         n = len(json.load(open(os.path.join(d, "manifest.json"))))
-        bad, shared, pic = compare(ref, script, number, n + 20)
+        bad, shared, pic = compare(ref, script, number, n + 20, skills=0)
         print(f"    {name}:")
         print(f"      record {bad} of {shared} frames differ")
         print(f"      screen {pic or 'NOT SCORED'}")

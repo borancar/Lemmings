@@ -1322,6 +1322,23 @@ and nothing writes it in a quiet window or a blast one. There is nothing left
 to find about where it comes from - it ships with the game, all 8,320 bytes of
 it, and the port transcribes it the way it transcribes a palette.
 
+### A harness setting reported as a reconstruction failure
+
+The nuke run's PANEL scored **0 of 557 frames** and had for as long as the
+case has existed. Nothing was wrong with the panel: `verify_skills.py` sets
+`LEM_SKILLS=20` for every case it runs, because the eight skill references are
+recorded with `record_level.py --skills 20` and both sides must get the same
+poke - but the nuke and the pause references are recorded WITHOUT it, so the
+port was drawing twenty of everything beside an original showing level 1's own
+counts. Giving those two cases the level's own skills takes the nuke's panel
+to **540 of 557**.
+
+The play area was exact on 535 the whole time, which is what made this easy to
+leave alone: one number looked finished and the other looked like a hard
+problem, and they were the same run. A harness that feeds the two sides
+different inputs reports the difference as the port's, and there is no way to
+tell that from the score - only from asking what the harness set.
+
 ### The blitter's right-edge trim is NOT what clips a lemming
 
 level002/4's last residue is three pixels in the screen's final column, x 319
