@@ -1744,6 +1744,15 @@ void level_release_step(void)
  * two statics of one name, and it was very nearly done.
  * ==================================================================== */
 
+/* The level music_choose should look at. THE PORT'S OWN: the original reads
+ * ds:0x0FE8 out of the level record it has already loaded, and the port hands
+ * level_start_reset the same information through here rather than changing
+ * its signature, which every caller and test would have to follow. */
+static const level *g_music_level;
+
+/* THE PORT'S OWN - see the note above. */
+void music_set_level(const level *lv) { g_music_level = lv; }
+
 static uint8_t g_tune;           /* ds:0x54  the driver's tune number */
 static uint8_t g_tune_rot;       /* ds:0x1F6C the rotation counter, 0..16 */
 static uint8_t g_tune_advance;   /* ds:0x1F6D non-zero: step the rotation */
@@ -1766,9 +1775,15 @@ static const uint8_t TUNE_BY_NUMBER[4] = { 0x01, 0x09, 0x03, 0x02 };
  * image 0x04866. Neither has a single near CALL in the image - they are
  * jumped to - which is why a static search for callers found nothing and the
  * question had to be put to the running original instead. */
-void music_choose(void)
+void music_choose(const level *lv)
 {
     if (g_snd_driver == 0) return;              /* image 0x04834 */
+    /* ds:0x0FE8 is the level's EXTENDED graphics set, its header's +0x1C,
+     * and non-zero means one of the four VGASPEC levels. Image 0x01A26 and
+     * image 0x03742 read the same byte to load a different file and build
+     * the terrain a different way, which is what identifies it - and it is
+     * why the by-number table has exactly four entries. */
+    if (lv) g_tune_pick = (uint8_t)(lv->extended_graphics_set & 0xFF);
     uint8_t al = g_tune_pick;                   /* image 0x04836 */
     if (al != 0) {                              /* image 0x0483D */
         g_tune = TUNE_BY_NUMBER[(uint8_t)(al - 1) & 3];   /* image 0x04866 */
@@ -1780,6 +1795,30 @@ void music_choose(void)
         g_tune_rot = al;
     }
     g_tune = TUNE_ROTATION[al % 17];            /* image 0x0485E */
+}
+
+/* ds:0x1F6D, and it is what makes each level's music differ from the last.
+ *
+ * Image 0x04720 compares the rescued percentage against the requirement; the
+ * PASS arm at image 0x04729 sets this to 0xFF - in the same instruction pair
+ * that advances the level index at image 0x0472E - and the FAIL arm at image
+ * 0x04778 clears it. So passing a level steps the rotation and failing one
+ * replays the same tune with the same level, which is the behaviour a player
+ * would notice immediately and the port did not have: it chose index 0 every
+ * time and played tune 6 on every level of the game.
+ *
+ * Image 0x0454C clears it on a cold start, which is why the FIRST level is
+ * index 0 whatever happened in a previous session. */
+void music_level_passed(uint8_t passed)
+{
+    g_tune_advance = passed ? 0xFF : 0;         /* image 0x04729 / 0x04778 */
+}
+
+/* image 0x0454C, in the block that wipes DGROUP 0..0xFCA at a cold start. */
+void music_cold_start(void)
+{
+    g_tune_advance = 0;
+    g_tune_rot = 0;
 }
 
 /* ds:0x25A7, the sound settings, and it lives HERE rather than in sdl_io.c
@@ -1846,8 +1885,9 @@ void level_start_reset(void)
     g_entrance_open = 0;
     /* image 0x00489 calls image 0x0482F in the same block that clears these
      * three bytes, so the tune is chosen when the level begins and image
-     * 0x03B4 twenty-odd frames later plays whatever it picked. */
-    music_choose();
+     * 0x03B4 twenty-odd frames later plays whatever it picked. The level is
+     * passed in because image 0x04836 reads its extended graphics set. */
+    music_choose(g_music_level);
     /* AND THE NUKE'S FOUR BYTES, which nothing here reset - so they carried
      * across levels and the double click became a SINGLE one. A player found
      * it after several levels in a row.

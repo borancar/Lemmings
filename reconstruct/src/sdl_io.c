@@ -1165,6 +1165,33 @@ uint32_t sound_fill_bytes(int queued, int target)
     return made;
 }
 
+/* Build one chunk: tick the driver where the tick falls, render around it.
+ *
+ * Split out of sound_pump so the LIVE path - the one the game actually runs -
+ * can be exercised without an audio device. Everything measured about the
+ * sound so far has been either the driver alone (tools/verify_adlib.py) or
+ * the pump's arithmetic (sound_fill_bytes); this is the code between them,
+ * and it had never been run by anything but the game. */
+void sound_build_chunk(int16_t *buf, uint32_t frames)
+{
+    const double per_tick = (double)OPL_SAMPLE_RATE / ADLIB_TICK_HZ;
+    uint32_t done = 0;
+    while (done < frames) {
+        /* One driver tick buys per_tick samples. The accumulator carries the
+         * fraction, so the rate stays 97.08 Hz over time rather than being
+         * rounded to 512 and running sharp. */
+        if (g_tick_acc < 1.0) {
+            adlib_tick();                   /* driver +0x0115 */
+            g_tick_acc += per_tick;
+        }
+        uint32_t want = (uint32_t)g_tick_acc;
+        if (want > frames - done) want = frames - done;
+        opl_render(buf + done, want);
+        done += want;
+        g_tick_acc -= want;
+    }
+}
+
 static void sound_pump(void)
 {
     if (!g_snd_stream || !adlib_ready()) return;
@@ -1173,25 +1200,9 @@ static void sound_pump(void)
     int queued = SDL_GetAudioStreamQueued(g_snd_stream);
     if (queued < 0) return;                 /* the device went away */
 
-    const double per_tick = (double)OPL_SAMPLE_RATE / ADLIB_TICK_HZ;
     int16_t buf[SND_CHUNK];
-
     while (queued < target) {
-        uint32_t done = 0;
-        while (done < SND_CHUNK) {
-            /* One driver tick buys per_tick samples. The accumulator carries
-             * the fraction, so the tick rate stays 97.08 Hz over time rather
-             * than being rounded to 512 and running sharp. */
-            if (g_tick_acc < 1.0) {
-                adlib_tick();               /* driver +0x0115 */
-                g_tick_acc += per_tick;
-            }
-            uint32_t want = (uint32_t)g_tick_acc;
-            if (want > SND_CHUNK - done) want = SND_CHUNK - done;
-            opl_render(buf + done, want);
-            done += want;
-            g_tick_acc -= want;
-        }
+        sound_build_chunk(buf, SND_CHUNK);
         SDL_PutAudioStreamData(g_snd_stream, buf, (int)sizeof buf);
         queued += (int)sizeof buf;
     }
@@ -1967,6 +1978,8 @@ int level_show(const char *dir, const char *file, uint32_t which,
          * flames are one animation frame behind the original's at every
          * frame checked. */
         level_anim_step(A.st, &A.lv);
+        /* image 0x04836 reads the level's extended graphics set. */
+        music_set_level(&A.lv);
         level_start_reset();
         level_release_reset(&A.lv);
         level_status_reset(&A.lv);

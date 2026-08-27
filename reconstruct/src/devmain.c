@@ -649,10 +649,15 @@ static int opl_replay(const char *in_path, const char *wav_path)
 static FILE *g_adlib_log;
 static uint32_t g_adlib_tick;
 
+static int g_adlib_live;
+
 static void adlib_log_write(uint8_t reg, uint8_t val)
 {
-    if (g_adlib_log)
-        fprintf(g_adlib_log, "%u 12291 %02X %02X\n", g_adlib_tick, reg, val);
+    if (!g_adlib_log) return;
+    /* In the live path the tick advances INSIDE the chunk, so ask the driver
+     * rather than use whatever was stamped before it started. */
+    uint32_t t = g_adlib_live ? adlib_tick_count() : g_adlib_tick;
+    fprintf(g_adlib_log, "%u 12291 %02X %02X\n", t, reg, val);
 }
 
 /* Feed the transcribed driver the same requests the ORIGINAL was given, at
@@ -699,6 +704,63 @@ static int audio_probe(const char *data, uint32_t seconds, double fps)
     if (dry) {
         fprintf(stderr, "THE DEVICE WOULD RUN DRY %d times - that is the "
                         "chopping.\n", dry);
+        return 1;
+    }
+    return 0;
+}
+
+/* THE LIVE PATH: the level's own opening sequence, driving the driver
+ * through the same sound_build_chunk the game uses, for N seconds of AUDIO
+ * time. Everything measured before this was either the driver alone or the
+ * pump's arithmetic; this is the code between them.
+ */
+static int adlib_live(const char *data, uint32_t seconds, const char *out)
+{
+    const char *err = "unknown error";
+    if (adlib_load(data, &err) != 0) {
+        fprintf(stderr, "adlib.dat: %s\n", err);
+        return 2;
+    }
+    sound_driver_present(1);
+    g_adlib_live = 1;
+    level_start_reset();
+
+    g_adlib_log = fopen(out, "w");
+    if (!g_adlib_log) { fprintf(stderr, "cannot write %s\n", out); return 2; }
+    fprintf(g_adlib_log, "# tick divisor reg val   (PIT_HZ = 1193182)\n");
+    opl_set_trace(adlib_log_write);
+
+    /* The level's own 17 frames a second drive level_start_step; the audio
+     * clock drives the driver. Two different rates, which is the whole point
+     * of the split - and getting them confused is how the music would end up
+     * at the display's speed. */
+    enum { CH = 1024 };
+    int16_t buf[CH];
+    uint32_t total = seconds * OPL_SAMPLE_RATE;
+    uint32_t made = 0;
+    double frame_acc = 0.0;
+    const double per_frame = (double)OPL_SAMPLE_RATE / LEVEL_FPS;
+    while (made < total) {
+        if (frame_acc < 1.0) { level_start_step(); frame_acc += per_frame; }
+        /* The DRIVER's own tick count, not one derived from the sample
+         * count. Deriving it quantises every write to the chunk the audio
+         * happens to be built in - 1024 samples, about two ticks - and the
+         * gaps then disagree with the original for a reason that is entirely
+         * this tool's. It read as 93.85% and looked like a port fault. */
+        g_adlib_tick = adlib_tick_count();
+        sound_build_chunk(buf, CH);
+        made += CH;
+        frame_acc -= CH;
+    }
+    opl_set_trace(NULL);
+    g_adlib_live = 0;
+    uint32_t n = opl_writes();
+    fclose(g_adlib_log);
+    g_adlib_log = NULL;
+    printf("  %u s of the LIVE path -> %u register writes -> %s\n",
+           seconds, n, out);
+    if (!n) {
+        fprintf(stderr, "THE LIVE PATH WROTE NOTHING.\n");
         return 1;
     }
     return 0;
@@ -866,6 +928,7 @@ int main(int argc, char **argv)
     const char *opl_in = NULL, *wav_out = NULL;
     int adlib_tune = -1; uint32_t adlib_ticks = 600;
     const char *adlib_scr = NULL;
+    int adlib_live_s = 0;
     int audio_secs = 0; double audio_fps = 17.0;
 
     for (int i = 1; i < argc; i++) {
@@ -988,6 +1051,8 @@ int main(int argc, char **argv)
             audio_secs = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--fps") && i + 1 < argc)
             audio_fps = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--adlib-live") && i + 1 < argc)
+            adlib_live_s = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--adlib-script") && i + 1 < argc)
             adlib_scr = argv[++i];
         else if (!strcmp(argv[i], "--adlib-tune") && i + 1 < argc)
@@ -1010,6 +1075,11 @@ int main(int argc, char **argv)
     lem_set_data_dir(data);
 
     if (audio_secs > 0) return audio_probe(data, (uint32_t)audio_secs, audio_fps);
+
+    if (adlib_live_s > 0) {
+        if (!raw) { usage(); return 2; }
+        return adlib_live(data, (uint32_t)adlib_live_s, raw);
+    }
 
     if (adlib_scr) {
         if (!raw) { usage(); return 2; }

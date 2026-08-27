@@ -92,6 +92,8 @@ int main(int argc, char **argv)
     /* sdl_io.c loads adlib.dat when the audio device opens, which is
      * after this point, so it has to be told where the files are. */
     lem_set_data_dir(data);
+    /* image 0x0454C: a cold start begins at rotation index 0. */
+    music_cold_start();
 
     if (menu_build_rating(data, rating, &mm, &err) != 0) {
         fprintf(stderr, "PC Lemmings: %s\n"
@@ -154,6 +156,10 @@ int main(int argc, char **argv)
                  * 0x04720 judges a percentage. */
                 uint8_t needed = level_needed_percent(&lv);
                 char code[11] = "";
+                /* Image 0x04729 sets ds:0x1F6D on a pass and image 0x04778
+                 * clears it on a failure, which is what steps the music to
+                 * the next tune - or replays the same one with the level. */
+                music_level_passed(level_won(saved, needed) ? 1 : 0);
                 if (level_won(saved, needed)) {
                     uint8_t next = index, r2 = rat;
                     if (!level_advance(&next, &r2)) break;   /* 0x04745 */

@@ -419,10 +419,18 @@ static void start_effect(void)
     run_stream(c);                            /* +0x0556 */
 }
 
+static uint32_t g_ticks;
+
+/* THE PORT'S OWN. The original counts nothing: its tick IS the timer
+ * interrupt, and anything wanting to know how many had passed would read the
+ * PIT. A check here has no PIT to read. */
+uint32_t adlib_tick_count(void) { return g_ticks; }
+
 /* driver +0x0115 - the tick, called from the game's own timer ISR. */
 void adlib_tick(void)
 {
     if (!g_drv) return;
+    g_ticks++;
     start_music();                            /* +0x0121 */
     start_effect();                           /* +0x0124 */
     g_tempo--;                                /* +0x0127 */
@@ -486,6 +494,7 @@ int adlib_load(const char *data_dir, const char **err)
     }
     g_req_music = g_req_slot5 = g_req_pending = g_req_effect = 0;
     g_tempo = g_tempo_reload = 1;
+    g_ticks = 0;
     g_music_chans = CHANNELS;
 
     opl_reset();

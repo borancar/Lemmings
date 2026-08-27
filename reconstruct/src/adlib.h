@@ -56,6 +56,12 @@ uint8_t adlib_ready(void);
  *   AH=5  driver +0x0032  a third slot         (driver +0x00EE)
  */
 void adlib_tick(void);
+
+/* How many ticks have been run since the driver was loaded. THE PORT'S OWN:
+ * a check that logs a DERIVED tick - samples divided by the rate - quantises
+ * it to whatever chunk the audio is built in, and the gaps then differ from
+ * the original's for a reason that is entirely the instrument's. */
+uint32_t adlib_tick_count(void);
 void adlib_stop(void);
 void adlib_music(uint8_t id);
 void adlib_effect(uint8_t id);

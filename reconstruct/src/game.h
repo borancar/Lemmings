@@ -299,7 +299,10 @@ void sound_tick_now(void);
 
 /* ds:0x2010 - whether a sound driver answered its detect. */
 void sound_driver_present(uint8_t yes);
-void music_choose(void);            /* image 0x0482F */
+void music_choose(const level *lv);   /* image 0x0482F */
+void music_level_passed(uint8_t passed);  /* image 0x04729 / 0x04778 */
+void music_cold_start(void);              /* image 0x0454C */
+void music_set_level(const level *lv);
 uint8_t sound_enabled(uint8_t bits);   /* ds:0x25A7 */
 
 /* Where the player's data files are. THE PORT'S OWN: the original ran in the
@@ -322,6 +325,10 @@ const char *lem_data_dir(void);
  * This is a claim about a RATE, and no comparison of register writes can see
  * it - 10,333 of 10,333 of those agreed while the game played chopped noise. */
 uint32_t sound_fill_bytes(int queued, int target);
+
+/* THE PORT'S OWN. One chunk of the pump's own output, without a device -
+ * so the LIVE path can be traced. */
+void sound_build_chunk(int16_t *buf, uint32_t frames);
 
 /* THE PORT'S OWN - the target the game itself pumps to, in bytes. */
 int sound_target_bytes(void);

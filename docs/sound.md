@@ -538,3 +538,61 @@ streams that agree write for write. Two causes, both the instrument:
 
 Audio that sounds identical differs everywhere under a sample compare. **The
 register stream is the instrument for this; a waveform is not.**
+
+## Which tune a level gets
+
+`music_choose` (image 0x0482F) reads two bytes, and the port had neither.
+
+**ds:0x0FE8 - the level's EXTENDED graphics set**, its header's +0x1C. Image
+0x01A26 and image 0x03742 read the same byte to load a different file and
+build the terrain a different way, which is what identifies it: non-zero means
+one of the four VGASPEC levels, and image 0x04866 gives them their own tunes
+from image 0x04888 - `01 09 03 02`. That is why the by-number table has
+exactly four entries.
+
+**ds:0x1F6D - the advance flag**, and it is what makes each level's music
+differ from the last. Image 0x04720 compares the rescued percentage against
+the requirement:
+
+    pass  image 0x04729  ds:0x1F6D = 0xFF, and image 0x0472E advances the
+                         LEVEL INDEX in the same breath
+    fail  image 0x04778  ds:0x1F6D = 0
+    cold  image 0x0454C  ds:0x1F6D = 0, in the block that wipes 0..0xFCA
+
+So passing a level steps the rotation and failing one replays the same tune
+with the same level. The port had neither, chose index 0 every time, and
+played tune 6 on every level of the game:
+
+    level 1  rotation 0  tune  6  Lemming1
+    level 2  rotation 1  tune  7  Lemming2
+    level 3  rotation 2  tune  8  Lemming3
+    level 4  rotation 3  tune 10  Mountain
+    level 5  rotation 4  tune 11  Ten Lemmings
+    level 6  rotation 5  tune  4  CanCan
+
+The first level was right by accident - index 0 is where a cold start begins.
+
+## The LIVE path, measured at last
+
+Everything scored before this was either the driver alone or the pump's
+arithmetic. The code BETWEEN them - `sound_build_chunk`, ticking the driver
+where the tick falls and rendering around it - had never been run by anything
+but the game. `lemdev --adlib-live` runs it with no audio device and traces
+what reaches the chip:
+
+    register and value agree : 10231 of 10231  (100.00%)
+    the GAP between writes   : 10228 of 10230  (99.98%)
+
+**Its first reading was 93.85% on the gaps, and that was the instrument.** The
+log stamped each write with a tick DERIVED from the sample count, which
+quantises every one of them to the 1024-sample chunk the audio happens to be
+built in - about two driver ticks. Asking the driver for its own count
+(`adlib_tick_count`) took it to 99.98%.
+
+The residue is one gap of 17 ticks at write #106, where the music starts. The
+original passes 199 PIT ticks between level frame 15 and frame 55 - 4.975 a
+frame, which is the five this project already documents - and the port's
+LEVEL_FPS of 17 against a 97.08 Hz PIT gives 5.71. **So the level's frame rate
+and the PIT rate disagree by about 13% and one of the two numbers is wrong.**
+That is not settled here and should not be guessed at: it needs
+`tools/probe_pace.py` run against a level.
