@@ -365,3 +365,67 @@ worth per frame:
 
 and `make test` runs all three, the last as the control. A check that cannot
 fail is not a check.
+
+## Nothing ever asked for a tune
+
+Effects worked and music did not, and the reason was not in the driver, the
+chip or the pump. Every `sound_request` site the port had transcribed is an
+EFFECT - `sound_request(4, ...)` - and **no site ever asked for a tune**.
+
+No comparison could have found that. A request that is never made writes no
+registers, so the stream comparison that scores 10,333 of 10,333 is scoring a
+stream driven by a script; the game's own path never produced one.
+
+### The routines, and why a static search could not find them
+
+    image 0x0031E  the title's cue sequencer, called once a frame from
+                   image 0x0019D; image 0x001A3 is the `inc byte [0x52]`
+                   that gives it a frame count
+    image 0x00380  frame 0x0F -> effect 3
+    image 0x00394  frame 0x23 -> effect 2, and ds:0x55 = 0xFF
+    image 0x003AD  frame 0x37 -> ask for ds:0x54 (AH=3), then run ONE tick
+                   immediately (AH=0) rather than waiting for the next
+    image 0x0482F  choose the tune, called from image 0x00489
+    image 0x04840  the next in a seventeen-deep rotation at image 0x04877
+    image 0x04866  one named by ds:0x0FE8, from image 0x04888
+
+**Not one of these has a near CALL anywhere in the image.** image 0x0031E
+JUMPS into them, so a search for callers returns nothing and says nothing.
+The question had to be put to the running original - a one-instruction
+UC_HOOK_CODE range on each, reading the near return address off the stack the
+way probe_blits.py reads the blitter's caller. `tools/probe_music.py`.
+
+That probe's first run reported **"none of them ran"**, which was a fact about
+the instrument: `begin`/`end` are LINEAR addresses and it had been given raw
+image offsets, so it watched five bytes near the bottom of memory that this
+program never executes. `base = m.load_seg * 16` is the conversion, and
+verify_level.py has always had it.
+
+### The tables
+
+    image 0x04877  06 07 08 0A 0B 04 0C 0D 0E 0F 05 10 11 12 13 14 15
+    image 0x04888  01 09 03 02
+
+Index 0 of the rotation is tune **6**, which is exactly what the original was
+caught asking for. `ds:0x1F6C` is the rotation counter and only advances when
+`ds:0x1F6D` is set; `ds:0x0FE8` non-zero names one of the four instead.
+
+### The gate is now established
+
+This file used to say bit 1 of `ds:0x25A7` was "music against effects - the
+obvious reading, and NOT yet established". It is established, by the two
+routines using different masks:
+
+    image 0x00387   test [0x25a7], 3    the EFFECTS want either switch
+    image 0x003AD   test [0x25a7], 2    the MUSIC wants bit 1 alone
+
+### Checked
+
+`reconstruct/tests/screens.c` runs the cue sequencer and watches for a write
+to register **0xBD** - only the driver's `start_music` writes it (driver
++0x0504), so it witnesses a TUNE beginning rather than merely a noise, which
+an effect would also make:
+
+    no tune before frame 55                   ok
+    the title starts a tune at frame 55       ok
+    with no driver, nothing is asked for      ok

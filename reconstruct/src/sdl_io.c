@@ -186,6 +186,7 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
         if (scroll_y < 0) scroll_y = 0;
         if (scroll_y > max_y) scroll_y = max_y;
 
+        sound_cue_tick();               /* image 0x0031E, once a frame */
         sound_pump();
         if (g_show_tick && g_show_pix)
             g_show_tick(g_show_ctx, g_show_pix);
@@ -1128,6 +1129,12 @@ void sound_request(uint8_t fn, uint8_t id)
     else         adlib_music(id);           /* driver +0x0022 */
 }
 
+/* image 0x003BB does this the instant it has asked for a tune. */
+void sound_tick_now(void)
+{
+    if (adlib_ready()) adlib_tick();        /* driver +0x0115 */
+}
+
 /* Mix and hand to SDL. Called once a frame from the level and menu loops. */
 /* How much audio to keep queued, and how much to build at a time.
  *
@@ -1204,6 +1211,10 @@ static void sound_open(void)
      * are the same thing to the game: silence, and it carries on. */
     if (adlib_load(lem_data_dir(), &err) != 0)
         fprintf(stderr, "no sound: adlib.dat: %s\n", err);
+    /* ds:0x2010 is set at image 0x005A4 when the detect answers; the port
+     * asks the driver whether it loaded. Without this the cue sequencer
+     * refuses at image 0x04834 and no tune is ever chosen. */
+    sound_cue_reset(adlib_ready());
 
     SDL_AudioSpec want;
     SDL_zero(want);

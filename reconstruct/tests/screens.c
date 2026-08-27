@@ -16,8 +16,16 @@
 #include <stdlib.h>
 #include "game.h"
 #include "opl.h"
+#include "adlib.h"
 
 static int fails;
+
+static int g_saw_bd;
+static void saw_bd(uint8_t reg, uint8_t val)
+{
+    (void)val;
+    if (reg == 0xBD) g_saw_bd = 1;
+}
 
 static void ck(const char *what, int ok, const char *err)
 {
@@ -1303,6 +1311,46 @@ int main(int argc, char **argv)
         }
     }
 
+
+    /* ---- the title actually ASKS for a tune ----
+     *
+     * Every sound_request site transcribed before this was an effect, so the
+     * port played effects and no music - and nothing could have caught it by
+     * comparing register streams, because a request that is never made
+     * writes nothing at all. The cue sequencer at image 0x0031E is what
+     * makes it: an effect at frame 15, another at 35, the music at 55.
+     *
+     * The witness is register 0xBD. Only the driver's start_music writes it
+     * (driver +0x0504), so seeing it proves a TUNE began rather than merely
+     * that something made a noise - which an effect would also do. */
+    {
+        const char *aerr = "unknown error";
+        if (adlib_load(dir, &aerr) != 0) {
+            ck("adlib.dat loads", 0, aerr);
+        } else {
+            ck("adlib.dat loads", 1, NULL);
+            g_saw_bd = 0;
+            opl_reset();
+            opl_set_trace(saw_bd);
+            sound_cue_reset(1);
+            for (int i = 0; i < 54; i++) { sound_cue_tick(); adlib_tick(); }
+            ck("no tune before frame 55", g_saw_bd == 0, NULL);
+            for (int i = 54; i < 60; i++) { sound_cue_tick(); adlib_tick(); }
+            ck("the title starts a tune at frame 55", g_saw_bd != 0, NULL);
+            opl_set_trace(NULL);
+
+            /* And the rotation: index 0 is tune 6, which is what the
+             * original was caught asking for. */
+            g_saw_bd = 0;
+            opl_reset();
+            sound_cue_reset(0);          /* no driver: image 0x04834 refuses */
+            opl_set_trace(saw_bd);
+            for (int i = 0; i < 60; i++) { sound_cue_tick(); adlib_tick(); }
+            ck("with no driver, nothing is asked for", g_saw_bd == 0, NULL);
+            opl_set_trace(NULL);
+            adlib_free();
+        }
+    }
 
     /* ---- the audio pump keeps up with the frame rate ----
      *

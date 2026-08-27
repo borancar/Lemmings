@@ -4225,6 +4225,120 @@ static void lem_boom(lemming *a)
     a->extra &= 1;                                  /* image 0x02D53 */
 }
 
+
+/* ====================================================================
+ * THE MUSIC - which tune, and when it starts.
+ *
+ * The port had none of this, and that is why it played effects and no music:
+ * every sound_request site transcribed so far is an EFFECT, and nothing ever
+ * asked for a tune. Nothing could have found that by comparing what the
+ * driver writes, because a request that is never made writes nothing.
+ * ==================================================================== */
+
+static uint8_t g_snd_flags;      /* ds:0x4E  which start-up phase is running */
+static uint8_t g_snd_frame;      /* ds:0x52  frames since it began */
+static uint8_t g_tune;           /* ds:0x54  the driver's tune number */
+static uint8_t g_tune_rot;       /* ds:0x1F6C the rotation counter, 0..16 */
+static uint8_t g_tune_advance;   /* ds:0x1F6D non-zero: step the rotation */
+static uint8_t g_tune_pick;      /* ds:0x0FE8 0 rotates, 1..4 names one */
+static uint8_t g_snd_driver;     /* ds:0x2010 0xFF once a driver answered */
+
+/* image 0x04877 - the rotation, seventeen tunes deep. The names are the
+ * driver's own, from its built-in test menu (docs/sound.md): 6 is "CanCan",
+ * and index 0 is where a fresh run starts, which is why the original's
+ * capture asked for tune 6. */
+static const uint8_t TUNE_ROTATION[17] = {
+    0x06, 0x07, 0x08, 0x0A, 0x0B, 0x04, 0x0C, 0x0D, 0x0E,
+    0x0F, 0x05, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15
+};
+
+/* image 0x04888 - the four that are asked for by name rather than rotated. */
+static const uint8_t TUNE_BY_NUMBER[4] = { 0x01, 0x09, 0x03, 0x02 };
+
+/* image 0x0482F, and the two routines it jumps into at image 0x04840 and
+ * image 0x04866. Neither has a single near CALL in the image - they are
+ * jumped to - which is why a static search for callers found nothing and the
+ * question had to be put to the running original instead. */
+void music_choose(void)
+{
+    if (g_snd_driver == 0) return;              /* image 0x04834 */
+    uint8_t al = g_tune_pick;                   /* image 0x04836 */
+    if (al != 0) {                              /* image 0x0483D */
+        g_tune = TUNE_BY_NUMBER[(uint8_t)(al - 1) & 3];   /* image 0x04866 */
+        return;
+    }
+    if (g_tune_advance != 0) {                  /* image 0x04840 */
+        al = (uint8_t)(g_tune_rot + 1);
+        if (al == 0x11) al = 0;                 /* image 0x0484C: seventeen */
+        g_tune_rot = al;
+    }
+    g_tune = TUNE_ROTATION[al % 17];            /* image 0x0485E */
+}
+
+/* image 0x00380 - and note the mask. Effects want EITHER switch of
+ * ds:0x25A7; the music at image 0x003AD wants bit 1 alone. This file used to
+ * record that as "the obvious reading, NOT established"; it is established
+ * now, by the two masks being different in the two routines. */
+static void snd_cue_effect3(void)
+{
+    if (g_snd_driver != 0xFF) return;           /* image 0x00380 */
+    if (!sound_enabled(3)) return;              /* image 0x00387 */
+    sound_request(4, 0x03);                     /* image 0x0038E */
+}
+
+/* image 0x00394 */
+static uint8_t g_snd_55;                        /* ds:0x55 */
+
+static void snd_cue_effect2(void)
+{
+    g_snd_55 = 0xFF;                            /* image 0x00394 */
+    if (g_snd_driver != 0xFF) return;
+    if (!sound_enabled(3)) return;              /* image 0x003A0 */
+    sound_request(4, 0x02);                     /* image 0x003A7 */
+}
+
+/* image 0x003AD - ask for the tune, then run ONE driver tick immediately
+ * rather than waiting for the next one. */
+static void snd_cue_music(void)
+{
+    if (!sound_enabled(2)) return;              /* image 0x003AD: BIT 1 */
+    sound_request(3, g_tune);                   /* image 0x003B4 */
+    sound_tick_now();                           /* image 0x003BB: AH=0 */
+}
+
+/* image 0x0031E's third branch, and the frame counter is image 0x001A3's
+ * `inc byte [0x52]`. The other two branches are the logo and the scroller,
+ * which this port does not have; they are left out rather than guessed at.
+ *
+ * Called once a frame while the title is up. Fifteen frames in an effect
+ * plays, thirty-five another, fifty-five the music starts - and at
+ * seventeen frames a second that is the tune arriving about three seconds
+ * after the screen does. */
+void sound_cue_tick(void)
+{
+    uint8_t al = g_snd_flags;
+    if (!(al & 4)) return;                      /* image 0x00361 */
+    uint8_t dl = g_snd_frame;                   /* image 0x00365 */
+    g_snd_frame = (uint8_t)(g_snd_frame + 1);   /* image 0x001A3 */
+    if (dl == 0x0F)      { snd_cue_effect3(); return; }   /* image 0x0036C */
+    else if (dl == 0x23) { snd_cue_effect2(); return; }   /* image 0x00371 */
+    else if (dl == 0x37) { snd_cue_music();   return; }   /* image 0x00376 */
+    else if (dl > 0x37)  al = (uint8_t)(al & 0xFB);       /* image 0x0037A */
+    g_snd_flags = al;                           /* image 0x0037C */
+}
+
+/* THE PORT'S OWN. The original does not need this: DOS had either installed
+ * the driver or not, and ds:0x2010 was set at image 0x005A4 when the detect
+ * answered. The port asks the driver itself. */
+void sound_cue_reset(uint8_t have_driver)
+{
+    g_snd_driver = have_driver ? 0xFF : 0;
+    g_snd_flags = 4;                 /* the cue phase, ds:0x4E bit 2 */
+    g_snd_frame = 0;                 /* ds:0x52 */
+    music_choose();                  /* image 0x00489 calls it at start-up */
+}
+
+
 /* THE CLOUD - transcribed from image 0x02350, the last of the bomber.
  *
  * Its counter is NOT masked: image 0x02353 simply increments, and image

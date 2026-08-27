@@ -285,6 +285,17 @@ extern uint8_t g_terrain_reverse;
  * Both gates are the caller's, as they are in the original: ds:0x25A7 bit 0
  * for an AH=3 call and bits 0-1 for an AH=4 one. */
 void sound_request(uint8_t fn, uint8_t id);
+
+/* Run one driver tick right now. image 0x003BB does this immediately after
+ * asking for a tune rather than waiting for the next timer interrupt. */
+void sound_tick_now(void);
+
+/* The title's timed sound cues - image 0x0031E's third branch. Call
+ * sound_cue_reset when the screen comes up and sound_cue_tick once a frame.
+ * The music starts at frame 55 (image 0x00376). */
+void sound_cue_reset(uint8_t have_driver);
+void sound_cue_tick(void);
+void music_choose(void);            /* image 0x0482F */
 uint8_t sound_enabled(uint8_t bits);   /* ds:0x25A7 */
 
 /* Where the player's data files are. THE PORT'S OWN: the original ran in the
