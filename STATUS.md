@@ -1441,8 +1441,17 @@ the eight, and 137 of those 138 differing frames are a **single pixel** - the
 same one, at screen (159, 81) on "Just dig!" driven by `out/s8.txt`. The
 original holds it and the port clears it.
 
-It is TERRAIN, and it matters slightly more than a pixel of picture: the port
-has a one-pixel hole in its solidity map that the original does not.
+It is terrain colour, and it is **cosmetic only** - a claim made twice here
+that the port had a one-pixel hole in its solidity map was wrong. The
+original's pixel is attribute 2, `0010`, whose PLANE 3 bit is clear, and plane
+3 is what solidity is: image `0x05DC6` tests it in the guest and `lem_solid`
+tests `& 8` in the port. Non-solid on both sides. What differs is that the
+original still shows a terrain colour where the port shows background.
+
+That also explains the shape of it. The clear made the pixel non-solid - it
+cleared planes 2 and 3 - and left plane 1's bit standing, so what is left is
+empty ground that has not stopped being drawn. The port writes a plain zero
+and has nothing to leave.
 
 What it is not, each checked rather than argued:
 
