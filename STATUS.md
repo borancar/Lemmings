@@ -1576,14 +1576,33 @@ unpack the nibbles `level_parse` reads), image `0x037C2` is the TRIGGER MAP
 (image `0x03808`), image `0x0389F` is the ENTRANCES (image `0x038A3`), and
 image `0x036AD` is a clear.
 
-So image `0x03789`'s conclusion stands and the preview still shows the
-objects. **Both are measured and they do not fit**, which is the honest state.
-Everything cheap is spent: the five passes read, a write probe over the
-bitmap's own rows at stride 208 finding only the shared blitter's stores, and
-both halves of `ds:0x1FEE`'s segment holding nothing but the decompressor's
-output. What is left is to compare the BITMAP ITSELF at image `0x0376A`
-against the same bytes when the briefing draws its preview - two dumps of one
-run, and `prove.sh` already takes one of those two. The routines stay owed - found is a step short of read - but the
+And the contradiction is **settled by dumping the bitmap itself.**
+`tools/probe_pvsrc.py` rides along and captures the level bitmap at image
+`0x07EB2` - the packer's entry, hit exactly once, at the briefing - and
+compares it against the port's canvas:
+
+    the port WITHOUT objects    815 pixels differ
+    the port WITH objects        19 pixels differ
+
+and the 815 begin at (707, 36), which is where this level's objects are. So
+the objects ARE in the bitmap when the preview reads it, and drawing them is
+right.
+
+**Image `0x03789`'s conclusion was a fact about one instant read as a fact
+about the program.** What it establishes is that at `prove.sh`'s break - image
+`0x0376A` - the objects are not there yet, which is why that comparison passes
+`--no-objects` and gets 100.00%. The five passes at image `0x0376A`..`0x03776`
+all run after that break, and the briefing comes after all of it. "The
+original never composes objects into the level bitmap" was too strong, and it
+had stood here long enough to make a correct routine look like a wrong one.
+
+What is left is nineteen pixels around (861, 108) and (886, 108) - the exit's
+edge - where the port and the bitmap disagree with objects drawn. That is a
+much smaller thing than the question it replaces.
+
+Getting there needed a hook rather than the control socket: `break i+0x7eb2`
+halts the guest while the menus are still up and every F1 the driver sends is
+dropped, so the run never reaches the briefing at all. The routines stay owed - found is a step short of read - but the
 marker can say where now, which is the difference between nobody having read
 it and nobody having found it.
 

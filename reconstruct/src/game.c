@@ -8117,16 +8117,28 @@ static char *put_num2(char *dst, uint8_t v);
  *                    carries
  *     image 0x036AD  a clear: di = 0xCC40, cx = 0x340
  *
- * So image 0x03789's conclusion stands - nothing composes objects into the
- * level bitmap - and the preview still shows them. The two facts are both
- * measured and they do not fit, which is the honest state of this routine.
- * Everything cheap has been tried: the five passes are read, a write probe
- * over the bitmap's own rows at stride 208 finds only the shared blitter's
- * stores, and both halves of ds:0x1FEE's segment hold nothing but the
- * decompressor's output. What is left is to compare the BITMAP ITSELF at
- * image 0x0376A against the same bytes when the briefing draws its preview -
- * two dumps of one run, which is the sort of thing tools/prove.sh already
- * does for one of the two moments.
+ * SETTLED, and image 0x03789's conclusion was wrong as it was stated.
+ * tools/probe_pvsrc.py rides along and dumps the level bitmap at image
+ * 0x07EB2 - the packer's entry, hit exactly once, at the briefing - and
+ * compares it against this port's canvas:
+ *
+ *     the port WITHOUT objects   815 pixels differ
+ *     the port WITH objects       19 pixels differ
+ *
+ * and the 815 begin at (707, 36), which is where this level's objects are.
+ * So the objects ARE in the bitmap by the time the preview reads it, and
+ * drawing them here is right.
+ *
+ * What image 0x03789 actually established is narrower: at tools/prove.sh's
+ * break, image 0x0376A, they are not there yet - which is why that comparison
+ * passes --no-objects and gets 100.00%. The five passes at image 0x0376A..
+ * 0x03776 run AFTER that break, and the briefing comes after all of it. The
+ * claim "the original never composes objects into the level bitmap" was a
+ * fact about one instant read as a fact about the program.
+ *
+ * Still open, and much smaller: nineteen pixels around (861, 108) and
+ * (886, 108) where the port and the bitmap disagree WITH objects drawn - the
+ * exit's edge. That is what this routine owes now.
  */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,
