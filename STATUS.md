@@ -1380,9 +1380,18 @@ been tried and both made it worse**, which is the useful part:
 A byte trim cannot produce a one-column difference, and a blanket last-column
 rule is refuted by every other lemming that reaches 319 and matches. So the
 rule is conditional on something not yet identified, and guessing at it has
-cost two rounds. The next step is to READ `ds:0x66F2` out of a running level
-and then read the sprite path that actually consumes it, not to try a third
-shape.
+cost two rounds. So `ds:0x66F2` was READ out of a running level -
+`tools/probe_clip.py`, 2,109 frames sampled at the game's own end-of-frame -
+and it is **352**, the full page width, on every one of them. Beside it sit
+`ds:0x66F0` = 160, the play area's height, and `ds:0x66F4` = 44, its row in
+bytes. So during a level the blitter clips against the PAGE and not against
+the visible 320 at all, and a sixteen-wide sprite at screen 312 (page 328)
+ends at page 344, well inside it: there is no right-edge trim to apply. Both
+attempts were wrong for one reason, and one word would have said so before
+either of them was written.
+
+That leaves the three pixels genuinely open, but far better fenced: whatever
+stops the original drawing there, it is not the blitter's limit.
 
 ### ODDTABLE.DAT: half the game's plates play under another name
 
