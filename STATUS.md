@@ -1107,6 +1107,22 @@ doing stops.
 spot is `(-8, -14)`, four rows deeper than anything else here, and its frame
 is `0x70` = 112 bytes against the drowner's `0x3C` = 60.
 
+### A minute is not available on every level
+
+`level001.dat --level 3` is scored over 530 frames and not the 1,020 that a
+minute would be, and that is the LEVEL rather than the run falling short: its
+own recording ends at frame 563 with all eighty lemmings dead, `over` set to
+0xFF and the DAC fading to nothing by 564. Reached as Fun 9 it stocks twenty
+of every skill and releases at 99, so with nobody playing the whole level is
+over in thirty-three seconds.
+
+The other two do give a minute and more - 1,100 frames each, and neither ends
+inside it.
+
+This is the same rule this file already states about the first level's 5,100:
+score the LEVEL, not the timer. A recorder waiting for frames a finished level
+will never produce looks exactly like a slow one.
+
 ### The fire death, and "I have a cunning plan" matched
 
 `level001.dat --level 3`, frame by frame: **play area exact on 488 of 530**,

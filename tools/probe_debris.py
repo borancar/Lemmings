@@ -38,8 +38,16 @@ def install(m):
     blast = collections.Counter()
 
     def on_frame(uc, ad, size, _):
-        if ad - base == FRAME_END:
-            st["n"] += 1
+        if ad - base != FRAME_END:
+            return
+        st["n"] += 1
+        # STOP AS SOON AS THE WINDOW IS PAST. record_level runs on to its
+        # --seconds ceiling after the last frame it wants, and with a hook on
+        # every guest write that is a very long time for nothing. A probe
+        # should end when its question is answered.
+        if st["n"] > BLAST[1] + 2:
+            report()
+            raise SystemExit(0)
 
     def on_write(uc, access, address, size, value, _):
         if not (VGA_LO <= address < VGA_HI):
@@ -57,8 +65,6 @@ def install(m):
     m.uc.hook_add(UC_HOOK_CODE, on_frame)
     m.uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
 
-    import atexit
-
     def report():
         print(f"\n  [probe_debris] reached frame {st['n']}")
         if st["n"] < BLAST[1]:
@@ -73,5 +79,4 @@ def install(m):
         print("    writes ONLY in the blast window:",
               ", ".join(f"{k:#07x}" for k in only[:10]) or "none")
 
-    atexit.register(report)
     print("  [probe_debris] watching EGA writes in two windows")
