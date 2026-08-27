@@ -8023,6 +8023,22 @@ static char *put_num2(char *dst, uint8_t v);
 #define PV_Y       20
 #define PV_W      396      /* LEVEL_W / 4 */
 #define PV_H       39      /* not 40: the top row is not drawn - see below */
+/* BOTH OF THESE ARE READ NOW, out of image 0x07F28..0x07F76 - the packer's
+ * bit scatter, which takes four source bytes and builds one output byte a
+ * plane. Decoding where each output bit comes from (bit 7 is the leftmost
+ * pixel):
+ *
+ *   out bit 7  ch rol 2, and 0x80   source bit 5   pixel  2
+ *   out bit 6  ch ror 3, and 0x40   source bit 1   pixel  6
+ *   out bit 5  cl        and 0x20   source bit 5   pixel 10
+ *   out bit 4  cl rol 3, and 0x10   source bit 1   pixel 14
+ *   out bit 3  bh ror 2, and 0x08   source bit 5   pixel 18
+ *   out bit 2  bh rol 1, and 0x04   source bit 1   pixel 22
+ *   out bit 1  bl rol 4, and 0x02   source bit 5   pixel 26
+ *   out bit 0  bl ror 1, and 0x01   source bit 1   pixel 30
+ *
+ * which is every FOURTH pixel starting at the THIRD - scale 4, sample 2,
+ * exactly what was measured off the screen. */
 #define PV_SCALE    4
 #define PV_SAMPLE   2      /* which pixel of each 4x4 block is taken */
 #define PV_TOP      4      /* the first level row the preview shows

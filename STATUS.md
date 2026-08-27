@@ -1510,9 +1510,28 @@ rather than fitted. Its four unrolled plane writes are image `0x07F7B`,
 2,028 - so 39 rows, which is `PV_H`. The blit then puts 632 x 94 up at y = 20,
 `PV_Y` exactly.
 
+And the SAMPLE is read too, which was the last of the fitted constants.
+Decoding image `0x07F28`..`0x07F76`'s bit scatter - four source bytes in, one
+output byte a plane out, bit 7 being the leftmost pixel:
+
+    out bit 7   ch rol 2, and 0x80    source bit 5    pixel  2
+    out bit 6   ch ror 3, and 0x40    source bit 1    pixel  6
+    out bit 5   cl        and 0x20    source bit 5    pixel 10
+    out bit 4   cl rol 3, and 0x10    source bit 1    pixel 14
+    out bit 3   bh ror 2, and 0x08    source bit 5    pixel 18
+    out bit 2   bh rol 1, and 0x04    source bit 1    pixel 22
+    out bit 1   bl rol 4, and 0x02    source bit 5    pixel 26
+    out bit 0   bl ror 1, and 0x01    source bit 1    pixel 30
+
+Every fourth pixel starting at the third: `PV_SCALE` 4 and `PV_SAMPLE` 2, and
+the preview still scores **0 pixels differing** against the original's own.
+
 Every constant `draw_preview`'s comment said was "measured against the
 original's screen, not read from its code" is now read from its code, and they
-all agree. The routines stay owed - found is a step short of read - but the
+all agree. One difference worth noting rather than chasing: the original packs
+the level bitmap's full 1,664 columns to 416 output pixels where the port
+packs the level's 1,584 to 396. The 20 output pixels between them are the
+bitmap's empty tail, which is why nothing shows. The routines stay owed - found is a step short of read - but the
 marker can say where now, which is the difference between nobody having read
 it and nobody having found it.
 
