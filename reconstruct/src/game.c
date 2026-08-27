@@ -1259,6 +1259,9 @@ void level_timer_step(void)
  * object's record - see level_object_trigger. */
 static level_anim *g_anim;
 
+/* THE PORT'S OWN: it copies GROUNDxO.DAT's object records into a form
+ * level_anim_step can walk. The original keeps them in the file's own layout
+ * and reads the same fields in place - image 0x07C1E. */
 void level_anim_init(level_anim *st, const level *lv, const ground *g)
 {
     memset(st, 0, sizeof(*st) * LEVEL_ANIM_MAX);
@@ -1349,6 +1352,7 @@ static uint8_t g_to_release;     /* ds:0x47 */
  * anything in the original can read it. */
 uint8_t level_released(void) { return g_released; }
 /* ds:0x47, and a VARIABLE - the nuke writes to it. */
+/* ds:0x47, and a VARIABLE - the nuke at image 0x04013 writes to it. */
 uint8_t level_to_release(void) { return g_to_release; }
 
 /* ======================================================================
@@ -1416,7 +1420,10 @@ int level_pause_click(void)
     g_pause_at = al;                              /* image 0x0402D */
     return 1;
 }
+/* THE PORT'S OWN, only because ds:0x1FD3 is a byte of the data segment and
+ * a harness may want to see what the double click is measuring against. */
 uint8_t level_tick_now(void) { return g_nuke_tick; }
+/* THE PORT'S OWN: ds:0x4B read back, for anything that wants to ask. */
 uint8_t level_nuking(void) { return g_nuke; }
 
 /* Image 0x03FEF. Returns whether this press was the second of a pair. */
@@ -1731,12 +1738,15 @@ uint8_t level_object_busy(uint8_t i)
     return (uint8_t)((g_anim[i].flags & 2) != 0);   /* image 0x02FC5 */
 }
 
+/* Image 0x02FCE: bit 1 of the object's record, which is the same bit image
+ * 0x07C1E tests to decide whether an object advances a frame. */
 void level_object_trigger(uint8_t i)
 {
     if (!g_anim || i >= LEVEL_ANIM_MAX) return;
     g_anim[i].flags |= 2;                           /* image 0x02FCE */
 }
 
+/* Image 0x037CB. */
 void level_triggers_build(const level *lv, const ground *g)
 {
     memset(g_trigger, 0, sizeof g_trigger);
@@ -3144,6 +3154,7 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 #define CLIMB_BIT   0x0020
 #define HOIST_BIT   0x0040
 
+/* Image 0x02179. */
 static void lem_climb_begin(lemming *a)
 {
     a->anim   = 0;                                  /* image 0x02179 */
@@ -3171,6 +3182,7 @@ static void lem_climb_fall(lemming *a)
     a->x     = (int16_t)(a->x + a->dir + a->dir);   /* image 0x025DA, twice */
 }
 
+/* Image 0x02552. */
 static void lem_climb(lemming *a, const uint8_t *lvl, uint16_t cw,
                       uint16_t chh)
 {
@@ -3386,6 +3398,7 @@ static void lem_bash_slice(lemming *a, uint8_t slice, uint8_t *lvl,
     }
 }
 
+/* Image 0x0287D. */
 static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     a->anim = (uint8_t)((a->anim + 1) & 0x1F);      /* image 0x02880 */
@@ -3739,6 +3752,7 @@ static const uint16_t CRATER[CRATER_ROWS] = {
     0x07E0,   /* .....######..... */
 };
 
+/* Image 0x05E73's masks, called from image 0x023B9. */
 static void lem_crater(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     int32_t x0 = (int32_t)a->x - CRATER_BACK - LEMMING_DX;
@@ -3806,6 +3820,7 @@ static const uint8_t FLOAT_SCRIPT[] = {
 };
 #define FLOAT_LOOP_AT 16        /* where the repeating tail begins, in pairs */
 
+/* Image 0x02AEC. */
 static void lem_float_land(lemming *a)
 {
     a->flags = 0;                                   /* image 0x02AEC */
@@ -3815,6 +3830,7 @@ static void lem_float_land(lemming *a)
     a->state = 9;                                   /* image 0x02B13 */
 }
 
+/* Image 0x02A6D, the chain's 0x0400. */
 static void lem_floatdown(lemming *a, const uint8_t *lvl, uint16_t cw,
                           uint16_t chh)
 {
@@ -3868,6 +3884,7 @@ static void lem_floatdown(lemming *a, const uint8_t *lvl, uint16_t cw,
 #define BOOM_BIT      0x8000
 #define CLOUD_BIT     0x0002
 
+/* Image 0x031C4. */
 int lem_bomb_start(lemming *a)
 {
     if (a->fuse) return 0;                          /* image 0x031CB */
@@ -3972,6 +3989,7 @@ int lem_climb_start(lemming *a)
     return 1;
 }
 
+/* Image 0x03557. */
 int lem_float_start(lemming *a)
 {
     if (a->floater) return 0;                   /* image 0x0355E */
@@ -4016,6 +4034,7 @@ static int block_taken(uint8_t v)
     return v == BLOCK_LEFT || v == BLOCK_MID || v == BLOCK_RIGHT;
 }
 
+/* Image 0x03336. */
 int lem_block_start(lemming *a)
 {
     if (a->flags & BLOCK_KEEP) return 0;            /* image 0x03340 */
@@ -5061,6 +5080,7 @@ static const uint8_t FUSE_DIGIT[5][FUSE_DIGIT_ROWS] = {
 #define FUSE_DIGIT_DY   (-8)
 #define FUSE_DIGIT_INK    3
 
+/* Image 0x070F3 loads the fuse and image 0x0714E places the digit. */
 static void lem_draw_fuse(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                           const lemming *a)
 {
@@ -5082,6 +5102,9 @@ static void lem_draw_fuse(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     }
 }
 
+/* Image 0x070A2 onwards - the blit that draws one lemming, which the port
+ * splits by state because it indexes MAIN.DAT rather than the pre-shifted
+ * store the original blits from. */
 void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                   const uint8_t *sec, uint32_t sec_len, const lemming *a)
 {
@@ -6998,7 +7021,10 @@ int level_odd_entry(uint8_t rating, uint8_t number)
  * because a stale entry is the same fault as a stale capture. */
 static int g_odd_pending = -1;
 
+/* THE PORT'S OWN. The original has no such variable - image 0x019C9 reads
+ * the level index it already has, where the record is loaded. */
 void level_odd_pending(int entry) { g_odd_pending = entry; }
+/* THE PORT'S OWN, and it CONSUMES: a stale entry is a stale capture. */
 int  level_odd_taken(void) { int e = g_odd_pending; g_odd_pending = -1; return e; }
 
 #define ODD_ENTRY   56          /* image 0x019E2: dh = 0x38 */
@@ -7008,6 +7034,8 @@ int  level_odd_taken(void) { int e = g_odd_pending; g_odd_pending = -1; return e
 /* Overlay one entry on a parsed level. The twenty-four bytes are the header's
  * own first twenty-four, so this sets exactly the fields level_parse read
  * from them and nothing else. */
+/* Image 0x019F5 copies twenty-four bytes of the entry over the record's
+ * header and image 0x019FE its thirty-two of name. */
 int level_apply_odd(const char *dir, level *lv, int entry, const char **err)
 {
     if (entry < 0) return 0;
@@ -7034,6 +7062,8 @@ int level_apply_odd(const char *dir, level *lv, int entry, const char **err)
     return 0;
 }
 
+/* Image 0x04551's table, LEVEL_ORDER - see level_odd_entry above for how
+ * the same n decides whether ODDTABLE.DAT applies. */
 int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
                  uint32_t *section)
 {
