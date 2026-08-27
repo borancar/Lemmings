@@ -2000,6 +2000,42 @@ harness with a frame budget, and frames after that budget would be scored as
 the game's - the six frame-by-frame levels still write exactly 530, 1100,
 1100, 1100, 1100 and 1100 frames and are all still exact.
 
+### An effect of ZERO is still stamped, and the skip cited the wrong address
+
+The one cell of 16,040 that `verify_triggers.py` found - row 27, column 208,
+original 0x20 against the port's 0x00 - was a real transcription fault, and it
+was settled from the LEVEL'S OWN RECORDS rather than from a run:
+
+    object 2 is id 6, effect 0, trigger 1x1 at (0, 0)
+      -> stamps column 208 row 27 with (2 << 4) | 0 = 0x20
+
+Exactly the cell, exactly the value. Object 0 also has effect 0 and stamps
+0x00, which is indistinguishable from an empty cell, which is why only one
+showed.
+
+`level_triggers_build` had `if (!go->trigger_effect) continue;` citing image
+0x037E3. **That address is not that test.** It is the `je` for image 0x037E1's
+`and ax, ax`, and AX there is the object's X - image 0x037DC reads bytes 0 and
+1 - so it is the empty-slot test `level_parse` already does. There is no
+effect test anywhere: image 0x03812 ORs `[si+0x14]` into `index << 4` and
+image 0x0381D stamps unconditionally.
+
+It is not cosmetic. **The stamp overwrites**, so an effect-0 object lying over
+a real trigger erases it in the original and did not here. On these levels the
+effect-0 rectangles are 1x1 and nothing is under them; that is a fact about
+these levels.
+
+Also transcribed: image 0x037C6's `cx = 0x10`. The trigger pass walks the
+first SIXTEEN object slots where image 0x07BB8 draws all thirty-two. No level
+in this set has more than sixteen objects, so it changes nothing.
+
+**How nearly this went the other way** is the part worth keeping. The first
+attempt at this fix was measured against a dump a concurrent background run
+had overwritten, scored worse, and was reverted as refuted - with a comment
+written into `game.c` claiming it had been measured. See the note in
+`CLAUDE.md` about fixed output paths. The reading survived only because it was
+re-derived from the level's records afterwards, where no run could corrupt it.
+
 ### The trigger map is now checked against the original's own
 
 `tools/verify_triggers.py` dumps the map the original builds and compares it

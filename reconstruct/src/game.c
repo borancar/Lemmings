@@ -1957,11 +1957,33 @@ void level_triggers_build(const level *lv, const ground *g)
                    9);                              /* image 0x03886 */
     }
 
-    for (uint16_t i = 0; i < lv->num_objects; i++) {
+    /* SIXTEEN, not thirty-two. Image 0x037C6 sets `cx = 0x10` and image
+     * 0x0382F steps `di` by eight, so the trigger pass walks the first
+     * sixteen object slots where image 0x07BB8 DRAWS all thirty-two. No level
+     * in this set has more than sixteen objects, so it changes nothing -
+     * transcribed because it is the original's bound and costs one line. */
+    for (uint16_t i = 0; i < lv->num_objects && i < 16; i++) {
         const level_object *o = &lv->objects[i];
         if (o->id >= GROUND_OBJECTS) continue;
         const ground_object *go = &g->objects[o->id];
-        if (!go->trigger_effect) continue;          /* image 0x037E3 */
+        /* AN EFFECT OF ZERO IS STILL STAMPED. This used to skip it and cite
+         * image 0x037E3 for the skip, which is the wrong address: that is the
+         * `je` for image 0x037E1's `and ax, ax`, and AX there is the object's
+         * X - image 0x037DC reads bytes 0 and 1 - so it is the empty-slot
+         * test that level_parse already does. There is no effect test at all:
+         * image 0x03812 ORs `[si+0x14]` into `index << 4` and image 0x0381D
+         * stamps unconditionally.
+         *
+         * It matters because the stamp OVERWRITES. An effect-0 object lying
+         * over a real trigger erases it in the original, and did not here.
+         *
+         * Settled from the DATA rather than from a run: on level004 section
+         * 3, object 2 is id 6 with effect 0 and a 1x1 trigger at (0, 0), so
+         * it stamps column 208 row 27 with `(2 << 4) | 0` = 0x20 - which is
+         * exactly the one cell of 16,040 where tools/verify_triggers.py found
+         * the original holding 0x20 and the port 0x00. Object 0 stamps 0x00
+         * and is invisible against an empty cell, which is why only one
+         * showed. */
         /* The port's object x is sixteen less than the file's - level_parse
          * takes it off there - and the builder used the file's. */
         int32_t c0 = ((int32_t)o->x + LEMMING_DX) / TRIG_CELL
