@@ -718,3 +718,57 @@ two emulators is right is NOT established here, and the fourth instrument
 failure is at least as likely as a fourth finding. What would settle it is
 DOSBox's own register stream, which needs a build that can log port writes -
 not another recording.
+
+## DOSBox is right, so the fault is UPSTREAM of the port
+
+Taking that as given, the chain is:
+
+    the port  ==  our emulator's run     10,970 of 10,970 register writes
+    our emulator  !=  DOSBox             0.068 envelope correlation
+
+**So the port is faithfully reproducing a run that is itself wrong**, and no
+amount of work on `adlib.c` can fix it. Every check this project has - the
+stream comparison, the live-path trace, the tests - compares the port against
+our emulator, and all of them pass.
+
+### What has been ruled out
+
+- **Not the level.** DOSBox's panel reads rate 50, ten diggers and nothing
+  else, TIME 4-57: Fun 1, the same level.
+- **Not DOSBox falling back to another device.** With `oplmode=none` DOSBox
+  produces complete silence - RMS 0, peak 0 - so the OPL is what is making
+  the sound there.
+- **Not the tune selection.** The rotation and the special-set pick are
+  transcribed now, and a cold start is index 0 on both sides.
+
+### What it points at
+
+The pitch content is close and the timing is not:
+
+    pitch-class profiles, cosine similarity   0.857   (same key, same notes)
+    loudness envelopes, any lag               0.044   (never aligns)
+    best over tempo ratios 0.40..2.60         0.288 at ratio 1.91
+
+Similar notes that never line up is what a TEMPO difference looks like, and
+1.9 is close enough to two to be worth reading as one. It also agrees with a
+discrepancy already recorded above: the original passes 4.975 PIT ticks per
+level frame while LEVEL_FPS of 17 against a 97.08 Hz PIT gives 5.71.
+
+`ADLIB_TICK_HZ` is a MEASUREMENT of our emulator (96.6-97.7 Hz across four
+runs), not a fact about the game. If our emulator's display timing makes the
+game program the wrong PIT divisor, then the music, the level and everything
+else paced off IRQ 0 run at the wrong speed - and the port, which was given
+that measurement as a constant, inherits it exactly.
+
+### What would settle it
+
+DOSBox's own register stream. `tools/reference_dosbox_opl.sh` is written and
+drives the game to a level, but no `.dro` appears: dosbox-staging has the
+`caprawopl` handler and "Rec. OPL" label, and neither Ctrl+F7 (its
+PRIMARY_MOD default) nor three other candidates produced a file - one of them
+started a video capture instead. The binding for this build is not yet known.
+
+Failing that: `tools/probe_pace.py` against a LEVEL, which reports the
+divisor the game programs and the ticks it actually gets. That is the number
+ADLIB_TICK_HZ and LEVEL_FPS both rest on, and neither has been checked
+against a level.
