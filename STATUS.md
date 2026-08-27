@@ -1955,6 +1955,35 @@ Six levels are now compared frame by frame, and `coverage.py` reports **0 of
 10 object ids, 0 of 2 object flags and 0 of 7 terrain flag combinations
 unexercised**.
 
+### The level did not fade out, and the original does
+
+Reported from watching the emulator: leaving a level fades it rather than
+cutting away. The port cut away.
+
+**Measured rather than inferred.** `out/ref_i8`'s own manifest - level001
+section 3, the recording that ends when all eighty are dead - walks its lit
+DAC entries down at the end with `over` already 0xFF:
+
+    frame  553..555   lit_dac 13
+    frame  556..557   lit_dac 10
+    frame  558..561   lit_dac  9
+    frame  562..563   lit_dac  7
+    frame  564..566   lit_dac  0
+
+So the fade is the original's, on the level's own end, and `record_level.py`
+has been printing it in every capture all along.
+
+The port's fade machinery already existed for the menu; what the level needed
+is that it carries TWO palettes - the play area's and the panel's, swapped
+part-way down - so both walk. It reuses the loop's own `screen` buffer and
+conversion rather than composing a second frame, because the last frame the
+game composed is the one that should fade.
+
+It runs only for a real window. Under `LEM_SCREEN_DIR` this is a capture
+harness with a frame budget, and frames after that budget would be scored as
+the game's - the six frame-by-frame levels still write exactly 530, 1100,
+1100, 1100, 1100 and 1100 frames and are all still exact.
+
 ### The steel areas were parsed and never used
 
 Reported from playing and checked against DOSBox: a bomber's crater ate

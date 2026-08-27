@@ -931,6 +931,56 @@ static int level_run(struct level_frame *A, const canvas *c,
         if (budget && --budget == 0) running = 0;
         if (A->over) running = 0;      /* image 0x001C8 */
     }
+    /* THE LEVEL FADES OUT, which it did not before and the original does.
+     *
+     * Reported from playing, watching the emulator: leaving a level fades it
+     * rather than cutting to the next screen. In the original the level ends
+     * by setting ds:0x4F to 0xFF - image 0x002B3 - and image 0x002C3 then
+     * takes one of two ways out depending on bit 1 of ds:0x4E, and both of
+     * them leave mode 0x0D behind rather than snapping to it.
+     *
+     * The port's fade machinery already exists for the menu, but the level
+     * carries TWO palettes - the play area's and the panel's, swapped
+     * part-way down the screen - so it walks both. Same conversion as the
+     * loop above, and the same `screen` buffer, deliberately: the last frame
+     * the game composed is the thing that should fade, and composing a
+     * second one here would be a second arrangement of the same sequence.
+     *
+     * Only for a real window. Under `sink` this is a capture harness with a
+     * frame budget, and extra frames after it would be scored as the game's.
+     */
+    if (!sink && g_win && tex && ren) {
+        lem_rgb black[16];
+        memset(black, 0, sizeof black);
+        for (;;) {
+            int moved = palette_fade_step(top, black, 16);
+            moved |= palette_fade_step(bottom, black, 16);
+            void *pixels = NULL;
+            int pitch = 0;
+            if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
+                for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
+                    uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+                    const uint8_t *src = screen + (size_t)y * LEVEL_SCREEN_W;
+                    const lem_rgb *pal = (y < LEVEL_PLAY_H) ? top : bottom;
+                    for (uint16_t x = 0; x < LEVEL_SCREEN_W; x++) {
+                        lem_rgb q = pal[src[x]];
+                        row[x] = ((uint32_t)q.r << 16) |
+                                 ((uint32_t)q.g << 8) | q.b;
+                    }
+                }
+                SDL_UnlockTexture(tex);
+            }
+            SDL_RenderClear(ren);
+            SDL_RenderTexture(ren, tex, NULL, NULL);
+            SDL_RenderPresent(ren);
+            SDL_Event fe;
+            while (SDL_PollEvent(&fe))
+                if (fe.type == SDL_EVENT_QUIT) { moved = 0; break; }
+            if (!moved) break;
+            SDL_DelayNS(SDL_NS_PER_SECOND / VIEW_REFRESH_HZ);
+        }
+    }
+
     /* Never leave the pointer captured by a window that is going away. */
     SDL_SetWindowRelativeMouseMode(g_win, false);
     if (statef) fclose(statef);
