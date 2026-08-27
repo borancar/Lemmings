@@ -595,6 +595,17 @@ int main(int argc, char **argv)
                     rating, number);
             return 1;
         }
+        /* A PLATE KNOWS ITS OWN ODD ENTRY, image 0x019C9 - so work it out
+         * here rather than making every caller pass --odd. Only --file needs
+         * that flag, because a file and a section is not a plate and cannot
+         * say which of the two ratings that reach the level is meant.
+         *
+         * Without this `lemdev --rating fun --number 9` and `./lemmings`
+         * played the same level with different skills, a name apiece and
+         * different save requirements - the harness disagreeing with the game
+         * it is supposed to be checking. */
+        if (g_odd_entry < 0)
+            g_odd_entry = level_odd_entry(rating, (uint8_t)number);
         file = picked;
         which += 1;               /* load_level takes 1-based sections */
         game_number = number;
@@ -714,6 +725,7 @@ int main(int argc, char **argv)
                     continue;              /* at the cap or the floor */
                 number = 1;                /* rating * 30 + 1, 1-based */
                 game_number = number;
+                g_odd_entry = level_odd_entry(rating, (uint8_t)number);
                 if (level_locate(rating, (uint8_t)number, picked,
                                  sizeof(picked), &which) != 0) {
                     fprintf(stderr, "no such level: rating %u number %u\n",

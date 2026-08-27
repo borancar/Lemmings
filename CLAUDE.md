@@ -796,6 +796,26 @@ the reference moved, not the port.
   and stay out of the verifier's dispatch — comparing a no-op against the
   original reports a decision as a difference.
 
+## Half the plates are not the level their file says
+
+`ODDTABLE.DAT` exists and the port reads it. Image `0x019C9` tests bit 0 of
+`n - 1`, and when it is set the game copies twenty-four bytes of entry
+`(n - 1) >> 1` over the level record - the release rate, the three counts and
+all eight skills - and thirty-two more over its NAME. So `level001.dat`
+section 2 is "I have a cunning plan" with 2, 0, 5, 10, 20, 2, 2, 2 when
+reached one way and "As long as you try your best" with twenty of everything
+when reached the other, and both are the same terrain.
+
+**A plate knows its own entry; a file and a section does not.** `./lemmings`
+and `lemdev --rating R --number N` work it out from the plate. `lemdev --file
+X --level S` cannot - it has no plate - so a comparison against a recorded run
+of an odd plate has to be told with `--odd E`.
+
+The way this shows up is the PANEL: the skill digits differ and everything
+else matches, because the two sides disagree about what the numbers ARE rather
+than about how to draw them. If a panel scores near zero while the play area
+is exact, check the plate before anything else.
+
 ## The level index is a PERMUTATION, not an offset
 
 `tools/record_level.py --level N` pokes **ds:0x1F6B**, the index into the
