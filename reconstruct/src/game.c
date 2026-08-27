@@ -8082,14 +8082,38 @@ static char *put_num2(char *dst, uint8_t v);
  *          `dx = 0x278` (632 wide), `cl = 0x5E` (94 rows), `si = 0x2080`,
  *          through `lcall 0x1010:0x8822` from the segment in ds:0x1FEE.
  *
- * WHAT IS STILL OPEN, and it is the whole of what render_objects owes: the
- * packer's source is the level bitmap, and image 0x03789 established that the
- * original never composes objects into that. Yet this port DOES draw them
- * into the preview and scores 0 pixels differing, where leaving them out
- * scored 167 and drawing them at the wrong offset 187. Both cannot be true of
- * the same bitmap, so either the objects are in it by the time the preview is
- * built or the packer's source base is not 0x4A40. Finding si's initial value
- * settles it in one read.
+ * AND THE REST OF THE GEOMETRY, from image 0x07EB2 - the packer's own entry:
+ *
+ *     di = ds:0x1F76 + ds:0x1F7A + 0x64F   0x64F is 20 rows of 80 plus byte
+ *                                          15, so y = 20 and x = 120 -
+ *                                          PV_Y and PV_X
+ *     si = 0x4F22                          0x4A40 + 6 * 208 + 2: the level
+ *                                          bitmap's ROW 6, and byte 2 is its
+ *                                          sixteen-pixel left margin, which
+ *                                          is where this port's canvas
+ *                                          starts. Row 6 is PV_TOP + PV_SAMPLE
+ *
+ * So every constant in this block is read out of the original now, and all
+ * six agree with what had been measured off the screen.
+ *
+ * WHAT IS STILL OPEN, and it is the whole of what render_objects owes. The
+ * original's preview DOES show the objects: taking them out of this routine
+ * takes the preview from 0 pixels differing to 53. But the packer's source is
+ * the level bitmap, and image 0x03789 established the original never
+ * composes objects into that - tools/prove.sh compares against it with
+ * --no-objects and gets 100.00%.
+ *
+ * Three of the five passes after the terrain loop walk the object list at
+ * ds:0x0FEB, and NONE of them is the drawer: image 0x0378A copies the records
+ * into the animation array at ds:0x17CB, image 0x037C2 builds the TRIGGER MAP
+ * (its `mul 0x1a0` and `add bx, 0x12` are image 0x03808, which
+ * level_triggers_build already carries), and image 0x0389F collects the
+ * entrances (level_entrances, image 0x038A3).
+ *
+ * So the objects reach the preview by a route not yet found, and the next
+ * step is to watch 0xA0000 + 0x4A40 during the BRIEFING rather than during
+ * the level - prove.sh's break at image 0x0376A is before those five passes
+ * and cannot see anything they do.
  */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,

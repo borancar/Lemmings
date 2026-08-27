@@ -1553,7 +1553,30 @@ original's screen, not read from its code" is now read from its code, and they
 all agree. One difference worth noting rather than chasing: the original packs
 the level bitmap's full 1,664 columns to 416 output pixels where the port
 packs the level's 1,584 to 396. The 20 output pixels between them are the
-bitmap's empty tail, which is why nothing shows. The routines stay owed - found is a step short of read - but the
+bitmap's empty tail, which is why nothing shows.
+
+Image `0x07EB2`, the packer's own entry, gives the last two: `di` is
+`ds:0x1F76 + ds:0x1F7A + 0x64F`, and 0x64F is 20 rows of 80 plus byte 15 - **y
+= 20 and x = 120**, `PV_Y` and `PV_X`. `si = 0x4F22` is `0x4A40 + 6 * 208 +
+2`: the level bitmap's **row 6**, byte 2 being its sixteen-pixel left margin,
+which is where the port's canvas starts. Row 6 is `PV_TOP + PV_SAMPLE`. All
+six constants read, all six agreeing with what was measured off the screen.
+
+**And one thing that does not add up, which is now the whole of what
+`render_objects` owes.** The original's preview DOES show the objects -
+removing them from the port takes the preview from 0 pixels differing to
+**53**. But the packer's source is the level bitmap, and image `0x03789`
+established that the original never composes objects into it; `prove.sh`
+compares against that bitmap with `--no-objects` and gets 100.00%.
+
+Three of the five passes after the terrain loop walk the object list at
+`ds:0x0FEB` and none is the drawer: image `0x0378A` copies the records into
+the animation array, image `0x037C2` builds the TRIGGER MAP (its `mul 0x1a0`
+and `add bx, 0x12` are image `0x03808`, which `level_triggers_build` already
+carries), and image `0x0389F` collects the entrances. So the objects reach the
+preview by a route not yet found, and the place to look is `0xA0000 + 0x4A40`
+during the BRIEFING - `prove.sh` breaks at image `0x0376A`, before those five
+passes, and cannot see anything they do. The routines stay owed - found is a step short of read - but the
 marker can say where now, which is the difference between nobody having read
 it and nobody having found it.
 
