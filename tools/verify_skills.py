@@ -8,17 +8,28 @@ the two arrays frame by frame.
 
     uv run python tools/verify_skills.py
 
-The comparison is the RECORD, not the picture: x, y, the hot spot, the state
-word, the animation counter and the alive byte, for every lemming on screen
-rather than only the one that was clicked. That last part matters - the
-bomber's own record was exact while another lemming walked over a hole it
-should have fallen into, and only comparing all of them showed it.
+TWO comparisons, and both are needed.
+
+The RECORD - x, y, the hot spot, the state word, the animation counter, the
+alive byte and the fuse, for every lemming on screen rather than only the one
+that was clicked. That last part matters: the bomber's own record was exact
+while another lemming walked over a hole it should have fallen into, and only
+comparing all of them showed it.
+
+And the SCREEN, which this tool did not do for a long time and should have.
+The record scores where a lemming IS and never what is drawn there, so three
+faults lived behind a row of "0 of 400 frames differ": the basher and the
+miner had no sprite at all and were drawn walking on the spot, and a nuked
+lemming was drawn with the blast's pose at the cloud's hot spot and appeared
+to leap into the air. Every one of them was reported by a player, because
+nothing here was looking.
 
 A skill with no reference recorded is reported as such rather than skipped
 silently.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -49,12 +60,28 @@ UNTOUCHED = [("level 2, nobody touching it", "ref_l2", None, 2),
              ("pause, level 1", "ref_pause", "out/pause.txt", 1)]
 
 
+def screens(ref, shots):
+    """The port's own screen against the original's, via compare_screen.py."""
+    out = subprocess.run(
+        [sys.executable, os.path.join(HERE, "compare_screen.py"),
+         "--ref", os.path.join(ROOT, "out", ref), "--dir", shots],
+        cwd=ROOT, capture_output=True, text=True)
+    for line in out.stdout.splitlines():
+        if "play area" in line:
+            return line.split("play area")[1].strip()
+    return None
+
+
 def compare(ref, script, number, frames):
     state = os.path.join(ROOT, "out", "vs_state.jsonl")
     if os.path.exists(state):
         os.unlink(state)
+    shots = os.path.join(ROOT, "out", "vs_screen")
+    shutil.rmtree(shots, ignore_errors=True)
+    os.makedirs(shots, exist_ok=True)
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", LEM_SKILLS="20",
-               LEM_FRAMES=str(frames), LEM_STATE_FILE=state)
+               LEM_FRAMES=str(frames), LEM_STATE_FILE=state,
+               LEM_SCREEN_DIR=shots)
     if script:
         env["LEM_INPUT_SCRIPT"] = os.path.join(ROOT, script)
     subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
@@ -63,7 +90,7 @@ def compare(ref, script, number, frames):
                    cwd=ROOT, env=env, stdout=subprocess.DEVNULL,
                    stderr=subprocess.DEVNULL)
     if not os.path.exists(state):
-        return None, 0
+        return None, 0, None
     man = json.load(open(os.path.join(ROOT, "out", ref, "manifest.json")))
     port = {}
     for line in open(state):
@@ -90,7 +117,7 @@ def compare(ref, script, number, frames):
             if tuple(A[k] for k in keys) != tuple(B[k] for k in keys):
                 bad += 1
                 break
-    return bad, shared
+    return bad, shared, screens(ref, shots)
 
 
 def main():
@@ -103,20 +130,23 @@ def main():
             worst = 1
             continue
         n = len(json.load(open(os.path.join(d, "manifest.json"))))
-        bad, shared = compare(ref, script, number, n + 20)
+        bad, shared, pic = compare(ref, script, number, n + 20)
         if bad is None:
             print(f"    {name:9s} the port wrote no state - not a pass")
             worst = 1
             continue
-        print(f"    {name:9s} {bad} of {shared} frames differ")
+        print(f"    {name:9s} record {bad} of {shared} frames differ")
+        print(f"    {'':9s} screen {pic or 'NOT SCORED'}")
         worst = max(worst, 1 if bad else 0)
     for name, ref, script, number in UNTOUCHED:
         d = os.path.join(ROOT, "out", ref)
         if not os.path.exists(os.path.join(d, "manifest.json")):
             continue
         n = len(json.load(open(os.path.join(d, "manifest.json"))))
-        bad, shared = compare(ref, script, number, n + 20)
-        print(f"    {name}: {bad} of {shared} frames differ")
+        bad, shared, pic = compare(ref, script, number, n + 20)
+        print(f"    {name}:")
+        print(f"      record {bad} of {shared} frames differ")
+        print(f"      screen {pic or 'NOT SCORED'}")
         worst = max(worst, 1 if bad else 0)
     print()
     return worst
