@@ -1054,6 +1054,66 @@ copies the ones it has over the ones it has not: none gives four of
 three repeats entry 1. All four entries are always valid, which is why
 `and bx,3` needs no further check.
 
+### Sprites: where a group lives, and how to find one
+
+`tools/find_sprite.py` scores a candidate offset against the ORIGINAL's own
+pixels on a recorded frame, at the position the record says the lemming is.
+Three things in it are load-bearing and every one was learned by getting it
+wrong:
+
+- **It scores rather than demands.** The input script parks the pointer on the
+  lemming it clicked, so the cross-hair sits over the sprite and about thirty
+  pixels can never agree. Demanding a match rejects the right answer.
+- **It slides nothing.** The record says exactly where the sprite is. Letting
+  a candidate slide lets a wrong offset find a flattering spot: the digger
+  check first came back with 11982 instead of 720 that way.
+- **It maps the attribute through `v < 8 ? v : v + 8`** before comparing,
+  because that is what the capture holds. Without it no sprite using the upper
+  eight colours can ever be found - and it fails SILENTLY, since the digger it
+  is checked against is three planes and passes either way.
+
+`--check` runs the digger first, whose offset is known, so a search that
+cannot find an answer it has been given says so.
+
+**What is in the file, in order.** The basher's 64 frames of 60 bytes end
+exactly where the miner's 48 of 78 begin, and those end exactly on the
+faller's base, which was already known:
+
+| | file | frame | frames |
+| --- | --- | --- | --- |
+| digger | 720 | 84 | 16 |
+| builder | 4240 | 78 | 16 |
+| basher | **6736** | 60 | 64 |
+| miner | **10576** | 78 | 48 |
+| faller | 14320 | 40 | |
+
+64 and 48 rather than 32 and 24 because image 0x070AB adds the STATE to the
+frame index when the lemming faces left, and the basher's state is `0x20`
+with the miner's `0x18`. So each group is that many frames facing right
+followed by the same number facing left, and the fact that the three regions
+ABUT is what makes the frame counts evidence and not only the bases.
+
+**`[si+0x0c]` is a PARAGRAPH offset into the pre-shifted store**, and the
+store is laid out in the same order:
+
+| | `[si+0x0c]` | store bytes | store frame `[si+0x10]` |
+| --- | --- | --- | --- |
+| digger | `0x032A` | 12,960 | 112 |
+| basher | `0x07CA` | 31,904 | 80 |
+| miner | `0x090A` | 37,024 | 104 |
+| faller | `0x0A42` | 42,016 | 90 |
+
+31,904 + 64 * 80 = 37,024 and 37,024 + 48 * 104 = 42,016, both exact. A store
+frame is the file frame plus a quarter - three ink planes and a mask - so
+across those three groups `file = 0.75 * store - 17192` holds to the byte.
+
+**It does NOT hold globally**, and that is the trap: the same line puts the
+digger at -7,472 when its file base is 720. The store has other things in it
+between groups, so the relation is only good for a run of adjacent groups and
+cannot be extrapolated to a group far away. The bomber's cloud at
+`[si+0x0c] = 0x180B` is 98,480 store bytes in, and reading 56,668 off that
+line is a guess, not a derivation.
+
 ### Level 2, where lemmings fall and die
 
 `tools/record_level.py --level N` pokes `ds:0x1F6B` before the briefing reads
