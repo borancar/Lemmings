@@ -1935,6 +1935,63 @@ Six levels are now compared frame by frame, and `coverage.py` reports **0 of
 10 object ids, 0 of 2 object flags and 0 of 7 terrain flag combinations
 unexercised**.
 
+### The steel areas were parsed and never used
+
+Reported from playing and checked against DOSBox: a bomber's crater ate
+through a STEEL floor on level004 section 3.
+
+`level_parse` has read the LVL's 32 steel entries for a long time. Nothing
+ever put them in the TRIGGER MAP, which is the only thing that answers "what
+is under this lemming" - `trig_stamp` was called from one place, the object
+pass. So a steel area read as cell 0 and **every test against it was dead
+code**:
+
+- the BOMBER's, image 0x023A6, which refuses effects 9 and 5 before image
+  0x023B9 digs the crater. That is the one a player hit.
+- the BASHER's `(a->tcell & 0x0F) == 9`, equally dead.
+
+Image 0x03839 is the pass that was missing: it walks the entries at ds:0x172B
+and stamps **9** over each, `(width + 1)` cells by `(height + 1)` - the two
+nibbles image 0x03851 and image 0x03856 unpack - at image 0x03886. It runs
+BEFORE the object trigger pass at image 0x037C2, so an object's effect lands
+on top of steel, and the port's loop is in that order for that reason.
+
+level004/3's five areas now stamp 479 cells of 9 across canvas x 560..879,
+y 136..159 - its floor.
+
+**Nothing here could have caught it**, and that is the part worth keeping.
+Every frame-by-frame reference in this repository is a level nobody bombs, and
+the eight skill runs are on "Just dig!", which has no steel at all. It is the
+same shape as the digger that could be assigned twice: a rule with no
+reachable state to check it, found by a player in a minute.
+
+### The right mouse button did nothing, and it should pick the other lemming
+
+Also from playing: with two lemmings under the cursor the wrong one takes the
+skill.
+
+The original files each lemming under the pointer into ONE OF TWO slots -
+image 0x03D79 - and keeps the LAST that matched in each:
+
+    test byte [si+0x24], 0x80   ; jne -> the BUSY slot
+    test word [si+8], 0x8b90    ; je  -> the PLAIN slot
+
+Then image 0x03DB7 tests bit 1 of ds:0x14 and picks the PLAIN one when it is
+set, the busy one otherwise, falling back to plain when there is no busy one.
+And ds:0x14 is the raw mouse button word - image 0x04269 stores INT 33h AX=3's
+BX - so bit 0 is the left button and bit 1 the right. Image 0x03168 does
+`and ax, 1` before it will assign anything.
+
+So: **left assigns, right points past a worker at the walker beside it.**
+
+Two things were wrong. `lem_buttons` was never written, so the right button
+never switched the preference; and the port treated ANY button as a click, so
+the right button also assigned, which the original will not do. Both fixed in
+`sdl_io.c`, and the two-slot classification now asks record byte 0x24 as well
+as the flag word - the port had no such byte when that scan was written and
+has carried `extra` since the builder's shrug, so the comment saying it could
+not was simply stale.
+
 ### OPEN: do the one-way arrows land on a builder's bricks?
 
 Reported from playing, with a screenshot: the arrows appear over bricks a

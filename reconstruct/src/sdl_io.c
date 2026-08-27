@@ -751,12 +751,36 @@ static int level_run(struct level_frame *A, const canvas *c,
                     grabbed = 1;
                     SDL_SetWindowRelativeMouseMode(g_win, true);
                 } else {
-                    held = 1;
-                    level_click(A, &scroll_x);
+                    /* THE TWO BUTTONS DO DIFFERENT THINGS, and the port
+                     * treated any of them as a click. Image 0x04269 stores
+                     * INT 33h AX=3's BX in ds:0x14, so bit 0 is the left
+                     * button and bit 1 the right, and the game asks for them
+                     * separately: image 0x03168 does `and ax, 1` before it
+                     * will assign anything, while image 0x03DB7 tests bit 1
+                     * and makes the under-pointer scan pick the PLAIN
+                     * lemming over the busy one.
+                     *
+                     * So the right button is how the original lets you point
+                     * past a builder at the walker behind it. Here it did
+                     * nothing at all - lem_buttons was never written - and
+                     * it also assigned, which the original will not do. */
+                    if (e.button.button == SDL_BUTTON_LEFT)
+                        lem_buttons |= 1;
+                    else if (e.button.button == SDL_BUTTON_RIGHT)
+                        lem_buttons |= 2;
+                    if (e.button.button == SDL_BUTTON_LEFT) {
+                        held = 1;
+                        level_click(A, &scroll_x);      /* image 0x03168 */
+                    }
                 }
             }
             else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                held = 0;
+                if (e.button.button == SDL_BUTTON_LEFT) {
+                    lem_buttons &= (uint8_t)~1u;
+                    held = 0;
+                } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    lem_buttons &= (uint8_t)~2u;
+                }
             }
             else if (e.type == SDL_EVENT_KEY_DOWN) {
                 /* Ctrl+Alt gives the pointer back, which is the gesture

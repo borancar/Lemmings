@@ -1921,6 +1921,42 @@ void level_triggers_build(const level *lv, const ground *g)
      * what a sanitizer is for, and why a claim that it passes has to be
      * re-run rather than carried forward. */
     if (!lv || !g) return;
+
+    /* THE STEEL AREAS GO IN FIRST, and the port never put them in at all.
+     *
+     * Image 0x03839 walks the LVL's 32 steel entries at ds:0x172B and stamps
+     * the cell value 9 over each one - image 0x03886 - `(width + 1)` cells
+     * across by `(height + 1)` down, the two nibbles image 0x03851 and image
+     * 0x03856 unpack. It runs BEFORE the object trigger pass at image
+     * 0x037C2, so an object's effect lands on top of steel rather than under
+     * it, and that order is this loop's position rather than a preference.
+     *
+     * What it cost: `tcell` is the cell under a lemming, and the only thing
+     * writing this map was the object pass - so a steel area read as 0 and
+     * every test against it was dead code. The BOMBER's is image 0x023A6,
+     * which refuses effects 9 and 5 before image 0x023B9 digs the crater, so
+     * a bomb ate straight through a steel floor. A player found it in
+     * level004 section 3 and checked it against DOSBox. The basher's test at
+     * game.c's `(a->tcell & 0x0F) == 9` was equally dead.
+     *
+     * Nothing here could have caught it: every frame-by-frame reference in
+     * this repository is a level nobody bombs, and the skill runs are on
+     * "Just dig!", which has no steel. It is the same shape as the digger
+     * being assignable twice - a rule with no reachable state to check it. */
+    for (uint16_t k = 0; k < lv->num_steel; k++) {
+        const level_steel *st = &lv->steel[k];
+        /* level_parse already turned the entry's bytes into pixels - the
+         * column is `(e[0] << 1) | (e[1] >> 7)` times four, less the same
+         * sixteen every x here is less, and the nibbles are plus one times
+         * four - so the cells come back by dividing. Reading the raw bytes
+         * again would be a second parse of the same field, and the two
+         * would drift. */
+        trig_stamp(((int32_t)st->x + LEMMING_DX) / TRIG_CELL,
+                   (int32_t)st->y / TRIG_CELL,
+                   st->w / TRIG_CELL, st->h / TRIG_CELL,
+                   9);                              /* image 0x03886 */
+    }
+
     for (uint16_t i = 0; i < lv->num_objects; i++) {
         const level_object *o = &lv->objects[i];
         if (o->id >= GROUND_OBJECTS) continue;
@@ -2925,11 +2961,23 @@ void level_pointer_scan(const lemming *lem, uint8_t n, uint16_t view_x,
         if (by >= HIT_Y_CAP) by = HIT_Y_CAP;     /* image 0x03D5E */
         if (px > bx || py > by) continue;        /* 0x03D6A, 0x03D71 */
 
-        /* Image 0x03D79. The first test reads record byte 0x24, which this
-         * port does not carry - see level_status_pointer for the same gap -
-         * so only the flag word is asked. */
-        if (a->flags & HIT_BUSY) out->busy = (int16_t)k;    /* image 0x03D8E */
-        else                     out->plain = (int16_t)k;   /* image 0x03D9C */
+        /* Image 0x03D79 asks TWO things, and the port asked one of them for
+         * as long as it had no record byte 0x24 to ask. It has one now -
+         * `extra`, added for the builder's shrug - so this is the whole test:
+         *
+         *     test byte [si+0x24], 0x80   ; jne -> the busy slot
+         *     test word [si+8], 0x8b90    ; je  -> the plain slot
+         *
+         * The byte matters on its own because image 0x027DE sets bit 7 as a
+         * builder runs out of bricks, and the shrug is the one job that is
+         * not in the flag word. Without it a shrugging builder is filed as
+         * PLAIN, and since each slot keeps the LAST lemming that matched, a
+         * walker behind it would lose the click to it or take it instead,
+         * depending on which came later in the array. */
+        if ((a->extra & 0x80) || (a->flags & HIT_BUSY))
+            out->busy = (int16_t)k;                         /* image 0x03D8E */
+        else
+            out->plain = (int16_t)k;                        /* image 0x03D9C */
         out->count++;                                       /* image 0x03DA1 */
     }
 
