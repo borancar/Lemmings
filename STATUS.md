@@ -1762,6 +1762,32 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### The rate now has a check, and it is checked against a fault
+
+`tools/verify_rate.py` drives image `0x04032` itself - the rate is a pure
+function of three bytes, so it sets `ds:0x2B`, `ds:0x64` and `ds:0x67`, points
+CS:IP at the handler and reads back `ds:0x67` and `ds:0x49`. The walk is the
+one a player makes, from the level's own rate up to the ceiling and back down
+to the floor, because that is the only way the PORT's rate can be moved too:
+it lives in a pair of globals rather than an argument, and `lemdev
+--rate-probe` walks it the same way.
+
+    240 of 240 clicks agree on both the rate and the interval
+
+It needs no level, only a machine far enough in that DS holds DGROUP, so it is
+ninety seconds rather than fifteen minutes - the same trick
+`verify_results.py` uses.
+
+**And it was checked against a fault it should catch.** Taking the floor out -
+`g_rate == 0` in place of `g_rate <= g_rate_min` - it reports from click 169:
+
+    click 169 down: port rate 49 step 29, original rate 50 step 28
+    click 170 down: port rate 48 step 29, original rate 50 step 28
+
+which is the minus walking past the level's own rate while the original holds.
+A check written for a bug a player found is worth exactly what it can catch,
+and now that is measured rather than assumed.
+
 ### Two more from playing: the release rate did nothing, the builder faced one way
 
 Both reported by the user playing the game, and neither is visible to anything

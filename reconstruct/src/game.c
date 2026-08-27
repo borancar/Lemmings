@@ -1578,6 +1578,8 @@ uint8_t level_rate_click(uint8_t up)
 /* ds:0x67 and ds:0x64 - the rate in force and the level's own, which the
  * panel draws as its first two numbers (image 0x036C1, image 0x036C4). */
 uint8_t level_rate(void)       { return g_rate; }
+/* ds:0x49, the interval the release counts down from - image 0x04053. */
+uint8_t level_release_interval(void) { return g_release_step; }
 uint8_t level_rate_floor(void) { return g_rate_min; }
 
 /* The level's release set up, image 0x036B9 onward: the header's rate into

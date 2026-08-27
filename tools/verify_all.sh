@@ -185,6 +185,13 @@ done
 # in a second composition path. Nothing compared the bitmap afterwards, and
 # that gap let "the original never composes objects into the level bitmap"
 # stand as a claim - true at prove.sh's break, false a few routines on.
+# THE RELEASE RATE, driven through the original's own handler. Nothing else
+# here presses those buttons: no recorded run contains one, which is why they
+# did nothing at all for as long as they did.
+say ""
+say "=== the release rate, against image 0x04032 ==="
+if uv run python tools/verify_rate.py 2>&1 | grep -vE "^pygame|^ *\[vga\]" | sed 's/^/  /'; then :; else fail=1; fi
+
 say ""
 say "=== the composed level WITH objects (the gap prove.sh leaves) ==="
 if uv run python tools/verify_objects.py 2>&1 | sed 's/^/  /'; then :; else fail=1; fi

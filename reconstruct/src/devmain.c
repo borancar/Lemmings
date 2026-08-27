@@ -124,6 +124,12 @@ static lemming g_lem[LEMMING_MAX];
 /* Bake the objects into the terrain instead of drawing them as the
  * original does. Only for comparing the two - see render_objects. */
 static int g_baked_objects;
+/* --rate-probe: the release rate after each of a scripted run of clicks, for
+ * tools/verify_rate.py to hold against the original's own image 0x04032. The
+ * port's rate is a pair of globals rather than an argument, so it cannot be
+ * called from outside with a value - it has to be walked from the level's own
+ * rate, which is what the game does too. */
+static int g_rate_probe;
 
 static int render_level(const char *data, const char *file, uint32_t which,
                         int objects, const char *raw, const char *panel_out,
@@ -229,6 +235,25 @@ static int render_level(const char *data, const char *file, uint32_t which,
     /* The lemmings and the minimap both probe the TERRAIN, and the buffer the
      * original probes has no objects in it - they are drawn at display time.
      * So a copy is kept before they go on. */
+    if (g_rate_probe) {
+        /* The rate walked exactly as a player walks it: from the level's own
+         * value up to the ceiling and back down to the floor, printing what
+         * the panel would show and the interval the release counts from. */
+        level_release_reset(&lv);
+        printf("floor %u\n", level_rate_floor());
+        for (int k = 0; k < 120; k++) {
+            level_rate_click(1);
+            printf("up %u %u\n", level_rate(), level_release_interval());
+        }
+        for (int k = 0; k < 120; k++) {
+            level_rate_click(0);
+            printf("down %u %u\n", level_rate(), level_release_interval());
+        }
+        dat_free(&gfx);
+        canvas_free(&c);
+        return 0;
+    }
+
     uint8_t *terrain = malloc((size_t)c.w * c.h);
     if (!terrain) {
         fprintf(stderr, "out of memory\n");
@@ -547,6 +572,7 @@ int main(int argc, char **argv)
         }
         else if (!strcmp(argv[i], "--no-objects")) objects = 0;
         else if (!strcmp(argv[i], "--baked")) g_baked_objects = 1;
+        else if (!strcmp(argv[i], "--rate-probe")) g_rate_probe = 1;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--panel") && i + 1 < argc) { panel_out = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;

@@ -374,6 +374,7 @@ void lemmings_step(lemming *lem, uint8_t n,
 uint8_t level_rate_click(uint8_t up);
 uint8_t level_rate(void);        /* ds:0x67, the rate in force */
 uint8_t level_rate_floor(void);  /* ds:0x64, the level's own */
+uint8_t level_release_interval(void); /* ds:0x49, image 0x04053's interval */
 
 /* Give this one a digger, image 0x0320D. Non-zero if it took - the original
  * refuses when the lemming is already in a state that forbids it. */
