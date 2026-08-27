@@ -1287,27 +1287,40 @@ It rises as the ten blasts accumulate - peaking near 589, which for ten
 lemmings is about 59 of the eighty each, the rest clipped or overlapping -
 and then falls away over fifty frames.
 
-**That decline is NOT a trajectory, and an earlier note here said it was.**
-The table was dumped from a running level - `LEM_DEBRIS_WATCH=dump` - and
-holds what the image holds: **row 0 has eighty pairs and all fifty-one rows
-after it begin with the `0x80` that ends them**. Nothing writes it during play
-either, in a quiet window or a blast one. So the eighty particles are drawn
-ONCE per explosion, on the single frame where the cloud's counter is 1, from a
-STATIC pattern - image `0x06E83`'s `(anim - 1) * 160` reaching an empty row on
-every frame after.
+That decline is a **trajectory**, and the table holds it: fifty-two rows of
+eighty (dx, dy) pairs, one row per frame of the cloud's own fifty-two-frame
+counter, read at image `0x06E83` as `(anim - 1) * 160`. The pairs are absolute
+offsets from the lemming - image `0x06EDE` pushes and pops `bp` and `dx` around
+each one, so they do not accumulate - and a pair whose first byte is `0x80` is a
+particle that has already gone, **skipped rather than ending the row**: image
+`0x06EDB` jumps to the `dec cx` at image `0x06F74` and carries on. Counting the
+live ones per row gives 80, 76, 75, 71, 69, 69, 68, 68, 67, 34, 20 and finally
+16, which is the decay seen on screen.
 
-What declines, then, is not how many are drawn but how many SURVIVE on screen:
-they are left where they land and erased as the game repaints those pixels.
-The inference from the shape of the curve was reasonable and wrong, and the
-dump is what settles it - the same lesson as the crater, one level along: the
-count tells you how much, never what.
+**Getting this wrong twice is the lesson, and both times it was an
+instrument.** A dump of the table taken from a running level is byte-identical
+to the image, so nothing computes it at load or during play - it is static data
+and always was. But a parser that treated `0x80` as a **terminator** read row 0
+as eighty particles and every row after it as empty, which said the eighty were
+drawn once and left to be erased. That was written up here as a finding and
+committed. The sentinel skips; the disassembly says so plainly at image
+`0x06EDB`, and the reading that contradicted it came from a five-line script
+nobody checked against a case whose answer was known.
 
-**The table at `ds:0x2788` is filled at RUN TIME.** In the image, row 0 holds
-eighty real offsets and every row after it begins with the `0x80` that ends
-the row - so it is a working buffer the game computes into, not a static
-trajectory table, and the next thing to find is what writes it. That is a much
-smaller question than the one this started as, and it is the right shape for
-the same probe: watch the writes to `ds:0x2788` instead of to the screen.
+The count is `ds:0x4D`, and it is **80** - image `0x0042C` stores `0x50` over
+the `0x80` the image ships with. Read from the static image alone it looks like
+128, which is more pairs than a row holds.
+
+So this project's rule about a check whose reference is derived from the thing
+under test needs a companion: **a parser is an instrument too.** Run it once
+against data whose answer is already known - here, any row but the first would
+have done - before believing what it says about data that is not.
+
+The table is **static data in the image**, not a buffer: dumped from a running
+level it is byte-identical to `image/vgalemmi.decrypted.img` at `ds:0x2788`,
+and nothing writes it in a quiet window or a blast one. There is nothing left
+to find about where it comes from - it ships with the game, all 8,320 bytes of
+it, and the port transcribes it the way it transcribes a palette.
 
 ### ODDTABLE.DAT: half the game's plates play under another name
 
