@@ -1187,28 +1187,48 @@ screen at a time, at frames 496, 498, 500, 502 and 504, and the lemming
 beside it is at **anim 0** every time - lemmings 1, 3, 5, 7 and 9 in turn.
 Each burst is about 430 pixels and lasts a single frame.
 
-**And it is drawn now**, at 98%. Scored over all five bursts at once, store
-index 7 with columns 32..39 dropped, placed at `(x - scroll - 7,
-y + hot_y - 18)`, agrees on **2,086 of 2,125 pixels**. The eight indices are
-monotonic - 7 beats 6 beats 5 - so the choice is not a coincidence, and the
-40-bit row turns out to be a 32-wide sprite with eight bits of pre-shift, the
-wrap being the last 39 of those differences.
+**IT WAS DRAWN WRONG, and a player found it: the left of the explosion was
+cut off.** The reading below was self-consistent and wrong in both halves,
+and it is kept because the way it failed is the point.
 
-**And why the index is 7 - which is a reading now, not a fit.** The store's
-pre-shift **rotates** within the 40-bit row rather than shifting into it, and
-the sprite is 32 wide: index `i` carries it at columns `i..i+31` with the part
-that runs off the end coming back at the start. Cell by cell, index `i` agrees
-with index 0 on **1,011 of the 1,024** cells of that window, for every one of
-the eight. So 7 is neither an animation frame nor a sub-pixel shift - it is
-the rotation that brings the sprite's thirty-two columns into one run, and its
-columns 0..6 are the sprite's own 33..39, which is why they belong SEVEN
-PIXELS LEFT of the origin rather than thirty-three right.
+It took store index **7**, dropped columns 32..39, and placed the result at a
+fitted `(x - scroll - 7, y + hot_y - 18)` for **2,086 of 2,125 pixels**. The
+argument for 7 was that the pre-shift ROTATES within the 40-bit row rather
+than shifting into it, so index `i` carries the sprite at columns `i..i+31`
+with the overflow coming back at the start - checked cell by cell, index `i`
+agrees with index 0 on 1,011 of the 1,024 cells of that window for every one
+of the eight. All of that is true. The conclusion drawn from it - that 7 is
+the rotation bringing the sprite's columns into one run - was not.
 
-The two halves check each other: index 7's columns 0..31 at `x - scroll - 7`
-score 2,086 of 2,125, index 0's own columns 0..31 at the origin score 1,400 of
-1,785, and index 7 at the origin 463 of 2,125.
+**Index 0 is simply the sprite.** 507 lit pixels, a whole round cloud in
+colours 3, 4 and 5, and every other index is that same picture rotated.
 
-The nuke's worst frame went from 1,081 differing to 672.
+**And the placement is not fitted at all - it is the HOT SPOT**, `(x + hot_x,
+y + hot_y)`, the same one every other sprite here is drawn at. That is what
+image 0x02D3C's `-16` and image 0x02D37's `-25` are FOR: they are set as the
+bomber turns into a cloud, to place this sprite.
+
+Measured against the original's own **ten** bursts in `out/ref_nuke`, frames
+495..504, one lemming reaching anim 0 on each:
+
+    frame 0 at the hot spot     5,032 of 5,070, and FIVE of the ten
+                                are 507 of 507, exactly
+    the old frame 7 at its
+    fitted offset                  77 of 507 on the first of them
+
+The five that are not exact are the early ones, where another lemming's
+sprite is still drawn over the cloud.
+
+**A 98% that came from fitting two wrong things against each other.** The
+sprite was a rotated window missing its left columns, and the offset was
+chosen to make that window land as well as it could - so the score was high,
+monotonic in the index, and pointing away from the answer. `CLAUDE.md` already
+says a structured residue is a rule you have not found; here the residue was
+the sprite's own left edge, and no amount of choosing between the eight
+indices could have reached it.
+
+The nuke's play area is now exact on **541 of 557** frames, worst 12
+pixels - it was 535 and a worst of 672 under the old reading.
 
 **And what remains is DEBRIS over the crater, not a slow crater.** An earlier
 reading of this said the original "goes on removing terrain for twenty-five
