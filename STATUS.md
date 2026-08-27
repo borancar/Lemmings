@@ -1791,10 +1791,39 @@ been caught before a player hit it.
 Both abutments are asserted in `tests/screens.c` now, against the numbers
 rather than against `game.c`'s defines.
 
-**And one gap is still open**: 18800..19440, 640 bytes between the burn's end
-and the shrug's base, which no sprite the port has claims. 640 is sixteen
-frames of 40, or eight of 40 each way - the same shape as everything around
-it. Something lives there and this port does not know what.
+**And the last gap was my table, not the port.** 18800..19440 is the BLOCKER,
+which `game.c` has had all along at `BLOCK_SPR_BASE` - sixteen frames of 40,
+exactly 640. With it in, the section tiles **completely**:
+
+    walker        0 +  720 =    720
+    digger      720 + 1344 =   2064
+    climber    2064 +  768 =   2832      8 frames, both ways
+    drown      2832 +  640 =   3472
+    hoist      3472 +  768 =   4240      8 frames, both ways
+    builder    4240 + 2496 =   6736     16 frames, both ways
+    basher     6736 + 3840 =  10576     32 frames, both ways
+    miner     10576 + 3744 =  14320     24 frames, both ways
+    fall      14320 +  320 =  14640      4 frames, both ways
+    float     14640 + 1536 =  16176      8 frames, both ways
+    splat     16176 +  640 =  16816
+    exit      16816 +  416 =  17232
+    burn      17232 + 1568 =  18800
+    blocker   18800 +  640 =  19440
+    shrug     19440 +  640 =  20080      8 frames, both ways
+    blast     20080 +  640 =  20720
+
+Sixteen regions, **no gaps and no overlaps**. That is a complete check on every
+base and every frame count this port believes, and it is what made the shrug's
+missing direction visible - its eight frames left 320 spare and nothing else
+could have used them.
+
+It also confirms a NEGATIVE that would otherwise be a guess: the blocker has no
+direction term in its draw, and the tiling says it cannot have one - sixteen
+frames of 40 fill its region exactly, with no room for a second set. The same
+holds for the drowner, the splatter, the burner and the blast.
+
+A sweep that finds nothing is worth having when it can say what it covered.
+This one covers 20,720 bytes and leaves none of them unexplained.
 
 ### And a held rate button ramps, the way the original's does
 
