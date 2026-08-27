@@ -120,12 +120,18 @@ int main(int argc, char **argv)
                                  &which) != 0)
                     break;
                 which += 1;         /* level_show takes 1-based sections */
+                /* Image 0x019C9: this plate may play its level under
+                 * another name with other skills. Set once for the
+                 * briefing and once for the level, because each parses. */
+                int odd = level_odd_entry(rat, num);
                 level lv;
+                level_odd_pending(odd);
                 if (level_show_briefing(data, picked, which, rat,
                                         num, DEFAULT_SCALE, &err) != 0) {
                     fprintf(stderr, "  %s\n", err);
                     break;
                 }
+                level_odd_pending(odd);
                 if (level_show(data, picked, which, &lv,
                                DEFAULT_SCALE, &err) != 0) {
                     fprintf(stderr, "  %s\n", err);

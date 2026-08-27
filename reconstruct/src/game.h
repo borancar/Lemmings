@@ -197,6 +197,14 @@ void preshift_sprite(const uint8_t *src, uint8_t cols, uint8_t rows,
 /* Where the game's level `number` (1..30) of `rating` (0..3 = Fun, Tricky,
  * Taxing, Mayhem) lives: which levelNNN.dat, and which section inside it.
  * Transcribed from the table at image 0x0EF7E - see game.c. */
+/* ODDTABLE.DAT: half the game's plates play a level under another name with
+ * other skills - image 0x019C9's bit 0 of n - 1. -1 means this plate uses the
+ * level's own numbers. */
+int level_odd_entry(uint8_t rating, uint8_t number);
+int level_apply_odd(const char *dir, level *lv, int entry, const char **err);
+/* The plate the next level parse belongs to; level_odd_taken consumes it. */
+void level_odd_pending(int entry);
+int  level_odd_taken(void);
 int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
                  uint32_t *section);
 

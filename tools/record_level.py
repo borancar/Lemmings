@@ -65,6 +65,13 @@ SKILLS = [0x6A, 0x6D, 0x70, 0x73, 0x76, 0x79, 0x7C, 0x7F]
 # even ask whether a lemming is a floater, so the floater's behaviour and the
 # splat cannot be reached on the first level at all.
 LEVEL_INDEX = 0x1F6B
+# WHERE THE LEVEL RECORD IS LOADED. Image 0x036B9 sets di to this fixed
+# address and reads the release rate, the counts and all eight skills from it,
+# so it is the record the game believes it is playing. Carried in the manifest
+# because the port and the original have been seen to disagree about a
+# level's skills while agreeing about its terrain, and only these bytes can
+# say which record each side actually had.
+LEVEL_RECORD = 0x0FCB
 # The end condition, image 0x001E7: released == to-release AND active == 0.
 RELEASED, ACTIVE, TO_RELEASE = 0x43, 0x45, 0x47
 SAVED, OVER = 0x46, 0x4F   # ds:0x4F is what image 0x001C8 tests first
@@ -198,6 +205,8 @@ def install(m):
             "lemmings": n_lem,
             "lem": lem_all,
             "skills": [uc.mem_read(base + DGROUP + a, 1)[0] for a in SKILLS],
+            "record_head": bytes(uc.mem_read(base + DGROUP + LEVEL_RECORD,
+                                             0x20)).hex(),
             "diggers": uc.mem_read(base + DGROUP + DIGGERS, 1)[0],
             "released": uc.mem_read(base + DGROUP + RELEASED, 1)[0],
             "active": uc.mem_read(base + DGROUP + ACTIVE, 1)[0],

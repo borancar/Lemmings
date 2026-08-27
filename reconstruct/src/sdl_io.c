@@ -1378,6 +1378,9 @@ int level_show_briefing(const char *dir, const char *file, uint32_t which,
                          levels.sections[which - 1].size, &lv, err);
     dat_free(&levels);
     if (rc != 0) return -1;
+    /* ODDTABLE.DAT, image 0x019F5 - half the plates play their level under
+     * another name with other skills. */
+    if (level_apply_odd(dir, &lv, level_odd_taken(), err) != 0) return -1;
     lv.level_number = number;
 
     menu_screen br;
@@ -1571,6 +1574,7 @@ int level_show(const char *dir, const char *file, uint32_t which,
                          levels.sections[which - 1].size, lv, err);
     dat_free(&levels);
     if (rc != 0) return -1;
+    if (level_apply_odd(dir, lv, level_odd_taken(), err) != 0) return -1;
 
     snprintf(path, sizeof(path), "%s/ground%uo.dat", dir, lv->graphics_set);
     if (ground_load(path, &g, err) != 0) return -1;

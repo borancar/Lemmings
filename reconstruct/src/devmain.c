@@ -30,6 +30,11 @@
 
 #include "game.h"
 
+/* ODDTABLE.DAT's entry for the plate being rendered - image 0x019C9's bit.
+ * --file names a file and a section and cannot know which PLATE that is, so
+ * a comparison against a recorded run has to be told. -1 is "its own". */
+static int g_odd_entry = -1;
+
 
 
 
@@ -100,6 +105,8 @@ static int load_level(const char *data, const char *file, uint32_t which,
     int rc = level_parse(levels.sections[which - 1].data,
                          levels.sections[which - 1].size, lv, err);
     dat_free(&levels);
+    if (rc == 0 && level_apply_odd(data, lv, level_odd_taken(), err) != 0)
+        return -1;
     /* The LVL does not carry its own number; the briefing prints one. This is
      * the container index, which is NOT what the game calls the level - see
      * the note in main() about level009.dat. */
@@ -141,6 +148,12 @@ static int render_level(const char *data, const char *file, uint32_t which,
     if (level_parse(levels.sections[which - 1].data,
                     levels.sections[which - 1].size, &lv, &err) != 0) {
         fprintf(stderr, "level %u: %s\n", which, err);
+        dat_free(&levels);
+        return 1;
+    }
+    /* The plate's own numbers, if this plate has any - image 0x019F5. */
+    if (level_apply_odd(data, &lv, g_odd_entry, &err) != 0) {
+        fprintf(stderr, "oddtable: %s\n", err);
         dat_free(&levels);
         return 1;
     }
@@ -500,6 +513,12 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--level") && i + 1 < argc) { which = (uint32_t)atoi(argv[++i]); want_menu = 0; }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--show")) show = 1;
+        /* ODDTABLE.DAT's entry for this plate - image 0x019C9. --file names a
+         * file and a section and so cannot know which PLATE it is; the
+         * original decides from the level index, and this is how a
+         * comparison against a recorded run says which it was. */
+        else if (!strcmp(argv[i], "--odd") && i + 1 < argc)
+            g_odd_entry = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--caret") && i + 1 < argc) {
             /* Whether the code screen's caret is showing, and on which of
              * the ten cells - the phase a capture happens to have caught.
@@ -727,5 +746,6 @@ int main(int argc, char **argv)
         return rc;
     }
 
+    level_odd_pending(g_odd_entry);
     return render_level(data, file, which, objects, raw, panel_out, scale, show);
 }

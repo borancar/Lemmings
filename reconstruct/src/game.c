@@ -6944,6 +6944,82 @@ static const uint8_t LEVEL_ORDER[120] = {
  * (image 0x0EF7E), takes the entry minus one, shifts it four right for the
  * container and masks 7 for the section, and calls digits3 at image 0x019A0.
  */
+/* ODDTABLE.DAT - the level's OTHER set of numbers.
+ *
+ * Eighty of the game's hundred and twenty plates are the same eighty levels,
+ * so a level reached from two ratings has to differ somehow. Image 0x019C9
+ * tests bit 0 of `n - 1` and, when it is set, image 0x019DC loads
+ * `oddtable.dat` - 4,480 bytes, eighty entries of fifty-six - and image
+ * 0x019F5 copies TWENTY-FOUR bytes of entry `(n - 1) >> 1` straight over the
+ * level record's header at ds:0x0FCB. Those twenty-four are exactly the
+ * release rate, the three counts and all eight skills. Image 0x019FE then
+ * copies the entry's remaining thirty-two - its NAME - to ds:0x17AB.
+ *
+ * So half the game's plates play a level under a different name with
+ * different skills and a different requirement, and the port had none of it.
+ * It showed as the panel drawing 2, 0, 5, 10, 20, 2, 2, 2 on Fun 9 where the
+ * original draws twenty eight times: the record in the guest's own memory at
+ * ds:0x0FCB reads rate 99, 80 lemmings, rescue SEVENTY-TWO where the file
+ * says eighty, and 0x14 in all eight skill words - which is entry 10 of
+ * oddtable.dat to the byte, name and all: "As long as you try your best".
+ *
+ * Confirmed on four levels: n = 22 and n = 42 have the bit and were
+ * overridden; n = 39 and n = 43 do not and kept their own. */
+int level_odd_entry(uint8_t rating, uint8_t number)
+{
+    if (rating > 3 || number < 1 || number > 30) return -1;
+    uint8_t n = LEVEL_ORDER[rating * 30 + (number - 1)];
+    if (n == 0 || !((n - 1) & 1)) return -1;    /* image 0x019C9 */
+    return (n - 1) >> 1;                        /* image 0x019E0 */
+}
+
+/* WHICH ENTRY THE NEXT PARSE SHOULD TAKE, or -1 for none.
+ *
+ * The original has no such variable: image 0x019C9 reads the level index it
+ * already has, right where the record is loaded. The port parses a level in
+ * five places - the briefing, the level, the preview and two in the harness -
+ * and threading an argument through all of them would be five chances to
+ * forget one. So the caller that KNOWS the plate says so once, and every
+ * parse after it obeys. level_show_briefing and level_show both clear it,
+ * because a stale entry is the same fault as a stale capture. */
+static int g_odd_pending = -1;
+
+void level_odd_pending(int entry) { g_odd_pending = entry; }
+int  level_odd_taken(void) { int e = g_odd_pending; g_odd_pending = -1; return e; }
+
+#define ODD_ENTRY   56          /* image 0x019E2: dh = 0x38 */
+#define ODD_HEADER  24          /* image 0x019F0: cx = 0x0C words */
+#define ODD_NAME    32          /* image 0x019FB: cx = 0x10 words */
+
+/* Overlay one entry on a parsed level. The twenty-four bytes are the header's
+ * own first twenty-four, so this sets exactly the fields level_parse read
+ * from them and nothing else. */
+int level_apply_odd(const char *dir, level *lv, int entry, const char **err)
+{
+    if (entry < 0) return 0;
+    char path[256];
+    snprintf(path, sizeof(path), "%s/oddtable.dat", dir);
+    FILE *f = fopen(path, "rb");
+    if (!f) { if (err) *err = "oddtable.dat: cannot open it"; return -1; }
+    uint8_t e[ODD_ENTRY];
+    if (fseek(f, (long)entry * ODD_ENTRY, SEEK_SET) != 0
+            || fread(e, 1, ODD_ENTRY, f) != ODD_ENTRY) {
+        fclose(f);
+        if (err) *err = "oddtable.dat: short read";
+        return -1;
+    }
+    fclose(f);
+    lv->release_rate  = (uint8_t)be16(e + 0x00);
+    lv->num_lemmings  = (uint8_t)be16(e + 0x02);
+    lv->num_to_rescue = (uint8_t)be16(e + 0x04);
+    lv->time_limit    = (uint8_t)be16(e + 0x06);
+    for (uint8_t i = 0; i < 8; i++)
+        lv->skills[i] = (uint8_t)be16(e + 0x08 + i * 2);
+    memcpy(lv->name, e + ODD_HEADER, ODD_NAME);
+    lv->name[ODD_NAME] = '\0';
+    return 0;
+}
+
 int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
                  uint32_t *section)
 {

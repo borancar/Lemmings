@@ -1184,47 +1184,45 @@ frames 520..540 is TERRAIN - 198 pixels where both sides have ink of
 different values, spread over the whole screen, converging to zero by frame
 556. That is a separate question from the picture.
 
-### Open: the panel's numbers on "I have a cunning plan"
+### ODDTABLE.DAT: half the game's plates play under another name
 
-`level001.dat --level 3` scores its PANEL exact on 0 of 530 frames, 74 pixels
-every frame, static. Reading the digits off both screens at the columns the
-ink actually occupies - button k at 5 + 16k and 9 + 16k, not at PANEL_ART_X:
+The port was missing a whole data file, and the panel is how it showed.
+
+`level001.dat --level 3` scored its PANEL 0 of 530 frames. Reading the digits
+off both screens at the columns the ink occupies - button k at 5 + 16k:
 
 ```
   original: 99 99 20 20 20 20 20 20 20 20
   port:     99 99 02 ?? 05 ?0 20 02 02 02
 ```
 
-The two agree on the release rate. The port draws the level header's own
-counts - climber 2, floater 0, bomber 5, blocker 10, builder 20, basher 2,
-miner 2, digger 2, which is what the bytes at 0x08 say and what `lemdev`
-prints - and **the original draws 20 on every skill button**. The reference's
-manifest agrees with its screen rather than with the header: it records
-`diggers 20` where the header says 2.
+The port drew the level header's own counts - 2, 0, 5, 10, 20, 2, 2, 2, which
+is what the bytes at 0x08 say - and the original drew **twenty, eight times**.
+Not a drawing fault: the two sides disagreed about what the numbers WERE.
 
-So this is not the port drawing the right numbers wrongly; the two sides
-disagree about what the numbers ARE. The other two levels do not do this -
-`level002.dat --level 6` records `diggers 2` against a header that says 2, and
-its panel scores 1,099 of 1,100.
+**Eighty levels, a hundred and twenty plates.** A level reached from two
+ratings has to differ somehow, and image `0x019C9` is where it does: it tests
+**bit 0 of `n - 1`**, and when it is set image `0x019DC` loads
+`oddtable.dat` - 4,480 bytes, eighty entries of fifty-six - and image
+`0x019F5` copies **twenty-four bytes** of entry `(n - 1) >> 1` straight over
+the level record at `ds:0x0FCB`. Those twenty-four are exactly the release
+rate, the three counts and all eight skills. Image `0x019FE` copies the
+entry's other thirty-two - its NAME - to `ds:0x17AB`.
 
-Both of those levels stock **builder 20**, which is the value the original
-shows eight times here, so the first thing to check is whether the game loads
-one word over all eight. `tools/record_level.py` now carries all eight of
-ds:0x6A..0x7F in its manifest so the question can be asked directly instead of
-inferred from the digger alone.
+The guest's own memory settles it. `tools/record_level.py` now carries the
+record at `ds:0x0FCB`, and for this plate it reads rate 99, 80 lemmings,
+rescue **72** where the file says 80, and `0x14` in all eight skill words -
+which is entry 10 of `oddtable.dat` to the byte, **name and all**: the plate
+is not "I have a cunning plan" but **"As long as you try your best"**.
 
-### Open: the panel's numbers on a level that is not "Just dig!"
+Confirmed on four levels rather than one: n = 22 and n = 42 have the bit and
+were overridden; n = 39 and n = 43 do not and kept their own numbers.
 
-`level001.dat --level 3` scores its PANEL exact on 0 of 530 frames, 74 pixels
-every frame, static. The differing 16-pixel columns are buttons 2, 3, 4, 5, 7,
-8 and 9 - every skill except the BUILDER, whose 20 agrees. The level stocks
-climber 2, floater 0, bomber 5, blocker 10, builder 20, basher 2, miner 2,
-digger 2, and the numbers the two sides draw are not the same.
+    panel, level001.dat --level 3:   0 of 530  ->  529 of 530
 
-Not reported by anyone and not one of the three deaths; written down so it is
-not mistaken for noise next time the panel scores zero. Note that "Just dig!"
-stocks ten diggers and nothing else, so every panel figure this port has ever
-been checked on came from a level with one number to get right.
+`lemdev --odd N` names the entry, because `--file` names a file and a section
+and cannot know which PLATE it is; the original decides from the level index,
+which `--file` does not have.
 
 ### Sprites: where a group lives, and how to find one
 
