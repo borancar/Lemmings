@@ -1762,6 +1762,33 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### screen_start's four set-up calls, and what sets the blitter's bounds
+
+`screen_start` said "image 0x04967 and 0x04A01 both open with 0x04DEF,
+0x04BF5, 0x0531E and 0x05017 - and none of those four has been read". All four
+are read now:
+
+    image 0x04DEF   clear the page - cx = 0x6D60, 28,000 bytes, 640 x 350 / 8
+    image 0x04BF5   declare the surface: page bases ds:0x1F76 = 0 and
+                    ds:0x1F78 = 0x6D60, fine scroll 0, then image 0x8808 with
+                    ax = 0x280 (640), bx = 0x15E (350)
+    image 0x0531E   the palette - sixteen entries through image 0x055B7,
+                    which branches on ds:0x1F7C and indexes ds:0x52D4
+    image 0x05017   the level preview - `xor bx,bx / jmp 0x7E76`
+
+**And image `0x8808` closes a loop from earlier this session.** It stores its
+`ax` in `ds:0x66F2`, `bx` in `ds:0x66F0` and `ax >> 3` in `ds:0x66F4` - the
+three words `tools/probe_clip.py` measured at 352, 160 and 44 inside a level.
+So the blitter's clip limit, the thing two wrong guesses were built on before
+it was measured, is nothing more than **the width of whatever surface was last
+declared**: 640 on the menus, 352 in a level. The measurement said what it was;
+this says why.
+
+Two of the four were already read this pass for other reasons - `0x04DEF`
+turned up as the red herring at the top of the preview's write probe, and
+`0x05017` is the preview builder's wrapper. A routine read for one question
+answers another.
+
 ### Score the thing under test, not the picture it sits in
 
 Three passes running, the fault was my own instrument: a check comparing two

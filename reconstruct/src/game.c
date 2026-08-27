@@ -7673,10 +7673,32 @@ static const char S_INPUT_3[]     = "3. Keyboard";         /* image 0x0E8F1 */
 #define INPUT_OPT_STEP  32
 
 /*
- * NOT TRANSCRIBED. The original does set these screens up - image 0x04967
- * and 0x04A01 both open with 0x04DEF, 0x04BF5, 0x0531E and 0x05017 - and
- * none of those four has been read.
- * in place and has no equivalent shared entry.
+ * NOT TRANSCRIBED, but all four of the original's set-up calls are read now.
+ * Image 0x04967 and image 0x04A01 both open with the same sequence:
+ *
+ *   image 0x04DEF  CLEAR the page. `di = 0`, `cx = 0x6D60` - 28,000 bytes,
+ *                  which is 640 x 350 / 8, the whole thing.
+ *   image 0x04BF5  DECLARE THE SURFACE. It sets the two page bases -
+ *                  ds:0x1F76 = 0 and ds:0x1F78 = 0x6D60 - and the fine
+ *                  scroll ds:0x1F7A = 0, then calls image 0x8808 with
+ *                  ax = 0x280 (640), bx = 0x15E (350) and dx = the page.
+ *
+ *                  Image 0x8808 is worth naming: it stores ax in ds:0x66F2,
+ *                  bx in ds:0x66F0 and ax >> 3 in ds:0x66F4. Those are the
+ *                  BLITTER'S OWN bounds - the width it refuses a blit past
+ *                  at image 0x09997, the height, and the row in bytes. So
+ *                  the clip limit is simply whatever surface was last
+ *                  declared: 640 here, and 352 in a level, which is what
+ *                  tools/probe_clip.py measures from a running game.
+ *   image 0x0531E  THE PALETTE. `al = 0, cx = 0x10, bx = 0x100`, then image
+ *                  0x055B7, which branches on ds:0x1F7C - the adapter letter
+ *                  - and indexes a table at ds:0x52D4. Sixteen entries.
+ *   image 0x05017  THE LEVEL PREVIEW - `xor bx,bx / jmp 0x7E76`. See
+ *                  draw_preview, which carries that whole chain.
+ *
+ * What is still owed is the transcription, not the reading: this routine
+ * does the same four things in the same order and none of them carries an
+ * address yet.
  */
 static int screen_start(const char *dir, menu_screen *m, dat_file *d,
                         const uint8_t **sec, const uint8_t **font,
