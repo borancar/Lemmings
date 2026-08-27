@@ -8165,9 +8165,26 @@ static char *put_num2(char *dst, uint8_t v);
  * tools/prove.sh has never seen it: that breaks at image 0x0376A, inside the
  * first.
  *
- * Still open, and much smaller: nineteen pixels around (861, 108) and
- * (886, 108) where the port and the bitmap disagree WITH objects drawn - the
- * exit's edge. That is what this routine owes now.
+ * Still open, and much smaller: NINETEEN pixels, in two clusters twenty-six
+ * apart at level x 874..878 and 901..905, rows 108..112. Two shapes in them:
+ *
+ *   guest 5, port 0     the port SKIPPED a pixel the original drew - eleven
+ *                       of the nineteen
+ *   guest 4, port 5 at one x and guest 5, port 4 at the next
+ *                       the port's content one pixel to the RIGHT
+ *
+ * The first is the likelier lead, and it points at the no-overwrite rule
+ * rather than at the geometry: the blit probe caught this object going up
+ * with bp = 0x800E, bit 15 being the LVL's `e[6] & 0x80`, and this port
+ * refuses a pixel where `dst & 8` - terrain's bit 3. If the original's test
+ * is not that, the two differ exactly at an object's edge against terrain,
+ * which is where all nineteen are.
+ *
+ * None of them shows on any screen scored so far: the briefing's preview is
+ * 0 pixels differing and the three levels are exact frame by frame. So this
+ * is a difference in the COMPOSED BITMAP that no comparison in this
+ * repository currently reaches - worth keeping for that reason as much as
+ * for its size.
  */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,

@@ -1614,8 +1614,24 @@ why `prove.sh` has never seen it: that breaks at image `0x0376A`, inside the
 first. Two composition paths, one break, and a claim about the program drawn
 from it.
 
-What is left is nineteen pixels around (861, 108) and (886, 108) - the exit's
-edge - where the port and the bitmap disagree with objects drawn.
+What is left is **nineteen pixels**, in two clusters twenty-six apart at level
+x 874..878 and 901..905, rows 108..112, and they have two shapes: eleven are
+`guest 5, port 0` - the port skipping a pixel the original drew - and the rest
+are `guest 4, port 5` at one x with `guest 5, port 4` at the next, the port's
+content one pixel to the right.
+
+The first points at the NO-OVERWRITE rule rather than at geometry. The blit
+probe caught this object going up with `bp = 0x800E`, bit 15 being the LVL's
+`e[6] & 0x80`, and the port refuses a pixel where `dst & 8` - terrain's bit 3.
+If the original's test is not that, the two differ exactly at an object's edge
+against terrain, which is where all nineteen are.
+
+**And none of them shows on any screen scored here**: the briefing's preview
+is 0 pixels differing and the three levels are exact frame by frame. It is a
+difference in the COMPOSED BITMAP that no comparison in this repository
+currently reaches, which is worth keeping for that reason as much as for its
+size - `prove.sh` compares the bitmap at image `0x0376A`, before the objects
+are in it, and nothing compares it afterwards.
 
 Getting there needed a hook rather than the control socket: `break i+0x7eb2`
 halts the guest while the menus are still up and every F1 the driver sends is
