@@ -918,3 +918,43 @@ everything at its tick boundary. Scoring it properly needs the port to log at
 finer resolution and the comparison to match sets within a tolerance - which
 is a harness job, and the timing question it was built to answer is already
 answered.
+
+## The dummy port reads are the chip RUNNING
+
+`opl.h` said the twelve and forty `in al,dx` reads at driver +0x0559 "carry no
+state and have no counterpart here". That was wrong, and it is the difference
+between the music and a hollow version of it.
+
+They are the YM3812's settling time - 3.3 us after the address, 23 us after
+the data - and the chip keeps generating through them. Drop them and every
+register write of a driver tick lands at ONE INSTANT: notes key off and on
+again with no time between, envelopes never get their attack, and voices that
+are being written correctly are never heard.
+
+**How it was found.** Every comparison said the streams agreed - the same
+notes on every channel, 100% in order; the same volumes; the same value set
+for every register; the same channels keyed on second by second; the same
+retrigger counts. And the audio still did not match.
+
+What settled it was rendering DOSBox's OWN stream through ymfm: it came out
+like DOSBox, so the chip was faithful. Then quantising that same stream onto
+the port's 14.29 ms tick grid:
+
+    dosbox, its own 1 ms timing    rms 1354   steady
+    dosbox, quantised to our tick  rms  703   hollow, collapsing
+    the port                       rms  523   hollow, collapsing
+
+The instrument had been reproducing the fault all along. Spreading the writes
+again restored it, and 59 us of spacing did as well as 1000 - what matters is
+that the chip advances AT ALL between writes.
+
+`opl_write` now generates the settling samples when the write happens and
+`opl_render` hands them out before anything new; discarding them would throw
+away a sixth of the audio at a busy tick.
+
+    the port, with settling        rms 2748   steady
+
+**The general form.** A hardware delay is not always dead time. This one is a
+timing guarantee the chip needs, and the port had transcribed the writes and
+thrown away the waiting - which no comparison of what was WRITTEN could ever
+have caught.

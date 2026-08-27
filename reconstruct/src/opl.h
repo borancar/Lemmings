@@ -39,10 +39,29 @@ extern "C" {
 void    opl_reset(void);
 
 /* One register write, exactly as `out 0x388, reg` / `out 0x389, val` did.
- * The twenty dummy port reads the driver does between them are the chip's
- * settling time on a real ISA bus (image adlib.dat +0x0559); they carry no
- * state and have no counterpart here. */
+ *
+ * AND THE CHIP RUNS WHILE IT HAPPENS. The driver reads the port twelve times
+ * after the register and about forty after the value (adlib.dat +0x0559),
+ * which is the YM3812's settling time - 3.3 us and 23 us - spent on a bus
+ * that takes about a microsecond a read.
+ *
+ * This header used to say those reads "carry no state and have no
+ * counterpart here". That was wrong, and it is the difference between music
+ * and a hollow version of it. Without them every register write of a driver
+ * tick lands at ONE INSTANT and the chip advances only afterwards: notes
+ * key off and on again with no time in between, envelopes never get their
+ * attack, and the result is thin and half as loud.
+ *
+ * Measured: DOSBox's own register stream, quantised onto the port's tick
+ * grid, falls from an RMS of 1354 to 703 and takes on exactly the hollow,
+ * collapsing profile the port had. Spreading the writes again restores it,
+ * and 59 us of spacing does as well as 1000 - what matters is that the chip
+ * advances AT ALL between writes, not by how much. */
 void    opl_write(uint8_t reg, uint8_t val);
+
+/* The settling time one register write costs, in microseconds: the YM3812's
+ * 3.3 us after the address and 23 us after the data. */
+#define OPL_WRITE_SETTLE_US 26.3
 
 /* Render `frames` mono samples at OPL_SAMPLE_RATE. */
 void    opl_render(int16_t *out, uint32_t frames);

@@ -46,6 +46,22 @@ opl_trace_fn    g_trace;
 const double DC_R = 1.0 - 6.2831853 * 5.0 / (double)OPL_SAMPLE_RATE;
 double g_dc_x1, g_dc_y1;
 
+/* THE SETTLING TIME, and the samples it produces.
+ *
+ * A register write costs the chip OPL_WRITE_SETTLE_US of running - see
+ * opl.h - and those are real samples, not a pause. They are generated here,
+ * when the write happens, and handed out by opl_render before anything new:
+ * discarding them would throw away a sixth of the audio at a busy tick. */
+const uint32_t SETTLE_MAX = 8192;
+int16_t  g_settle[SETTLE_MAX];
+uint32_t g_settle_head, g_settle_tail;
+double   g_settle_owed;
+
+inline uint32_t settle_count()
+{
+    return (g_settle_tail - g_settle_head) & (SETTLE_MAX - 1);
+}
+
 }  /* namespace */
 
 extern "C" void opl_reset(void)
@@ -53,6 +69,25 @@ extern "C" void opl_reset(void)
     g_chip.reset();
     g_writes = 0;
     g_dc_x1 = g_dc_y1 = 0.0;
+    g_settle_head = g_settle_tail = 0;
+    g_settle_owed = 0.0;
+}
+
+namespace {
+/* One sample from the chip, through the coupling capacitor. */
+int16_t one_sample()
+{
+    ymfm::ym3812::output_data frame;
+    g_chip.generate(&frame, 1);
+    double x = (double)frame.data[0];
+    double y = x - g_dc_x1 + DC_R * g_dc_y1;
+    g_dc_x1 = x;
+    g_dc_y1 = y;
+    int32_t v = (int32_t)y;
+    if (v >  32767) v =  32767;
+    if (v < -32768) v = -32768;
+    return (int16_t)v;
+}
 }
 
 extern "C" void opl_set_trace(opl_trace_fn fn)
@@ -67,22 +102,30 @@ extern "C" void opl_write(uint8_t reg, uint8_t val)
     g_chip.write(0, reg);
     g_chip.write(1, val);
     g_writes++;
+
+    /* AND THE CHIP RUNS WHILE THE DRIVER WAITS OUT THE WRITE - see opl.h.
+     * Without this every register write of a tick lands at one instant and
+     * the music comes out hollow and half as loud. */
+    g_settle_owed += OPL_WRITE_SETTLE_US * OPL_SAMPLE_RATE / 1000000.0;
+    while (g_settle_owed >= 1.0) {
+        g_settle_owed -= 1.0;
+        uint32_t next = (g_settle_tail + 1) & (SETTLE_MAX - 1);
+        if (next == g_settle_head) break;     /* full: the render is behind */
+        g_settle[g_settle_tail] = one_sample();
+        g_settle_tail = next;
+    }
 }
 
 extern "C" void opl_render(int16_t *out, uint32_t frames)
 {
-    ymfm::ym3812::output_data frame;
-    for (uint32_t i = 0; i < frames; i++) {
-        g_chip.generate(&frame, 1);
-        double x = (double)frame.data[0];
-        double y = x - g_dc_x1 + DC_R * g_dc_y1;   /* the coupling capacitor */
-        g_dc_x1 = x;
-        g_dc_y1 = y;
-        int32_t v = (int32_t)y;
-        if (v >  32767) v =  32767;
-        if (v < -32768) v = -32768;
-        out[i] = (int16_t)v;
+    uint32_t i = 0;
+    /* whatever the writes already produced, in the order they produced it */
+    while (i < frames && g_settle_head != g_settle_tail) {
+        out[i++] = g_settle[g_settle_head];
+        g_settle_head = (g_settle_head + 1) & (SETTLE_MAX - 1);
     }
+    for (; i < frames; i++)
+        out[i] = one_sample();
 }
 
 extern "C" uint32_t opl_writes(void)
