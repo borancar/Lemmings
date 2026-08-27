@@ -1902,6 +1902,40 @@ simply a different phase from a capture at frame 600. Sweeping `--obj-frame`
 found the match at 5, and the frame-by-frame comparison, which advances the
 animation itself, is exact.
 
+### A third coverage axis: the trigger EFFECTS
+
+`coverage.py` counted object ids, object flags and terrain flags. It did not
+count the thing the loop's three original bugs were actually about - the
+trigger EFFECT an object carries, which is not in the LVL at all. The level
+names an id; the effect is a field of the GROUND file's object record,
+`[si+0x14]`, so it needs the graphics set read alongside.
+
+    TRIGGER EFFECTS             in the game   in a measured level
+      0 none                     178          18
+      1 exit (0x02F3B)            84           8
+      4 TRAP (0x02FB6)            22           6
+      5 water (0x02FF8)           63           1
+      6 fire (0x0304F)            41           3
+      7 one-way right             45          14
+      8 one-way left              21           2
+
+Every effect is exercised, but **water by ONE object** across six levels -
+and drowning is one of the three faults this loop exists to chase. Effects 4
+and 8 are barely better.
+
+Effects 2, 3 and 0x0A are a BLOCKER's three columns, written into the map at
+run time rather than from an object record, and 9 is steel from the LVL's own
+list. They cannot appear in a table built from object records, and the table
+says so, because otherwise their absence reads as a gap.
+
+**The instrument was checked twice before any of this was reported**, and
+needed it both times: the parse was verified against `game.c`'s own
+`ground_load` on all sixteen ids of five graphics sets, and the first version
+scored EVERY level against `ground0o`, because `graphics_set` is a big-endian
+word at 0x1A and `sec[0x1A]` is the high half - always zero. That table
+claimed effect 6 does not exist in the game. It does: `ground1o` has three ids
+carrying it and 41 objects use it.
+
 ### A fifth level, chosen the same way, found a TERRAIN bug
 
 `tools/coverage.py` had one object id left that nothing measured - id 4, the
