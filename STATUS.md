@@ -1468,6 +1468,31 @@ with mod 00 and rm 110 now, and still cannot see an access made through a
 register - so a count of zero means "no direct reference", not "never
 touched".
 
+### Two more flags swept, and both came back clean
+
+The sweep is only worth having if its negative answers are recorded too,
+otherwise the next pass repeats it.
+
+**`ds:0x55`, the entrance**, has four sites and the port has all four: image
+`0x00394` opens it at frame 35 of the opening sequence, image `0x00447` clears
+it at level start, image `0x030B0` stops the release until it is open, and
+image `0x07C26` stops object id 1 animating until it is.
+
+**`ds:0x61`, the assignment latch**, has three, and they are an edge detector
+written as a poll. Image `0x0316E` tests `ds:0x14` bit 0 - the HELD button -
+and clears the latch whenever it is up (image `0x031BE`); image `0x03175`
+refuses a second assignment while it is set, and image `0x03177` sets it. So a
+held button assigns once and then nothing, however long it is held and
+whatever it is dragged over.
+
+The port reaches the same behaviour by a different route: it acts on the
+button-DOWN edge, in both the script path and the SDL one, so a held button
+produces one assignment and no more. Equivalent, and worth writing down as
+equivalent-by-a-different-mechanism rather than as a match - if the port ever
+grows a polled input path, this is the thing that quietly breaks.
+
+Yield so far: three flags swept, one bug (`ds:0x2B` at image `0x03944`).
+
 ### PAUSE stops the objects too, and the port's kept turning
 
 A real fault in the port, and the pause case is the only thing in this
