@@ -1914,6 +1914,43 @@ Two levels chosen by a coverage gap, two bugs, and neither of them in the
 thing the gap was about. That is the argument for choosing the next reference
 by what nothing measures rather than by what looks interesting.
 
+### OPEN: do the one-way arrows land on a builder's bricks?
+
+Reported from playing, with a screenshot: the arrows appear over bricks a
+builder has laid, and the original does not do that.
+
+The PORT's mechanism is confirmed and is a direct consequence of the
+only-on-terrain rule. `lem_build_brick` ORs attribute 8 into the level canvas
+- image 0x05F13 sets the Map Mask to 8 and image 0x05F1E and image 0x05F26 set
+Set/Reset and Enable Set/Reset to 8, so a brick is plane 3 and nothing else -
+and `object_pixel_allowed` asks exactly `dst & 8`. A fresh brick is therefore
+indistinguishable from terrain to the arrow blit.
+
+What is NOT yet settled is whether the original does the same, and reading has
+so far argued that it should, which contradicts the report:
+
+- the two writes go to DIFFERENT buffers. Image 0x05DC6 puts the brick at
+  `0x4A40 + y * 0xD0 + x/8` - the level-wide bitmap, 208 bytes a row - while
+  the blitter's destination is `[0x1F76] + [0x1F7A]` with the stride at
+  `[0x66F4]`, the visible page.
+- but the arrows ANIMATE, measured on the reference rather than assumed:
+  ~1,366 pixels of the arrow band change between consecutive frames of
+  out/ref_i77 and go on doing so for all 1,100. So the page they are drawn
+  into is refreshed from the level bitmap every frame, or last frame's arrows
+  would still be there.
+- and that refresh must carry plane 3, or the arrows would never draw at all.
+  Which puts the brick's plane 3 in front of the arrow blit.
+- an arrow also CLEARS plane 3 where it lands (Set/Reset 4, Enable Set/Reset
+  0x0E). If the arrows were drawn into the level bitmap itself the wall would
+  erode frame by frame and the arrows would disappear. They do not, over 1,100
+  frames, which is the same evidence from the other side.
+
+So one of those premises is wrong. Both sides are being driven through one
+input script - select the builder, click the lemming at the left face of
+level004 section 3's arrow wall - and the pixels the builder created will be
+scored on both. That is the measurement; the reading above is not a conclusion
+and must not be written up as one.
+
 ### An object can carry both flags too, and five of them do
 
 Found by listing what a modifier byte actually holds across all eighty levels
