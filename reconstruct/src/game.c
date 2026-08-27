@@ -7135,13 +7135,41 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                 if (dx < 0 || dx >= c->w)
                     continue;
                 uint32_t si = (uint32_t)src_y * go->width + (uint32_t)sx;
-                if (!mask[si])
+                /* THE MASK IS NOT CONSULTED FOR A NO-OVERWRITE BLIT, and the
+                 * two paths differ in exactly that. Image 0x09709, the
+                 * only-on-terrain one, does `and ah, [bx]` - the destination's
+                 * plane 3 AND the object's own mask. Image 0x09592, the
+                 * no-overwrite one, has no such AND: its bit mask is `not ah`
+                 * and nothing else, so the whole rectangle goes down wherever
+                 * plane 3 is clear, transparent pixels included. */
+                if (!o->no_overwrite && !mask[si])
                     continue;
 
                 uint8_t *dst = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
-                if (o->only_on_terrain && *dst == 0)
+                if (o->only_on_terrain && (*dst & 8) == 0)
                     continue;
-                if (o->no_overwrite && *dst != 0)
+                /* PLANE 3, not "anything is already there" - image 0x0953E.
+                 *
+                 * A blit carrying bp bit 15 reaches image 0x09573, which sets
+                 * the graphics controller to READ MODE 1 (Mode = 8) with
+                 * Color Compare = 8 and Color Don't Care = 8. A read then
+                 * gives a bit per pixel saying whether its PLANE 3 is set,
+                 * nothing else compared; image 0x09595 inverts that and image
+                 * 0x09599 makes it the bit mask, so the object goes down
+                 * wherever plane 3 is CLEAR.
+                 *
+                 * This tested `*dst != 0` - anything at all - and the two
+                 * differ on every pixel whose attribute is 1..7: bit 3 clear,
+                 * so the original writes and the port skipped. That is
+                 * exactly the shape of the residue tools/verify_objects.py
+                 * reports, guest with ink where the port has none.
+                 *
+                 * level_anim_draw already had this right and says why in its
+                 * own comment - "terrain is the only thing with bit 3 set,
+                 * which is what makes the test exact rather than 'something
+                 * is already there'". Two sites, one rule, and only one of
+                 * them had been corrected. */
+                if (o->no_overwrite && (*dst & 8))
                     continue;
                 *dst = pix[si];
             }

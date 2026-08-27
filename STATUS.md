@@ -1630,11 +1630,37 @@ compared. Image `0x09592` reads it, image `0x09595` inverts it, and image
 `0x09599` makes it the GC's bit mask - the object is written only where plane
 3 is clear.
 
-Plane 3 is bit 3 of the attribute, and the port refuses a pixel where
-`dst & 8`. Same rule. So the nineteen are something else, and the suspect left
-is the one the miner's single pixel raised: the original blits whole BYTES
-through a pre-shifted source with a bit mask where the port walks pixels, and
-both shapes here sit at an object's edge.
+Plane 3 is bit 3 of the attribute, and `level_anim_draw` refuses a pixel where
+`dst & 8`. Same rule.
+
+**But `render_objects` had a different one, and reading the blit is what
+showed it.** It tested `*dst != 0` - "anything is already there" - where the
+original tests plane 3 alone, and the two disagree on every pixel whose
+attribute is 1..7. `level_anim_draw`'s own comment had said why that matters
+years' worth of commits ago: *terrain is the only thing with bit 3 set, which
+is what makes the test exact rather than "something is already there"*. Two
+sites, one rule, and only one of them corrected.
+
+The companion flag came out of the same read. Image `0x09709` - the
+only-on-terrain path, `bp` bit 14 - does `and ah, [bx]`: the destination's
+plane 3 AND the object's own mask. So that one is `dst & 8` too, and the port
+had `*dst == 0`. And the two paths differ in one more way worth transcribing:
+the no-overwrite blit at image `0x09592` has **no** AND with the object's
+mask, so its whole rectangle goes down wherever plane 3 is clear, transparent
+pixels included.
+
+All three are now the original's rules rather than the port's guesses, and
+**none of them changes a single number here** - the nineteen stay nineteen,
+`prove.sh` stays 100.00%, the briefing stays 0, the three levels stay exact.
+That is worth saying rather than hiding: they are transcription, not repair,
+and no check in this repository can tell them from what they replaced. They
+are kept because a read rule beats a fitted one that happens to agree, which
+is this project's whole method - but the honest label is unverified.
+
+So the nineteen are something else again, and the suspect left is the one the
+miner's single pixel raised: the original blits whole BYTES through a
+pre-shifted source with a bit mask where the port walks pixels, and both
+shapes here sit at an object's edge.
 
 **And none of them shows on any screen scored here**: the briefing's preview
 is 0 pixels differing and the three levels are exact frame by frame. It is a
