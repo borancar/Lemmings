@@ -1159,13 +1159,23 @@ test; the two that are have 0.
 `0x180B` with 5 x 32 x 3 gives a starburst in colours 3, 4 and 5 - the exact
 colours the original's screen holds.
 
-**What is still open is the animation.** The store holds ONE picture in eight
-shifts at indices 0..7 and nothing at 8..31, so the index cannot be image
-`0x070B6`'s `anim * 8 + shift`: the cloud's counter runs to 0x34. Scored
-against the original's own frames, the burst is barely present at anim 0, 2
-and 5 and best at anim 9 with 258 of 510 - half, which is a blob overlapping a
-blob and not a match. Something between the counter and the index is not read
-yet, and until it is this draws nothing rather than something wrong.
+**The animation is ONE FRAME, and that is now proved rather than guessed.**
+The store holds one picture in eight shifts at indices 0..7 and nothing at
+8..31, which said the index cannot be image `0x070B6`'s `anim * 8 + shift`
+when the counter runs to `0x34`. Scanning the original's own frames 492..528
+for dense runs of colours 3, 4 and 5 settles it: there is exactly ONE burst on
+screen at a time, at frames 496, 498, 500, 502 and 504, and the lemming
+beside it is at **anim 0** every time - lemmings 1, 3, 5, 7 and 9 in turn.
+Each burst is about 430 pixels and lasts a single frame.
+
+So the picture is right, the frame is anim 0, and what is left is the ORIGIN.
+Scoring the store picture freely over the screen gives 417 of 510 at index 7
+placed (148, 53), and the shifts behave exactly as they should - index 6 wants
+149, index 5 wants 150, each one pixel along - so the geometry is certainly
+right. But (148, 53) is nine right and two up from where the lemming's own
+sprite origin is, and nothing read so far explains those nine pixels. Drawing
+it at the lemming's origin scores 77 of 510. Until that is read this still
+draws nothing rather than something nine pixels wrong.
 
 ### Open: the panel's numbers on a level that is not "Just dig!"
 
