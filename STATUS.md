@@ -1189,10 +1189,37 @@ The two halves check each other: index 7's columns 0..31 at `x - scroll - 7`
 score 2,086 of 2,125, index 0's own columns 0..31 at the origin score 1,400 of
 1,785, and index 7 at the origin 463 of 2,125.
 
-The nuke's worst frame went from 1,081 differing to 672. What remains at
-frames 520..540 is TERRAIN - 198 pixels where both sides have ink of
-different values, spread over the whole screen, converging to zero by frame
-556. That is a separate question from the picture.
+The nuke's worst frame went from 1,081 differing to 672.
+
+**And what remains is DEBRIS over the crater, not a slow crater.** An earlier
+reading of this said the original "goes on removing terrain for twenty-five
+frames". The measurement was right and the reading of it was wrong.
+
+Take the crater's final footprint - the 615 pixels inside a box that the port
+ends with empty - and ask how many the ORIGINAL still has ink on:
+
+```
+  frame     505 506 508 512 520 548
+  still ink 182  92  86  77  48   0
+```
+
+The crater is cut at once on BOTH sides. What the original then has is ink ON
+TOP of it, thinning away over forty frames. Frame to frame, the changing
+pixels are the same 8x8 blocks every frame with a falling count - 138, 151,
+130, ... 19 - an effect animating over the site, not terrain being revealed
+block by block.
+
+It is debris in the terrain's OWN COLOURS, which is exactly why counting
+terrain-coloured pixels made it look like terrain not yet removed. The same
+trap this file already records one level up: a frame diff cannot tell you what
+a pixel IS.
+
+Two mechanisms are ruled out and need not be checked again. The dirty-block
+repaint at image `0x080FD` drains EVERY marked run each frame - image
+`0x08199`'s `jcxz`/`jmp` loops back rather than budgeting - so the screen
+never lags its map. And `[si+0x22]`, set to fifteen by image `0x02D4F` and the
+obvious candidate for a particle count, is written in four places and read in
+none.
 
 ### ODDTABLE.DAT: half the game's plates play under another name
 
