@@ -1275,6 +1275,20 @@ So the debris is EIGHTY pixels a frame, positioned from a row of eighty signed
 offsets and coloured by a countdown through sixteen. That is why it is in the
 terrain's colours - half that table is.
 
+**How much debris there is, frame by frame.** Counting pixels the original
+has and the port does not, over the whole play area:
+
+```
+  frame  494 498 502 506 510 514 518 522 526 530 534 538 542 546 550 554
+  pixels   0 249 466 589 577 508 380 302 325 309 230 122  84  44  24   8
+```
+
+It rises as the ten blasts accumulate - peaking near 589, which for ten
+lemmings is about 59 of the eighty each, the rest clipped or overlapping -
+and then falls away over fifty frames. That decline is what a computed
+trajectory looks like: image `0x06EF2` drops any particle that has flown past
+`x = 0x150` or `y = 0xA0`, so fewer survive the clip each frame.
+
 **The table at `ds:0x2788` is filled at RUN TIME.** In the image, row 0 holds
 eighty real offsets and every row after it begins with the `0x80` that ends
 the row - so it is a working buffer the game computes into, not a static
