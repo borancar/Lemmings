@@ -6406,6 +6406,21 @@ void level_status_out(uint8_t live)
  * frame is never shown - that is what the original does, not a fencepost. */
 void level_anim_step(level_anim *st, const level *lv)
 {
+    /* PAUSE STOPS THE OBJECTS TOO - image 0x03944, which is the only thing
+     * that reaches image 0x07C0A: `cmp byte [0x2b], 0xff / je / jmp 0x7c0a`,
+     * so the advance happens only while the pause flag is clear. ds:0x2B is
+     * that flag, toggled by image 0x04018's `xor byte [0x2b], 0xff`, and the
+     * clock (image 0x0020C) and the release (image 0x030A6) already guard on
+     * it here.
+     *
+     * The port did not, and the two never came back into step: with the
+     * original's objects frozen from the moment the button went down and the
+     * port's still turning, a trap's animation was permanently out of phase
+     * afterwards. It shows as about twenty pixels on EVERY frame from the
+     * press to the end of the run - 285 of 500 on the pause case - and it
+     * needed a run that pauses to see at all. No frame-for-frame comparison
+     * of a level nobody touches could. */
+    if (level_paused() == 0xFF) return;             /* image 0x03944 */
     for (uint16_t i = 0; i < LEVEL_ANIM_MAX; i++) {
         level_anim *a = &st[i];
         if (!a->live) continue;
@@ -6910,7 +6925,10 @@ void level_play_draw(level_anim *st, const level *lv,
  *
  * The set-up, image 0x00495 onward, runs once before the loop is entered:
  *
- *     0x00495  0x3944   the play area
+ *     0x00495  0x3944   the object animations advance one frame -
+ *                       image 0x03944 is a pause guard on ds:0x2B in front of
+ *                       image 0x07C0A, and NOT the play area, which is what
+ *                       this line said when the sequence was first written up
  *     0x00498  0x7BB8   the objects
  *     0x0049B  0x7900   the MINIMAP'S TERRAIN, copied from 0xD320 to
  *                       ds:0x1F76 + 0x2172 + 2
@@ -6920,7 +6938,7 @@ void level_play_draw(level_anim *st, const level *lv,
  *
  *     0x001B0  0x30A6   the release
  *     0x001B3  0x1F19   the lemmings walk
- *     0x001B6  0x3944   the play area
+ *     0x001B6  0x3944   the object animations advance (pause-guarded)
  *     0x001B9  0x7BB8   the objects
  *     0x001BC  0x3634   the lemmings, and the OUT count at image 0x03684
  *     0x001BF  0x3CDE   what the pointer is over, into ds:0x2083

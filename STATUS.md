@@ -1434,6 +1434,44 @@ all.** `level_panel_build` was the other - there the original had no such
 routine, here it has one and it is DOS. Neither could be settled without going
 and reading the address that was already written down beside the marker.
 
+### PAUSE stops the objects too, and the port's kept turning
+
+A real fault in the port, and the pause case is the only thing in this
+repository that could have seen it: its play area went from **215 of 500
+frames exact to 499**, the one left being a single cursor.
+
+Image `0x03944` is the only thing that reaches the object-animation advance at
+image `0x07C0A`, and it is a guard:
+
+    cmp byte [0x2b], 0xff
+    je  (return)
+    jmp 0x7c0a
+
+`ds:0x2B` is the pause flag - image `0x04018` toggles it with
+`xor byte [0x2b], 0xff` - and the clock (image `0x0020C`) and the release
+(image `0x030A6`) already guarded on it in the port. The objects did not, so
+from the moment the button went down the original's objects were frozen and
+the port's kept turning, and **they never came back into step**: about twenty
+pixels differing on every frame from the press to the end of the run, long
+after the game was unpaused.
+
+Two things worth keeping:
+
+- **A permanent divergence that starts at an input is a state the input
+  changed, not a drawing bug.** The residue was ~20 pixels in one 32x5 band,
+  which looks like a sprite; what it actually was is a phase difference in an
+  animation, and the give-away is that it began exactly at frame 200 and never
+  healed.
+- **It needed a run that pauses.** Every frame-by-frame number this port has
+  came from levels nobody touches or from single skill assignments. Five
+  thousand one hundred frames of "Just dig!" cannot see this, and neither can
+  any of the eight skills.
+
+And a correction to the panel-order note written earlier this session: image
+`0x03944`, at image `0x001B6` in the play loop and image `0x00495` in the
+set-up, is **not "the play area"**. It is this guard in front of the object
+animations. The addresses were right and the label was a guess.
+
 ### The digger's panel had scored 0 of 676 and nobody was shown the number
 
 `verify_skills` prints one line per case and it was the PLAY AREA's. The
