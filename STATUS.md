@@ -1914,6 +1914,31 @@ Two levels chosen by a coverage gap, two bugs, and neither of them in the
 thing the gap was about. That is the argument for choosing the next reference
 by what nothing measures rather than by what looks interesting.
 
+### An object can carry both flags too, and five of them do
+
+Found by listing what a modifier byte actually holds across all eighty levels
+rather than assuming the flags are exclusive. `e[6]` takes exactly four
+values - 0x00 (77 objects), 0x40 (61), 0x80 (311) and **0xC0 (5)** - and
+`e[7]` is 0x0F on all 454 of them.
+
+The five with 0xC0 carry only-on-terrain AND no-overwrite. `object_pixel_allowed`
+ANDed the two conditions, which for such an object is unsatisfiable - `dst & 8`
+cannot be both zero and non-zero - so the port **drew nothing at all**. All
+five are object id 4 in level003 section 7, "Upsidedown World".
+
+Image 0x093D2 tests bp bit 14 and jumps to image 0x0969C; only if that is
+clear does image 0x093DB test bit 15. So only-on-terrain wins and the
+no-overwrite bit never gets a say. The gate is now that dispatch.
+
+Rendering that level draws 553 more pixels than it did. **It is not verified
+frame by frame** - level003/7 has no reference here, and it is the only level
+in the game that would exercise it. The five other levels are unchanged.
+
+This is the same shape as the terrain erase bug two entries up, found the same
+way and on the same afternoon: two flags, a dispatch that picks one, and a
+port that treated them as independent tests. Worth remembering that BOTH came
+from enumerating the data rather than from any comparison.
+
 ### And the no-overwrite blit ORs, which nothing here can see yet
 
 Read while confirming the arrows: image 0x0956B sets the graphics

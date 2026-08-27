@@ -7199,8 +7199,25 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
  * is "something is already there". */
 static int object_pixel_allowed(uint8_t dst, const level_object *o)
 {
-    if (o->only_on_terrain && (dst & 8) == 0) return 0;  /* image 0x09709 */
-    if (o->no_overwrite    && (dst & 8) != 0) return 0;  /* image 0x09595 */
+    /* ONLY-ON-TERRAIN IS TESTED FIRST, AND AN OBJECT CAN CARRY BOTH. Image
+     * 0x093D2 tests bp bit 14 and jumps to image 0x0969C; only if that bit is
+     * clear does image 0x093DB test bit 15 and jump to image 0x0953E. So when
+     * both are set the object is drawn where there IS terrain, and the
+     * no-overwrite bit never gets a say.
+     *
+     * The port ANDed the two conditions, which for such an object is
+     * unsatisfiable - `dst & 8` cannot be both zero and non-zero - so it drew
+     * NOTHING. Five objects in the game carry `e[6] == 0xC0`, all of them id
+     * 4 in level003 section 7, "Upsidedown World", and all five were missing.
+     *
+     * Same shape as the terrain erase bug in render_terrain, and found the
+     * same way: by listing the values a modifier byte actually takes across
+     * all eighty levels instead of assuming the flags are exclusive. e[6] is
+     * one of 0x00, 0x40, 0x80 and 0xC0, and only the last is interesting. */
+    if (o->only_on_terrain)                  /* image 0x093D2, first */
+        return (dst & 8) != 0;               /* image 0x09709 */
+    if (o->no_overwrite)                     /* image 0x093DB */
+        return (dst & 8) == 0;               /* image 0x09595 */
     return 1;
 }
 
@@ -7401,7 +7418,12 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                  * no-overwrite one, has no such AND: its bit mask is `not ah`
                  * and nothing else, so the whole rectangle goes down wherever
                  * plane 3 is clear, transparent pixels included. */
-                if (!o->no_overwrite && !mask[si])
+                /* ...AND THE PATH IS CHOSEN BY ONLY-ON-TERRAIN FIRST, so an
+                 * object carrying both flags takes image 0x0969C and DOES
+                 * consult the mask. See object_pixel_allowed for the
+                 * dispatch. Without this the five both-flag objects in
+                 * level003 section 7 go down as whole rectangles. */
+                if (!(o->no_overwrite && !o->only_on_terrain) && !mask[si])
                     continue;
 
                 uint8_t *dst = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
