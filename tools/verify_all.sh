@@ -180,6 +180,15 @@ done
 # numbers instead of the file's. The park script aims the port's cursor at the
 # guest's own; two cross-hairs in different places is 56 differing pixels on
 # every frame and compare_screen.py excuses 28, which is one.
+# THE COMPOSED LEVEL WITH ITS OBJECTS, which prove.sh above cannot see: it
+# breaks at image 0x0376A, and the objects are drawn later by image 0x03981
+# in a second composition path. Nothing compared the bitmap afterwards, and
+# that gap let "the original never composes objects into the level bitmap"
+# stand as a claim - true at prove.sh's break, false a few routines on.
+say ""
+say "=== the composed level WITH objects (the gap prove.sh leaves) ==="
+if uv run python tools/verify_objects.py 2>&1 | sed 's/^/  /'; then :; else fail=1; fi
+
 say ""
 say "=== three further levels, frame by frame ==="
 for case in "level001.dat 3 ref_i8 530 10" \
