@@ -807,12 +807,17 @@ Neither is the other plus anything.
 file `(n - 1) >> 4`, section `((n - 1) >> 1) & 7`. It is a genuine
 permutation, so no arithmetic relates them and the table has to be read:
 
-| | |
+**And `lemdev --level` is ONE-based where `level_locate`'s section is
+zero-based**, so `--file level001.dat --level 3` is section **2**. Getting
+that wrong on top of the permutation lands on a level that is wrong twice
+over, and the check is free: both sides print the level's NAME.
+
+| lemdev | record_level |
 | --- | --- |
-| `level000.dat` section 1 | `--level 74` (Taxing 15) |
-| `level001.dat` section 3 | `--level 21` (Fun 22) |
-| `level002.dat` section 4 | `--level 15` (Fun 16) |
-| `level002.dat` section 6 | `--level 64` (Taxing 5) |
+| `level001.dat --level 3` "I have a cunning plan" | `--level 8` (Fun 9) |
+| `level002.dat --level 4` "Watch out, there\`s traps about" | `--level 61` (Taxing 2) |
+| `level002.dat --level 6` "Lend a helping hand...." | `--level 63` (Taxing 4) |
+| `level000.dat --level 1` "This should be a doddle!" | `--level 30` (Tricky 1) |
 
 Getting it wrong does not look like a mix-up. Both sides run the same
 SIMULATION - the same lemmings in the same places, the panel's OUT, IN and
