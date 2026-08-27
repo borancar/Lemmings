@@ -1184,6 +1184,35 @@ frames 520..540 is TERRAIN - 198 pixels where both sides have ink of
 different values, spread over the whole screen, converging to zero by frame
 556. That is a separate question from the picture.
 
+### Open: the panel's numbers on "I have a cunning plan"
+
+`level001.dat --level 3` scores its PANEL exact on 0 of 530 frames, 74 pixels
+every frame, static. Reading the digits off both screens at the columns the
+ink actually occupies - button k at 5 + 16k and 9 + 16k, not at PANEL_ART_X:
+
+```
+  original: 99 99 20 20 20 20 20 20 20 20
+  port:     99 99 02 ?? 05 ?0 20 02 02 02
+```
+
+The two agree on the release rate. The port draws the level header's own
+counts - climber 2, floater 0, bomber 5, blocker 10, builder 20, basher 2,
+miner 2, digger 2, which is what the bytes at 0x08 say and what `lemdev`
+prints - and **the original draws 20 on every skill button**. The reference's
+manifest agrees with its screen rather than with the header: it records
+`diggers 20` where the header says 2.
+
+So this is not the port drawing the right numbers wrongly; the two sides
+disagree about what the numbers ARE. The other two levels do not do this -
+`level002.dat --level 6` records `diggers 2` against a header that says 2, and
+its panel scores 1,099 of 1,100.
+
+Both of those levels stock **builder 20**, which is the value the original
+shows eight times here, so the first thing to check is whether the game loads
+one word over all eight. `tools/record_level.py` now carries all eight of
+ds:0x6A..0x7F in its manifest so the question can be asked directly instead of
+inferred from the digger alone.
+
 ### Open: the panel's numbers on a level that is not "Just dig!"
 
 `level001.dat --level 3` scores its PANEL exact on 0 of 530 frames, 74 pixels

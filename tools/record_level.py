@@ -197,6 +197,7 @@ def install(m):
             "cur_bias": uc.mem_read(base + DGROUP + CUR_BIAS, 1)[0],
             "lemmings": n_lem,
             "lem": lem_all,
+            "skills": [uc.mem_read(base + DGROUP + a, 1)[0] for a in SKILLS],
             "diggers": uc.mem_read(base + DGROUP + DIGGERS, 1)[0],
             "released": uc.mem_read(base + DGROUP + RELEASED, 1)[0],
             "active": uc.mem_read(base + DGROUP + ACTIVE, 1)[0],
