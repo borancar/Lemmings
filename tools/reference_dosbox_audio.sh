@@ -40,7 +40,17 @@ output=texture
 machine=vgaonly
 [cpu]
 core=normal
-cycles=fixed 8000
+# NOT 8000 cycles. That is roughly an 8 MHz 8086 and the game cannot keep up
+# on it - its own clock ran 25 game-seconds in 30 real ones - and a reference
+# that is CPU-starved measures the emulator's throughput rather than the
+# game's intent. This project already records that trap for its own emulator:
+# the rate has to be read out of what the loop waits ON.
+#
+# NOTE FOR ANYONE EDITING THIS FILE: the heredoc below is UNQUOTED, because
+# the config needs \$WORK expanded. A backtick in a comment inside it is a
+# command substitution, and one here made the shell try to run 'fixed 8000'
+# and silently drop the whole [cpu] section.
+cycles=fixed 25000
 [mixer]
 rate=48000
 blocksize=1024

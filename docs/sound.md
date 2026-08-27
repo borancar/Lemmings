@@ -772,3 +772,50 @@ Failing that: `tools/probe_pace.py` against a LEVEL, which reports the
 divisor the game programs and the ticks it actually gets. That is the number
 ADLIB_TICK_HZ and LEVEL_FPS both rest on, and neither has been checked
 against a level.
+
+## The port's music runs 1.9x too fast
+
+Settled against DOSBox, and the reference is now three independent runs:
+
+    port      vs user's DOSBox   (8k cycles)   ratio 1.920
+    port      vs ours            (8k cycles)   ratio 1.900
+    port      vs ours           (25k cycles)   ratio 1.905
+    user's    vs ours           (25k cycles)   ratio 0.990   <- they agree
+
+**Tripling DOSBox's CPU changed nothing** - not the music (0.990) and not the
+game clock, which read 0.82x real time at 8,000 cycles and 0.81x at 25,000.
+So DOSBox is not CPU-starved, it is self-consistent, and the 1.9 is real.
+
+    04-level.png  TIME 4-56        05-end.png  TIME 3-42
+    74 game-seconds across ~91 real ones
+
+### Where it comes from
+
+`ADLIB_TICK_HZ` is **a measurement of our own emulator**, not a fact about the
+game: `probe_pace.py` reports the game programming divisor 12268 = 97.3 Hz
+there, and every capture in this file measured 96.6-97.7. The port was handed
+that number as a constant.
+
+The game derives the divisor itself, at image 0x1602: it waits for a vertical
+retrace, programs channel 0 to 0xFFFF, counts `bx` display-enable cycles on
+port 0x3DA bit 0 (image 0x1624 and image 0x1629 wait for each edge), then
+latches the counter. So the divisor is a direct function of the HORIZONTAL
+rate the adapter reports - and ours reports 31.469 kHz.
+
+For DOSBox's game to end up ~1.9x slower it must be measuring roughly half
+that. Which of the two is right is not established here.
+
+### And there are TWO rate errors, not one
+
+    the music   1.9x  fast against DOSBox
+    the clock   1.22x fast against DOSBox   (17 fps against DOSBox's ~13.9)
+
+They differ, and that is itself the finding: **the port paces the level and
+the driver independently** - `LEVEL_FPS` for one, `ADLIB_TICK_HZ` for the
+other - where the original derives both from IRQ 0 and cannot have them
+disagree. Fitting either constant to its ratio would leave the structure
+wrong and the two free to drift apart again.
+
+The fix is to pace the driver off the level's own clock, as image 0x0019D
+does, and to settle the timer's rate from image 0x1602's measurement rather
+than from ours. Neither is a constant to tune.
