@@ -1224,6 +1224,27 @@ were overridden; n = 39 and n = 43 do not and kept their own numbers.
 and cannot know which PLATE it is; the original decides from the level index,
 which `--file` does not have.
 
+### Open: a sprite at the very last screen column
+
+`level002.dat --level 4` differs on 28 of its 1,100 frames by exactly THREE
+pixels, always the same three: (319, 37), (319, 38) and (319, 44), where the
+original holds 0 and the port holds 2, 2 and 3.
+
+They are the only on-screen part of a lemming. At frame 136 lemming 1 is at
+record x 880 with hot_x -8 and the view at 544, so its sprite starts at screen
+312 and spans 312..327 - and only its column 7 carries ink in the visible
+part. The port draws that column; the original draws **nothing at all** in
+312..319 for those rows.
+
+So the original drops a sprite that reaches the right edge where the port
+draws the sliver of it that fits. What has NOT been established is the rule:
+the original's blit works in a 352-wide page (image 0x07098 adds 0x160 to a
+negative x), so nothing about 320 forces a clip there, and scoring its ink
+column by column does not separate the sprite from the terrain underneath.
+
+Left alone deliberately. Three pixels on 28 frames is a poor reason to guess
+at a clip, and a wrong guess would cost the 5,099 the first level scores.
+
 ### The minimap's dots go UNDER the viewport's frame
 
 `level002.dat --level 4` scored its panel 891 of 1,100, and the whole of the
