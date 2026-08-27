@@ -37,7 +37,7 @@ numbers, re-measured on the current build:
 | the **briefing** | **100.00%** — 0 of 224,000: background, text, palette, and the level preview |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings, **with one of the walking lemmings on screen** in three of the four. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, the whole scrolling banner, its two end lemmings, and the animation |
 | **three further levels**, frame by frame for over a minute each | `level001.dat --level 3` play **488 of 530**, panel **529**; `level002.dat --level 4` play **1,071 of 1,100**, panel **1,099**; `level002.dat --level 6` play **1,099 of 1,100**, panel **1,099**. What is left is named: 42 frames of the OPENING cursor on the first (the guest does not poll the mouse until frame 42, its cross-hair sitting at 135..148 and jumping to 145..158), and 28 frames of THREE pixels on the second, where a sprite's inked column lands exactly on x 319 |
-| **the nuke**, driven by a double click | record **0 of 557 frames**; screen exact on 496, the residue being the explosion's DEBRIS over its crater |
+| **the nuke**, driven by a double click | record **0 of 557 frames**; screen exact on **541 of 557**, the residue being 16 frames of 12 pixels - the crater's top row, which the original's incremental display has not repainted yet |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -958,6 +958,22 @@ crater's begin: two directions of two slices of eight shifts of thirteen rows
 of three bytes. `tools/verify_results.py` dumps them; nothing was read by eye.
 
 ### The nuke
+
+**0 of 557 frames differ** in the RECORD, and the screen is exact on **541 of
+557** - re-measured after the explosion sprite was corrected, not carried
+forward from the 535 it scored before.
+
+What is left is **16 frames, 501..516, of 6 or 12 pixels**, and it is one
+thing: on frame 508, all twelve are on the single row `y = 80`, in two runs of
+six at `x 45..50` and `x 56..61`. The port has 0 there and the original still
+has terrain. Two runs of six is the two craters' top row, and the port has
+cleared it while the original's visible page has not been repainted there yet.
+
+That is the DISPLAY MODEL and it stays a deliberate non-goal - see the note
+below. What is worth recording is that correcting the sprite narrowed it from
+22 frames to 16 and from whole craters to one row of each: the previous
+figure was measuring the wrong sprite as well as the display lag, and the two
+were not separable while the first was wrong.
 
 **0 of 557 frames differ**, against a recording of the original being nuked on
 level 1 - the double click, the cascade, all ten explosions and the level's
