@@ -8044,30 +8044,52 @@ static char *put_num2(char *dst, uint8_t v);
 #define PV_TOP      4      /* the first level row the preview shows
  *
  * NOT TRANSCRIBED - but the address is no longer unknown, and the reason no
- * blit in screen coordinates was ever found is that there is not one.
+ * BLIT in screen coordinates was ever found is that the preview is not
+ * blitted: it is written plane by plane, straight into the visible page.
  *
- * The preview is built into a BUFFER and put up with the rest of the
- * briefing's upper panel in a single blit:
+ * (An earlier version of this note said the preview was composed into a
+ * buffer and went up inside the briefing's one big blit. That was wrong. The
+ * 632 x 94 blit at image 0x04F0A is the panel's STATIC artwork, decompressed
+ * from a file into ds:0x1FEE - tools/probe_preview.py finds only the
+ * decompressor writing there, at image 0x01C83 and image 0x01C9A, in both
+ * halves of that segment. The preview is drawn on top of it afterwards.)
+ *
+ * The chain:
  *
  *   image 0x04639 -> image 0x05017 (`xor bx,bx / jmp`) -> image 0x07E76
  *          the builder. It copies ds:0x1FEE into ds:0x1FE4 and blits the
  *          level through the shared blitter four times, then falls into
  *   image 0x07EC5..0x080F8
- *          a 4:1 packer. `cx = 0x34` at image 0x07F04 is 52 destination
- *          bytes a row; it reads FOUR source bytes at image 0x07F1D..0x07F25
- *          and scatters their bits into one output byte per plane, which is
- *          this file's PV_SCALE of 4. Its four unrolled plane writes are
- *          image 0x07F7B, 0x07FF1, 0x08067 and 0x080DD, 2,028 bytes each -
- *          52 x 39, which is PV_H.
- *   image 0x04434 -> image 0x04EEF -> image 0x04F0A
- *          the blit: `bx = 0x14` (y = 20, this file's PV_Y), `dx = 0x278`
- *          (632 wide), `cl = 0x5E` (94 rows), `si = 0x2080`, through
- *          `lcall 0x1010:0x8822` from the segment in ds:0x1FEE.
+ *          the 4:1 packer, and image 0x07EFC sets DS as well as ES to
+ *          0xA000 - it reads the LEVEL BITMAP out of video memory and writes
+ *          the visible page, with no buffer between. Every number in it is
+ *          one of this file's:
  *
- * Found by tools/probe_preview.py, which watches ds:0x1FEE:0x2080 rather than
- * the EGA window - a probe pointed at the screen can only ever see the page
- * being cleared and that one blit landing, which is what every earlier
- * attempt saw.
+ *            image 0x07EFE  cx = 0x27    39 rows            PV_H
+ *            image 0x07F04  cx = 0x34    52 bytes a row     396 -> 416 px
+ *            image 0x080ED  di += 0x50   80, the 640-wide screen's stride
+ *            image 0x080F0  si += 0x340  832 = 4 x 208, so FOUR level rows
+ *                                        per output row    PV_SCALE
+ *            image 0x07F1D  four source bytes in, one output byte a plane
+ *                                        out                PV_SCALE again,
+ *                                        horizontally, and PV_SAMPLE
+ *
+ *          Its four unrolled plane writes are image 0x07F7B, 0x07FF1,
+ *          0x08067 and 0x080DD, and tools/probe_writes.py sees exactly 2,028
+ *          bytes from each - 52 x 39.
+ *   image 0x04434 -> image 0x04EEF -> image 0x04F0A
+ *          the panel's static artwork UNDER it: `bx = 0x14` (y = 20, PV_Y),
+ *          `dx = 0x278` (632 wide), `cl = 0x5E` (94 rows), `si = 0x2080`,
+ *          through `lcall 0x1010:0x8822` from the segment in ds:0x1FEE.
+ *
+ * WHAT IS STILL OPEN, and it is the whole of what render_objects owes: the
+ * packer's source is the level bitmap, and image 0x03789 established that the
+ * original never composes objects into that. Yet this port DOES draw them
+ * into the preview and scores 0 pixels differing, where leaving them out
+ * scored 167 and drawing them at the wrong offset 187. Both cannot be true of
+ * the same bitmap, so either the objects are in it by the time the preview is
+ * built or the packer's source base is not 0x4A40. Finding si's initial value
+ * settles it in one read.
  */
 
 static void draw_preview(const char *dir, const level *lv, const ground *g,

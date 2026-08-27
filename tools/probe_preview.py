@@ -23,7 +23,13 @@ import os
 
 DGROUP = 0x9A90
 SEG_AT = 0x1FEE          # ds:0x1FEE holds the segment, image 0x04EEF
-LO, HI = 0x2080, 0x2080 + 94 * 80 * 4   # the blit's own window, four planes
+# The window to watch, inside that segment. Default is the blit's own -
+# image 0x04EEF's si = 0x2080, 94 rows of four planes - but the builder at
+# image 0x07E76 blits FROM this same segment at si = 0, 0x140 and so on, so
+# `LEM_PREVIEW_LO=0 LEM_PREVIEW_HI=0x2080` asks the other half of the
+# question: who fills the source the preview is packed from.
+LO = int(os.environ.get("LEM_PREVIEW_LO", "0x2080"), 0)
+HI = int(os.environ.get("LEM_PREVIEW_HI", str(0x2080 + 94 * 80 * 4)), 0)
 OUT = os.environ.get("LEM_PREVIEW_OUT", "out/preview_writes.txt")
 
 

@@ -1500,8 +1500,30 @@ So the routine that is owed writes to `ds:0x1FEE:0x2080`, not to `0xA000`.
     image 0x07EC5 .. image 0x080F8                       a 4:1 packer
     image 0x04434 -> image 0x04EEF -> image 0x04F0A      the blit
 
-The builder copies `ds:0x1FEE` into `ds:0x1FE4` and blits the level through
-the shared blitter four times, then falls into the packer: `cx = 0x34` at
+**And a correction: the preview is NOT part of that blit.** This was written
+up twice as "the briefing's whole upper area, preview included, composed into
+a buffer and put up in ONE blit". It is not. Pointing
+`tools/probe_preview.py` at the other half of the segment - `LEM_PREVIEW_LO=0`
+- finds the same two instructions writing there as at `0x2080`, and both are
+the DECOMPRESSOR (image `0x01C83`, image `0x01C9A`). Segment `0x587E` is a
+decompression buffer, so the 632 x 94 blit is the panel's STATIC artwork, and
+the preview is drawn on top of it afterwards.
+
+Where it is drawn is the thing the earlier note got backwards: image `0x07EFC`
+sets **DS as well as ES to 0xA000**, so the packer reads the level bitmap out
+of video memory and writes the visible page directly, with no buffer between
+and no blit. Every number in it is one of `draw_preview`'s:
+
+    image 0x07EFE   cx = 0x27     39 rows                        PV_H
+    image 0x07F04   cx = 0x34     52 bytes a row
+    image 0x080ED   di += 0x50    80, the 640-wide screen's stride
+    image 0x080F0   si += 0x340   832 = 4 x 208, four LEVEL rows  PV_SCALE
+    image 0x07F1D   four source bytes in, one byte a plane out    PV_SCALE
+                                                                  PV_SAMPLE
+
+so the vertical scale is read as well as the horizontal one. The builder
+copies `ds:0x1FEE` into `ds:0x1FE4` and blits four times, then falls into the
+packer: `cx = 0x34` at
 image `0x07F04` is **52 destination bytes a row**, and it reads FOUR source
 bytes at image `0x07F1D` and scatters their bits into one output byte per
 plane - which is `draw_preview`'s `PV_SCALE` of 4, read out of the original
