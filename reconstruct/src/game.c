@@ -4760,6 +4760,18 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
 #define FLOAT_SPR_BASE  14640   /* 16 rows, 3 planes - ink 356, 0 differ */
 #define BLAST_SPR_BASE  20080   /* 10 rows, 2 planes - ink 256, 0 differ */
 
+/* The basher's and the miner's - see the note where they are drawn. Their
+ * sizes are the original's own: image 0x03526 gives the basher 0x3C = 60
+ * bytes a frame and image 0x035FF gives the miner 0x4E = 78, and image
+ * 0x0352B and image 0x03604 give the states that index the left-facing
+ * halves. */
+#define BASH_SPR_BASE   6736
+#define BASH_SPR_H      10
+#define BASH_SPR_STATE  0x20    /* image 0x0352B */
+#define MINE_SPR_BASE   10576
+#define MINE_SPR_H      13
+#define MINE_SPR_STATE  0x18    /* image 0x03604 */
+
 /* THE CLOUD'S SPRITE IS NOT FOUND, and the search says why rather than just
  * failing. Every geometry tried - 32x32 in three planes and in two, 24x32,
  * 20x32 - scores within a few per cent of its own ink, which is the noise
@@ -5064,6 +5076,65 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
         }
         return;
     }
+    /* THE BASHER AND THE MINER, whose sprites the port did not have at all.
+     *
+     * Both fell through to the walker's group, so a basher and a miner were
+     * drawn walking on the spot while their records were exact - the record
+     * comparison scores x, y, the flags and the animation counter and never
+     * a pixel, and both skills sat at 0 of 400 frames for a day with the
+     * wrong picture on screen. A player reported both.
+     *
+     * Found with tools/find_sprite.py against the original's own frames:
+     *
+     *   basher  ref_s7 frame 113 is anim 2 and matches at 6856,
+     *           frame 115 is anim 4 and matches at 6976;
+     *           6856 - 2 * 60 == 6976 - 4 * 60 == 6736.
+     *           26 of 26 and 29 of 31 pixels agree, the two under the cursor.
+     *   miner   ref_s8 frame 130 is anim 19 and matches at 12058,
+     *           frame 150 is anim 15 and matches at 11746;
+     *           12058 - 19 * 78 == 11746 - 15 * 78 == 10576.
+     *           30 of 31 and 32 of 34 agree.
+     *
+     * And the three regions ABUT, which neither search knew: the basher's
+     * 64 frames of 60 end at 10576 where the miner starts, and the miner's
+     * 48 of 78 end at 14320, which is FALL_SPR_BASE - a number that was
+     * already in this file for a different reason. That is what makes the
+     * frame COUNTS evidence too, and not only the bases.
+     *
+     * 64 and 48 because image 0x070AB adds the STATE to the frame index when
+     * the lemming faces left: the basher's state is 0x20 and the miner's
+     * 0x18, so each has that many right-facing frames followed by the same
+     * number facing left. */
+    if (a->flags & 0x0200 || a->flags & 0x0800) {
+        uint8_t bash = (a->flags & 0x0200) != 0;
+        uint32_t sb   = bash ? BASH_SPR_BASE  : MINE_SPR_BASE;
+        uint8_t  sh   = bash ? BASH_SPR_H     : MINE_SPR_H;
+        uint8_t  sadd = bash ? BASH_SPR_STATE : MINE_SPR_STATE;
+        uint32_t fsz  = (uint32_t)2 * sh * 3;         /* 16 wide, 3 planes */
+        uint16_t fr   = a->anim;
+        if (fr >= sadd) return;                       /* image 0x02880's mask */
+        if (a->dir != 1) fr = (uint16_t)(fr + sadd);  /* image 0x070AB */
+        base = sb + (uint32_t)fr * fsz;
+        if (base + fsz > sec_len) return;
+        x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
+        y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
+        for (uint8_t r = 0; r < sh; r++) {
+            int32_t py = y0 + r;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            for (uint8_t c = 0; c < 16; c++) {
+                int32_t px = x0 + c;
+                uint8_t v = 0;
+                if (px < 0 || px >= (int32_t)dst_w) continue;
+                for (uint8_t p = 0; p < 3; p++) {
+                    uint8_t byte = sec[base + p * 2u * sh + r * 2 + (c >> 3)];
+                    v = (uint8_t)(v | (((byte >> (7 - (c & 7))) & 1u) << p));
+                }
+                if (v) dst[(size_t)py * dst_w + px] = v;
+            }
+        }
+        return;
+    }
+
     if (a->dir != 1) frame = (uint16_t)(frame + a->state);  /* image 0x070AB */
     /* Which group, from the state - the store base the original carries in
      * [si+0x0c] is a group, and the port indexes the same groups in the file. */

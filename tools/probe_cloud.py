@@ -33,10 +33,27 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 FRAME_END = 0x018F
-STORE_SEG = 0x003C        # ds: image 0x02D45's word
-GROUP = 0x180B            # image 0x02D24
-STRIDE = 0x280            # image 0x02D29, a frame of the store
-ROWS, ROW_BYTES, PLANES = 40, 4, 4
+# THE STORE'S SEGMENT IS ds:0x1FE6, image 0x07112 - not the ds:0x3C that
+# image 0x02D45 puts in [si+0x14], which is something else the blit carries.
+# And image 0x070C6 divides the frame's byte offset by SIXTEEN before image
+# 0x070D6 adds [si+0x0c], so both are PARAGRAPH counts and image 0x07116 adds
+# the result to the segment rather than to an offset. Reading ds:0x3C as a
+# segment and [si+0x0c] as a byte offset gives dense noise that looks like a
+# sprite decoded with the wrong geometry.
+STORE_SEG = 0x1FE6        # image 0x07112
+GROUP = 0x180B            # image 0x02D24, in PARAGRAPHS
+STRIDE = 0x280            # image 0x02D29, bytes a frame
+INK = 8                   # image 0x02D1F's [si+0x0a] - a byte offset, and
+                          # image 0x070DF adds it to (index * stride) % 16
+MASK = INK + 0x1E0        # image 0x070E4 adds [si+0x12]
+# FIVE bytes a row, not four. [si+0x10] = 0x280 is the whole frame and
+# [si+0x12] = 0x1E0 is where the MASK starts, so the ink is 480 bytes in
+# three planes - 160 a plane - and the mask is the remaining 160. 160 as
+# 5 x 32 makes the sprite 32 wide PRE-SHIFTED into 40 bits, which is what a
+# store built for eight sub-byte positions holds. Reading it as 4 x 40 gives
+# a picture that drifts sideways a byte every row and looks like a diagonal
+# weave - which is what it did.
+ROWS, ROW_BYTES = 32, 5
 
 
 def decode(buf, base):
@@ -48,10 +65,10 @@ def decode(buf, base):
         for c in range(ROW_BYTES * 8):
             v = 0
             for p in range(3):
-                byte = buf[base + p * plane + r * ROW_BYTES + (c >> 3)]
+                byte = buf[base + INK + p * plane + r * ROW_BYTES + (c >> 3)]
                 v |= ((byte >> (7 - (c & 7))) & 1) << p
             row.append(v)
-            mb = buf[base + 3 * plane + r * ROW_BYTES + (c >> 3)]
+            mb = buf[base + MASK + r * ROW_BYTES + (c >> 3)]
             mrow.append((mb >> (7 - (c & 7))) & 1)
         ink.append(row)
         mask.append(mrow)
@@ -74,20 +91,28 @@ def install(m):
         if not seg:
             return                     # not in a level yet
         st["done"] = True
-        # Enough for the group and a good many frames past it.
-        want = GROUP + STRIDE * 8 * 16
-        buf = bytes(uc.mem_read(seg * 16, want))
+        # AND THE RAW BYTES BESIDE THE DECODE. Every derivation of where in
+        # this store the cloud sits has been wrong so far, so dump a wide
+        # window and let a search against the original's own screen say where
+        # it is - the arithmetic can be checked against the answer afterwards.
+        raw = os.environ.get("LEM_CLOUD_RAW", "out/cloud_store.bin")
+        span = 512 * 1024
+        with open(raw, "wb") as rf:
+            rf.write(bytes(uc.mem_read(seg * 16, span)))
+        print(f"  [probe_cloud] {span} bytes from segment {seg:#06x} -> {raw}")
         frames = {}
         # Frame 8 is what image 0x02D1F asks for, but take a spread: the
         # index is fixed while the animation counter runs, so which frame is
         # actually on screen is a question the pictures answer and a reading
         # of one instruction does not.
-        for f in range(0, 12):
-            off = GROUP + (f * 8) * STRIDE // 16
-            if off + STRIDE > len(buf):
-                break
-            ink, mask = decode(buf, off)
-            frames[f] = {"off": off, "ink": ink, "mask": mask}
+        for f in range(0, 53):
+            # Image 0x070B6: the index is frame * 8 + the sub-byte shift, and
+            # shift 0 is the one this port wants - it works in whole pixels.
+            para = (f * 8) * STRIDE // 16 + GROUP
+            lin = seg * 16 + para * 16
+            buf = bytes(uc.mem_read(lin, MASK + ROW_BYTES * ROWS))
+            ink, mask = decode(buf, 0)
+            frames[f] = {"para": para, "ink": ink, "mask": mask}
         with open(out, "w") as fh:
             json.dump({"seg": seg, "group": GROUP, "stride": STRIDE,
                        "frames": frames}, fh)
@@ -95,7 +120,7 @@ def install(m):
         for f in (0, 4, 8):
             if f not in frames:
                 continue
-            print(f"\n  frame {f} (store offset {frames[f]['off']:#07x}):")
+            print(f"\n  frame {f} (paragraph {frames[f]['para']:#07x}):")
             for row in frames[f]["ink"][:40]:
                 print("    " + "".join(f"{v:x}" if v else "." for v in row))
         raise SystemExit(0)
