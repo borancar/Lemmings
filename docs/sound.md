@@ -596,3 +596,48 @@ LEVEL_FPS of 17 against a 97.08 Hz PIT gives 5.71. **So the level's frame rate
 and the PIT rate disagree by about 13% and one of the two numbers is wrong.**
 That is not settled here and should not be guessed at: it needs
 `tools/probe_pace.py` run against a level.
+
+## Four voices, and every one of them sounds
+
+"Instruments are missing" was measured rather than argued about, three ways,
+and all three say the port plays what the original wrote.
+
+**Which channels sound.** Take the port's live stream, suppress every
+channel's key-on but one, render, and look at the peak:
+
+    ch 0  8080    ch 3  2044    ch 6  0
+    ch 1  7856    ch 4     0    ch 7  0
+    ch 2  4088    ch 5     0    ch 8  5200
+
+Five channels sound - four for the music, one for the effects - and the four
+silent ones are silent because tune 6's header declares FOUR channels.
+
+**Which voices are loaded.** The distinct feedback/connection bytes written
+per channel, which is the patch actually in use:
+
+    ch 0  original [1]                port [1]
+    ch 1  original [4, 8, 9, 13, 14]  port [4, 8, 9, 13, 14]
+    ch 2  original [3, 8, 9, 13, 14]  port [3, 8, 9, 13, 14]
+    ch 3  original [8]                port [8]
+    ch 8  original [0, 11]            port [0, 11]
+
+Identical. Channels 1 and 2 change instrument 147 and 296 times across the
+tune, so the arrangement is rich in TIME rather than in voices.
+
+**And the descriptor's first word is dead.** Each tune begins with a word the
+driver stores at +0x05A8 - 0x4000, 0x4200, 0x4312 or 0x4400 - and **nothing
+in the driver ever reads it back**. It is not a channel mask or a voice count,
+which is what it looks like.
+
+So if the game still sounds thin, the music is not where it is thin. **Nine
+effect sites are still unported**, and the code map places them exactly:
+
+    0x01F19  the lemming walk      0x0229E=08  0x024CE=0A  0x026D3=12
+                                   0x026C0=13 (INT 60h)
+    0x0283B                        0x02A68=0A  0x02D0B=0A  0x02D68=0C
+    0x02E04                        0x02E5C=05  0x02EB0=0C
+    0x03150  a skill assigned      0x03298=12  0x031F6=13 (INT 60h)
+    0x03E6F  the panel             0x03F8D=13 (INT 60h)
+
+A level with no splat, no "oh no" and no trap-object noises is a quieter level
+than the original, and none of that is the music.
