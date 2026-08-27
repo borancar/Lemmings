@@ -883,6 +883,14 @@ int main(int argc, char **argv)
                 if (b0[i] != b16[i]) { same = 0; break; }
             ck("and frame 16 is a different picture from frame 0", !same,
                "the left-facing set is identical to the right-facing one");
+            /* THE SHRUG'S SECOND EIGHT, found the same way: its base is
+             * 19440 and eight frames of 40 end at 19760, where the next
+             * thing the port knows about is the blast at 20080 - exactly
+             * 320 bytes, which is eight more frames. */
+            ck("the shrug's 16 frames end where the blast begins",
+               19440 + 16 * 40 == 20080,
+               "the shrug's region no longer reaches the blast's, so it is "
+               "not eight frames each way any more");
             dat_free(&d9);
         }
     }

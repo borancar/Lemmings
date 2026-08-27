@@ -6152,7 +6152,20 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
      * not the flag word, which reads zero throughout. */
     if (a->extra & 0x80) {
         if (a->anim >= SHRUG_SPR_FRAMES) return;
-        base = SHRUG_SPR_BASE + (uint32_t)a->anim * SHRUG_SPR_FRAME;
+        /* AND IT FACES BOTH WAYS, like the builder it comes from. Image
+         * 0x070AB adds the STATE to the frame index for a lemming facing
+         * left, and image 0x027CC sets [si+0x29] to 8 as the builder gives
+         * up - which is the 8 lem_build_stop is called with here.
+         *
+         * Nobody reported this one. It was found by TILING the sprite file
+         * from the port's own constants: every region abuts its neighbour,
+         * and the shrug's eight frames of 40 left exactly 320 bytes spare
+         * before the blast's base at 20080. 320 is eight more frames, and
+         * 19440 + 8 * 40 = 19760 is where they are. */
+        uint16_t sfr = a->anim;
+        if (a->dir != 1)                                  /* image 0x070AB */
+            sfr = (uint16_t)(sfr + a->state);
+        base = SHRUG_SPR_BASE + (uint32_t)sfr * SHRUG_SPR_FRAME;
         if (base + SHRUG_SPR_FRAME > sec_len) return;
         x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
         y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;

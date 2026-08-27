@@ -1762,6 +1762,40 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### Tiling the sprite file found a second builder-shaped bug, unreported
+
+The builder's fix rested on its region abutting the basher's. That argument
+generalises: lay every sprite region out from the port's own constants,
+doubling the ones that face both ways, and see whether they tile MAIN.DAT.
+
+Nine of twelve abut exactly. Two of the three gaps are sprites the port
+already has and the tiling did not know about - the climber's 768 bytes
+(8 frames x 2 directions x 12 rows x 2 planes) fill 2064..2832 exactly, which
+is `CLIMB_SPR_RIGHT` and `CLIMB_SPR_LEFT`, and the exit's 416 fill
+16816..17232.
+
+The third was real. **The shrug faces both ways and the port drew one.** Its
+base is 19440 and eight frames of 40 end at 19760, where the next thing the
+port knows about is the blast at 20080 - exactly 320 bytes, which is eight
+more frames. Image `0x070AB` adds the STATE for a lemming facing left, and
+image `0x027CC` sets `[si+0x29]` to 8 as the builder gives up, so
+`19440 + 8 * 40 = 19760` is where the left-facing eight are. Decoding frame 8
+shows the mirrored shrug, 142 of 160 cells agreeing with a strict mirror of
+frame 0.
+
+**Nobody reported this one.** It is the same fault as the builder's, in the
+same shape, and it was found by arithmetic on constants rather than by anyone
+playing - which is the first time on this project that a bug of this class has
+been caught before a player hit it.
+
+Both abutments are asserted in `tests/screens.c` now, against the numbers
+rather than against `game.c`'s defines.
+
+**And one gap is still open**: 18800..19440, 640 bytes between the burn's end
+and the shrug's base, which no sprite the port has claims. 640 is sixteen
+frames of 40, or eight of 40 each way - the same shape as everything around
+it. Something lives there and this port does not know what.
+
 ### And a held rate button ramps, the way the original's does
 
 The rate buttons stepped once per click and stopped. The original's ramp when
