@@ -41,7 +41,12 @@ UNTOUCHED = [("level 2, nobody touching it", "ref_l2", None, 2),
              # above: nothing is assigned to a lemming, the script presses
              # panel button 11 twice within five frames and the whole array
              # is expected to light its fuses one a frame and go up.
-             ("the nuke, level 1", "ref_nuke", "out/nuke.txt", 1)]
+             ("the nuke, level 1", "ref_nuke", "out/nuke.txt", 1),
+             # PAUSE is a flag the frame reads in eight places rather than a
+             # button that does something, so what this scores is that
+             # NOTHING moved between frames 200 and 300 and that everything
+             # picked up where it left off.
+             ("pause, level 1", "ref_pause", "out/pause.txt", 1)]
 
 
 def compare(ref, script, number, frames):

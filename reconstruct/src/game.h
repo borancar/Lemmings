@@ -486,6 +486,10 @@ uint8_t level_to_release(void);
 /* THE NUKE, panel button 11 - image 0x03FEF. A DOUBLE click: two presses
  * within five game frames. level_tick counts those frames (image 0x00199). */
 void    level_tick(void);
+/* PAUSE, panel button 10 - image 0x04018. A flag the frame reads in eight
+ * places, not a button that does something. */
+int     level_pause_click(void);
+uint8_t level_paused(void);
 uint8_t level_tick_now(void);
 int     level_nuke_click(void);
 uint8_t level_nuking(void);

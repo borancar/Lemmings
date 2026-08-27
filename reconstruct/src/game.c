@@ -1218,6 +1218,7 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x)
  */
 void level_timer_step(void)
 {
+    if (level_paused() == 0xFF) return;    /* image 0x0020C */
     if (--g_tick) return;
     g_tick = g_tick_load;
 
@@ -1371,12 +1372,51 @@ static uint8_t g_nuke_at;        /* ds:0x4C, the cascade's cursor */
 static uint8_t g_nuke_last;      /* ds:0x1FD4, the previous press */
 
 void level_tick(void) { g_nuke_tick++; }         /* image 0x00199 */
+
+/* ======================================================================
+ * PAUSE - panel button 10, image 0x04018.
+ *
+ * Not a button that does something so much as a FLAG the frame reads in
+ * eight places. Image 0x04028 toggles ds:0x2B with a debounce of two frames
+ * on ds:0x52, and everything else asks it:
+ *
+ *     image 0x0020C  the clock does not tick
+ *     image 0x01F19  no lemming is stepped - and so the nuke's cascade,
+ *                    which is that loop's tail, does not run either
+ *     image 0x030A6  nobody comes out of the entrance
+ *     image 0x03150  a click on a lemming assigns nothing
+ *     image 0x03944  the panel is not redrawn
+ *     image 0x03F52  a click on the panel selects no skill
+ *     image 0x03FEF  the nuke refuses
+ *     image 0x04032  the release rate refuses
+ *
+ * NOTHING RESETS ds:0x2B or ds:0x53. Leaving a level paused leaves the game
+ * paused, and the first press of the next level measures its debounce
+ * against a stale ds:0x53 - the original's behaviour, transcribed rather
+ * than tidied.
+ * ====================================================================== */
+static uint8_t g_paused;         /* ds:0x2B */
+static uint8_t g_pause_at;       /* ds:0x53 */
+
+uint8_t level_paused(void) { return g_paused; }
+
+/* Image 0x04018. Two frames must have passed since the last toggle, which is
+ * what stops a held button flickering the game on and off. */
+int level_pause_click(void)
+{
+    uint8_t al = level_frame_counter();           /* image 0x04018 */
+    if ((uint8_t)(al - g_pause_at) < 2) return 0; /* image 0x04021 */
+    g_paused ^= 0xFF;                             /* image 0x04028 */
+    g_pause_at = al;                              /* image 0x0402D */
+    return 1;
+}
 uint8_t level_tick_now(void) { return g_nuke_tick; }
 uint8_t level_nuking(void) { return g_nuke; }
 
 /* Image 0x03FEF. Returns whether this press was the second of a pair. */
 int level_nuke_click(void)
 {
+    if (g_paused == 0xFF) return 0;              /* image 0x03FEF */
     uint8_t was = g_nuke_last;
     g_nuke_last = g_nuke_tick;                   /* image 0x04002 */
     /* Image 0x04005 subtracts in AL and image 0x04007 is a SIGNED `jg`, so
@@ -1457,6 +1497,7 @@ void level_release_reset(const level *lv)
  * this keeps only the count, because nothing walks that array yet. */
 void level_release_step(void)
 {
+    if (level_paused() == 0xFF) return;         /* image 0x30A6 */
     if (level_entrance_open() != 0xFF) return;  /* image 0x30B0 */
     if (--g_release_wait) return;               /* image 0x30BA */
     g_release_wait = g_release_step;            /* image 0x30C3 */
@@ -4230,6 +4271,10 @@ void lemmings_release(lemming *lem, uint8_t n, const level *lv)
 void lemmings_step(lemming *lem, uint8_t n,
                    uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
+    /* Image 0x01F19, and it jumps to image 0x01FFF - PAST the nuke's cascade
+     * at image 0x01FF8, which is this loop's tail. A paused nuke stops
+     * mid-cascade with its fuses still counting nothing down. */
+    if (level_paused() == 0xFF) return;
     for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
         lemming *a = &lem[k];
         if (a->alive == 0xFF) continue;            /* image 0x1F3C */
@@ -4813,6 +4858,28 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
      * these follow it. */
     {
         uint32_t sb = 0; uint8_t sh = 0, sp = 0, sf = 0;
+        /* THE CLOUD IS ASKED FIRST, and it draws NOTHING yet.
+         *
+         * Image 0x01F5E's chain tests 0x0002 before 0x8000 and so must this:
+         * a lemming in the cloud state has BOTH bits, and the port asked
+         * 0x8000 first and drew the blast's pose - a standing lemming with
+         * its arms out - at the cloud's hot spot of (-16, -25). That is
+         * fifteen rows above where it had been standing, so every nuked
+         * lemming appeared to jump into the air and go off a second time.
+         * A player reported exactly that; the record comparison agreed on
+         * all 557 frames while it was happening, because the fault is
+         * entirely in what is DRAWN.
+         *
+         * The cloud's own pixels are not in the port yet. Image 0x02D1F
+         * gives it sprite index 8 of group 0x180B, 0x1E0 = 480 bytes a frame
+         * - 32 wide, 40 rows, three planes, which is what the original's
+         * screen shows: a starburst of colours 3, 4 and 5 spanning 28x28.
+         * It is not in MAIN.DAT section 0 with the walker's relatives and a
+         * byte search of the other six found nothing, so it comes from the
+         * PRE-SHIFTED store at ds:0x3C and has to be lifted from there the
+         * way the crater's and the basher's masks were. Until it is, this
+         * draws nothing rather than something wrong. */
+        if (a->flags & 0x0002) return;              /* image 0x02350 */
         if (a->flags & 0x0400) { sb = FLOAT_SPR_BASE; sh = 16; sp = 3; sf = 8; }
         else if (a->flags & 0x0001) { sb = SPLAT_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x8000) { sb = BLAST_SPR_BASE; sh = 10; sp = 2; sf = 16; }

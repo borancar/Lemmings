@@ -482,6 +482,9 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
     if (h.what == LEVEL_HIT_MINIMAP)
         *scroll_x = h.scroll;
     else if (h.what == LEVEL_HIT_PLAY) {
+        /* Image 0x03150 opens on the pause flag: a click on a lemming
+         * assigns nothing while the game is stopped. */
+        if (level_paused() == 0xFF) return;
         /* Image 0x03170: a skill is selected, so find what is under the
          * pointer and give it one. */
         /* Image 0x0320D opens by testing the count and image 0x03224
@@ -535,11 +538,17 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          * returns early on it), so it is a change to the loop and not to
          * this switch. */
         if (h.button < 2) return;         /* image 0x03F27 */
-        if (h.button == 10 || h.button == 12) return;
+        if (h.button == 12) return;       /* image 0x03FEE: a bare `ret` */
+        if (h.button == 10) {             /* image 0x04041 */
+            level_pause_click();          /* image 0x04018 */
+            return;
+        }
         if (h.button == 11) {             /* image 0x03F48 */
             level_nuke_click();           /* image 0x03FEF */
             return;
         }
+        /* Image 0x03F52: no skill is selected while paused either. */
+        if (level_paused() == 0xFF) return;
         /* The highlight sits one slot on from the number it belongs to -
          * PANEL_SEL_X0 is 16 where the numbers start at PANEL_ART_X, 32 -
          * so the box for button k is drawn at k + 1. */
