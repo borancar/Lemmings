@@ -20,10 +20,14 @@
 
 static int fails;
 
-static int g_saw_bd;
+/* Register 0xBD is written by the driver's start_music and by nothing else
+ * (driver +0x0504), so it witnesses a TUNE beginning rather than merely a
+ * noise - which an effect would also make. g_saw_any catches the noise. */
+static int g_saw_bd, g_saw_any;
 static void saw_bd(uint8_t reg, uint8_t val)
 {
     (void)val;
+    g_saw_any = 1;
     if (reg == 0xBD) g_saw_bd = 1;
 }
 
@@ -1329,25 +1333,46 @@ int main(int argc, char **argv)
             ck("adlib.dat loads", 0, aerr);
         } else {
             ck("adlib.dat loads", 1, NULL);
-            g_saw_bd = 0;
+            /* Frame 15 is the entrance opening, 35 opens it, 55 is the
+             * music - image 0x0361's chain, driven by level_start_step. */
+            g_saw_bd = 0; g_saw_any = 0;
             opl_reset();
+            sound_driver_present(1);
+            level_start_reset();
             opl_set_trace(saw_bd);
-            sound_cue_reset(1);
-            for (int i = 0; i < 54; i++) { sound_cue_tick(); adlib_tick(); }
-            ck("no tune before frame 55", g_saw_bd == 0, NULL);
-            for (int i = 54; i < 60; i++) { sound_cue_tick(); adlib_tick(); }
-            ck("the title starts a tune at frame 55", g_saw_bd != 0, NULL);
+            for (int i = 0; i < 15; i++) { level_start_step(); adlib_tick(); }
+            ck("silence before frame 15", g_saw_any == 0, NULL);
+            for (int i = 15; i < 20; i++) { level_start_step(); adlib_tick(); }
+            ck("the ENTRANCE is heard at frame 15", g_saw_any != 0, NULL);
+            ck("and it is not the music", g_saw_bd == 0, NULL);
+            ck("the trapdoor is still shut", level_entrance_open() != 0xFF,
+               NULL);
+            for (int i = 20; i < 40; i++) { level_start_step(); adlib_tick(); }
+            ck("the trapdoor opens at frame 35",
+               level_entrance_open() == 0xFF, NULL);
+            ck("still no music", g_saw_bd == 0, NULL);
+            for (int i = 40; i < 60; i++) { level_start_step(); adlib_tick(); }
+            ck("the music starts at frame 55", g_saw_bd != 0, NULL);
             opl_set_trace(NULL);
 
-            /* And the rotation: index 0 is tune 6, which is what the
-             * original was caught asking for. */
-            g_saw_bd = 0;
+            /* With no driver, every one of those sites refuses - the two
+             * effects at their ds:0x2010 test and the music because bit 1
+             * of ds:0x25A7 is only raised when a driver answers.
+             *
+             * The tune started above has to be STOPPED first. Without that
+             * the driver keeps sequencing it, its writes are seen, and this
+             * fails while the port is behaving perfectly - the leftover
+             * being measured rather than the case under test. */
+            adlib_stop();
+            g_saw_bd = 0; g_saw_any = 0;
             opl_reset();
-            sound_cue_reset(0);          /* no driver: image 0x04834 refuses */
+            sound_driver_present(0);
+            level_start_reset();
             opl_set_trace(saw_bd);
-            for (int i = 0; i < 60; i++) { sound_cue_tick(); adlib_tick(); }
-            ck("with no driver, nothing is asked for", g_saw_bd == 0, NULL);
+            for (int i = 0; i < 60; i++) { level_start_step(); adlib_tick(); }
+            ck("with no driver, nothing is asked for", g_saw_any == 0, NULL);
             opl_set_trace(NULL);
+            sound_driver_present(1);
             adlib_free();
         }
     }

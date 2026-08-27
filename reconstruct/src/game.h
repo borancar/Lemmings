@@ -290,11 +290,8 @@ void sound_request(uint8_t fn, uint8_t id);
  * asking for a tune rather than waiting for the next timer interrupt. */
 void sound_tick_now(void);
 
-/* The title's timed sound cues - image 0x0031E's third branch. Call
- * sound_cue_reset when the screen comes up and sound_cue_tick once a frame.
- * The music starts at frame 55 (image 0x00376). */
-void sound_cue_reset(uint8_t have_driver);
-void sound_cue_tick(void);
+/* ds:0x2010 - whether a sound driver answered its detect. */
+void sound_driver_present(uint8_t yes);
 void music_choose(void);            /* image 0x0482F */
 uint8_t sound_enabled(uint8_t bits);   /* ds:0x25A7 */
 

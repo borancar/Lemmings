@@ -186,7 +186,6 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
         if (scroll_y < 0) scroll_y = 0;
         if (scroll_y > max_y) scroll_y = max_y;
 
-        sound_cue_tick();               /* image 0x0031E, once a frame */
         sound_pump();
         if (g_show_tick && g_show_pix)
             g_show_tick(g_show_ctx, g_show_pix);
@@ -1111,13 +1110,7 @@ void lem_set_data_dir(const char *dir) { if (dir) g_data_dir = dir; }
 const char *lem_data_dir(void) { return g_data_dir; }
 
 static SDL_AudioStream *g_snd_stream;
-static uint8_t g_snd_bits = 3;         /* ds:0x25A7 - both switches on */
 static double  g_tick_acc;             /* samples owed to the next tick */
-
-/* ds:0x25A7, image 0x00591 sets 1 and image 0x005A9 sets 3. The caller tests
- * it exactly as the original does, so a site that asks with the wrong mask
- * differs from the game whether or not anything is audible. */
-uint8_t sound_enabled(uint8_t bits) { return (uint8_t)((g_snd_bits & bits) != 0); }
 
 /* The game asks through INT 60h (fn 3) or INT 61h (fn 4) - see docs/sound.md
  * for which call site asks for which, and why the two are alternatives
@@ -1211,10 +1204,9 @@ static void sound_open(void)
      * are the same thing to the game: silence, and it carries on. */
     if (adlib_load(lem_data_dir(), &err) != 0)
         fprintf(stderr, "no sound: adlib.dat: %s\n", err);
-    /* ds:0x2010 is set at image 0x005A4 when the detect answers; the port
-     * asks the driver whether it loaded. Without this the cue sequencer
-     * refuses at image 0x04834 and no tune is ever chosen. */
-    sound_cue_reset(adlib_ready());
+    /* ds:0x2010, set at image 0x005A4 when the detect answers. Without it
+     * image 0x04834 refuses and no tune is ever chosen. */
+    sound_driver_present(adlib_ready());
 
     SDL_AudioSpec want;
     SDL_zero(want);
