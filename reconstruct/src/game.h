@@ -368,6 +368,13 @@ void lemmings_release(lemming *lem, uint8_t n, const level *lv);
 void lemmings_step(lemming *lem, uint8_t n,
                    uint8_t *lvl, uint16_t cw, uint16_t chh);
 
+/* THE RELEASE-RATE BUTTONS - image 0x04032, panel buttons 0 and 1. Non-zero
+ * if the rate moved. The plus stops at 99 and the minus at the level's own
+ * rate, which is a floor rather than a starting point. */
+uint8_t level_rate_click(uint8_t up);
+uint8_t level_rate(void);        /* ds:0x67, the rate in force */
+uint8_t level_rate_floor(void);  /* ds:0x64, the level's own */
+
 /* Give this one a digger, image 0x0320D. Non-zero if it took - the original
  * refuses when the lemming is already in a state that forbids it. */
 /* WHICH lemming the pointer is over, and how many are under it.

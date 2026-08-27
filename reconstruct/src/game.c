@@ -861,7 +861,12 @@ void panel_buttons(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                    const uint8_t *sec, uint32_t sec_len, const level *lv)
 {
     uint8_t v[PANEL_BUTTONS];
-    v[0] = v[1] = (uint8_t)lv->release_rate;
+    /* TWO DIFFERENT NUMBERS: the level's own rate, which is the floor the
+     * minus stops at (ds:0x64), and the rate in force (ds:0x67). They start
+     * equal, which is why one value stood in for both until the buttons
+     * worked. */
+    v[0] = level_rate_floor();                  /* ds:0x64 */
+    v[1] = level_rate();                        /* ds:0x67 */
     /* What is LEFT, not what the header stocked - see g_skills. */
     for (uint8_t k = 0; k < 8; k++)
         v[2 + k] = g_skills[k];
@@ -1385,6 +1390,8 @@ void status_put_num(char *dst, uint8_t v)
  * ====================================================================== */
 static uint8_t g_release_wait;   /* ds:0x48 */
 static uint8_t g_release_step;   /* ds:0x49 */
+static uint8_t g_rate;           /* ds:0x67 - the rate the buttons move */
+static uint8_t g_rate_min;       /* ds:0x64 - the level's own, and the floor */
 static uint8_t g_released;       /* ds:0x43 */
 static uint8_t g_to_release;     /* ds:0x47 */
 
@@ -1522,10 +1529,70 @@ static void level_nuke_step(lemming *lem)
 
 /* Image 0x39D1 sets the countdown and image 0x39D6 the interval; both run
  * when the level is set up. */
+/* Image 0x04053, the interval the release counts down from. Written out as
+ * the original does it, four negations and all:
+ *
+ *     al = 0x63 - ds:0x67 ; al >>= 1 ; al = -al
+ *     al += 0x35          ; al = -al ; al += 0x39
+ *
+ * which comes to ((99 - rate) >> 1) + 4 - so rate 99 releases every fourth
+ * frame and rate 1 every fifty-third. */
+static uint8_t level_rate_step(uint8_t rate)
+{
+    return (uint8_t)(((99u - (uint16_t)rate) >> 1) + 4u);
+}
+
+/* THE RELEASE-RATE BUTTONS, image 0x04032. `up` is non-zero for the plus.
+ *
+ * These had done nothing at all, because image 0x03F27 was read as refusing
+ * every button below 2. It does the opposite: `cmp al,2 / jge 0x3f2e / jmp
+ * 0x4032` sends 0 and 1 HERE, and it is the buttons from 2 up that go through
+ * the latch at image 0x03F2E. A player found it - the panel's minus and plus
+ * moved nothing.
+ *
+ * Image 0x04046 stops the plus at 99 and image 0x04076 stops the minus at
+ * ds:0x64, the level's own rate: a level can be sped up and never slowed
+ * below what its header asked for.
+ *
+ * One thing here is named rather than transcribed: ds:0x69, tested at image
+ * 0x0403D and image 0x0406C. It is a divider of exactly the shape
+ * ds:0x84 has for the skill strip - image 0x03B8C catches it at 2, sets it
+ * 0xFF, and the `inc` at image 0x03B9C wraps it to zero - so a HELD button
+ * steps the rate one frame in three. The port acts on the button-down edge
+ * instead, so one press is one step and holding does not ramp. Applying the
+ * divider to an edge would drop clicks rather than pace them. */
+uint8_t level_rate_click(uint8_t up)
+{
+    if (level_paused() == 0xFF) return 0;       /* image 0x04032 */
+    if (up) {
+        if (g_rate >= 99) return 0;             /* image 0x04046 */
+        g_rate++;                               /* image 0x0404F */
+    } else {
+        if (g_rate <= g_rate_min) return 0;     /* image 0x04076 */
+        g_rate--;                               /* image 0x0407F */
+    }
+    g_release_step = level_rate_step(g_rate);   /* image 0x04053 */
+    return 1;
+}
+
+/* ds:0x67 and ds:0x64 - the rate in force and the level's own, which the
+ * panel draws as its first two numbers (image 0x036C1, image 0x036C4). */
+uint8_t level_rate(void)       { return g_rate; }
+uint8_t level_rate_floor(void) { return g_rate_min; }
+
+/* The level's release set up, image 0x036B9 onward: the header's rate into
+ * both ds:0x64 and ds:0x67, the counter's start at image 0x39D1, and the
+ * lemming total. */
 void level_release_reset(const level *lv)
 {
     g_release_wait = 0x14;                      /* image 0x39D1 */
-    g_release_step = (uint8_t)(((99u - (uint16_t)lv->release_rate) >> 1) + 4u);
+    /* THE LEVEL'S RATE IS A FLOOR, NOT A FIXTURE. Image 0x036C1 puts the
+     * header's rate in ds:0x64 and image 0x036C4 puts the SAME value in
+     * ds:0x67, and only the second moves: the panel's two buttons walk
+     * ds:0x67 between ds:0x64 and 99. */
+    g_rate_min = (uint8_t)lv->release_rate;     /* image 0x036C1 */
+    g_rate     = (uint8_t)lv->release_rate;     /* image 0x036C4 */
+    g_release_step = level_rate_step(g_rate);
     g_released     = 0;
     g_to_release   = (uint8_t)lv->num_lemmings;
     /* Image 0x00436..0x0043B: the level's set-up zeroes ds:0x1FD3 and
@@ -4876,6 +4943,8 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
 #define BUILD_SPR_PLANE (BUILD_SPR_ROW * BUILD_SPR_H)          /* 26 */
 #define BUILD_SPR_FRAME (BUILD_SPR_PLANE * BUILD_SPR_PLANES)   /* 78 */
 #define BUILD_SPR_FRAMES 16
+/* Image 0x0330A's BUILD_STATE: the frames facing left start this far on. */
+#define BUILD_SPR_STATE 0x10
 
 /* THE SHRUG'S SPRITE - the eight frames a builder animates through when it
  * runs out of bricks. Measured the same way, and it is the WALKER's
@@ -6076,10 +6145,30 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
     }
 
     /* A builder has its own too - see BUILD_SPR_BASE. Its counter runs to
-     * sixteen, image 0x02698's `and al, 0x0F`. */
+     * sixteen, image 0x02698's `and al, 0x0F`.
+     *
+     * AND IT FACES BOTH WAYS. This drew the right-facing sixteen whichever
+     * direction the builder was laying bricks, so one built towards the left
+     * with the wrong animation - a player reported it, and nothing here could
+     * have: every record comparison scores x, y, the flags and the counter,
+     * and a sprite index is none of those.
+     *
+     * The rule is the one the basher and the miner two branches down already
+     * carry: image 0x070AB adds the STATE to the frame index when the lemming
+     * faces left, and the builder's state is 0x10 (image 0x0330A, this file's
+     * BUILD_STATE). So sixteen frames facing right, then sixteen facing left.
+     *
+     * The region says the same thing without being asked, which is what makes
+     * it evidence rather than a guess: 4240 + 32 * 78 = 6736, and 6736 is
+     * BASH_SPR_BASE. Thirty-two frames fit exactly between the builder's
+     * start and the basher's, and sixteen would leave 1,248 bytes of nothing
+     * in a file where every other sprite region abuts its neighbour. */
     if (a->flags & 0x0080) {
         if (a->anim >= BUILD_SPR_FRAMES) return;
-        base = BUILD_SPR_BASE + (uint32_t)a->anim * BUILD_SPR_FRAME;
+        uint16_t bfr = a->anim;
+        if (a->dir != 1)                                  /* image 0x070AB */
+            bfr = (uint16_t)(bfr + BUILD_SPR_STATE);
+        base = BUILD_SPR_BASE + (uint32_t)bfr * BUILD_SPR_FRAME;
         if (base + BUILD_SPR_FRAME > sec_len) return;
         x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
         y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;

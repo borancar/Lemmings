@@ -1762,6 +1762,58 @@ And a correction to the panel-order note written earlier this session: image
 set-up, is **not "the play area"**. It is this guard in front of the object
 animations. The addresses were right and the label was a guess.
 
+### Two more from playing: the release rate did nothing, the builder faced one way
+
+Both reported by the user playing the game, and neither is visible to anything
+in this repository - the same as every other fault a player has found here.
+
+**The panel's minus and plus did nothing**, because the port read image
+0x03F27 as refusing every button below 2. It does the opposite:
+`cmp al,2 / jge 0x3f2e / jmp 0x4032` SENDS 0 and 1 to the rate handler, and it
+is the buttons from 2 up that go through the latch at image `0x03F2E`. One
+misread word - "refuses" for "routes" - and a whole control was inert.
+
+What the handler does, read out of image `0x04032`:
+
+    ds:0x67   the rate in force, which the buttons move (image 0x036C4)
+    ds:0x64   the LEVEL'S OWN rate, and the floor the minus stops at
+              (image 0x036C1) - a level can be sped up and never slowed
+              below what its header asked for
+    99        where the plus stops (image 0x04046)
+    ds:0x49   the interval, ((99 - rate) >> 1) + 4 - image 0x04053 writes it
+              as four negations and the port already had the formula
+
+The panel's first two numbers are those two bytes, not one value twice: they
+start equal, which is why a single `lv->release_rate` stood in for both until
+the buttons worked.
+
+Named rather than transcribed: `ds:0x69`, tested at image `0x0403D`. It is a
+divider of exactly the shape `ds:0x84` has for the skill strip - image
+`0x03B8C` catches it at 2 and the `inc` at image `0x03B9C` wraps it - so a
+HELD button steps the rate one frame in three. The port acts on the button-down
+edge, so one press is one step and holding does not ramp yet.
+
+**The builder faced one way.** Its branch computed
+`BUILD_SPR_BASE + anim * FRAME` with no direction term, so a builder laying
+bricks leftwards was drawn with the right-facing sixteen. The basher and the
+miner two branches down already had the rule and even explain it in their own
+comment - image `0x070AB` adds the STATE to the frame index when the lemming
+faces left - and the builder's state is 0x10 (image `0x0330A`).
+
+Two independent things confirm the sixteen-and-sixteen. The region abuts:
+**4240 + 32 x 78 = 6736, which is `BASH_SPR_BASE`** - thirty-two frames fit
+exactly between the builder's start and the basher's, where sixteen would
+leave 1,248 bytes of nothing in a file whose every other sprite region touches
+its neighbour. And decoding frame 16 shows the left-facing builder: the arm
+and the brick mirror across, 159 of 208 cells agreeing with a strict mirror of
+frame 0, which is what a hand-drawn pair looks like rather than a flipped one.
+
+**Neither is checked by anything here, and that is the point.** The builder's
+own case still scores 399 of 400 because its reference builds to the RIGHT;
+the rate buttons are never pressed in any recorded run. Both were found by
+someone playing, both are read out of the original, and the repository would
+have gone on reporting everything exact.
+
 ### What "owed" means for screen_start, now that the four calls are read
 
 Reading them turned a vague debt into a specific decision. The port's

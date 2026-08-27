@@ -526,7 +526,7 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          * 0x03F3D..0x03F4D sends 10, 11 and 12 away before image 0x03F66
          * stores the rest in ds:0x82:
          *
-         *     0, 1   image 0x04032   the release rate - NOT TRANSCRIBED
+         *     0, 1   image 0x04032   THE RELEASE RATE - transcribed now
          *     2..9   image 0x03F66   the eight skills
          *     10     image 0x04018   pause - NOT TRANSCRIBED
          *     11     image 0x03FEF   THE NUKE
@@ -537,7 +537,18 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          * on its own but a flag the whole frame loop reads (image 0x01F19
          * returns early on it), so it is a change to the loop and not to
          * this switch. */
-        if (h.button < 2) return;         /* image 0x03F27 */
+        /* BUTTONS 0 AND 1 ARE THE RELEASE RATE, and image 0x03F27 sends
+         * them there rather than refusing them: `cmp al,2 / jge 0x3f2e /
+         * jmp 0x4032`. This line read that as "refuses anything below 2
+         * outright", so the panel's minus and plus did nothing at all. A
+         * player found it.
+         *
+         * They also skip the latch at image 0x03F2E that the skill buttons
+         * take, which is what lets a held one repeat in the original. */
+        if (h.button < 2) {               /* image 0x03F27 */
+            level_rate_click(h.button);   /* image 0x04032: 0 down, 1 up */
+            return;
+        }
         if (h.button == 12) return;       /* image 0x03FEE: a bare `ret` */
         if (h.button == 10) {             /* image 0x04041 */
             level_pause_click();          /* image 0x04018 */
