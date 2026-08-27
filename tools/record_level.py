@@ -139,6 +139,19 @@ def install(m):
         # cue is simply how many times 0x0D has been entered: the first is
         # the "PC Lemmings Loading" screen, the second is the level.
         modes = getattr(m, "video_modes", [])
+        # A CAPTURE THAT IS DONE CANNOT STOP THE RUN, and it is worth saying
+        # why rather than trying again. `uc.emu_stop()` from inside a hook
+        # ends the current `emu_start`, but the emulator's own main loop is a
+        # `while running:` that calls `emu_start` again every pass and only
+        # leaves on `--run-seconds`. So a hook cannot end the process; it just
+        # gives up one slice, which the loop hands straight back.
+        #
+        # That is why a four-frame capture still costs its whole --seconds
+        # budget. It was tried, measured against the ceiling, and reverted -
+        # a comment claiming an optimisation that does not happen is worse
+        # than no change, because the next reader believes the comment instead
+        # of the clock. Ending early would need an additive hook UPSTREAM in
+        # dos_emulator, not a change here.
         if not modes or modes[-1] != 0x0D or st["n"] >= want:
             return
         if sum(1 for v in modes if v == 0x0D) < 2:

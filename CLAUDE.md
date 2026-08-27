@@ -766,6 +766,43 @@ the frame-by-frame comparison, which advances the animation itself, was exact
 once the colour was right. A one-frame comparison is a fine instrument, but
 every clock in the picture has to be set to the same time.
 
+## Read the segment register; do not assume which segment a thing is in
+
+The trigger map - the only thing that answers "what is under this lemming" -
+is addressed `ss:[bx]`. Image 0x023A6 reads it that way and image 0x03886
+writes it that way. `tools/verify_triggers.py` dumped it from DGROUP instead,
+because a small-model DOS program usually has `SS == DS`, and got a page of
+unrelated stack variables.
+
+That dump scored the port's map as **47% wrong**, and it was a fact about the
+address. What killed it in one look was checking the SHAPE of both sides
+before quoting the percentage: the "original's" map held all sixteen effect
+values in roughly equal numbers, and no level's trigger map ever does. The
+port's held three - the one-way walls, the steel and the exit - which is what
+a real one looks like.
+
+So: **when a routine names a segment, read that segment register out of the
+guest rather than working out which one it ought to be.** The tool now prints
+`SS` beside its result, so a wrong segment arrives as something visible
+rather than as a score.
+
+## A comparison has to be bounded by what the program can read
+
+The same tool then reported **3,180 differing cells** on a map that agrees
+completely. The port's array is 64 rows because that is convenient; the
+original's map lives in its stack segment with other variables after it, and
+everything past the live extent compared as a difference.
+
+The bounds are the program's own and both have addresses: image 0x02EC5
+refuses any lemming at `y >= 0xB0` and the row is `(y - 0x10) >> 2`, so row 39
+is the last one anything can ask about; the canvas is 1,600 wide and the
+column is `x >> 2`, so column 400 is the last. Inside that, 16,040 of 16,040
+cells agree.
+
+**Dump generously and compare narrowly.** A dump sized to the port's array is
+fine; a comparison sized to it is a comparison of the port against memory the
+program will never look at.
+
 ## Conventions
 
 - **SDL3 for the window, input and sound.** Never X11, Win32, Cocoa or SDL2;
@@ -1024,6 +1061,7 @@ sweeps are the only thing that would catch a regression there. So:
 | **`tools/verify_hit.py`** | **the under-pointer test against the original's own answer**, frame by frame. The guest clears ds:0x1A at image 0x03DAF and sets it at image 0x03DE8 when its scan finds a lemming, so that byte settles it. Exists because the unit test for this passed while the code was sixteen pixels wrong - both were written from the same reading, and a test that shares the code's mistake agrees with it |
 | **`tools/verify_pace.py`** | **how long the port's loops take**, against the rates the original sets - the level at 17 a second (image 0x0418) and the menu at 70 (image 0x01550 waits a retrace). The ONLY check here that measures duration: every other one compares frame N against frame N and cannot see a port running at four times speed, which is exactly how the level shipped at sixty. Times the port's own loops on the host, never the guest's - the emulator's throughput answers between 3 and 8 a second and that is the instrument, not the game |
 | **`tools/compare_screen.py`** | **the game's own 320x200 screen** against the original's, frame by frame - the window path, not the harness. A different claim from `compare_run.py`, which scores a canvas and a panel `lemdev` composed separately: every frame of that matched while `./lemmings` showed an empty cave. Play area and panel scored SEPARATELY, and the cursor's 28 pixels named rather than averaged away |
+| **`tools/verify_triggers.py`** | **the trigger map, the port's against the original's own** - the map at ds:0x12 that answers "what is under this lemming", and the only thing that does. Two passes build it, image 0x03839's STEEL and image 0x037C2's objects, and the port had the second and not the first: steel areas were parsed and never stamped, so every test against them was dead code and a bomb went through a steel floor. No picture can show this map and no frame comparison can reach it |
 | **`tools/probe_attrpal.py`** | **the EGA attribute registers, per level** - the step between the attribute a routine writes and the DAC entry a capture holds. `compare_screen.py`'s map is one measurement taken on one level, and a per-level palette would make it right there and wrong everywhere else. It reports how many frames it sampled and says outright when it read nothing, because a run that never reached a level would otherwise report the menu's |
 | **`tools/probe_dac.py`** | **is the palette changed part-way down the screen?** Samples the emulator's palette every 512 instructions between the game's own end-of-frame points at image 0x018F. It is a sampler and not a port hook on purpose: wrapping `m._on_out` records nothing, because Unicorn holds the bound method from construction - and "no port writes" reads as a finding |
 | **`tools/compare_frame.py`** | one level frame, the original beside the port. Mode 0x0D is two things stacked - the play area at rows 0..159 and the panel at 176..199 - and they are scored SEPARATELY, because an average hides which one is missing. Fits the scroll if you do not give one, and says which it used |

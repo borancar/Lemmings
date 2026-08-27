@@ -213,6 +213,18 @@ say "=== the composed level WITH objects (the gap prove.sh leaves) ==="
 if uv run python tools/verify_objects.py 2>&1 | sed 's/^/  /'; then :; else fail=1; fi
 
 say ""
+say "=== the TRIGGER MAP, which no picture can show ==="
+# The map at ss:0x12 is the only thing that answers "what is under this
+# lemming", and the port built half of it: the steel pass at image 0x03839 was
+# missing entirely, so a bomb went through a steel floor. A frame comparison
+# cannot reach this and neither can a screenshot.
+#
+# level004/3 because it has all three kinds of cell in it - twelve one-way
+# walls, five steel areas and an exit. It drives the emulator to a level, so
+# it is minutes rather than seconds.
+if uv run python tools/verify_triggers.py --level 77 2>&1 | sed 's/^/  /'; then :; else fail=1; fi
+
+say ""
 say "=== three further levels, frame by frame ==="
 # level004.dat 3 is here because tools/coverage.py said the other three carry
 # no one-way wall between them: object ids 3 and 4 and the only_on_terrain

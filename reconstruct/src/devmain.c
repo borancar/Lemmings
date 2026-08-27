@@ -34,6 +34,10 @@
  * --file names a file and a section and cannot know which PLATE that is, so
  * a comparison against a recorded run has to be told. -1 is "its own". */
 static int g_odd_entry = -1;
+/* --triggers FILE: the port's trigger map, for tools/verify_triggers.py.
+ * 64 rows of 0x1A0, the same shape the original keeps at ds:0x12 with
+ * image 0x03874's `mul 0x1a0` for a stride. */
+static const char *g_triggers_out = NULL;
 
 
 
@@ -208,6 +212,20 @@ static int render_level(const char *data, const char *file, uint32_t which,
     if (ground_load(path, &g, &err) != 0) {
         fprintf(stderr, "%s: %s\n", path, err);
         return 1;
+    }
+
+    /* THE TRIGGER MAP, before anything draws - the thing image 0x03839's
+     * steel pass and image 0x037C2's object pass build between them, and the
+     * only place the game answers "what is under this lemming". */
+    if (g_triggers_out) {
+        level_triggers_build(&lv, &g);
+        FILE *tf = fopen(g_triggers_out, "wb");
+        if (!tf) { fprintf(stderr, "%s: cannot write\n", g_triggers_out); return 1; }
+        for (int32_t row = 0; row < 64; row++)
+            for (int32_t col = 0; col < 0x1A0; col++)
+                fputc(level_trigger_cell(col, row), tf);
+        fclose(tf);
+        fprintf(stderr, "  wrote the port's trigger map to %s\n", g_triggers_out);
     }
 
     snprintf(path, sizeof(path), "%s/vgagr%u.dat", data, lv.graphics_set);
@@ -575,6 +593,8 @@ int main(int argc, char **argv)
         }
         else if (!strcmp(argv[i], "--no-objects")) objects = 0;
         else if (!strcmp(argv[i], "--baked")) g_baked_objects = 1;
+        else if (!strcmp(argv[i], "--triggers") && i + 1 < argc)
+            g_triggers_out = argv[++i];
         else if (!strcmp(argv[i], "--rate-probe")) g_rate_probe = 1;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--panel") && i + 1 < argc) { panel_out = argv[++i]; want_menu = 0; }

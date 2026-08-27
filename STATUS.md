@@ -2000,6 +2000,61 @@ harness with a frame budget, and frames after that budget would be scored as
 the game's - the six frame-by-frame levels still write exactly 530, 1100,
 1100, 1100, 1100 and 1100 frames and are all still exact.
 
+### The trigger map is now checked against the original's own
+
+`tools/verify_triggers.py` dumps the map the original builds and compares it
+with the port's, cell by cell. It exists because the steel fix below was
+justified by READING image 0x03839 and by the port's own render, and nothing
+checked it against the original - and because no frame comparison or
+screenshot can reach this map at all.
+
+On level004 section 3, which carries all three kinds of cell:
+
+    the trigger map, 16040 cells (rows 0..39, cols 0..400)
+      effect nibble   16040 agree, 0 differ
+      whole byte      16039 agree, 1 differ
+      STEEL cells     original 479, port 479
+
+The one byte is row 27, column 208: the original carries object 2's index
+with effect 0, the port carries 0 with effect 0. It is inert either way -
+every reader masks with 0x0F, image 0x023A6 and image 0x034DC both - and it
+is reported rather than rounded away because the tool scores the index and
+the effect separately on purpose. A port that agreed on the effect and not
+the index would be right about steel and wrong about which trap fired.
+
+**Two instrument faults on the way, and both were caught before anything was
+reported.** They are in `CLAUDE.md` because both generalise:
+
+- the map is in the STACK segment. Image 0x023A6 reads it `ss:[bx]` and image
+  0x03886 writes it `ss:[bx]`. Dumping from DGROUP - because small-model DOS
+  usually has SS == DS - gave a page of other variables that scored the port
+  **47% wrong**. What killed it in one look was checking the SHAPE of both
+  sides first: the "original's" map held all sixteen effect values in roughly
+  equal numbers, and no level's ever does.
+- the comparison has to be bounded by what the program can READ. The port's
+  array is 64 rows because that is convenient; the original's map has other
+  stack variables after it. Unbounded, the tool reported **3,180 differing
+  cells** on a map that agrees completely. Image 0x02EC5 refuses `y >= 0xB0`
+  and the row is `(y - 0x10) >> 2`, so row 39 is the last; the canvas is
+  1,600 wide and the column is `x >> 2`, so column 400 is the last.
+
+### A finished capture cannot stop its own run
+
+Worth writing down because it was tried and reverted. A short capture pays its
+whole `--seconds` budget - four frames cost five minutes - and the obvious fix
+is for `record_level.py` to call `uc.emu_stop()` once it has them.
+
+It does nothing. `dos_emulator`'s main is a `while running:` loop that calls
+`emu_start` again every pass and only leaves on `--run-seconds`, so a hook
+gives up one slice and the loop hands it straight back. The measurement said
+so before the reading did: the frames and the dump landed at 15:57 and the
+recorder was still going two minutes later.
+
+Reverted, with the reason in the comment. Ending early would need an additive
+hook UPSTREAM in dos_emulator. A comment claiming an optimisation that does
+not happen is worse than no change, because the next reader believes the
+comment instead of the clock.
+
 ### The steel areas were parsed and never used
 
 Reported from playing and checked against DOSBox: a bomber's crater ate
@@ -2057,42 +2112,27 @@ as the flag word - the port had no such byte when that scan was written and
 has carried `extra` since the builder's shrug, so the comment saying it could
 not was simply stale.
 
-### OPEN: do the one-way arrows land on a builder's bricks?
+### The one-way arrows DO land on a builder's bricks, in both
 
-Reported from playing, with a screenshot: the arrows appear over bricks a
-builder has laid, and the original does not do that.
+Reported from playing: the arrows appear over bricks a builder has laid, and
+the original was thought not to do that. **It does.** The player checked the
+emulator and confirmed it, so the port matches and there was nothing to fix.
 
-The PORT's mechanism is confirmed and is a direct consequence of the
-only-on-terrain rule. `lem_build_brick` ORs attribute 8 into the level canvas
-- image 0x05F13 sets the Map Mask to 8 and image 0x05F1E and image 0x05F26 set
-Set/Reset and Enable Set/Reset to 8, so a brick is plane 3 and nothing else -
-and `object_pixel_allowed` asks exactly `dst & 8`. A fresh brick is therefore
-indistinguishable from terrain to the arrow blit.
+Kept because the reading behind it is worth having, and because it is a case
+where the reading and the report disagreed and the reading was right:
 
-What is NOT yet settled is whether the original does the same, and reading has
-so far argued that it should, which contradicts the report:
-
-- the two writes go to DIFFERENT buffers. Image 0x05DC6 puts the brick at
-  `0x4A40 + y * 0xD0 + x/8` - the level-wide bitmap, 208 bytes a row - while
-  the blitter's destination is `[0x1F76] + [0x1F7A]` with the stride at
-  `[0x66F4]`, the visible page.
-- but the arrows ANIMATE, measured on the reference rather than assumed:
-  ~1,366 pixels of the arrow band change between consecutive frames of
-  out/ref_i77 and go on doing so for all 1,100. So the page they are drawn
-  into is refreshed from the level bitmap every frame, or last frame's arrows
-  would still be there.
-- and that refresh must carry plane 3, or the arrows would never draw at all.
-  Which puts the brick's plane 3 in front of the arrow blit.
-- an arrow also CLEARS plane 3 where it lands (Set/Reset 4, Enable Set/Reset
-  0x0E). If the arrows were drawn into the level bitmap itself the wall would
-  erode frame by frame and the arrows would disappear. They do not, over 1,100
-  frames, which is the same evidence from the other side.
-
-So one of those premises is wrong. Both sides are being driven through one
-input script - select the builder, click the lemming at the left face of
-level004 section 3's arrow wall - and the pixels the builder created will be
-scored on both. That is the measurement; the reading above is not a conclusion
-and must not be written up as one.
+- a brick is attribute 8 and nothing else - image 0x05F1E and image 0x05F26
+  set Set/Reset and Enable Set/Reset to 8, so it is plane 3 alone - and the
+  only-on-terrain rule asks exactly `dst & 8`. A fresh brick is therefore
+  indistinguishable from terrain to the arrow blit.
+- the two writes go to different buffers: image 0x05DC6 puts the brick at
+  `0x4A40 + y * 0xD0 + x/8`, the level-wide bitmap, while the blitter's
+  destination is the visible page.
+- but image 0x080FD repaints the visible page from that bitmap every frame
+  for every DIRTY BLOCK, all four planes, and image 0x09A15 marks the blocks
+  a blit touches. So the brick reaches the page and the arrows see it.
+- and the arrows animate, measured rather than assumed: ~1,366 pixels of the
+  band change between consecutive frames of out/ref_i77, for all 1,100.
 
 ### An object can carry both flags too, and five of them do
 
