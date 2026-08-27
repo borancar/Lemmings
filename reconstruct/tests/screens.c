@@ -15,6 +15,7 @@
 
 #include <stdlib.h>
 #include "game.h"
+#include "opl.h"
 
 static int fails;
 
@@ -1300,6 +1301,47 @@ int main(int argc, char **argv)
                "screen's 5 might come from the sprite after all");
             dat_free(&gr);
         }
+    }
+
+
+    /* ---- the audio pump keeps up with the frame rate ----
+     *
+     * The device drains at 49,716 samples a second whatever the game does.
+     * A level frame at 17 fps owes 2,924 samples and a menu frame at 70 owes
+     * 710, so a pump that produces a FIXED amount per frame is right for at
+     * most one of them. The first one produced 1,024 samples a frame, a
+     * third of what a level owes, and the game played chopped noise while
+     * every one of the driver's 10,333 register writes agreed with the
+     * original. No comparison of what is WRITTEN can see a rate. */
+    {
+        const int target = sound_target_bytes();
+        struct { double fps; const char *what; } rates[] = {
+            { 17.0, "a level at 17 fps" },
+            { 70.0, "the menu at 70 fps" },
+        };
+        for (size_t k = 0; k < sizeof rates / sizeof rates[0]; k++) {
+            int frame = (int)((double)OPL_SAMPLE_RATE / rates[k].fps) * 2;
+            int q = 0, dry = 0;
+            for (int i = 0; i < 400; i++) {
+                q += (int)sound_fill_bytes(q, target);
+                q -= frame;
+                if (q <= 0) { dry++; q = 0; }
+            }
+            ck(rates[k].what, dry == 0, NULL);
+        }
+
+        /* And the check must be able to FAIL. A target smaller than one
+         * frame cannot keep up by construction, and if this passes the two
+         * above prove nothing. */
+        int frame = (int)((double)OPL_SAMPLE_RATE / 17.0) * 2;
+        int q = 0, dry = 0;
+        for (int i = 0; i < 400; i++) {
+            q += (int)sound_fill_bytes(q, frame / 4);
+            q -= frame;
+            if (q <= 0) { dry++; q = 0; }
+        }
+        ck("a target below one frame runs dry (the control)",
+           dry > 0, NULL);
     }
 
     printf(fails ? "\n  %d FAILED\n" : "\n  all passed\n", fails);

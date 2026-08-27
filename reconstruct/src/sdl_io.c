@@ -1129,33 +1129,72 @@ void sound_request(uint8_t fn, uint8_t id)
 }
 
 /* Mix and hand to SDL. Called once a frame from the level and menu loops. */
-#define SND_CHUNK 1024
+/* How much audio to keep queued, and how much to build at a time.
+ *
+ * The device drains at 49,716 samples a second whatever the game is doing.
+ * A LEVEL runs at 17 frames a second, so one frame owes 2,924 samples; the
+ * menu at 70 owes 710. sound_pump is called once a frame from both, so a
+ * pump that produces a FIXED amount is right for at most one of them - and
+ * the first version produced 1,024, a third of what a level frame owes. The
+ * device ran dry every frame, and that is what chopped noise is.
+ *
+ * So the target is a DEPTH, not a quantity: top the queue up to a fifth of a
+ * second, however many chunks that takes. Deep enough to ride out a slow
+ * frame, a level load or a fade; shallow enough that a click's sound is not
+ * heard a fifth of a second after the click.
+ *
+ * Nothing in the frame-by-frame comparisons could have caught this. They
+ * score what the driver WRITES, and the writes were already exact - 10,333
+ * of 10,333. This is the same shape of gap CLAUDE.md records for the level
+ * running at sixty frames a second while every frame matched: a rate is not
+ * visible to anything that compares frame N against frame N. */
+#define SND_TARGET_MS 200
+#define SND_CHUNK     1024
+
+int sound_target_bytes(void)
+{
+    return (int)((OPL_SAMPLE_RATE * SND_TARGET_MS) / 1000u)
+           * (int)sizeof(int16_t);
+}
+
+uint32_t sound_fill_bytes(int queued, int target)
+{
+    const int chunk = SND_CHUNK * (int)sizeof(int16_t);
+    uint32_t made = 0;
+    while (queued < target) { queued += chunk; made += (uint32_t)chunk; }
+    return made;
+}
 
 static void sound_pump(void)
 {
     if (!g_snd_stream || !adlib_ready()) return;
-    /* Keep about a quarter second queued. Less and the host's scheduler
-     * shows up as gaps; more and a sound effect is heard long after the
-     * click that asked for it. */
-    const int ahead = (int)(OPL_SAMPLE_RATE / 4) * (int)sizeof(int16_t);
-    if (SDL_GetAudioStreamQueued(g_snd_stream) > ahead) return;
+
+    const int target = sound_target_bytes();
+    int queued = SDL_GetAudioStreamQueued(g_snd_stream);
+    if (queued < 0) return;                 /* the device went away */
 
     const double per_tick = (double)OPL_SAMPLE_RATE / ADLIB_TICK_HZ;
     int16_t buf[SND_CHUNK];
-    uint32_t done = 0;
-    while (done < SND_CHUNK) {
-        if (g_tick_acc <= 0.0) {
-            adlib_tick();                   /* driver +0x0115 */
-            g_tick_acc += per_tick;
+
+    while (queued < target) {
+        uint32_t done = 0;
+        while (done < SND_CHUNK) {
+            /* One driver tick buys per_tick samples. The accumulator carries
+             * the fraction, so the tick rate stays 97.08 Hz over time rather
+             * than being rounded to 512 and running sharp. */
+            if (g_tick_acc < 1.0) {
+                adlib_tick();               /* driver +0x0115 */
+                g_tick_acc += per_tick;
+            }
+            uint32_t want = (uint32_t)g_tick_acc;
+            if (want > SND_CHUNK - done) want = SND_CHUNK - done;
+            opl_render(buf + done, want);
+            done += want;
+            g_tick_acc -= want;
         }
-        uint32_t want = (uint32_t)g_tick_acc;
-        if (want > SND_CHUNK - done) want = SND_CHUNK - done;
-        if (want == 0) { g_tick_acc = 0.0; continue; }
-        opl_render(buf + done, want);
-        done += want;
-        g_tick_acc -= want;
+        SDL_PutAudioStreamData(g_snd_stream, buf, (int)sizeof buf);
+        queued += (int)sizeof buf;
     }
-    SDL_PutAudioStreamData(g_snd_stream, buf, (int)sizeof buf);
 }
 
 static void sound_open(void)

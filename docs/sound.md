@@ -326,3 +326,42 @@ driver's tick for that count has already run is not something a tick counter
 can answer. Reordering the port's requests against its tick was tried and
 changed **nothing** - every request shifts equally, so the relative timing
 came out identical.
+
+## The pump is a RATE, and nothing that compares writes can see it
+
+With the driver transcribed and 10,333 of 10,333 register writes agreeing,
+the game played **chopped noise**. Both facts were true at once, and the
+second is not visible to the first.
+
+The device drains at 49,716 samples a second whatever the game is doing.
+`sound_pump` is called once a frame, so:
+
+    a LEVEL frame at 17 fps owes 2,924 samples
+    a MENU  frame at 70 fps owes   710
+
+and the first pump produced a fixed **1,024**. A third of what a level frame
+owes, every frame, for as long as the level lasted. The fix is to make the
+target a DEPTH rather than a quantity - top the queue up to a fifth of a
+second, however many chunks that takes.
+
+This is the same shape as the level shipping at sixty frames a second while
+every frame matched: a rate is invisible to anything that scores frame N
+against frame N, or write N against write N.
+
+**The first attempt to measure it measured nothing.** `--audio-probe` drove
+the real pump under `SDL_AUDIODRIVER=dummy` and watched
+`SDL_GetAudioStreamQueued`. The dummy device never drains, so the queue only
+ever grows: a run at THREE frames a second, which cannot possibly keep up,
+reported a full buffer and zero underruns. The control failed to fail, and
+that is the only reason the instrument was caught rather than believed.
+
+It is now a simulation with no device in it - `sound_fill_bytes` split out of
+the pump so the arithmetic can be exercised directly, drained one frame's
+worth per frame:
+
+    ./reconstruct/lemdev --audio-probe 10 --fps 17   never below 141 ms, 0 dry
+    ./reconstruct/lemdev --audio-probe 10 --fps 70   never below 186 ms, 0 dry
+    ./reconstruct/lemdev --audio-probe 10 --fps 3    runs dry 30 times, exit 1
+
+and `make test` runs all three, the last as the control. A check that cannot
+fail is not a check.

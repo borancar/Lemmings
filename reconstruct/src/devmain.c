@@ -657,6 +657,46 @@ static void adlib_log_write(uint8_t reg, uint8_t val)
  * too. tools/probe_opl.py writes the script; verify_adlib.py scores the two
  * streams against each other.
  */
+/* Does the pump keep up? THE PORT'S OWN.
+ *
+ * A SIMULATION, deliberately, and no audio device is involved. The claim is
+ * that over any stretch the pump produces at least as many samples as the
+ * device drains, and that is arithmetic: drain one frame's worth per frame,
+ * fill by whatever sound_fill_bytes says, and watch whether the queue ever
+ * reaches zero.
+ *
+ * Driving the real pump instead was tried first and measured nothing -
+ * SDL_AUDIODRIVER=dummy never drains its queue, so three frames a second,
+ * which cannot keep up, reported a full buffer and no underruns.
+ */
+static int audio_probe(const char *data, uint32_t seconds, double fps)
+{
+    (void)data;
+    const int frame_bytes = (int)((double)OPL_SAMPLE_RATE / fps)
+                            * (int)sizeof(int16_t);
+    const int target = sound_target_bytes();
+    uint64_t frames = (uint64_t)(seconds * fps);
+    int q = 0, mn = 0x7FFFFFFF, dry = 0;
+
+    for (uint64_t i = 0; i < frames; i++) {
+        q += (int)sound_fill_bytes(q, target);
+        q -= frame_bytes;
+        if (q <= 0) { dry++; q = 0; }
+        if (q < mn) mn = q;
+    }
+    printf("  %.1f fps, %u s: one frame drains %d bytes, the target is %d\n",
+           fps, seconds, frame_bytes, target);
+    printf("  the queue never fell below %d bytes (%.0f ms)\n", mn,
+           1000.0 * mn / 2.0 / OPL_SAMPLE_RATE);
+    printf("  frames that found it EMPTY : %d\n", dry);
+    if (dry) {
+        fprintf(stderr, "THE DEVICE WOULD RUN DRY %d times - that is the "
+                        "chopping.\n", dry);
+        return 1;
+    }
+    return 0;
+}
+
 static int adlib_script(const char *data, const char *script,
                         uint32_t ticks, const char *out)
 {
@@ -819,6 +859,7 @@ int main(int argc, char **argv)
     const char *opl_in = NULL, *wav_out = NULL;
     int adlib_tune = -1; uint32_t adlib_ticks = 600;
     const char *adlib_scr = NULL;
+    int audio_secs = 0; double audio_fps = 17.0;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
@@ -936,6 +977,10 @@ int main(int argc, char **argv)
             else if (!strcmp(m, "hw")) g_terrain_mode = TERRAIN_HW;
             else { usage(); return 2; }
         }
+        else if (!strcmp(argv[i], "--audio-probe") && i + 1 < argc)
+            audio_secs = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--fps") && i + 1 < argc)
+            audio_fps = atof(argv[++i]);
         else if (!strcmp(argv[i], "--adlib-script") && i + 1 < argc)
             adlib_scr = argv[++i];
         else if (!strcmp(argv[i], "--adlib-tune") && i + 1 < argc)
@@ -956,6 +1001,8 @@ int main(int argc, char **argv)
         return opl_replay(opl_in, wav_out);
     }
     lem_set_data_dir(data);
+
+    if (audio_secs > 0) return audio_probe(data, (uint32_t)audio_secs, audio_fps);
 
     if (adlib_scr) {
         if (!raw) { usage(); return 2; }
