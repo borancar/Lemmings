@@ -894,6 +894,47 @@ int view_run_anim(canvas *c, const lem_rgb *palette, const char *title,
  * whole method exists to avoid.
  * ====================================================================== */
 
+/* THE WHOLE OF A FILE, IN MEMORY - which DOS used to do a piece at a time.
+ *
+ * Image 0x01D2E is the original's loader and it is pure DOS: INT 21h AH=23h
+ * for the size through an FCB, the size divided into paragraphs and checked
+ * against what is left at ds:0x1F90, then INT 21h AH=3Fh reading into a bump
+ * allocator at ds:0x1F8A - which it advances past a 13-byte section header
+ * each time (image 0x01DA6's `add dx, 0xd`). It streams the sections one
+ * after another into one buffer and never has the whole file at once.
+ *
+ * The port reads it whole. That is the arrangement dat_load's comment already
+ * described, but the READING half was sitting in game.c, and the note at the
+ * top of this block says what that means: a routine marked as ours inside the
+ * game's file is either IO that belongs here, or game logic nobody has
+ * transcribed. This one is the first. Splitting the container and
+ * decompressing it stay in game.c, because the format is the game's.
+ */
+int io_read_file(const char *path, uint8_t **out, long *len, const char **err)
+{
+    *out = NULL;
+    *len = 0;
+    FILE *f = fopen(path, "rb");
+    if (!f) { if (err) *err = "cannot open file"; return -1; }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f); if (err) *err = "cannot size file"; return -1;
+    }
+    long n = ftell(f);
+    if (n <= 0) { fclose(f); if (err) *err = "empty file"; return -1; }
+    rewind(f);
+    uint8_t *blob = malloc((size_t)n);
+    if (!blob) { fclose(f); if (err) *err = "out of memory"; return -1; }
+    if (fread(blob, 1, (size_t)n, f) != (size_t)n) {
+        free(blob); fclose(f);
+        if (err) *err = "short read";
+        return -1;
+    }
+    fclose(f);
+    *out = blob;
+    *len = n;
+    return 0;
+}
+
 #define GROUND_SIZE 1056
 
 /* A 6-bit DAC value as 8 bits, the way the hardware does it: the top two bits

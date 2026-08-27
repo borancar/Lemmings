@@ -245,6 +245,10 @@ extern uint8_t g_terrain_reverse;
 
 /* Implemented in sdl_io.c - see "WHAT THE HARDWARE USED TO DO" there. */
 uint8_t widen6(uint8_t v);
+/* The whole of a file in memory. DOS did this a section at a time through
+ * image 0x01D2E's INT 21h calls; reading it whole is the port's arrangement,
+ * and the reading is IO wherever the arrangement came from. */
+int io_read_file(const char *path, uint8_t **out, long *len, const char **err);
 uint8_t planar(const uint8_t *sec, uint32_t base, uint32_t plane_step,
                uint16_t stride, uint8_t nplanes, uint16_t x, uint16_t y);
 

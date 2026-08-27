@@ -273,28 +273,30 @@ int disk_check(uint8_t media)
 }
 
 
-/* NOT TRANSCRIBED. The original streams sections through a read routine
- * (image 0x01D2E) into one buffer as it goes; this reads the whole file and
- * decompresses every section up front, which is the port's own arrangement. */
+/* The port's own arrangement, and image 0x01D2E is what it replaces - read
+ * rather than left as a debt.
+ *
+ * That routine is pure DOS: INT 21h AH=23h for the file's size through an
+ * FCB, the size shifted into paragraphs and checked against what is left at
+ * ds:0x1F90, then INT 21h AH=3Fh reading into a bump allocator at ds:0x1F8A
+ * which it advances past a 13-byte section header each time (image 0x01DA6's
+ * `add dx, 0xd`). It streams the sections one after another into a single
+ * buffer and never holds the whole file.
+ *
+ * So there is no container-parsing routine in the original to transcribe -
+ * the reading and the walking are the same loop, and the reading is DOS's.
+ * The port reads the file whole through io_read_file, which is IO and lives
+ * in sdl_io.c for the reason that file's own note gives, and what stays here
+ * is the part that IS the game's: the section headers and the decompressor,
+ * which tools/verify_dat.py checks against the original's own body. */
 int dat_load(const char *path, dat_file *out, const char **err)
 {
     memset(out, 0, sizeof(*out));
 
-    FILE *f = fopen(path, "rb");
-    if (!f) { if (err) *err = "cannot open file"; return -1; }
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (len <= 0) { fclose(f); if (err) *err = "empty file"; return -1; }
-
-    uint8_t *blob = malloc((size_t)len);
-    if (!blob) { fclose(f); if (err) *err = "out of memory"; return -1; }
-    if (fread(blob, 1, (size_t)len, f) != (size_t)len) {
-        free(blob); fclose(f);
-        if (err) *err = "short read";
+    uint8_t *blob = NULL;
+    long len = 0;
+    if (io_read_file(path, &blob, &len, err) != 0)
         return -1;
-    }
-    fclose(f);
 
     uint32_t cap = 8;
     out->sections = calloc(cap, sizeof(*out->sections));

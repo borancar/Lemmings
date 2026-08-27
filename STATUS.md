@@ -1374,6 +1374,36 @@ Note also what the frame-by-frame score could not see. Both of these agreed on
 show it was the one the port draws before it has stepped - which is exactly
 the frame a comparison is most tempted to excuse as the fade-in.
 
+### dat_load was not a debt, it was IO in the wrong file
+
+`dat_load` carried a NOT TRANSCRIBED marker and the note that "the original
+streams sections through a read routine (image 0x01D2E) into one buffer as it
+goes". Nobody had read that routine, so the debt stood. Read now, it is **pure
+DOS**: `INT 21h AH=23h` for the size through an FCB, the size shifted into
+paragraphs and checked against what is left at `ds:0x1F90`, then `INT 21h
+AH=3Fh` reading into a bump allocator at `ds:0x1F8A` which advances past a
+13-byte section header each time (image `0x01DA6`'s `add dx, 0xd`).
+
+So there is no container-parsing routine in the original to transcribe at all:
+the reading and the walking are one loop, and the reading is DOS's. The port
+reads the file whole, which is a real arrangement difference, but the arrangement
+was never the debt - not having read the routine was.
+
+The reading half now lives in `sdl_io.c` as `io_read_file`, under the note
+that file already carries: *a routine marked as ours inside the game's file is
+either IO that belongs here, or game logic nobody has transcribed*. What stays
+in `game.c` is the part that is the game's - the section headers and the
+decompressor, which `tools/verify_dat.py` checks against the original's own
+body.
+
+    owed routines: 6 -> 5
+
+The general form, and it is the second time this pass: **a routine can look
+like an untranscribed debt when the original's equivalent is not game logic at
+all.** `level_panel_build` was the other - there the original had no such
+routine, here it has one and it is DOS. Neither could be settled without going
+and reading the address that was already written down beside the marker.
+
 ### One pixel of the miner's tunnel, and four things it is not
 
 `verify_skills` scores the miner's SCREEN at 262 of 400 frames, the worst of
