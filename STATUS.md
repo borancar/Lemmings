@@ -36,6 +36,8 @@ numbers, re-measured on the current build:
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing** | **100.00%** — 0 of 224,000: background, text, palette, and the level preview |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings, **with one of the walking lemmings on screen** in three of the four. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, the whole scrolling banner, its two end lemmings, and the animation |
+| **three further levels**, frame by frame for over a minute each | `level001.dat --level 3` play **488 of 530**, panel **529**; `level002.dat --level 4` play **1,071 of 1,100**, panel **1,099**; `level002.dat --level 6` play **1,099 of 1,100**, panel **1,099**. What is left is named: 42 frames of the OPENING cursor on the first (the guest does not poll the mouse until frame 42, its cross-hair sitting at 135..148 and jumping to 145..158), and 28 frames of THREE pixels on the second, where a sprite's inked column lands exactly on x 319 |
+| **the nuke**, driven by a double click | record **0 of 557 frames**; screen exact on 496, the residue being the explosion's DEBRIS over its crater |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical |
 | the LVL header parse | 15 fields, all agreeing |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
@@ -45,8 +47,9 @@ numbers, re-measured on the current build:
 | **pace** | the level 170 frames in 10.01s against 17/s; the menu 350 passes in 5.01s against 70 Hz (`tools/verify_pace.py`) |
 | tests | `make test` 134 checks across two binaries, `make sanitize` clean under ASan + UBSan |
 
-**Transcription is a different claim from any of the above, and it is 87
-routines with an address, 48 marked the port's own and 9 still owed** — counted by `reconstruct/tests/provenance.py`, which reads
+**Transcription is a different claim from any of the above, and it is 153
+routines with an address, 56 marked the port's own and 7 still owed, with
+NONE unaccounted for** — counted by `reconstruct/tests/provenance.py`, which reads
 the comment immediately above every function and fails while any of them says
 neither an address nor an explicit "not transcribed". It runs in `make test`. The port renders these screens from the file formats and from
 geometry measured against the original — that is real evidence, and it is not
