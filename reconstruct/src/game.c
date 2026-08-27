@@ -1073,6 +1073,19 @@ void level_status_reset(const level *lv)
      * port and the original disagree on exactly one frame in every
      * seventeen - 850, 867, 884 - and agree on every frame either side. */
     g_tick      = LEVEL_FRAMES_PER_SECOND + 1;
+    /* AND THE 'IN' PERCENTAGE IS WRITTEN BEFORE THE LOOP RUNS. Image 0x03AC8
+     * has two callers: image 0x001C2, inside the play loop, and image
+     * 0x0049E, in the level's set-up - after image 0x00495 draws and image
+     * 0x00498 puts the objects up, and before the loop is entered at all.
+     *
+     * So the original's very first frame already carries it, and the port's
+     * did not: level_frame_step has it, and frame 0 is the level before
+     * anything steps. Fifty pixels of panel on one frame of 1,100.
+     *
+     * Nothing is saved yet, so this is level_saved_percent's own answer at
+     * the start rather than a hard zero - the routine is the game's and the
+     * number should come from it. */
+    level_status_in(level_saved_percent(lv));   /* image 0x0049E */
 }
 
 /* THE NAMES, transcribed from image 0x0E34F (ds:0x48BF): twelve of seven
@@ -6822,9 +6835,6 @@ void level_play_step(level_anim *st, const level *lv, lemming *lem,
      * Measured: the port's trap region matched the original's shifted by
      * exactly +1 on 19 of 33 frames and by nothing at any other shift. */
     level_anim_step(st, lv);                    /* image 0x07C1E */
-    /* level_frame_step wrote the RELEASED count; the panel wants the LIVE
-     * one, so this goes after the simulation has had its say. */
-    level_status_out(lemmings_live(lem, *released));
 }
 
 /* And the drawing half: the objects at image 0x07BB8, which image 0x01B9
@@ -6838,8 +6848,29 @@ void level_play_draw(level_anim *st, const level *lv,
 {
     level_anim_draw(st, lv, obj_sec, obj_len, pix, w, h, 0);
     if (!lem_sec) return;
-    for (uint8_t k = 0; k < released && k < LEMMING_MAX; k++)
+    /* THE 'OUT' COUNT IS THE DRAW'S, not the step's. Image 0x03645's loop
+     * skips a lemming whose [di+0x26] is 0xFF and counts the rest into
+     * ds:0x45 as it draws them, and image 0x03684 hands that count straight
+     * to the three-digit routine with si = ds:0x2095 - the status line's
+     * column 22.
+     *
+     * The port had it at the tail of level_play_step, which agreed on every
+     * frame but the FIRST: frame 0 is the level before anything moves, so it
+     * draws without stepping, and the original's own first frame already has
+     * both counters while the port's had neither. 100 pixels of panel, on
+     * one frame of 1,100, and the fix is a routine sitting in the wrong half
+     * of the loop rather than anything about what it computes.
+     *
+     * Same shape as the object animation two functions up - image 0x07C1E is
+     * part of the draw as well, and moving it there is what fixed
+     * level002/6. */
+    uint8_t out = 0;
+    for (uint8_t k = 0; k < released && k < LEMMING_MAX; k++) {
+        if (lem[k].alive == 0xFF) continue;     /* image 0x03647 */
+        out++;                                  /* image 0x0364D */
         lemming_draw(pix, w, h, view_x, lem_sec, lem_len, &lem[k]);
+    }
+    level_status_out(out);                      /* image 0x03684 */
 }
 
 /* THE CONTROL PANEL, one frame of it.

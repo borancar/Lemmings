@@ -1339,6 +1339,41 @@ problem, and they were the same run. A harness that feeds the two sides
 different inputs reports the difference as the port's, and there is no way to
 tell that from the score - only from asking what the harness set.
 
+### All three levels are exact, panel included - and the last two faults were
+### routines sitting in the wrong half of the loop
+
+    level001.dat --level 3     530 of 530 play area,   530 of 530 panel
+    level002.dat --level 4   1,100 of 1,100 play area, 1,100 of 1,100 panel
+    level002.dat --level 6   1,100 of 1,100 play area, 1,100 of 1,100 panel
+
+Zero differing pixels on every frame of all three, over a minute and a half of
+play each. The last hundred pixels were both on **frame 0** - the level as it
+stands before anything moves, which the port draws without stepping - and both
+were a routine the port ran in the step where the original runs it elsewhere:
+
+- **the OUT count belongs to the DRAW.** Image `0x03645`'s loop skips a
+  lemming whose `[di+0x26]` is 0xFF and counts the rest into `ds:0x45` as it
+  draws them; image `0x03684` hands that count to the three-digit routine with
+  `si = ds:0x2095`. The port computed it at the tail of `level_play_step`,
+  which agrees on every frame except the first.
+- **the IN percentage is written before the loop starts.** Image `0x03AC8` has
+  exactly two callers - image `0x001C2` inside the play loop, and image
+  `0x0049E` in the level's set-up, after image `0x00495` draws and image
+  `0x00498` puts the objects up. The port had only the first.
+
+This is the third time on this project that a routine has turned out to live
+in the draw rather than the step - the object animation at image `0x07C1E`
+was the second, and it is what fixed level002/6. **When a difference appears
+on the first frame and nowhere else, the question is not what the routine
+computes but which half of the loop it is called from**, and finding the
+answer means finding the original's callers rather than reading the routine
+itself.
+
+Note also what the frame-by-frame score could not see. Both of these agreed on
+1,099 frames out of 1,100 and were still wrong, and the only frame that could
+show it was the one the port draws before it has stepped - which is exactly
+the frame a comparison is most tempted to excuse as the fade-in.
+
 ### Two cross-hairs in different places is not a residue, it is a harness
 
 All three of the levels being chased now score their play area **exact on
