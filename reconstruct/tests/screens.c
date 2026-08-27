@@ -1153,6 +1153,52 @@ int main(int argc, char **argv)
     ck("menu_hotspots fills its array",
        spots[MENU_HOTSPOTS - 1].w == MENU_W, "last hotspot not written");
 
+    /* THE NUKE IS A DOUBLE CLICK, AND IT HAS TO STAY ONE ACROSS LEVELS.
+     *
+     * Nothing here tested it, and it broke: the four bytes image 0x00438,
+     * image 0x0043B and image 0x0044F's wipe clear at a level start were not
+     * reset by the port, so they carried over and a single click nuked. A
+     * player found it after playing several levels in a row.
+     *
+     * The middle case is the one that matters. Image 0x04007 is a SIGNED
+     * compare - the signedness is deliberate, so a wrapped counter is let
+     * through - which means a STALE `last` gives a negative difference and
+     * the first press is accepted. Ticking past 128 with a stale last is
+     * exactly the state a second level starts in. */
+    {
+        level_start_reset();
+        for (int i = 0; i < 40; i++) level_tick();
+        ck("a first nuke press is refused",
+           level_nuke_click() == 0, "one click armed the nuke");
+        ck("and a second, straight after, fires it",
+           level_nuke_click() == 1, "the double click did not take");
+        ck("and the nuke is now running", level_nuking() == 0xFF,
+           "ds:0x4B was not set");
+
+        /* A NEW LEVEL CLEARS ds:0x4B. Without this a nuked level left it at
+         * 0xFF and the next one began its cascade the moment it started. */
+        level_start_reset();
+        ck("a new level clears the nuke", level_nuking() == 0,
+           "ds:0x4B carried over - the next level nukes itself");
+
+        /* AND THE QUIRK IS ASSERTED, not corrected. Image 0x04007 is a
+         * SIGNED compare, so a gap of 128 or more reads as negative and is
+         * accepted ON ITS OWN: for half of every fifteen seconds one click
+         * nukes the level. The original does this - it lit its first fuse on
+         * the first press of the reference run, at the same frame and with
+         * the same 79 as the port.
+         *
+         * It is asserted so that nobody "fixes" it into an unsigned compare
+         * later. What was actually wrong was the four bytes above not being
+         * cleared, which made this window turn up at random rather than on
+         * the original's own schedule. */
+        for (int i = 0; i < 200; i++) level_tick();
+        ck("one press 200 frames in nukes on its own - the original's quirk",
+           level_nuke_click() == 1,
+           "image 0x04007's signed compare has been made unsigned");
+        level_start_reset();
+    }
+
     /* THE ONE-WAY TILES CARRY ONE COLOUR, AND IT IS NOT THE ONE ON SCREEN.
      *
      * game.c's object_pixel_value says an only-on-terrain object lands as

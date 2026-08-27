@@ -1719,6 +1719,30 @@ void level_start_reset(void)
     g_level_frame  = 0;
     g_level_phase  = 4;
     g_entrance_open = 0;
+    /* AND THE NUKE'S FOUR BYTES, which nothing here reset - so they carried
+     * across levels and the double click became a SINGLE one. A player found
+     * it after several levels in a row.
+     *
+     * Image 0x00438 clears ds:0x1FD4 and image 0x0043B clears ds:0x1FD3
+     * explicitly, and image 0x0044F then wipes ds:0x12 for 0x42A0 bytes -
+     * through 0x42B1 - which covers ds:0x4B and ds:0x4C as well.
+     *
+     * WHY IT SHOWED AS A SINGLE CLICK. Image 0x04007 is a SIGNED compare, so
+     * the test is `(int8_t)(tick - last) > 5`. With `last` left over from an
+     * earlier level and `tick` a free-running byte, that difference is
+     * negative about half the time - and a negative difference is ACCEPTED,
+     * because the signedness is there to let a wrapped counter through. The
+     * first press then nukes. Fresh from a level start both are zero, the
+     * difference is 0, and... it would nuke too, which is why image 0x0043B
+     * clearing the TICK matters as much as clearing the last press: the tick
+     * has to climb past 5 before the first press can be refused.
+     *
+     * ds:0x4B is the worse one. Nuke a level and it stayed 0xFF, so the NEXT
+     * level began its cascade the moment it started. */
+    g_nuke_last = 0;                /* image 0x00438: ds:0x1FD4 */
+    g_nuke_tick = 0;                /* image 0x0043B: ds:0x1FD3 */
+    g_nuke      = 0;                /* image 0x0044F's wipe: ds:0x4B */
+    g_nuke_at   = 0;                /*                       ds:0x4C */
 }
 
 /* THE PORT'S OWN, and only because these two bytes are `ds:0x55` and

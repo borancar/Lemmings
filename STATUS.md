@@ -995,6 +995,24 @@ this - it lit its first fuse on the first press of the reference run, at the
 same frame and with the same 79 as the port - so it is transcribed rather than
 corrected.
 
+**AND ITS FOUR BYTES WERE NEVER RESET**, which is what a player actually hit:
+after several levels in a row the nuke "became a single click". The quirk
+above is the original's and is on its own schedule; carrying the state over
+made the accept window turn up at random instead.
+
+A level start clears them - image `0x00438` clears ds:0x1FD4 and image
+`0x0043B` clears ds:0x1FD3 explicitly, and image `0x0044F` then wipes ds:0x12
+for 0x42A0 bytes, through 0x42B1, which covers ds:0x4B and ds:0x4C. The port
+reset none of the four.
+
+`ds:0x4B` is the worse one: nuke a level and it stayed 0xFF, so **the next
+level began its cascade the moment it started.**
+
+`reconstruct/tests/screens.c` now tests the double click, which nothing did -
+and it ASSERTS the signed-compare quirk rather than contradicting it, so that
+nobody turns image `0x04007` into an unsigned compare later and breaks a match
+that is already proven against the reference run.
+
 Then image `0x04013` copies the released count over the level's total, so the
 entrance stops and image `0x001EA`'s "everyone released and none alive" can be
 reached at all.

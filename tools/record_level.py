@@ -139,20 +139,24 @@ def install(m):
         # cue is simply how many times 0x0D has been entered: the first is
         # the "PC Lemmings Loading" screen, the second is the level.
         modes = getattr(m, "video_modes", [])
-        # A CAPTURE THAT IS DONE CANNOT STOP THE RUN, and it is worth saying
-        # why rather than trying again. `uc.emu_stop()` from inside a hook
-        # ends the current `emu_start`, but the emulator's own main loop is a
-        # `while running:` that calls `emu_start` again every pass and only
-        # leaves on `--run-seconds`. So a hook cannot end the process; it just
-        # gives up one slice, which the loop hands straight back.
-        #
-        # That is why a four-frame capture still costs its whole --seconds
-        # budget. It was tried, measured against the ceiling, and reverted -
-        # a comment claiming an optimisation that does not happen is worse
-        # than no change, because the next reader believes the comment instead
-        # of the clock. Ending early would need an additive hook UPSTREAM in
-        # dos_emulator, not a change here.
-        if not modes or modes[-1] != 0x0D or st["n"] >= want:
+        if st["n"] >= want:
+            # DONE - ask the run to end rather than paying out the clock.
+            #
+            # `uc.emu_stop()` from inside a hook does NOT do this: it ends the
+            # current `emu_start` and the emulator's main loop calls it again
+            # on the next pass. That was tried here, measured against the
+            # ceiling, and reverted.
+            #
+            # `m.stop_requested` is the additive hook added upstream for it -
+            # the main loop checks it beside its own `--run-seconds` test, and
+            # `getattr` means a machine that never sets it behaves exactly as
+            # before. A four-frame capture cost five minutes without it.
+            #
+            # Only once the count is REACHED, so a run cut off at its ceiling
+            # still reports that rather than being confused with this.
+            m.stop_requested = True
+            return
+        if not modes or modes[-1] != 0x0D:
             return
         if sum(1 for v in modes if v == 0x0D) < 2:
             return
