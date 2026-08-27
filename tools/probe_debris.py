@@ -24,6 +24,12 @@ import os
 
 FRAME_END = 0x018F
 VGA_LO, VGA_HI = 0xA0000, 0xB0000
+# WHAT TO WATCH. The screen answered "who draws the debris" - image 0x06E83,
+# eighty pixels a frame from a row at ds:0x2788. That row is filled at RUN
+# TIME, so the next question is who fills it, and it is the same question one
+# level down: point the same differencing at the TABLE instead of the screen.
+WATCH = os.environ.get("LEM_DEBRIS_WATCH", "screen")
+TABLE_OFF, TABLE_LEN = 0x2788, 160 * 56
 QUIET = (400, 450)
 BLAST = (505, 545)
 
@@ -49,9 +55,17 @@ def install(m):
             report()
             raise SystemExit(0)
 
+    dg = None
+
     def on_write(uc, access, address, size, value, _):
-        if not (VGA_LO <= address < VGA_HI):
-            return
+        if WATCH == "screen":
+            if not (VGA_LO <= address < VGA_HI):
+                return
+        else:
+            from unicorn.x86_const import UC_X86_REG_DS
+            lo = uc.reg_read(UC_X86_REG_DS) * 16 + TABLE_OFF
+            if not (lo <= address < lo + TABLE_LEN):
+                return
         n = st["n"]
         if QUIET[0] <= n < QUIET[1]:
             bucket = quiet
