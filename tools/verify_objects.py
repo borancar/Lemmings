@@ -61,10 +61,9 @@ def main():
     # transcribed into render_objects from image 0x0953E moved the score by
     # nothing - not because they were unverifiable, but because the check did
     # not reach them.
-    subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
-                    "--data", "lemming1.pc", "--baked", "--raw", raw],
-                   cwd=ROOT, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL)
+    baked = subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
+                            "--data", "lemming1.pc", "--baked", "--raw", raw],
+                           cwd=ROOT, capture_output=True, text=True)
 
     # AND THE SAME LEVEL WITHOUT THEM, so the object pixels can be scored on
     # their own. The whole bitmap is 243,936 pixels and barely 800 of them are
@@ -128,6 +127,39 @@ def main():
         return 2
     if diff:
         print(f"    first at level {first}")
+
+    # AND WHAT THIS RUN ACTUALLY EXERCISED. The level is the game's own
+    # first, so the score above is a claim about whatever objects "Just dig!"
+    # happens to carry and about nothing else. render_objects has rules that
+    # only some objects reach - no-overwrite, only-on-terrain, and the
+    # constant colour an only-on-terrain blit writes - and a level without
+    # one of them scores it as neither passing nor failing.
+    #
+    # Printing it costs a line and stops this reading as a check of the
+    # routine rather than of one level's worth of it. tools/coverage.py makes
+    # the same point across the frame-by-frame suite.
+    line = ""
+    for ln in (baked.stdout or "").splitlines():
+        if "object effects" in ln:
+            line = ln.strip()
+            break
+    if line:
+        body = line.split(":", 1)[1]
+        ids = sorted({t.split("=")[0][t.split("=")[0].index("id"):]
+                      for t in body.split() if "id" in t})
+        print("    this level carried  %s" % " ".join(ids))
+        for flag, letter, what in (("no-overwrite", "N", "image 0x09595"),
+                                   ("only-on-terrain", "T", "image 0x09709")):
+            n = sum(1 for t in body.split() if t.endswith(letter))
+            if n:
+                print("    %-16s %d object(s), so %s was exercised"
+                      % (flag, n, what))
+            else:
+                print("    %-16s NOT PRESENT - this run says nothing about %s"
+                      % (flag, what))
+    else:
+        print("    could not read the level's object list, so this run "
+              "cannot say what it exercised")
     return 1 if diff else 0
 
 

@@ -190,11 +190,14 @@ static int render_level(const char *data, const char *file, uint32_t which,
         snprintf(gp, sizeof(gp), "%s/ground%uo.dat", data,
                  (unsigned)(lv.graphics_set & 0x0F));
         if (ground_load(gp, &gg, &ge) == 0) {
-            printf("  object effects:");
+            printf("  object effects (N no-overwrite, T only-on-terrain):");
             for (uint16_t i = 0; i < lv.num_objects; i++) {
                 uint8_t id = lv.objects[i].id;
                 if (id >= GROUND_OBJECTS) continue;
-                printf(" [%u]id%u=%u", i, id, gg.objects[id].trigger_effect);
+                printf(" [%u]id%u=%u%s%s", i, id,
+                       gg.objects[id].trigger_effect,
+                       lv.objects[i].no_overwrite ? "N" : "",
+                       lv.objects[i].only_on_terrain ? "T" : "");
             }
             printf("\n");
         }
