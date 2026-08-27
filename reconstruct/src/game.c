@@ -7136,6 +7136,41 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
                    MINIMAP_AT_X, VIEWPORT_AT_Y);
 }
 
+/* MAY AN OBJECT'S PIXEL GO DOWN HERE - the LVL's two modifier bits, in one
+ * place because they have twice drifted apart in two.
+ *
+ * The port draws objects from two routines: level_anim_draw, which is what
+ * the game displays, and render_objects, which bakes them into a composed
+ * level. Each has its own pixel loop, and a rule added to one has twice not
+ * reached the other:
+ *
+ *   the NO-OVERWRITE test was `dst & 8` in one and `*dst != 0` in the other.
+ *   Invisible, because no object pixel in the whole game lands on an
+ *   attribute of 1..7 - the only place the two disagree.
+ *   the ONLY-ON-TERRAIN test was in render_objects and MISSING from
+ *   level_anim_draw, so a one-way wall's arrows were drawn over the black
+ *   beside their block. A player sent screenshots.
+ *
+ * Both rules are the blitter's, and both come down to PLANE 3:
+ *
+ *   image 0x0953E  bp bit 15, no-overwrite. Image 0x09573 sets read mode 1
+ *                  with Color Compare 8 and Color Don't Care 8, so a read
+ *                  gives a bit per pixel saying whether plane 3 is set;
+ *                  image 0x09595 inverts it into the bit mask. Written only
+ *                  where plane 3 is CLEAR.
+ *   image 0x0969C  bp bit 14, only-on-terrain. Same read, but image 0x09709
+ *                  ANDs it with the object's own mask instead of inverting.
+ *                  Written only where plane 3 is SET.
+ *
+ * Plane 3 is bit 3 of the attribute, which is why both are `& 8` and neither
+ * is "something is already there". */
+static int object_pixel_allowed(uint8_t dst, const level_object *o)
+{
+    if (o->only_on_terrain && (dst & 8) == 0) return 0;  /* image 0x09709 */
+    if (o->no_overwrite    && (dst & 8) != 0) return 0;  /* image 0x09595 */
+    return 1;
+}
+
 /* Image 0x07BB8.
  *
  *     ax = be16([di]) ; x from the LEVEL's own list, unbiased
@@ -7205,9 +7240,7 @@ void level_anim_draw(const level_anim *st, const level *lv,
                  * terrain AND the object's own mask. So the arrows go down
                  * only where plane 3 is already set. */
                 uint8_t *px = &dst[(size_t)y * dst_w + (uint16_t)x];
-                if (o->only_on_terrain && (*px & 8) == 0)  /* image 0x09709 */
-                    continue;
-                if (o->no_overwrite && (*px & 8))
+                if (!object_pixel_allowed(*px, o))
                     continue;
                 *px = planar(object_sec, ink, plane, stride, 4, c, r);
             }
@@ -7297,37 +7330,10 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                     continue;
 
                 uint8_t *dst = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
-                if (o->only_on_terrain && (*dst & 8) == 0)
-                    continue;
-                /* PLANE 3, not "anything is already there" - image 0x0953E.
-                 *
-                 * A blit carrying bp bit 15 reaches image 0x09573, which sets
-                 * the graphics controller to READ MODE 1 (Mode = 8) with
-                 * Color Compare = 8 and Color Don't Care = 8. A read then
-                 * gives a bit per pixel saying whether its PLANE 3 is set,
-                 * nothing else compared; image 0x09595 inverts that and image
-                 * 0x09599 makes it the bit mask, so the object goes down
-                 * wherever plane 3 is CLEAR.
-                 *
-                 * This tested `*dst != 0` - anything at all - and the two
-                 * differ on every pixel whose attribute is 1..7: bit 3 clear,
-                 * so the original writes and the port skipped. That is
-                 * exactly the shape of the residue tools/verify_objects.py
-                 * reports, guest with ink where the port has none.
-                 *
-                 * level_anim_draw already had this right and says why in its
-                 * own comment - "terrain is the only thing with bit 3 set,
-                 * which is what makes the test exact rather than 'something
-                 * is already there'". Two sites, one rule, and only one of
-                 * them had been corrected.
-                 *
-                 * UNVERIFIED, and measured to be so: with this rule and with
-                 * the old one, tools/verify_objects.py scores the same
-                 * 243,936 of 243,936. "Just dig!" has no object pixel over an
-                 * attribute of 1..7, which is the only place the two can
-                 * disagree, so nothing here can tell them apart. Kept because
-                 * it is what image 0x0953E does. */
-                if (o->no_overwrite && (*dst & 8))
+                /* THE SAME TEST level_anim_draw uses - see
+                 * object_pixel_allowed, which exists because these two loops
+                 * had drifted apart twice. */
+                if (!object_pixel_allowed(*dst, o))
                     continue;
                 *dst = pix[si];
             }
