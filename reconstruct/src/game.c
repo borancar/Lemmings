@@ -2237,6 +2237,18 @@ void lem_exit_start(lemming *a)
     a->hot_x = -8;                         /* image 0x02F5F */
     a->hot_y = -13;                        /* image 0x02F64 */
     a->state = 0;
+    a->extra &= 1;                         /* image 0x02F77 */
+    /* AND IT IS HEARD. Image 0x02F7B..0x02F9F is the same pair of gates
+     * every sound site here has, and this routine has BOTH halves of it:
+     * image 0x02F8C asks INT 60h for 0x02 when ds:0x2010 is NOT 0xFF - the
+     * machine with no driver - and image 0x02F9F asks INT 61h for 0x10 when
+     * it is. sound_request's first argument is which of the two. */
+    if (g_snd_driver != 0xFF) {
+        if (sound_enabled(1))              /* image 0x02F82 */
+            sound_request(3, 0x02);        /* image 0x02F89 */
+    } else if (sound_enabled(3)) {         /* image 0x02F95 */
+        sound_request(4, 0x10);            /* image 0x02F9C */
+    }
 }
 
 /* Transcribed from image 0x02326: eight frames, then saved and gone. */
@@ -4926,6 +4938,18 @@ void lemmings_step(lemming *lem, uint8_t n,
                 if (!level_object_busy(obj)) {
                     level_object_trigger(obj);       /* image 0x02FCE */
                     a->alive = 0xFF;                 /* image 0x02FD1 */
+                    /* AND THE TRAP'S OWN NOISE. Image 0x02FE9 takes the id
+                     * from the OBJECT - byte 0x1B of its record - not from
+                     * the effect, and image 0x02FEE makes zero mean silence.
+                     * `obj` is the trigger byte's high nibble, which is the
+                     * index image 0x02FB6 multiplies by 0x1C. */
+                    if (g_snd_driver == 0xFF && sound_enabled(3)     /* 0x02FDF */
+                        && obj < trig_lv->num_objects) {
+                        const ground_object *tgo =
+                            &trig_g->objects[trig_lv->objects[obj].id & 0x0F];
+                        if (tgo->trigger_sound)      /* image 0x02FEC */
+                            sound_request(4, tgo->trigger_sound);  /* 0x02FF3 */
+                    }
                 }
             } else if (eff == 5) {
                 /* WATER, image 0x02FF8. The flag word is ASSIGNED 0x1000,
@@ -4937,6 +4961,13 @@ void lemmings_step(lemming *lem, uint8_t n,
                     a->hot_y = -10;
                     a->state = 0;                    /* image 0x03029 */
                     a->extra &= 1;                   /* image 0x03037 */
+                    /* THE DROWNING, image 0x0304C - the last act of this
+                     * routine, immediately before image 0x0304F begins the
+                     * fire's. Two handlers back to back, each ending in its
+                     * own sound: exactly the layout that got 0x0D attached
+                     * to the release. */
+                    if (g_snd_driver == 0xFF && sound_enabled(3))
+                        sound_request(4, 0x11);      /* image 0x03049 */
                 }
             } else if (eff == 6) {
                 /* Image 0x0304F, the other one - fourteen frames and gone.

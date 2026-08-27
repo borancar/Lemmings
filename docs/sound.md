@@ -462,3 +462,79 @@ routine is decisive.
 `tests/screens.c` now asserts the release makes no sound. Nothing could have
 caught this before: the sound sites had never been scored against anything at
 all, only read.
+
+## Every sound site, attributed by its routine's boundaries
+
+After 0x0D was found attached to the wrong routine, all thirty-eight sites
+were re-attributed mechanically - walk back to the previous `ret` rather than
+look at what is nearby:
+
+    site       int  AH AL   routine
+    0x00391    61h  04 03   0x00380   the entrance opening
+    0x003AA    61h  04 02   0x00394   the trapdoor, with ds:0x55 = 0xFF
+    0x003B9    61h  03 --   0x003AD   the tune, from ds:0x54
+    0x02F8C    60h  03 02   0x02F3B   THE EXIT, no-driver fallback
+    0x02F9F    61h  04 10   0x02F3B   THE EXIT
+    0x02FF5    61h  04 --   0x02FB6   A TRAP, id from the OBJECT
+    0x0304C    61h  04 11   0x02FF8   DROWNING
+    0x030A3    61h  04 0D   0x0304F   THE FIRE - not the release
+    0x031F6    60h  03 13   0x031C4   a skill assigned, fallback
+    0x03209    61h  04 04   0x031C4   a skill assigned
+    0x03298    61h  04 12   0x0320D   the digger's own guard
+
+The exit is the clearest illustration of the shape: image 0x02F7B tests
+ds:0x2010 and takes INT 60h with id 0x02 when NO driver answered, then image
+0x02F8E tests it the other way and takes INT 61h with id 0x10 when one did.
+Two ids for one event, and which one is asked for depends on the machine.
+
+## The trap's sound is the OBJECT's, not the effect's
+
+Image 0x02FE9 reads `[di+0x1b]`, where `di` is `0x17CB + index * 0x1C` - byte
+0x1B of the object's own record, which is byte 0x1B of its GROUNDxO.DAT
+entry. Image 0x02FEE drops the sound when it is zero.
+
+The file agrees, and this is a check rather than a reading:
+
+    ground0o  obj6 eff=4 snd=15   obj8 eff=4 snd=7   obj10 eff=4 snd=14
+    ground2o  obj8 eff=4 snd=7
+    ground3o  obj8 eff=4 snd=9    obj9 eff=4 snd=7   obj10 eff=4 snd=7
+    ground4o  obj7 eff=4 snd=9    obj9 eff=4 snd=6   obj10 eff=4 snd=6
+
+**Every object with effect 4 has a sound and no other object has one.** Five
+different noises across the sets, so two traps in one graphics set differ from
+each other - which no table keyed on the effect could express. The port's
+parser stopped at byte 0x14 and never read it; `tests/screens.c` now asserts
+the relation, because it is the premise the code rests on.
+
+## Three or four voices IS the music
+
+The port was thought to be dropping voices. It is not: the tune headers say
+so. Reading each tune's descriptor - word, instrument table, tempo, channel
+count - across all twenty-one:
+
+    tunes with 3 channels : 15
+    tunes with 4 channels : 6
+
+and the port's own streams key on exactly those channels, never fewer. For
+tune 6 the port and the original address the identical set - 0, 1, 2, 3 for
+the music and 8 for an effect - with identical key-on counts:
+
+    key-ons per channel   {0: 600, 1: 483, 2: 540, 3: 75, 8: 38}   both sides
+
+**But only tune 6 has ever been compared against the original.** That is one
+value of a parameter that takes twenty-one, and this file already records what
+that is worth.
+
+### And a WAV diff cannot settle it
+
+Rendering both streams and comparing samples reported **99.3% differing** on
+streams that agree write for write. Two causes, both the instrument:
+
+- the original's capture still carried its detect, taken at the 18.2 Hz
+  divisor a PC boots with, so the replay rendered fifteen seconds of silence
+  in front of the music
+- the port's log hard-codes divisor 12291 where that run measured 12261, and
+  a 0.24% difference in the tick length shifts every sample
+
+Audio that sounds identical differs everywhere under a sample compare. **The
+register stream is the instrument for this; a waveform is not.**

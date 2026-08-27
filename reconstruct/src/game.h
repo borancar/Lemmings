@@ -118,6 +118,13 @@ typedef struct {
     uint8_t  trigger_width;     /* +0x12 */
     uint8_t  trigger_height;    /* +0x13 */
     uint8_t  trigger_effect;    /* +0x14 */
+    /* WHAT IT SOUNDS LIKE, and it is per OBJECT rather than per effect.
+     * Image 0x02FE9 reads `[di+0x1b]` out of the runtime record at
+     * ds:0x17CB, which is this entry's byte 0x1B, and image 0x02FEE drops
+     * the sound entirely when it is zero. So two traps in one graphics set
+     * make different noises, and a trap with no sound makes none - neither
+     * of which a per-effect table could express. */
+    uint8_t  trigger_sound;     /* +0x1B */
 } ground_object;
 
 /* The effects this port acts on. Image 0x02F1x dispatches them as a chain of

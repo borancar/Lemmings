@@ -1620,6 +1620,7 @@ int ground_load(const char *path, ground *g, const char **err)
         o->trigger_effect  = e[0x14];
         o->frames_base_loc = le16(e + 0x15);
         o->preview_frame   = e[0x17];
+        o->trigger_sound   = e[0x1B];
     }
 
     /* 64 terrain entries of 8 bytes, from 0x1C0. */

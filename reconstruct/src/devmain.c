@@ -544,7 +544,14 @@ static int opl_replay(const char *in_path, const char *wav_path)
         }
         if (div == 0) div = 0x10000;
         double t = (double)tick * (double)div / 1193182.0;
+        /* Rebase on the FIRST write. A capture's ticks are the guest's own
+         * counter and start wherever its run did - the original's music
+         * begins around tick 1451, which rendered fifteen seconds of silence
+         * in front of it and made two identical streams compare as 99.3%
+         * different. The gaps are the claim; the absolute count is not. */
         if (prev_t < 0.0) prev_t = t;
+        t -= prev_t;
+        if (t < 0.0) t = 0.0;
 
         /* render the gap since the previous write, then apply this one */
         if (t > now) {

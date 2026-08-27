@@ -1415,6 +1415,42 @@ int main(int argc, char **argv)
         }
     }
 
+    /* ---- the trap's sound is per OBJECT, and only traps have one ----
+     *
+     * Image 0x02FE9 reads the id from byte 0x1B of the object's record
+     * rather than from a table keyed on the effect, and image 0x02FEE makes
+     * zero mean silence. That is the premise the trap's sound rests on, and
+     * it is a fact about the FILE, so it is checked here rather than
+     * asserted in a comment - the same reason the one-way tiles are checked
+     * above.
+     *
+     * Every object across the five graphics sets that declares effect 4 has
+     * a sound, and every object that declares a sound has effect 4. A table
+     * keyed on the effect could not express that traps differ from each
+     * other: the sounds run 6, 7, 9, 14 and 15. */
+    {
+        int bad = 0, traps = 0;
+        for (int gi = 0; gi < 5; gi++) {
+            char gp[1024];
+            ground gg;
+            const char *ge = NULL;
+            snprintf(gp, sizeof gp, "%s/ground%do.dat", dir, gi);
+            if (ground_load(gp, &gg, &ge) != 0) { bad = 1; break; }
+            for (int oi = 0; oi < GROUND_OBJECTS; oi++) {
+                const ground_object *o = &gg.objects[oi];
+                if (!o->width && !o->height) continue;
+                if (o->trigger_effect == 4) {
+                    traps++;
+                    if (!o->trigger_sound) bad = 1;
+                } else if (o->trigger_sound) {
+                    bad = 1;
+                }
+            }
+        }
+        ck("only traps carry a sound, and every trap has one",
+           !bad && traps >= 8, "the object table says otherwise");
+    }
+
     /* ---- the audio pump keeps up with the frame rate ----
      *
      * The device drains at 49,716 samples a second whatever the game does.
