@@ -2696,6 +2696,110 @@ int level_code_ok(const char *code)
     return code[CODE_LEN - 1] == level_code_checksum(code);
 }
 
+/* ======================================================================
+ * IMAGE 0x051A2 - TAKING A CODE BACK, and it does far more than the
+ * checksum level_code_ok stops at.
+ *
+ *   0x051A6  "BILLANDTED" - five word compares, and a match sets ds:0x1F74.
+ *            The cheat, tested before anything else and NOT part of the
+ *            validation: a wrong code that begins with it still fails below.
+ *   0x051D4  the checksum, sum of the first nine masked to a nibble, against
+ *            character 9 less the base's - the same relation level_code_ok
+ *            already has, written the other way round.
+ *   0x051EC  THE LEVEL, out of characters 7 and 8 as two nibbles:
+ *            (c7 - base7) & 0x0F  |  ((c8 - base8) & 0x0F) << 4
+ *            into ds:0x1F6B.
+ *   0x0520E  undo the rotation - `dh = 7 - (index & 7)` passes of shifting
+ *            characters 0..6 left by one, which is image 0x05042's own
+ *            rotation run backwards.
+ *   0x0523A  rebuild the index a SECOND time, one bit at a time out of the
+ *            unrotated characters 0..6, and image 0x05292 REQUIRES the two
+ *            to agree. That is what makes this a real check rather than a
+ *            round trip: the index is carried twice, by different means, and
+ *            a code that satisfies one and not the other is refused.
+ *   0x05298  ds:0x1F6E = ds:0x1F6B / 30 - the rating, the same division
+ *            level_rating does.
+ *   0x052A4  the percentage, four bits from characters 0, 2, 4 and 5, into
+ *            ds:0x491D.
+ *
+ * Returns with ZF SET on success - image 0x052D1's `sub ah,ah` - and the
+ * caller at image 0x04999 is a `jne`. Here that is 1 for accepted.
+ *
+ * THE PORT ONLY HAD THE CHECKSUM, and nothing set ds:0x1F6B, so typing a
+ * code changed nothing. A player found that too.
+ * ====================================================================== */
+#define CODE_CHEAT "BILLANDTED"          /* image 0x051A6 */
+static uint8_t g_cheat;                  /* ds:0x1F74 */
+static uint8_t g_code_pct;               /* ds:0x491D */
+
+uint8_t level_cheat_on(void)  { return g_cheat; }
+uint8_t level_code_pct(void)  { return g_code_pct; }
+
+/* One bit of the index out of an unrotated character - image 0x0523A's
+ * chain. Each character contributes one bit, at its own shift. */
+static uint8_t code_bit(const char *c, uint8_t i, int8_t shift, uint8_t mask)
+{
+    uint8_t al = (uint8_t)c[i];
+    al = (shift < 0) ? (uint8_t)(al >> (uint8_t)(-shift))
+                     : (uint8_t)(al << (uint8_t)shift);
+    return (uint8_t)(al & mask);
+}
+
+int level_code_apply(const char *code)
+{
+    char c[CODE_LEN];
+    uint8_t al, ah, sum, idx, dh;
+
+    for (uint8_t i = 0; i < CODE_LEN; i++) c[i] = code[i];
+
+    /* Image 0x051A6, and it is checked on the TYPED code before the rotation
+     * is undone. A match arms the cheat and then falls straight into the
+     * validation, which the cheat itself does not pass. */
+    if (!memcmp(c, CODE_CHEAT, CODE_LEN))
+        g_cheat = 0xFF;                             /* image 0x051C8 */
+
+    sum = 0;                                        /* image 0x051D4 */
+    for (uint8_t i = 0; i < CODE_LEN - 1; i++)
+        sum = (uint8_t)(sum + (uint8_t)c[i]);
+    sum &= 0x0F;                                    /* image 0x051DD */
+    ah = (uint8_t)((uint8_t)c[9] - sum);            /* image 0x051E2 */
+    if ((uint8_t)CODE_BASE[9] != ah) return 0;      /* image 0x051E4 */
+
+    /* Image 0x051EC: the level, as two nibbles in characters 7 and 8. */
+    al = (uint8_t)((uint8_t)c[7] - (uint8_t)CODE_BASE[7]);
+    ah = (uint8_t)((uint8_t)c[8] - (uint8_t)CODE_BASE[8]);
+    al &= 0x0F; ah &= 0x0F;                         /* image 0x051F8 */
+    idx = (uint8_t)(al | (uint8_t)(ah << 4));       /* image 0x05203 */
+
+    /* Image 0x0520E: undo image 0x05042's rotation, 7 - (index & 7) times. */
+    dh = (uint8_t)(7 - (idx & 7));                  /* image 0x05208 */
+    for (int8_t n = (int8_t)dh; n >= 0; n--) {      /* image 0x05238's jns */
+        char first = c[0];
+        for (uint8_t i = 0; i < 6; i++) c[i] = c[i + 1];
+        c[6] = first;
+    }
+
+    /* Image 0x0523A: and now the index AGAIN, a bit per character. */
+    ah  = code_bit(c, 0, -3, 0x01);                 /* image 0x0523C */
+    ah |= code_bit(c, 1, -1, 0x02);                 /* image 0x05248 */
+    ah |= code_bit(c, 2,  0, 0x04);                 /* image 0x05251 */
+    ah |= code_bit(c, 3,  3, 0x08);                 /* image 0x05258 */
+    ah |= code_bit(c, 4,  3, 0x10);                 /* image 0x05265 */
+    ah |= code_bit(c, 5,  5, 0x20);                 /* image 0x05272 */
+    ah |= code_bit(c, 6,  4, 0xC0);                 /* image 0x05283 */
+    if (ah != idx) return 0;                        /* image 0x05292 */
+
+    level_index_set(idx);                           /* image 0x05205 / 0x052A1 */
+
+    /* Image 0x052A4: the percentage, four bits from four characters. */
+    ah  = code_bit(c, 0, -1, 0x01);
+    ah |= code_bit(c, 2,  1, 0x02);
+    ah |= code_bit(c, 4,  2, 0x04);
+    ah |= code_bit(c, 5,  2, 0x08);
+    g_code_pct = ah;                                /* image 0x052CD */
+    return 1;                                       /* image 0x052D1 */
+}
+
 /* THE RESULTS SCREEN'S TEXT - transcribed from image 0x048BD.
  *
  * The screen's COMPOSITION is not read: image 0x048F3 hands a record at

@@ -40,6 +40,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import lemmings   # noqa: E402  (after sys.path)
 CASES = os.path.join(ROOT, "out", "code.json")
+CASES_IN = os.path.join(ROOT, "out", "codein.json")
 
 
 def build():
@@ -119,8 +120,50 @@ def main():
     print(f"    and {round_trip}/{len(cases)} pass image 0x051D4's checksum "
           f"- which a WRONG table also does")
 
-    if bad:
-        print(f"\n  {len(bad)} of {len(cases)} differ\n")
+    # ---------------------------------------------------------------- and
+    # THE OTHER DIRECTION, image 0x051A2, which is a real check rather than
+    # the round trip above: tools/probe_codein.py drives the ORIGINAL's own
+    # validator and records what it decided, and this compares the port's
+    # against it - the verdict, the level index it set, the rating and the
+    # percentage.
+    #
+    # The codes it is driven over come from the original's GENERATOR, in the
+    # same run, so neither side of this comes from the port. The first
+    # version of that probe built them in Python from the measured bit table
+    # and the original refused 108 of 123: it had applied the DECODER's
+    # rotation count while encoding. Reimplementing is what this project
+    # keeps writing down not to do, and it did it again.
+    bad_in = []
+    if os.path.exists(CASES_IN):
+        cin = json.load(open(CASES_IN))
+        lib.level_code_apply.restype = ctypes.c_int
+        lib.level_code_apply.argtypes = [ctypes.c_char_p]
+        for c in cin:
+            lib.level_index_set(0)
+            ok = 1 if lib.level_code_apply(c["code"].encode("latin1")) else 0
+            if ok == 0 and c["ok"] == 0:
+                continue        # both refuse, and the guest keeps its state
+            got = (ok, lib.level_index(), lib.level_rating(),
+                   lib.level_code_pct())
+            want = (c["ok"], c["level"], c["rating"], c["pct"])
+            if got != want:
+                bad_in.append((c["code"], want, got))
+        acc = sum(x["ok"] for x in cin)
+        print(f"\n  image 0x051A2, driven {len(cin)} times")
+        print(f"    the original accepted {acc}, refused {len(cin) - acc}")
+        print(f"    the port agrees on {len(cin) - len(bad_in)}/{len(cin)} - "
+              "the verdict, the level, the rating and the percentage")
+        for code, want, got in bad_in[:a.max]:
+            print(f"    {code}: original {want} port {got}")
+    else:
+        print(f"\n  image 0x051A2 is NOT checked - no {CASES_IN}.")
+        print("    Run tools/probe_codein.py through play.py; without it the "
+              "only\n    claim about taking a code BACK is the round trip "
+              "above, and that\n    accepts a wrong table.")
+
+    if bad or bad_in:
+        print(f"\n  {len(bad)} of {len(cases)} generated and {len(bad_in)} "
+              "validated differ\n")
         return 1
     print("\n  no differences\n")
     return 0

@@ -687,6 +687,13 @@ void lem_exit_start(lemming *a);
  * original - see the note in game.c. `out` needs CODE_LEN + 1 bytes. */
 char level_code_checksum(const char *first_nine);
 int level_code_ok(const char *code);
+/* Image 0x051A2: the whole of taking a code back - the checksum, the level
+ * out of characters 7 and 8, the rotation undone, the index checked a second
+ * way, the rating, the percentage, and "BILLANDTED". Non-zero if the code is
+ * accepted, and it has then SET the level index. See game.c. */
+int level_code_apply(const char *code);
+uint8_t level_cheat_on(void);    /* ds:0x1F74 */
+uint8_t level_code_pct(void);    /* ds:0x491D */
 void level_code_generate(uint8_t level_no, uint8_t other, uint8_t percent,
                          char *out);
 
