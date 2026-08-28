@@ -780,6 +780,30 @@ static uint32_t panel_glyph(uint8_t ch)
 #define PANEL_SEL_INK     3
 #define PANEL_SEL_START   3      /* image 0x0427: ds:0x83 starts at 3 */
 
+/* ds:0x82 AND ds:0x83 - WHICH SKILL, AND WHICH BOX.
+ *
+ * Image 0x00422 starts ds:0x82 at 2 and image 0x00427 starts ds:0x83 at 3, in
+ * the level's own set-up at image 0x003E7. They are the game's state and were
+ * living in sdl_io.c's per-frame struct, which is where a window's scroll
+ * position belongs and a selected skill does not: every level began with
+ * skill 0 there, where the game begins with 2.
+ *
+ * Image 0x03F66 writes ds:0x82 when a button is chosen, by click or by key. */
+static uint8_t g_skill = 2;      /* ds:0x82, image 0x00422 */
+static uint8_t g_selected = PANEL_SEL_START;   /* ds:0x83, image 0x00427 */
+
+uint8_t level_skill(void)    { return g_skill; }
+uint8_t level_selected(void) { return g_selected; }
+
+/* image 0x03F66, reached by a click at image 0x03F27 and by a function key
+ * at image 0x03EA0 - the same store either way. */
+void level_skill_select(uint8_t button)
+{
+    g_skill = button;                              /* image 0x03F66 */
+    g_selected = (uint8_t)(button + 1);            /* ds:0x83 */
+}
+
+/* image 0x02102's box, from the block comment above. */
 void panel_highlight(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                      uint8_t button)
 {
@@ -1959,11 +1983,37 @@ static uint8_t g_entrance_open;    /* ds:0x55 */
 
 /* Image 0x0436..0x0447 clears these when a level starts; bit 2 of ds:0x4E is
  * what makes the opening sequence run at all. */
+/* IMAGE 0x003E7 - the level's whole set-up, and the port had a handful of it.
+ *
+ *     0x003F3  ds:0x1A   = 0        nothing under the pointer yet
+ *     0x003F8  ds:0x10   = 0x96     the pointer, at (150,100)
+ *     0x003FE  ds:0x12   = 0x64
+ *     0x00404  ds:0x47   = 0xC8     to release, until the header says
+ *     0x0040E  ds:0x20A9 = '0'      the clock's digits
+ *     0x00413  ds:0x20AA = '0'
+ *     0x00418  ds:0x85   = 0x11     the clock's frame counter
+ *     0x0041D  ds:0x86   = 0x11
+ *     0x00422  ds:0x82   = 2        the skill a click would hand out
+ *     0x00427  ds:0x83   = 3        and the box drawn round it
+ *     0x0042C  ds:0x4D   = 0x50     eighty pieces of debris
+ *     0x00431  ds:0x4E   = 1        the opening's phase
+ *     0x00436  ds:0x1FD4, ds:0x1FD3, ds:0x4F, ds:0x2A, ds:0x52, ds:0x55 = 0
+ *     0x0044F  ss:0x12 for 0x42A0   the trigger map
+ *
+ * ds:0x4E STARTS AT 1, NOT 4. This set it to 4 - image 0x0031E's third
+ * branch, the timed cues - and so skipped whatever the first branch does
+ * before it. The cues still fire, because something later sets bit 2: the
+ * probe caught image 0x0031E running with ds:0x4E at 5 and then 4. What
+ * turns bit 2 on has NOT been found, so this keeps the port's 4 with that
+ * said plainly rather than transcribing the 1 and losing the cues. */
 void level_start_reset(void)
 {
-    g_level_frame  = 0;
+    g_level_frame  = 0;              /* image 0x00444: ds:0x52 */
+    /* NOT image 0x00431's 1 - see above. */
     g_level_phase  = 4;
-    g_entrance_open = 0;
+    g_entrance_open = 0;             /* image 0x00447: ds:0x55 */
+    g_skill    = 2;                  /* image 0x00422 */
+    g_selected = PANEL_SEL_START;    /* image 0x00427 */
     /* image 0x00489 calls image 0x0482F in the same block that clears these
      * three bytes, so the tune is chosen when the level begins and image
      * 0x03B4 twenty-odd frames later plays whatever it picked. The level is

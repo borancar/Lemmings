@@ -597,6 +597,12 @@ void panel_minimap(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * 16 + 16*button in the panel's 352-wide line. Transcribed from image
  * 0x0780D; ds:0x83 names the button and image 0x0427 starts it at 3. */
 #define PANEL_SEL_BUTTON 3
+
+/* ds:0x82 and ds:0x83 - which skill a click would hand out, and which
+ * button's box is drawn. Image 0x00422 and image 0x00427 start them. */
+uint8_t level_skill(void);
+uint8_t level_selected(void);
+void    level_skill_select(uint8_t button);   /* image 0x03F66 */
 void panel_highlight(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                      uint8_t button);
 

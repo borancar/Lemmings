@@ -389,8 +389,6 @@ struct level_frame {
     lemming      lem[LEMMING_MAX];
     uint8_t      released;   /* how many have come out of the trapdoor */
     uint16_t     view_x;     /* where the play area has scrolled to */
-    uint8_t      selected;   /* which button's box is drawn */
-    uint8_t      skill;      /* ds:0x82 - the one a click would hand out */
     uint8_t      over;       /* image 0x001C8 said the level has finished */
     int          stepped;    /* the first frame is the state before a step */
 };
@@ -496,29 +494,29 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          * each opens by testing its own count - see level_skill_left. */
         /* AND AN ASSIGNMENT DOES TOO - image 0x03202 tests the same bits and
          * image 0x03205 asks for sound 0x04, inside image 0x03150. */
-        if (level_skill_left(A->skill) && sound_enabled(3))
+        if (level_skill_left(level_skill()) && sound_enabled(3))
             sound_request(0x61, 4, 0x04);       /* image 0x03205 */
-        if (level_skill_left(A->skill)) {
+        if (level_skill_left(level_skill())) {
             int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
             if (k >= 0) {
                 int took = 0;
-                if (A->skill == SKILL_DIGGER)
+                if (level_skill() == SKILL_DIGGER)
                     took = lem_dig_start(&A->lem[k]);      /* image 0x0320D */
-                else if (A->skill == SKILL_BUILDER)
+                else if (level_skill() == SKILL_BUILDER)
                     took = lem_build_start(&A->lem[k]);    /* image 0x032BD */
-                else if (A->skill == SKILL_BASHER)
+                else if (level_skill() == SKILL_BASHER)
                     took = lem_bash_start(&A->lem[k]);     /* image 0x034CE */
-                else if (A->skill == SKILL_MINER)
+                else if (level_skill() == SKILL_MINER)
                     took = lem_mine_start(&A->lem[k]);     /* image 0x03598 */
-                else if (A->skill == SKILL_BLOCKER)
+                else if (level_skill() == SKILL_BLOCKER)
                     took = lem_block_start(&A->lem[k]);    /* image 0x03336 */
-                else if (A->skill == SKILL_BOMBER)
+                else if (level_skill() == SKILL_BOMBER)
                     took = lem_bomb_start(&A->lem[k]);     /* image 0x031C4 */
-                else if (A->skill == SKILL_CLIMBER)
+                else if (level_skill() == SKILL_CLIMBER)
                     took = lem_climb_start(&A->lem[k]);    /* image 0x0329B */
-                else if (A->skill == SKILL_FLOATER)
+                else if (level_skill() == SKILL_FLOATER)
                     took = lem_float_start(&A->lem[k]);    /* image 0x03557 */
-                if (took) level_skill_spend(A->skill);
+                if (took) level_skill_spend(level_skill());
             }
         }
     }
@@ -573,8 +571,7 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
         /* The highlight sits one slot on from the number it belongs to -
          * PANEL_SEL_X0 is 16 where the numbers start at PANEL_ART_X, 32 -
          * so the box for button k is drawn at k + 1. */
-        A->selected = (uint8_t)(h.button + 1);
-        A->skill = h.button;              /* image 0x03F66: ds:0x82 */
+        level_skill_select(h.button);     /* image 0x03F66: ds:0x82 */
     }
 }
 
@@ -623,8 +620,7 @@ static void level_key_button(struct level_frame *A, SDL_Keycode k)
      * before it. */
     if (sound_enabled(3))                        /* image 0x03F70 */
         sound_request(0x61, 4, 0x01);                  /* image 0x03F77 */
-    A->selected = (uint8_t)(button + 1);
-    A->skill    = (uint8_t)button;               /* image 0x03F66 */
+    level_skill_select((uint8_t)button);         /* image 0x03F66 */
 }
 
 static int level_run(struct level_frame *A, const canvas *c,
@@ -902,7 +898,7 @@ static int level_run(struct level_frame *A, const canvas *c,
             level_panel_build(A->panel, A->pan_sec, A->pan_len, &A->lv,
                               A->from->pix, A->from->w, A->from->h,
                               A->lem, A->released, A->view_x,
-                              A->selected);
+                              level_selected());
         }
 
         for (uint16_t y = 0; y < LEVEL_PLAY_H; y++)
@@ -2057,8 +2053,6 @@ int level_show(const char *dir, const char *file, uint32_t which,
         A.pan_sec = NULL; A.pan_len = 0;
         A.view_x = lv->start_x;
         A.stepped = 0;
-        A.selected = PANEL_SEL_BUTTON;
-        A.skill = 0;
         A.over = 0;
         level_saved_reset();
         level_triggers_set(&A.lv, &g);
