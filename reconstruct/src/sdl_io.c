@@ -223,69 +223,62 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
     return 0;
 }
 
-static view_key from_sdl(SDL_Keycode k)
+
+/* THE SCANCODE THE KEYBOARD PRODUCED - not what it means.
+ *
+ * The original's keyboard handler at image 0x016D4 reads port 0x60 and keeps
+ * an 83-entry state table at ds:0x0F78; image 0x04D1A scans it and translates
+ * through ds:0x202E. This replaces the first half of that - the hardware -
+ * and menu_key_code and menu_dispatch in game.c are the second, transcribed.
+ *
+ * This used to be a key ENUM and a table of boxes. The enum was the port's
+ * invention standing where the game has scancodes, and the boxes stood where
+ * the game has nothing at all.
+ */
+static uint8_t scancode_of(SDL_Keycode k)
 {
     switch (k) {
-    case SDLK_F1:     return VIEW_KEY_F1;
-    case SDLK_F2:     return VIEW_KEY_F2;
-    case SDLK_F3:     return VIEW_KEY_F3;
-    case SDLK_F4:     return VIEW_KEY_F4;
-    case SDLK_ESCAPE: return VIEW_KEY_ESC;
-    case SDLK_UP:     return VIEW_KEY_UP;
-    case SDLK_DOWN:   return VIEW_KEY_DOWN;
-    /* The original takes the rating on ` and on - as well as on the arrows,
-     * and its scancode table gives keypad minus the same code as -, so both
-     * arrive here as the same key. */
-    case SDLK_GRAVE:  return VIEW_KEY_BACKQUOTE;
-    case SDLK_MINUS: case SDLK_KP_MINUS: return VIEW_KEY_MINUS;
-    default:          return VIEW_KEY_NONE;
+    case SDLK_ESCAPE:    return 0x01;
+    case SDLK_MINUS:     return 0x0C;
+    case SDLK_GRAVE:     return 0x29;
+    case SDLK_F1:        return 0x3B;
+    case SDLK_F2:        return 0x3C;
+    case SDLK_F3:        return 0x3D;
+    case SDLK_F4:        return 0x3E;
+    case SDLK_UP:        return 0x48;
+    case SDLK_KP_MINUS:  return 0x4A;
+    case SDLK_DOWN:      return 0x50;
+    default:             return 0xFF;   /* past the table: image 0x04D1A's
+                                         * scan would not have found it */
     }
 }
 
-/* Which hotspot a key or a point selects.
- *
- * These are separate from the event loop on purpose: they are the part that
- * can be WRONG - a key mapped to the wrong plate, a box off by its own width -
- * and they can be checked without a window, a display or SDL's event delivery.
- * The loop below is then only plumbing.
- *
- * Both return VIEW_CLOSED for "nothing here", which is also what a closed
- * window returns; the caller cannot tell those apart and does not need to,
- * because neither is a choice.
- */
-int32_t view_match_key(const view_hotspot *spots, uint8_t n, view_key k)
+/* The menu's own two steps, transcribed in game.c. */
+static int32_t menu_input(uint8_t scancode)
 {
-    if (k == VIEW_KEY_NONE) return VIEW_CLOSED;
-    for (uint8_t i = 0; i < n; i++)
-        if (spots[i].key == k) return spots[i].id;
-    return VIEW_CLOSED;
+    return menu_dispatch(menu_key_code(scancode));   /* image 0x0447B */
 }
 
-int32_t view_match_point(const view_hotspot *spots, uint8_t n,
-                         float x, float y)
+/* A screen with nothing on it to choose takes Esc, and a click. */
+static int32_t dismiss_input(uint8_t scancode)
 {
-    for (uint8_t i = 0; i < n; i++) {
-        const view_hotspot *s = &spots[i];
-        if (x >= s->x && x < s->x + s->w && y >= s->y && y < s->y + s->h)
-            return s->id;
-    }
-    return VIEW_CLOSED;
+    return menu_key_code(scancode) == 0x1B ? 1 : -1;
 }
 
 int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
                       const lem_rgb *palette, const char *title, uint8_t scale,
-                      const view_hotspot *spots, uint8_t nspots)
+                      view_input input, int32_t click_id)
 {
     /* No tick: the picture is fixed, and the cast is safe because nothing
      * writes through it when `tick` is NULL. */
     return view_interact_anim((uint8_t *)pix, w, h, palette, title, scale,
-                              spots, nspots, NULL, NULL);
+                              input, click_id, NULL, NULL);
 }
 
 int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
                            const lem_rgb *palette, const char *title,
-                           uint8_t scale, const view_hotspot *spots,
-                           uint8_t nspots, view_tick tick, void *ctx)
+                           uint8_t scale, view_input input, int32_t click_id,
+                           view_tick tick, void *ctx)
 {
     if (scale < 1) scale = 1;
     if (view_open(w, h, title, scale) != 0) return VIEW_CLOSED;
@@ -312,16 +305,12 @@ int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
             if (e.type == SDL_EVENT_QUIT) {
                 running = 0;
             } else if (e.type == SDL_EVENT_KEY_DOWN) {
-                hit = view_match_key(spots, nspots, from_sdl(e.key.key));
+                if (input) hit = input(scancode_of(e.key.key));
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                /* The window may be scaled and letterboxed, so ask SDL where
-                 * the click landed in PICTURE coordinates rather than doing
-                 * the arithmetic here and getting it wrong at every scale but
-                 * the one that was tested. */
-                float px = 0, py = 0;
-                SDL_RenderCoordinatesFromWindow(ren, e.button.x, e.button.y,
-                                                &px, &py);
-                hit = view_match_point(spots, nspots, px, py);
+                /* WHEREVER IT LANDED. Image 0x04473 tests ds:0x14's low three
+                 * bits and jumps to image 0x0454C - key 0x80's own target -
+                 * without once looking at the position. */
+                hit = click_id;
             }
             if (hit != VIEW_CLOSED) {
                 chosen = hit;
@@ -1446,17 +1435,7 @@ static void view_fade_out(const uint8_t *pix, uint16_t w, uint16_t h,
 void menu_show_until_dismissed(const menu_screen *m, const char *title,
                                uint8_t scale)
 {
-    view_hotspot any[2];
-    any[0].x = 0;
-    any[0].y = 0;
-    any[0].w = MENU_W;
-    any[0].h = MENU_H;
-    any[0].key = VIEW_KEY_NONE;
-    any[0].id = 1;
-    any[1] = any[0];
-    any[1].w = 0;
-    any[1].h = 0;
-    any[1].key = VIEW_KEY_ESC;
+
     /* The briefing is two pictures stacked with different palettes - see
      * menu_screen.split. Every other screen leaves split at zero. */
     g_split = m->split;
@@ -1469,8 +1448,9 @@ void menu_show_until_dismissed(const menu_screen *m, const char *title,
         g_fade_low_cur[i].r = g_fade_low_cur[i].g = g_fade_low_cur[i].b = 0;
     }
     g_split_pal = m->split ? g_fade_low_cur : NULL;
+    /* Esc or a click; the briefing says "Press mouse button to continue". */
     view_interact_anim(m->pix, MENU_W, MENU_H, g_fade_cur, title, scale,
-                       any, 2, fade_tick, NULL);
+                       dismiss_input, 1, fade_tick, NULL);
 
     /* And back down to black on the way out. The original fades the screen
      * away before it draws the next one; cutting straight to the level is
@@ -1585,11 +1565,10 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
  * image 0x07D0D. */
 menu_action menu_run(menu_screen *m, uint8_t scale)
 {
-    view_hotspot spots[MENU_HOTSPOTS];
-    menu_hotspots(spots);
+    /* image 0x0447B for a key, image 0x04473 for a click - which is F1. */
     int32_t r = view_interact_anim(m->pix, MENU_W, MENU_H, m->palette,
-                                   "PC Lemmings", scale, spots,
-                                   MENU_HOTSPOTS, menu_frame_step, m);
+                                   "PC Lemmings", scale, menu_input,
+                                   MENU_PLAY, menu_frame_step, m);
     if (r == VIEW_CLOSED) return MENU_EXIT;
     return (menu_action)r;
 }

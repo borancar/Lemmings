@@ -43,55 +43,45 @@ int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    view_hotspot spots[MENU_HOTSPOTS];
-    menu_hotspots(spots);
-
-    printf("menu keys - the ones the original prints on its own plates:\n");
-    check("F1 starts the game",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_F1), MENU_PLAY);
-    check("F2 is NEW LEVEL",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_F2), MENU_NEW_LEVEL);
-    check("F3 is FX",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_F3), MENU_FX);
-    check("F4 is the ? plate",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_F4), MENU_HELP);
-    check("Esc exits to DOS",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_ESC), MENU_EXIT);
-    /* The rating plate. All four keys are the original's own, read off its
+    /* The two steps the original takes, and nothing else: image 0x04D4B
+     * translates a SCANCODE through ds:0x202E, and image 0x0447B compares the
+     * result. Both are pure, so both can be checked without a window. */
+    printf("menu keys - the scancodes the original's own table translates:\n");
+    check("F1 (0x3B) starts the game",
+          menu_dispatch(menu_key_code(0x3B)), MENU_PLAY);
+    check("F2 (0x3C) is NEW LEVEL",
+          menu_dispatch(menu_key_code(0x3C)), MENU_NEW_LEVEL);
+    check("F3 (0x3D) is the sound settings",
+          menu_dispatch(menu_key_code(0x3D)), MENU_FX);
+    check("F4 (0x3E) is the ? plate",
+          menu_dispatch(menu_key_code(0x3E)), MENU_HELP);
+    check("Esc (0x01) exits to DOS",
+          menu_dispatch(menu_key_code(0x01)), MENU_EXIT);
+    /* The rating plate. All four are the original's own, read off its
      * scancode table at ds:0x202E and its dispatcher at image 0x0447B, and
      * driven against it by tools/probe_rating.py. */
-    check("Up raises the rating",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_UP), MENU_RATING_UP);
-    check("and so does `",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_BACKQUOTE),
-          MENU_RATING_UP);
-    check("Down lowers it",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_DOWN),
-          MENU_RATING_DOWN);
-    check("and so does - (keypad minus arrives as the same key)",
-          view_match_key(spots, MENU_HOTSPOTS, VIEW_KEY_MINUS),
-          MENU_RATING_DOWN);
+    check("Up (0x48) raises the rating",
+          menu_dispatch(menu_key_code(0x48)), MENU_RATING_UP);
+    check("and so does ` (0x29)",
+          menu_dispatch(menu_key_code(0x29)), MENU_RATING_UP);
+    check("Down (0x50) lowers it",
+          menu_dispatch(menu_key_code(0x50)), MENU_RATING_DOWN);
+    check("and so does - (0x0C)",
+          menu_dispatch(menu_key_code(0x0C)), MENU_RATING_DOWN);
+    check("and keypad - (0x4A), which the table maps to the same 0x2D",
+          menu_dispatch(menu_key_code(0x4A)), MENU_RATING_DOWN);
+    check("a key the menu does not use is ignored",
+          menu_dispatch(menu_key_code(0x1E)), -1);
+    check("and a scancode past the table's 83 entries",
+          menu_dispatch(menu_key_code(0x60)), -1);
 
-    /* Clicks. The original HIDES the cursor on this screen and treats a
-     * click anywhere as F1 - clicking "EXIT TO DOS" starts the level rather
-     * than exiting, measured with tools/probe_menu_keys.py. So every one of
-     * these is MENU_PLAY, including the ones over other plates, and that is
-     * the behaviour being pinned down here. */
-    printf("\nmenu clicks - the original ignores WHERE, and acts as F1:\n");
-    check("over 1 PLAYER",
-          view_match_point(spots, MENU_HOTSPOTS, 68 + 60, 120 + 30), MENU_PLAY);
-    check("over EXIT TO DOS (does NOT exit)",
-          view_match_point(spots, MENU_HOTSPOTS, 196 + 60, 197 + 30), MENU_PLAY);
-    check("over the rating plate",
-          view_match_point(spots, MENU_HOTSPOTS, 452 + 60, 120 + 30), MENU_PLAY);
-    check("on bare background, top left",
-          view_match_point(spots, MENU_HOTSPOTS, 4, 4), MENU_PLAY);
-    check("on bare background, between the rows",
-          view_match_point(spots, MENU_HOTSPOTS, 320, 188), MENU_PLAY);
-    check("bottom right corner",
-          view_match_point(spots, MENU_HOTSPOTS, 639, 349), MENU_PLAY);
-    check("outside the screen entirely",
-          view_match_point(spots, MENU_HOTSPOTS, 700, 400), VIEW_CLOSED);
+    /* THE CLICK IS NOT TESTED HERE, because there is nothing to test: image
+     * 0x04473 takes any of ds:0x14's low three bits straight to image
+     * 0x0454C, key 0x80's own target, without looking at the position. What
+     * used to be here was seven checks that a click at seven different points
+     * all meant MENU_PLAY - which was really seven checks that a
+     * full-screen box covers the screen. sdl_io.c passes MENU_PLAY as the
+     * click action and there is no matcher left to get wrong. */
 
     printf(failures ? "\n  %d FAILED\n" : "\n  all passed\n", failures);
     return failures ? 1 : 0;

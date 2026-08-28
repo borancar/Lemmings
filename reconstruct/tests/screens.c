@@ -579,11 +579,6 @@ int main(int argc, char **argv)
         }
     }
 
-    /* A hotspot table the menu never asked for, to catch an out-of-bounds
-     * write in menu_hotspots if MENU_HOTSPOTS and the code disagree. */
-    view_hotspot spots[MENU_HOTSPOTS];
-    memset(spots, 0xAA, sizeof(spots));
-    menu_hotspots(spots);
     /* A SKILL MUST NOT BE SPENT ON A LEMMING THAT CANNOT TAKE IT.
      *
      * Image 0x0321D refuses a digger when the state word has any of 0xF57F
@@ -1201,8 +1196,11 @@ int main(int argc, char **argv)
     ck("and a floppy too, LEM_DISK_CHECK being off",
        disk_check(0xF9) == 0, "0xF9 was refused with the check disabled");
 
-    ck("menu_hotspots fills its array",
-       spots[MENU_HOTSPOTS - 1].w == MENU_W, "last hotspot not written");
+    /* The menu's key table is 83 entries, ds:0x202E's own size, and image
+     * 0x04D1A never indexes past it - its scan is `mov cx, 0x53`. */
+    ck("a scancode past the table's 83 entries is refused",
+       menu_key_code(0x53) == 0xFF && menu_dispatch(menu_key_code(0x53)) == -1,
+       "it indexed past ds:0x202E");
 
     /* THE RATE BUTTONS STEP ONCE PER PRESS AND ONCE PER THREE FRAMES HELD.
      *

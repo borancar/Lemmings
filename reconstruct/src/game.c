@@ -10026,65 +10026,6 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
     return 0;
 }
 
-/* The signs, as things the player can choose.
- *
- * The keys are the ones the original prints on the plates themselves - F1, F2,
- * F3, ESC and F4 - so the mapping is read off the game's own screen rather
- * than guessed at. The "FUN" plate carries two small arrow tabs instead of a
- * function key, which is why it answers to Up and Down.
- *
- * The box is the whole 120x61 sprite, which includes the lemming standing
- * behind the plate. Whether the original's own hit test is that generous has
- * not been checked; it is the obvious reading of the sprite and it is marked
- * here as unverified rather than presented as transcribed.
- */
-static const view_hotspot SIGN_SPOT[6] = {
-    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F1,   MENU_PLAY      },
-    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F2,   MENU_NEW_LEVEL },
-    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F3,   MENU_FX        },
-    /* The rating plate takes Up and Down, and this is read off the original's
-     * own dispatcher rather than found by sweeping keys. The menu translates a
-     * scancode through a table at ds:0x202E (image 0x0BABE) and compares the
-     * result at image 0x0447B:
-     *
-     *     Up  (0x48) -> 0x8a  and  `  (0x29) -> 0x60   go to image 0x044EC
-     *     Down(0x50) -> 0x8b  and  - (0x0c) -> 0x2d   go to image 0x0451C
-     *     keypad - (0x4a) -> 0x2d as well
-     *
-     * Up caps at 3 (image 0x044F9), Down floors at 0 (image 0x04529), and
-     * both then write ds:0x1F6B = rating * 30. tools/probe_rating.py drives
-     * all five keys against the original and watches ds:0x1F6E.
-     *
-     * An earlier note here said "the rating plate answers to NOTHING that has
-     * been found... neither Up nor Down moves it". That was wrong, and the
-     * way it was wrong is worth keeping: the sweep that produced it watched
-     * the plate's PIXELS from a rating already at Fun, where Down is supposed
-     * to do nothing, and its key list did not contain Up at all. */
-    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_UP,   MENU_RATING_UP },
-    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_ESC,  MENU_EXIT      },
-    { SIGN_W, SIGN_H, 0, 0, VIEW_KEY_F4,   MENU_HELP      },
-};
-
-/*
- * Where plate i is, from the loop parameters at image 0x04F31 - four from
- * (68,120) and two from (196,197), each stepping 0x80. The original never
- * asks: its loop knows where it is. menu_hotspots needs it after the fact.
- */
-static uint16_t sign_x(uint8_t i)
-{
-    const uint8_t r = (i < SIGN_ROW[0].count) ? 0 : 1;
-    return (uint16_t)(SIGN_ROW[r].x
-                      + (i - SIGN_ROW[r].first) * SIGN_STRIDE_X);
-}
-
-/*
- * As sign_x, from the same loop at image 0x04F31.
- */
-static uint16_t sign_y(uint8_t i)
-{
-    return (i < SIGN_ROW[0].count) ? SIGN_ROW[0].y : SIGN_ROW[1].y;
-}
-
 /*
  * How many walk-on lemmings are on screen, read off the counters the table at
  * image 0x0E3F0 drives. Exposed because no capture of the original shows one,
@@ -10099,62 +10040,76 @@ uint8_t menu_anim_visible(void)
     return n;
 }
 
-/* Transcribed from image 0x0447B for the KEYS; the boxes are the port's,
- * because the original ignores where a click lands. The keys are the plates' it draws
- * on its own screen - F1, F2, F3, ESC, F4 - so the mapping is evidence. What
- * each does beyond F1 and ESC is not reconstructed.
+/* THE MENU'S KEY TRANSLATION, ds:0x202E - image 0x0BABE - transcribed whole.
  *
- * Transcribed from image 0x0447B - the compare chain that turns a translated
- * key into a screen. The boxes are the port's, because the original ignores
- * where a click lands; the KEYS are its own.
+ * Image 0x04D1A scans an 83-entry key-state table at ds:0x0F78 for one with
+ * bit 7 set, runs its own key REPEAT on the low seven bits (0x93 on the first
+ * press, counting down and reloading 0x86), and finally does
+ *
+ *     0x04D45  al = bl            the scancode it found
+ *     0x04D47  bx = 0x202E
+ *     0x04D4B  xlatb              al = ds:[0x202E + al]
+ *
+ * so this table IS the mapping, and it is data rather than a reading. The
+ * codes it produces are what image 0x0447B compares against.
  */
-void menu_hotspots(view_hotspot *spots)
+static const uint8_t MENU_XLAT[0x53] = {
+    0x4C, 0x1B, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,   /* 0x00 */
+    0x37, 0x38, 0x39, 0x30, 0x2D, 0x3D, 0x7F, 0x09,   /* 0x08 */
+    0x51, 0x57, 0x45, 0x52, 0x54, 0x59, 0x55, 0x49,   /* 0x10 */
+    0x4F, 0x50, 0x5B, 0x5D, 0x0D, 0x03, 0x41, 0x53,   /* 0x18 */
+    0x44, 0x46, 0x47, 0x48, 0x4A, 0x4B, 0x4C, 0x3B,   /* 0x20 */
+    0x27, 0x60, 0x02, 0x5C, 0x5A, 0x58, 0x43, 0x56,   /* 0x28 */
+    0x42, 0x4E, 0x4D, 0x2C, 0x2E, 0x01, 0x2F, 0x2A,   /* 0x30 */
+    0x04, 0x20, 0x05, 0x80, 0x81, 0x82, 0x83, 0x84,   /* 0x38 */
+    0x85, 0x86, 0x87, 0x88, 0x89, 0x06, 0x07, 0x37,   /* 0x40 */
+    0x8A, 0x39, 0x2D, 0x8C, 0x35, 0x8D, 0x2B, 0x31,   /* 0x48 */
+    0x8B, 0x32, 0x33,   /* 0x50 */
+};
+
+/* image 0x04D45..0x04D4B: the scancode it found, through ds:0x202E. */
+uint8_t menu_key_code(uint8_t scancode)
 {
-    /* The plates are KEYBOARD ONLY, with no click box of their own. That is
-     * measured, not a simplification, and it cost three experiments:
-     *
-     *   - the menu calls INT 33h AX=0002h once - HIDE CURSOR - and draws no
-     *     pointer: moving the position to (600,40) changes nothing anywhere
-     *     near it, only the scroller keeps moving.
-     *   - it polls AX=0003h 1342 times, so it is reading the BUTTON, and the
-     *     position reaches it and is ignored.
-     *   - clicking "EXIT TO DOS" does not exit. It starts the level, exactly
-     *     as clicking "1 PLAYER" or clicking bare background does.
-     *
-     * So a click anywhere acts as F1, and that is the last hotspot below.
-     * Giving each plate its own box would be inventing behaviour the original
-     * does not have, which is a worse kind of wrong than leaving it out. */
-    for (uint8_t i = 0; i < 6; i++) {
-        spots[i].x = sign_x(i);
-        spots[i].y = sign_y(i);
-        spots[i].w = 0;
-        spots[i].h = 0;
-        spots[i].key = SIGN_SPOT[i].key;
-        spots[i].id = SIGN_SPOT[i].id;
+    return (scancode < 0x53) ? MENU_XLAT[scancode] : 0xFF;
+}
+
+/* WHAT THE MENU DOES WITH A CODE - image 0x0447B, the compare chain, in its
+ * own order:
+ *
+ *     0x0447B  cmp al, 0x80  ->  image 0x0454C   F1, play
+ *     0x04482  cmp al, 0x81  ->  image 0x044AD   F2
+ *     0x04486  cmp al, 0x82  ->  image 0x044B3   F3, the sound settings
+ *     0x0448A  cmp al, 0x83  ->  image 0x044B0   F4
+ *     0x0448E  cmp al, 0x1B  ->  image 0x004D0   ESC, out to DOS
+ *     0x04495  cmp al, 0x8A  ->  image 0x044EC   Up
+ *     0x04499  cmp al, 0x60  ->  image 0x044EC   `, the same
+ *     0x0449D  cmp al, 0x8B  ->  image 0x0451C   Down
+ *     0x044A4  cmp al, 0x2D  ->  image 0x0451C   -, and keypad - via the
+ *                                                table, which maps both to
+ *                                                0x2D
+ *
+ * There is no box and no position anywhere in it. Image 0x04473 gets there
+ * first: any of ds:0x14's low three bits jumps to image 0x0454C, which is
+ * where 0x80 goes - so a click is F1 wherever it lands, which is why
+ * "EXIT TO DOS" starts the level when clicked.
+ *
+ * This replaced a hotspot table with a box per plate. Nine of its ten boxes
+ * were zero-sized and could not be hit, and the positions written into them
+ * came from image 0x04F31's plate loop through two functions that existed for
+ * no other purpose. The original has no cursor to aim and nothing to aim at.
+ */
+int32_t menu_dispatch(uint8_t code)
+{
+    switch (code) {
+    case 0x80: return MENU_PLAY;        /* image 0x0447B */
+    case 0x81: return MENU_NEW_LEVEL;   /* image 0x04482 */
+    case 0x82: return MENU_FX;          /* image 0x04486 */
+    case 0x83: return MENU_HELP;        /* image 0x0448A */
+    case 0x1B: return MENU_EXIT;        /* image 0x0448E */
+    case 0x8A: case 0x60: return MENU_RATING_UP;    /* image 0x04495 */
+    case 0x8B: case 0x2D: return MENU_RATING_DOWN;  /* image 0x0449D */
+    default:   return -1;               /* image 0x044AB falls through */
     }
-    /* The rating plate's other three keys. A hotspot carries one key, so the
-     * alternates need entries of their own; they are click-less, because the
-     * plate's own box above is what a click would hit. */
-    static const struct { view_key key; int32_t id; } RATING_ALT[3] = {
-        { VIEW_KEY_BACKQUOTE, MENU_RATING_UP   },
-        { VIEW_KEY_DOWN,      MENU_RATING_DOWN },
-        { VIEW_KEY_MINUS,     MENU_RATING_DOWN },
-    };
-    for (uint8_t i = 0; i < 3; i++) {
-        spots[6 + i].x = sign_x(3);
-        spots[6 + i].y = sign_y(3);
-        spots[6 + i].w = 0;
-        spots[6 + i].h = 0;
-        spots[6 + i].key = RATING_ALT[i].key;
-        spots[6 + i].id = RATING_ALT[i].id;
-    }
-    /* A click anywhere on the screen, which the original treats as F1. */
-    spots[9].x = 0;
-    spots[9].y = 0;
-    spots[9].w = MENU_W;
-    spots[9].h = MENU_H;
-    spots[9].key = VIEW_KEY_NONE;
-    spots[9].id = MENU_PLAY;
 }
 
 /* One frame of the banner. The original advances 4 pixels per pass of its

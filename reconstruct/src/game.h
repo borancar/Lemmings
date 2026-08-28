@@ -942,38 +942,30 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
  * The window and input. Implemented by sdl_io.c, which is OURS.
  * ==================================================================== */
 
-/* An abstract key, so no header outside view.c has to know about SDL. */
-typedef enum {
-    VIEW_KEY_NONE = 0,
-    VIEW_KEY_F1, VIEW_KEY_F2, VIEW_KEY_F3, VIEW_KEY_F4,
-    VIEW_KEY_ESC, VIEW_KEY_UP, VIEW_KEY_DOWN,
-    /* The rating plate's alternates. The original's scancode table at
-     * ds:0x202E maps ` and - (and keypad -) to the same two handlers the
-     * arrows reach, so these are its keys, not the port's convenience. */
-    VIEW_KEY_BACKQUOTE, VIEW_KEY_MINUS
-} view_key;
-
-/* A thing on the screen that can be clicked, or reached with a key. */
-typedef struct {
-    uint16_t x, y, w, h;   /* the clickable box, in picture pixels */
-    view_key key;          /* VIEW_KEY_NONE for click-only */
-    int32_t  id;           /* what view_interact returns when it is chosen */
-} view_hotspot;
+/* THERE IS NO KEY ENUM. The original has SCANCODES - image 0x016D4 reads port
+ * 0x60 and image 0x04D1A translates one through ds:0x202E - and an enum of
+ * the port's own naming stood where those are. sdl_io.c produces the
+ * scancode; menu_key_code and menu_dispatch say what it means.
+ *
+ * NOR IS THERE A HOTSPOT TYPE. The original's menu matches no boxes: image
+ * 0x04D1A translates a scancode through ds:0x202E and image 0x0447B compares
+ * the result, while image 0x04473 takes any button as F1 without once looking
+ * at where it landed. What was here was a box per plate, nine of them
+ * zero-sized and unreachable. See menu_dispatch in game.c. */
 
 /* Returned when the window is closed rather than a hotspot chosen. */
 #define VIEW_CLOSED (-1)
 
-/* Which hotspot a key, or a point in picture coordinates, selects; VIEW_CLOSED
- * for none. Pure, so the mapping can be tested without opening a window. */
-int32_t view_match_key(const view_hotspot *spots, uint8_t n, view_key k);
-int32_t view_match_point(const view_hotspot *spots, uint8_t n,
-                         float x, float y);
+/* A screen's own answer to a key. `scancode` is what the keyboard produced;
+ * what it MEANS is the screen's business, and for the menu that is
+ * menu_key_code and menu_dispatch, both transcribed. Return -1 to ignore it. */
+typedef int32_t (*view_input)(uint8_t scancode);
 
-/* Show a picture and wait for the viewer to choose one of `spots`, or close
- * the window. Returns the chosen hotspot's id, or VIEW_CLOSED. */
+/* Show a picture and wait. A key goes to `input`; a CLICK always yields
+ * `click_id`, because image 0x04473 never asks where it was. */
 int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
                       const lem_rgb *palette, const char *title, uint8_t scale,
-                      const view_hotspot *spots, uint8_t nspots);
+                      view_input input, int32_t click_id);
 
 /* Called once per displayed frame to redraw `pix` in place; return non-zero if
  * anything changed, so the texture is only re-uploaded when it has to be. */
@@ -983,8 +975,8 @@ typedef int (*view_tick)(void *ctx, uint8_t *pix);
  * The menu needs this and nothing else does: its banner scrolls. */
 int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
                            const lem_rgb *palette, const char *title,
-                           uint8_t scale, const view_hotspot *spots,
-                           uint8_t nspots, view_tick tick, void *ctx);
+                           uint8_t scale, view_input input, int32_t click_id,
+                           view_tick tick, void *ctx);
 
 /* Open a window on an 8-bit indexed buffer and let the viewer scroll it.
  * `view_w`/`view_h` is the viewport onto a `src_w`x`src_h` picture; pass the
@@ -1095,11 +1087,7 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
 #define MENU_RATING_MAX  3
 #define MENU_RATING_STEP 30
 
-/* How many hotspots the menu has: the six plates, three more for the rating
- * plate's alternate keys (one hotspot carries one key), and one full-screen
- * box for "a click anywhere", which is what the original does with the mouse.
- * See menu_hotspots in game.c. */
-#define MENU_HOTSPOTS 10
+
 
 /* Show a screen that has no choices on it - the briefing, the level-code
  * screen, the input chooser - and wait for the viewer to dismiss it. The
@@ -1108,9 +1096,11 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
 void menu_show_until_dismissed(const menu_screen *m, const char *title,
                                uint8_t scale);
 
-/* Fill in the menu's hotspots. Exposed so the mapping can be tested without
- * opening a window - see tests/menu_input.c. */
-void menu_hotspots(view_hotspot *spots);
+/* The menu's own key handling, transcribed: image 0x04D4B's translation
+ * through ds:0x202E, then image 0x0447B's compare chain. Exposed so the
+ * mapping can be tested without opening a window - see tests/menu_input.c. */
+uint8_t menu_key_code(uint8_t scancode);
+int32_t menu_dispatch(uint8_t code);
 
 /* The scrolling banner's position, in pixels, and how far a step moves it.
  * The original shifts the strip 4 pixels a step (image 0x07D54) and takes a
