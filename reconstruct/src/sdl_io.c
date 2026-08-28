@@ -807,7 +807,24 @@ static int level_run(struct level_frame *A, const canvas *c,
                     break;
                 }
                 switch (e.key.key) {
-                case SDLK_ESCAPE: case SDLK_Q: running = 0;               break;
+                /* ESCAPE ENDS THE LEVEL; it does not leave it.
+                 *
+                 * Image 0x002AB tests bit 0x20 of the key word ds:0x1FC7 and
+                 * jumps to image 0x002B3, which sets ds:0x4F to 0xFF - the
+                 * same byte image 0x001C8 tests when everyone is out or the
+                 * clock has run down. So the play loop ends exactly as it
+                 * would have on its own, image 0x002FB fades, and image
+                 * 0x00311 goes to the results screen with whatever was
+                 * rescued.
+                 *
+                 * The port took Escape as "close the level", so a player got
+                 * the menu and no result at all. Bit 0x20 is the same key the
+                 * results screen tests at image 0x047C1, which is the
+                 * corroboration: one key, two screens, both sending it on. */
+                case SDLK_ESCAPE: A->over = 1; running = 0;               break;
+                /* THE PORT'S OWN. The original has no way to abandon a level
+                 * without a result; a window does. */
+                case SDLK_Q:      running = 0;                            break;
                 case SDLK_LEFT:  scroll_x -= LEVEL_SCROLL * 2;            break;
                 case SDLK_RIGHT: scroll_x += LEVEL_SCROLL * 2;            break;
                 case SDLK_HOME:  scroll_x = 0;                            break;
