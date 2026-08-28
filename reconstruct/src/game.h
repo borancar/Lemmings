@@ -1187,6 +1187,9 @@ void    video_page_flip(void);
  * ends the process where it stands. See view_quit_now in sdl_io.c. */
 void    video_screen_set(uint8_t *pix, lem_rgb *pal);
 void    view_quit_now(void);
+/* THE PORT'S OWN - a host keycode as the scancode the game's keyboard handler
+ * would have produced. Exported so a test can check every letter arrives. */
+uint8_t view_scancode_of(int32_t keycode);
 int     video_screen_is(const uint8_t *pix);
 uint8_t menu_key_read(void);
 uint16_t menu_buttons(void);

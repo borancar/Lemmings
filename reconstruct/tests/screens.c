@@ -1225,6 +1225,31 @@ int main(int argc, char **argv)
 
     /* The menu's key table is 83 entries, ds:0x202E's own size, and image
      * 0x04D1A never indexes past it - its scan is `mov cx, 0x53`. */
+    /* EVERY LETTER HAS TO ARRIVE, and for a long time none did: scancode_of
+     * knew the menu's eleven keys and returned 0xFF for everything else, so
+     * image 0x04C7E's entry loop - which takes A-Z - saw nothing when a
+     * player typed. The screen stayed blank and it read as a dead screen.
+     *
+     * The check is the round trip through the game's OWN table: a keycode
+     * becomes a scancode, and image 0x04D4B's xlat of that scancode has to be
+     * the character that was typed. */
+    {
+        int all = 1, bad = 0;
+        for (int c = 'A'; c <= 'Z'; c++) {
+            uint8_t sc = view_scancode_of(c >= 'a' ? c : c + ('a' - 'A'));
+            if (sc == 0xFF || menu_key_code(sc) != (uint8_t)c) {
+                all = 0;
+                if (!bad) bad = c;
+            }
+        }
+        ck("every letter A-Z reaches the code screen as itself", all, NULL);
+        /* SDL's own keycodes for these two are the ASCII values. */
+        ck("backspace is 0x7F to the entry loop",
+           menu_key_code(view_scancode_of(0x08)) == 0x7F, NULL);
+        ck("and Enter is 0x0D",
+           menu_key_code(view_scancode_of(0x0D)) == 0x0D, NULL);
+    }
+
     ck("a scancode past the table's 83 entries is refused",
        menu_key_code(0x53) == 0xFF && menu_dispatch(menu_key_code(0x53)) == -1,
        "it indexed past ds:0x202E");

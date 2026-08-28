@@ -26,6 +26,7 @@
 #include <SDL3/SDL.h>
 
 #include "game.h"
+#include "data.h"
 #include "adlib.h"
 #include "opl.h"
 
@@ -283,6 +284,16 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
  * invention standing where the game has scancodes, and the boxes stood where
  * the game has nothing at all.
  */
+static uint8_t scancode_of(SDL_Keycode k);
+
+/* Exported for the test in tests/screens.c: every letter a player can type
+ * has to reach the entry loop as the character the game's own table names,
+ * and for a long time none of them did. */
+uint8_t view_scancode_of(int32_t keycode)
+{
+    return scancode_of((SDL_Keycode)keycode);
+}
+
 static uint8_t scancode_of(SDL_Keycode k)
 {
     switch (k) {
@@ -296,9 +307,38 @@ static uint8_t scancode_of(SDL_Keycode k)
     case SDLK_UP:        return 0x48;
     case SDLK_KP_MINUS:  return 0x4A;
     case SDLK_DOWN:      return 0x50;
-    default:             return 0xFF;   /* past the table: image 0x04D1A's
-                                         * scan would not have found it */
+    default:             break;
     }
+
+    /* THE LETTERS, BACKSPACE AND ENTER, and they are not listed here.
+     *
+     * The eleven above are the menu's, and for a long time they were all the
+     * port had - so image 0x04C7E's entry loop, which takes A-Z, got 0xFF for
+     * every letter typed and correctly ignored it. Nothing appeared on
+     * screen, which is what a player reported.
+     *
+     * Rather than write out a scancode set from memory, this INVERTS the
+     * game's own table. MENU_XLAT is ds:0x202E, the xlat image 0x04D4B reads,
+     * and it maps scancode -> character; so the scancode for a character is
+     * the index that holds it. Derived this way the two cannot disagree, and
+     * a wrong entry would show up as a key that does nothing rather than as a
+     * key that means something else.
+     *
+     * Index 0 is skipped: it is not a key, and it holds 'L' - which would
+     * otherwise win over the L key at 0x26. */
+    {
+        uint8_t want;
+        if (k >= SDLK_A && k <= SDLK_Z)
+            want = (uint8_t)('A' + (k - SDLK_A));
+        else if (k == SDLK_BACKSPACE)  want = 0x7F;
+        else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) want = 0x0D;
+        else return 0xFF;
+        for (uint8_t i = 1; i < 0x53; i++)
+            if (MENU_XLAT[i] == want)
+                return i;
+    }
+    return 0xFF;   /* past the table: image 0x04D1A's scan would not have
+                    * found it */
 }
 
 /* A screen with nothing on it to choose takes Esc, and a click. */
