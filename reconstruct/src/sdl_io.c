@@ -1275,6 +1275,25 @@ static void sound_pump(void)
 
 static void sound_open(void)
 {
+    /* ONCE, AND NOT PER SCREEN.
+     *
+     * The original does this in its start-up and never again: image 0x00576
+     * points INT 61h at the driver, image 0x00589 loads adlib.dat, image
+     * 0x0059D asks it whether there is a card, and image 0x005A9 sets
+     * ds:0x25A7 from the answer.
+     *
+     * view_open calls this every time a window opens - menu, briefing,
+     * level, results - and it used to redo the whole of it each time,
+     * including sound_driver_present, which writes ds:0x25A7. So F3 set the
+     * sound off and the very next screen set it back on, and a player who
+     * turned everything off still heard everything. It was also re-reading
+     * adlib.dat and opening a second audio stream per screen.
+     *
+     * view_shutdown is the only thing that closes it, and it runs at exit. */
+    static int done;
+    if (done) return;
+    done = 1;
+
     const char *err = "unknown error";
     /* The driver's data is the player's own adlib.dat. No card and no file
      * are the same thing to the game: silence, and it carries on. */
