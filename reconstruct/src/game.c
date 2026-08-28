@@ -1961,6 +1961,20 @@ void sound_settings_cycle(void)
 /* THE PORT'S OWN - so a caller can show which setting is up. */
 uint8_t sound_setting(void) { return g_snd_setting; }
 
+/* THE PORT'S OWN, and only for the harness - see game.h.
+ *
+ * It exists because of a REAL DISAGREEMENT it turned up. The menu's FX label
+ * is chosen by image 0x04E5A from ds:0x25A7 AND ds:0x2010, so a guest whose
+ * AdLib detect answered draws a different sprite from a port with no driver
+ * loaded - 728 pixels of one label, scored as the port's for as long as the
+ * emulator has been answering that detect. Neither side was wrong; they were
+ * in different states, and nothing said so. */
+void sound_state_set(uint8_t bits, uint8_t driver)
+{
+    g_snd_bits   = bits;                /* ds:0x25A7 */
+    g_snd_driver = driver ? 0xFF : 0;   /* ds:0x2010 */
+}
+
 /* ds:0x2010, which image 0x04E65 tests before choosing the label. */
 uint8_t sound_driver_answered(void) { return g_snd_driver == 0xFF; }
 

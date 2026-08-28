@@ -982,6 +982,14 @@ int main(int argc, char **argv)
             if (rating > 3) { usage(); return 2; }
             want_menu = 0;
         }
+        /* The two bytes the menu's FX label is chosen by - image 0x04E5A
+         * reads ds:0x25A7 and ds:0x2010. A comparison has to put both sides
+         * in the same state; see sound_state_set. */
+        else if (!strcmp(argv[i], "--snd") && i + 2 < argc) {
+            uint8_t bits = (uint8_t)atoi(argv[++i]);
+            uint8_t drv  = (uint8_t)atoi(argv[++i]);
+            sound_state_set(bits, drv);
+        }
         else if (!strcmp(argv[i], "--number") && i + 1 < argc) {
             number = (uint32_t)atoi(argv[++i]); want_menu = 0;
         }

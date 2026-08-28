@@ -307,6 +307,12 @@ void sound_tick_now(void);
 void sound_driver_present(uint8_t yes);
 void sound_settings_cycle(void);   /* image 0x044B3 - the menu's F3 */
 uint8_t sound_setting(void);       /* ds:0x1F71 */
+/* THE PORT'S OWN, for the harness. The original never sets ds:0x25A7 to an
+ * arbitrary value - image 0x044E3 writes it from the table image 0x044B3
+ * indexes - but a comparison against a guest whose settings are its own has
+ * to be able to put both sides in the same state, the way --rating already
+ * does for ds:0x1F6E. See tools/verify_menu.py. */
+void sound_state_set(uint8_t bits, uint8_t driver);   /* ds:0x25A7, ds:0x2010 */
 uint8_t sound_driver_answered(void);  /* ds:0x2010 */
 /* Which label the FX plate wears, or -1 for the bare plate that image
  * 0x04E84 draws when the sound is off entirely. */

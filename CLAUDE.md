@@ -1034,6 +1034,20 @@ Four rules come out of that, and they are cheap:
   original's composed buffer against the port's composed buffer. Say which two
   things are being compared, in the tool, where the next reader will see it.
 
+A fifth of the same kind, and it is the subtlest: **the two sides have to be
+in the same state, and the state includes things the screen does not show.**
+`verify_menu.py` scored the menu at 728 pixels differing - one tight block,
+rows 146..171 - which is exactly the FX label. Image 0x04E5A picks that label
+from `ds:0x25A7` and `ds:0x2010`, the emulator answers the AdLib detect so the
+guest has a driver, and `lemdev --screen menu` loads none. Neither side was
+wrong. The tool read the guest's rating and its banner scroll and told the
+port both; it did not read those two bytes, and the difference arrived as a
+percentage. It now passes them as `--snd`.
+
+The tell was the shape, not the size: 728 pixels in one 26x53 block is a
+SPRITE, and a sprite that is wholly different rather than shifted is the wrong
+sprite being chosen - which is a state question, not a drawing one.
+
 And the one that ties them together: **the port has been exact on every screen
 this repository scores throughout all five.** A number that moves is not
 evidence the reconstruction moved. Ask what the harness fed each side before

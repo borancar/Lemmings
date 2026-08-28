@@ -67,6 +67,18 @@ def read_raw(path):
 
 
 RATING_VAR = 0x0B9FE      # image address of ds:0x1F6E, the current rating
+# THE MENU'S FX LABEL IS CHOSEN BY THESE TWO, image 0x04E5A: ds:0x25A7's low
+# bits and whether ds:0x2010 says a driver answered. They have to be read out
+# of the guest and handed to the port, exactly as the rating is - not assumed.
+#
+# Assuming them cost 728 pixels, scored as the port's. The emulator answers
+# the AdLib detect, so the guest's ds:0x2010 is 0xFF and its ds:0x25A7 is 3;
+# `lemdev --screen menu` loads no driver, so it drew the other of the two
+# label sprites. Neither side was wrong and nothing said they were in
+# different states - which is this file's own claim about what a comparison
+# is worth, one screen further in.
+SND_VAR = 0x0C037         # ds:0x25A7, the sound settings
+DRV_VAR = 0x0BAA0         # ds:0x2010, whether a driver answered
 # The banner's scroll, ds:0x21 - image 0x07CC6 starts it at 4. Reading it back
 # is the same idea as reading the rating: the menu ANIMATES, so a capture shows
 # one phase of it and the port has to be told which, or the banner's rows come
@@ -154,6 +166,8 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
     last_scroll = 0
     last_anim = None
     last_cells = None
+    last_snd_bits = None
+    last_snd_drv = None
     for attempt in range(tries):
         if os.path.exists(path):
             os.unlink(path)
@@ -169,6 +183,8 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
         if rating:
             cmd += ["--cmd", "sleep 1.5"]      # let the plate redraw
         cmd += ["--cmd", f"read i+{RATING_VAR:#x} 1"]
+        cmd += ["--cmd", f"read i+{SND_VAR:#x} 1"]
+        cmd += ["--cmd", f"read i+{DRV_VAR:#x} 1"]
         cmd += ["--cmd", f"read i+{ADAPTER_VAR:#x} 2"]
         if screen == "code":
             cmd += ["--cmd", f"read i+{CODE_CELLS_VAR:#x} {CODE_CELLS_N}"]
@@ -268,6 +284,26 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
                     f"the capture after the key press is {n - ink} of {n}"
                     f" pixels blank.\nThat is a screen in transition, not the"
                     f" {screen} screen. A failure, not a percentage.")
+
+        def read_back(addr):
+            """One byte the run read out of the guest, or None."""
+            state = None
+            for ln in out.splitlines():
+                if f"read i+{addr:#x}" in ln:
+                    state = "pending"
+                    continue
+                if state == "pending" and ln.strip():
+                    for t in ln.replace(":", " ").split():
+                        if len(t) == 2:
+                            try:
+                                return int(t, 16)
+                            except ValueError:
+                                continue
+                    return None
+            return None
+
+        snd_bits = read_back(SND_VAR)
+        snd_drv  = read_back(DRV_VAR)
 
         got = None
         for line in out.splitlines():
@@ -410,7 +446,7 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
             raise SystemExit(f"ds:0x1F6E reads {got}, which is not a rating")
         ambiguous = anim is None or (screen == "code" and cells is None)
         if got == rating and not ambiguous:
-            return path, got, scroll, anim, cells
+            return path, got, scroll, anim, cells, snd_bits, snd_drv
         if got == rating:
             # The rating is right and only the walkers' phase is ambiguous.
             # That is worth another run, not a score against a guess.
@@ -420,6 +456,8 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
             last_scroll = scroll
             last_anim = anim
             last_cells = cells
+            last_snd_bits = snd_bits
+            last_snd_drv = snd_drv
             continue
         print(f"  asked for rating {rating}, the guest reached {got} - "
               f"presses were dropped or doubled"
@@ -428,9 +466,12 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
         last_scroll = scroll
         last_anim = anim
         last_cells = cells
+        last_snd_bits = snd_bits
+        last_snd_drv = snd_drv
     print(f"  gave up after {tries} tries; scoring against rating {last}, "
           f"which is what is actually on the screen.")
-    return path, last, last_scroll, last_anim, last_cells
+    return (path, last, last_scroll, last_anim, last_cells,
+            last_snd_bits, last_snd_drv)
 
 
 def main():
@@ -455,8 +496,9 @@ def main():
 
     if a.capture:
         cap, shown, scroll, anim, cells = a.capture, a.rating, None, None, None
+        snd_bits = snd_drv = None
     else:
-        cap, shown, scroll, anim, cells = capture(
+        cap, shown, scroll, anim, cells, snd_bits, snd_drv = capture(
             os.path.join(ROOT, "out",
                          f"{a.screen}{a.rating or ''}.scrn"),
             a.seconds, a.delay, a.rating, screen=a.screen)
@@ -479,6 +521,15 @@ def main():
                 "--screen", a.screen, "--rating",
                 ("fun", "tricky", "taxing", "mayhem")[shown],
                 "--raw", port_raw]
+    # THE SOUND STATE, out of the guest rather than assumed - see SND_VAR.
+    if snd_bits is not None and snd_drv is not None:
+        print(f"  the FX label: ds:0x25A7 reads {snd_bits:#04x} and ds:0x2010 "
+              f"{snd_drv:#04x}, so the port is told the same")
+        port_cmd += ["--snd", str(snd_bits & 3), "1" if snd_drv == 0xFF else "0"]
+    else:
+        print("  the FX label: ds:0x25A7 and ds:0x2010 were NOT read, so the "
+              "two\n  sides may disagree about which label is up - 728 pixels "
+              "when they do")
     if a.screen == "menu":
         # The banner scrolls, so a capture shows one phase of it and the port
         # has to be rendered at the same one or its rows come back as a
