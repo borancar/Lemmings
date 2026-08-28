@@ -31,7 +31,7 @@ LDFLAGS += $(SDL_LIBS)
 # mirrors the original, which has no command line. `lemdev` is the developer
 # harness - one screen to a file, a forced rating or scroll - and none of it
 # corresponds to anything in vgalemmi.exe.
-CORE := src/game.c src/sdl_io.c src/adlib.c
+CORE := src/game.c src/data.c src/sdl_io.c src/adlib.c
 BIN     := lemmings
 DEV_BIN := lemdev
 
@@ -68,7 +68,7 @@ src/%.o: src/%.c $(HDRS)
 # SDL events and asserts what menu_run returns. SDL's dummy video driver means
 # it needs no display.
 TEST_BIN := tests/menu_input
-TEST_OBJ := src/game.o src/sdl_io.o src/adlib.o $(OPL_OBJ)
+TEST_OBJ := src/game.o src/data.o src/sdl_io.o src/adlib.o $(OPL_OBJ)
 
 $(TEST_BIN): tests/menu_input.c $(TEST_OBJ)
 	$(CC) $(CFLAGS) -Isrc -o $@ $< $(TEST_OBJ) $(LDFLAGS)
@@ -105,7 +105,8 @@ SAN_CC ?= clang
 sanitize:
 	$(SAN_CC) -O1 -g -std=c11 -Wall -Wextra -Wno-sign-conversion \
 	    -fsanitize=address,undefined -fno-omit-frame-pointer \
-	    -Isrc -o tests/screens_asan tests/screens.c src/game.c src/sdl_io.c src/adlib.c \
+	    -Isrc -o tests/screens_asan tests/screens.c src/game.c src/data.c \
+	    src/sdl_io.c src/adlib.c \
 	    $(OPL_SRC) -lstdc++ $(SDL_CFLAGS) $(SDL_LIBS)
 	SDL_VIDEODRIVER=dummy ASAN_OPTIONS=detect_leaks=1 \
 	    ./tests/screens_asan $(DATA)

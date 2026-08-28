@@ -876,8 +876,15 @@ program will never look at.
   file and the linker laid each module into the segment whole and in link
   order, so a contiguous run of addresses is one original source file and
   address order is source order inside it. That is the only division of this
-  program its authors made. The port is `game.c` + `game.h`; `sdl_io.c` and
-  `main.c` are boundaries **the port chose**, and their headers say so.
+  program its authors made. The port is `game.c` + `game.h`; `sdl_io.c`,
+  `main.c`, `adlib.c` and `data.c` are boundaries **the port chose**, and
+  their headers say so. `adlib.c` is the one with a claim to being a real
+  translation unit: it is `adlib.dat`, which WAS a separate program.
+  `data.c` holds the transcribed tables and nothing else - a thousand lines
+  of bytes between two routines makes the routines harder to find and says
+  nothing while you scroll past them. Every table there carries its address
+  exactly as a routine does, and a table that had to be COMPUTED rather than
+  read does not belong in it.
 - **Every function carries where it came from** — the image offset if it is
   transcribed, and an explicit "not transcribed, address unknown" if it is
   not. Transcribed *data* (a palette, a string table) takes the same comment.

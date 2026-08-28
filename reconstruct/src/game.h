@@ -13,6 +13,9 @@
 #ifndef LEM_GAME_H
 #define LEM_GAME_H
 
+#ifndef GAME_H
+#define GAME_H
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -1164,3 +1167,5 @@ int menu_frame_step(void *ctx, uint8_t *pix);
 menu_action menu_run(menu_screen *m, uint8_t scale);
 
 void menu_free(menu_screen *m);
+
+#endif /* GAME_H */
