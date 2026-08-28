@@ -294,7 +294,9 @@ extern uint8_t g_terrain_reverse;
  *
  * Both gates are the caller's, as they are in the original: ds:0x25A7 bit 0
  * for an AH=3 call and bits 0-1 for an AH=4 one. */
-void sound_request(uint8_t fn, uint8_t id);
+/* `vec` is 0x60 or 0x61 - the fallback device or the loaded driver, and
+ * they are not the same thing; `ah` is 3 for a tune and 4 for an effect. */
+void sound_request(uint8_t vec, uint8_t ah, uint8_t id);
 
 /* Run one driver tick right now. image 0x003BB does this immediately after
  * asking for a tune rather than waiting for the next timer interrupt. */

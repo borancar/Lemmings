@@ -2015,12 +2015,12 @@ void level_start_step(void)
              * that they have. This was a deliberate no-op for as long as the
              * port had no sound. */
             if (g_snd_driver == 0xFF && sound_enabled(3))  /* image 0x0387 */
-                sound_request(4, 0x03);                    /* image 0x038E */
+                sound_request(0x61, 4, 0x03);                    /* image 0x038E */
         } else if (dl == 0x23) {
             g_entrance_open = 0xFF;         /* image 0x394 */
             /* image 0x03A7's own sound, which the port had never made */
             if (g_snd_driver == 0xFF && sound_enabled(3))  /* image 0x03A0 */
-                sound_request(4, 0x02);                    /* image 0x03A7 */
+                sound_request(0x61, 4, 0x02);                    /* image 0x03A7 */
         } else if (dl == 0x37) {
             /* image 0x03AD, and note the mask: the MUSIC wants bit 1 of
              * ds:0x25A7 ALONE where the two effects above want either bit.
@@ -2028,7 +2028,7 @@ void level_start_step(void)
              * reading and NOT established for a long time; the two routines
              * using different masks is what settles it. */
             if (sound_enabled(2)) {                        /* image 0x03AD */
-                sound_request(3, g_tune);                  /* image 0x03B4 */
+                sound_request(0x61, 3, g_tune);                  /* image 0x03B4 */
                 sound_tick_now();                          /* image 0x03BB */
             }
         } else if (dl > 0x37) {
@@ -2366,9 +2366,9 @@ void lem_exit_start(lemming *a)
      * it is. sound_request's first argument is which of the two. */
     if (g_snd_driver != 0xFF) {
         if (sound_enabled(1))              /* image 0x02F82 */
-            sound_request(3, 0x02);        /* image 0x02F89 */
+            sound_request(0x60, 3, 0x02);   /* image 0x02F89 */
     } else if (sound_enabled(3)) {         /* image 0x02F95 */
-        sound_request(4, 0x10);            /* image 0x02F9C */
+        sound_request(0x61, 4, 0x10);            /* image 0x02F9C */
     }
 }
 
@@ -3529,7 +3529,7 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
          * for as long as the port had no sound. */
         else if (a->anim == 0x0A && a->bricks <= 3) {   /* image 0x026A4 */
             if (g_snd_driver == 0xFF && sound_enabled(3))  /* image 0x026C2 */
-                sound_request(4, 0x12);                    /* image 0x026D0 */
+                sound_request(0x61, 4, 0x12);                    /* image 0x026D0 */
         }
         return;                                    /* image 0x026DB */
     }
@@ -4143,7 +4143,7 @@ static int lem_fuse_step(lemming *a)
     /* THE FUSE HAS RUN OUT - image 0x02E59. This is the one the nuke makes
      * over and over as it lights each lemming in turn. */
     if (g_snd_driver == 0xFF && sound_enabled(3))   /* image 0x02E4B */
-        sound_request(4, 0x05);                     /* image 0x02E59 */
+        sound_request(0x61, 4, 0x05);                     /* image 0x02E59 */
     return 0;                                       /* image 0x02E5E */
 }
 
@@ -4161,7 +4161,7 @@ static void lem_boom(lemming *a)
     /* THE EXPLOSION - image 0x02D65. The cloud's own sound at image 0x02374
      * is a different one on the OTHER interrupt; this is the bang. */
     if (g_snd_driver == 0xFF && sound_enabled(3))   /* image 0x02D57 */
-        sound_request(4, 0x0C);                     /* image 0x02D65 */
+        sound_request(0x61, 4, 0x0C);                     /* image 0x02D65 */
 }
 
 
@@ -4205,11 +4205,15 @@ static void lem_cloud(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         return;
     }
     if (a->anim != 1) return;                       /* image 0x0235F */
-    /* THE BANG. Image 0x02372 tests ds:0x25A7 bit 0 and image 0x02374 asks
-     * for sound 0x0C with AH=3 - see docs/sound.md. It sits here, on the one
-     * frame the counter is 1, because that is where the original's is. */
-    if (sound_enabled(1))                           /* image 0x02372 */
-        sound_request(3, 0x0C);                     /* image 0x02374 */
+    /* THE BANG, and it is on the FALLBACK device. Image 0x02366 tests
+     * ds:0x2010 FIRST and skips the whole thing when a driver answered -
+     * this is what a machine with no AdLib does instead. The port had only
+     * the ds:0x25A7 test, and its sound_request sent AH=3 to the driver's
+     * TUNE slot whatever the interrupt was, so bombing a lemming started
+     * tune 12 - which is what "fx only, and it is still playing music"
+     * turned out to be. */
+    if (g_snd_driver != 0xFF && sound_enabled(1))   /* image 0x02366, 0x02372 */
+        sound_request(0x60, 3, 0x0C);               /* image 0x02374 */
     /* Image 0x023A6 reads the cell under it and refuses on 9 and 5 - steel. */
     if ((a->tcell & 0x0F) == 9 || (a->tcell & 0x0F) == 5) return;
     lem_crater(a, lvl, cw, chh);                    /* image 0x023B9 */
@@ -4764,7 +4768,7 @@ void lemmings_step(lemming *lem, uint8_t n,
                         const ground_object *tgo =
                             &trig_g->objects[trig_lv->objects[obj].id & 0x0F];
                         if (tgo->trigger_sound)      /* image 0x02FEC */
-                            sound_request(4, tgo->trigger_sound);  /* 0x02FF3 */
+                            sound_request(0x61, 4, tgo->trigger_sound);  /* 0x02FF3 */
                     }
                 }
             } else if (eff == 5) {
@@ -4783,7 +4787,7 @@ void lemmings_step(lemming *lem, uint8_t n,
                      * own sound: exactly the layout that got 0x0D attached
                      * to the release. */
                     if (g_snd_driver == 0xFF && sound_enabled(3))
-                        sound_request(4, 0x11);      /* image 0x03049 */
+                        sound_request(0x61, 4, 0x11);      /* image 0x03049 */
                 }
             } else if (eff == 6) {
                 /* Image 0x0304F, the other one - fourteen frames and gone.
@@ -4801,7 +4805,7 @@ void lemmings_step(lemming *lem, uint8_t n,
                      * next thing this routine does, at image 0x03092's
                      * ds:0x2010 test and image 0x030A0's request. */
                     if (g_snd_driver == 0xFF && sound_enabled(3))
-                        sound_request(4, 0x0D);      /* image 0x030A0 */
+                        sound_request(0x61, 4, 0x0D);      /* image 0x030A0 */
                 }
             }
         }

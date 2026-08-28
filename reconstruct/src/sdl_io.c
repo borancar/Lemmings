@@ -497,7 +497,7 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
         /* AND AN ASSIGNMENT DOES TOO - image 0x03202 tests the same bits and
          * image 0x03205 asks for sound 0x04, inside image 0x03150. */
         if (level_skill_left(A->skill) && sound_enabled(3))
-            sound_request(4, 0x04);       /* image 0x03205 */
+            sound_request(0x61, 4, 0x04);       /* image 0x03205 */
         if (level_skill_left(A->skill)) {
             int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
             if (k >= 0) {
@@ -554,7 +554,7 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          * ds:0x25A7 bits 0-1 and image 0x03F77 asks for sound 0x01 with
          * AH=4, before the dispatch below sorts out which button it was. */
         if (sound_enabled(3))             /* image 0x03F75 */
-            sound_request(4, 0x01);       /* image 0x03F77 */
+            sound_request(0x61, 4, 0x01);       /* image 0x03F77 */
         if (h.button < 2) {               /* image 0x03F27 */
             level_rate_click(h.button);   /* image 0x04032: 0 down, 1 up */
             return;
@@ -622,7 +622,7 @@ static void level_key_button(struct level_frame *A, SDL_Keycode k)
      * the same one a click makes, because the key path joins the click path
      * before it. */
     if (sound_enabled(3))                        /* image 0x03F70 */
-        sound_request(4, 0x01);                  /* image 0x03F77 */
+        sound_request(0x61, 4, 0x01);                  /* image 0x03F77 */
     A->selected = (uint8_t)(button + 1);
     A->skill    = (uint8_t)button;               /* image 0x03F66 */
 }
@@ -1179,10 +1179,27 @@ static double  g_tick_acc;             /* samples owed to the next tick */
 /* The game asks through INT 60h (fn 3) or INT 61h (fn 4) - see docs/sound.md
  * for which call site asks for which, and why the two are alternatives
  * rather than two faces of one driver. */
-void sound_request(uint8_t fn, uint8_t id)
+/* WHICH INTERRUPT MATTERS AS MUCH AS WHICH AH.
+ *
+ * The game asks for sound two ways and they are not the same device:
+ *
+ *   INT 61h   the loaded driver - adlib.dat - and AH says what: 3 stores a
+ *             TUNE number in its slot at driver +0x00ED, 4 an EFFECT at
+ *             +0x00F0
+ *   INT 60h   the fallback, for a machine where no driver answered. Every
+ *             one of its sites is guarded by ds:0x2010 first - image 0x02366
+ *             and image 0x02F7B both `cmp byte [0x2010], 0xff / je` PAST the
+ *             call - so it never runs alongside the driver.
+ *
+ * This took only AH, so AH=3 meant "play a tune" whichever interrupt the
+ * site belonged to. Image 0x02374's fallback beep for the bomber's cloud is
+ * AH=3, AL=0x0C on INT 60h, and it became adlib_music(12): a whole tune,
+ * started by a bomb, on a setting where music is off. */
+void sound_request(uint8_t vec, uint8_t ah, uint8_t id)
 {
+    if (vec != 0x61) return;   /* the fallback device, which this port has not */
     if (!adlib_ready()) return;
-    if (fn == 4) adlib_effect(id);          /* driver +0x002A */
+    if (ah == 4) adlib_effect(id);          /* driver +0x002A */
     else         adlib_music(id);           /* driver +0x0022 */
 }
 

@@ -1448,6 +1448,33 @@ int main(int argc, char **argv)
         ck("and the plate is DIFFERENT in all three", lab,
            "two of the three drew the same plate");
 
+        /* AND "FX ONLY" MUST NOT PLAY A TUNE.
+         *
+         * sound_request took only AH, so AH=3 meant "a tune" whichever
+         * interrupt the site belonged to - and image 0x02374's fallback beep
+         * for the bomber is AH=3 on INT 60h. On fx-only it started tune 12.
+         *
+         * Register 0xBD is the witness again: only the driver's start_music
+         * writes it, so seeing it means a TUNE began. */
+        const char *serr = "unknown error";
+        if (adlib_load(dir, &serr) == 0) {
+            sound_driver_present(1);
+            sound_settings_cycle();              /* 2 -> 0, silent */
+            sound_settings_cycle();              /* 0 -> 1, effects only */
+            int fx_only = sound_enabled(1) && !sound_enabled(2);
+            g_saw_bd = 0; g_saw_any = 0;
+            opl_reset();
+            opl_set_trace(saw_bd);
+            /* the fallback's AH=3, which used to become a tune */
+            sound_request(0x60, 3, 0x0C);
+            for (int i = 0; i < 40; i++) adlib_tick();
+            opl_set_trace(NULL);
+            ck("fx only, and INT 60h's AH=3 starts no tune",
+               fx_only && g_saw_bd == 0, "a tune began");
+            adlib_free();
+            sound_driver_present(1);
+        }
+
         /* and with no driver the music setting is skipped entirely */
         sound_driver_present(0);
         int ok2 = sound_setting() == 1;             /* image 0x00596 */
