@@ -209,6 +209,13 @@ int main(int argc, char **argv)
             continue;
         }
 
+        /* Image 0x044B3 cycles the sound settings and goes straight back
+         * to the menu loop at image 0x0445B - it opens no screen. */
+        if (a == MENU_FX) {
+            sound_settings_cycle();
+            continue;
+        }
+
         if (a == MENU_NEW_LEVEL || a == MENU_HELP) {
             menu_screen sub;
             int ok = (a == MENU_NEW_LEVEL) ? menu_code_screen(data, &sub, &err)

@@ -1415,6 +1415,37 @@ int main(int argc, char **argv)
         }
     }
 
+    /* ---- F3 cycles the sound settings, image 0x044B3 ----
+     *
+     * Three settings behind a two-bit gate, and the count depends on whether
+     * a driver answered: image 0x044C4 uses three, image 0x044CD drops it to
+     * two when ds:0x2010 is not 0xFF, because setting 2 IS the music and
+     * there is nothing to play it on. */
+    {
+        sound_driver_present(1);
+        int ok = (sound_setting() == 2)             /* image 0x005AE */
+              && sound_enabled(1) && sound_enabled(2);
+        sound_settings_cycle();                     /* 2 -> 0, silent */
+        ok = ok && sound_setting() == 0
+                && !sound_enabled(1) && !sound_enabled(2);
+        sound_settings_cycle();                     /* 0 -> 1, effects */
+        ok = ok && sound_setting() == 1
+                && sound_enabled(1) && !sound_enabled(2);
+        sound_settings_cycle();                     /* 1 -> 2, both again */
+        ok = ok && sound_setting() == 2 && sound_enabled(2);
+        ck("F3 cycles silent / effects / both", ok, "the cycle differs");
+
+        /* and with no driver the music setting is skipped entirely */
+        sound_driver_present(0);
+        int ok2 = sound_setting() == 1;             /* image 0x00596 */
+        sound_settings_cycle();
+        ok2 = ok2 && sound_setting() == 0;
+        sound_settings_cycle();
+        ok2 = ok2 && sound_setting() == 1 && !sound_enabled(2);
+        ck("with no driver it is two, never the music", ok2, "it reached 2");
+        sound_driver_present(1);
+    }
+
     /* ---- the trap's sound is per OBJECT, and only traps have one ----
      *
      * Image 0x02FE9 reads the id from byte 0x1B of the object's record

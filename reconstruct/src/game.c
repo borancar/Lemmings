@@ -1832,6 +1832,7 @@ void music_cold_start(void)
  * is exactly why image 0x003AD can ask for music with no ds:0x2010 test of
  * its own while image 0x00380 and image 0x00394 both have one. */
 static uint8_t g_snd_bits = 1;         /* image 0x00591 */
+static uint8_t g_snd_setting = 1;      /* ds:0x1F71, image 0x00596 */
 
 uint8_t sound_enabled(uint8_t bits)
 {
@@ -1883,7 +1884,45 @@ void sound_driver_present(uint8_t yes)
 {
     g_snd_driver = yes ? 0xFF : 0;     /* image 0x005A4 */
     g_snd_bits   = yes ? 3 : 1;        /* image 0x005A9 against image 0x00591 */
+    g_snd_setting = yes ? 2 : 1;       /* image 0x005AE against image 0x00596 */
 }
+
+/* THE MENU'S F3, image 0x044B3 - the sound settings, cycled.
+ *
+ *     0x044BF  al = ds:0x1F71 + 1        the setting, one on
+ *     0x044C4  ah = 3
+ *     0x044C6  ...unless ds:0x2010 says no driver answered, then ah = 2
+ *     0x044D1  al == ah, so wrap to 0
+ *     0x044E0  al = the table at image 0x044E9
+ *     0x044E3  ds:0x25A7 = al
+ *
+ * The table is three bytes, 00 01 03, and they are the two gate bits this
+ * port already tests everywhere:
+ *
+ *     0  0x00   silent
+ *     1  0x01   effects only - bit 0
+ *     2  0x03   effects and music - bits 0 and 1
+ *
+ * Which is why the count is three with a driver and two without: setting 2
+ * is the music, and there is nothing to play it on. Image 0x00596 starts at
+ * 1 and image 0x005AE raises it to 2 when the detect answers, so a machine
+ * with an AdLib begins with everything on and F3 takes things AWAY.
+ */
+void sound_settings_cycle(void)
+{
+    /* image 0x044B3: one input mode leaves the plate inert. ds:0x1F72 is
+     * the plate's own state, image 0x04E41's, and the port does not model
+     * it - so this arm is a no-op with its address rather than a guess. */
+    uint8_t al = (uint8_t)(g_snd_setting + 1);      /* image 0x044BF */
+    uint8_t ah = (g_snd_driver == 0xFF) ? 3 : 2;    /* image 0x044C4 */
+    if (al == ah) al = 0;                           /* image 0x044D3 */
+    g_snd_setting = al;                             /* image 0x044D5 */
+    static const uint8_t BITS[3] = { 0x00, 0x01, 0x03 };  /* image 0x044E9 */
+    g_snd_bits = BITS[al % 3];                      /* image 0x044E3 */
+}
+
+/* THE PORT'S OWN - so a caller can show which setting is up. */
+uint8_t sound_setting(void) { return g_snd_setting; }
 
 /* ======================================================================
  * THE LEVEL'S OPENING SEQUENCE - image 0x0361, called from the play loop's
