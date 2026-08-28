@@ -62,14 +62,7 @@ def build_lib(path):
     # layout rather than a split of our invention, so there is one file to
     # build here and not a hand-picked subset of modules. sdl_io.c comes with
     # it because game.c calls into the window layer.
-    sdl = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl3"],
-                         capture_output=True, text=True, check=True
-                         ).stdout.split()
-    subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-Wall", "-Wextra",
-                    "-Wconversion", "-I", src, "-o", path,
-                    os.path.join(src, "game.c"),
-                    os.path.join(src, "sdl_io.c")] + sdl, check=True)
-    lib = ctypes.CDLL(path)
+    lib = lemmings.game_lib()
     lib.dat_decompress.restype = ctypes.c_int
     lib.dat_decompress.argtypes = [
         ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,

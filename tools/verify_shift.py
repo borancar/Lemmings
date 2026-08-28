@@ -26,6 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import lemmings   # noqa: E402  (after sys.path)
 
 BEFORE = 0x09365          # buffer copied, shift count about to be read
 AFTER = 0x09382           # shifted, about to be blitted
@@ -77,14 +79,7 @@ def install(m):
 
 def build_lib(path):
     src = os.path.join(ROOT, "reconstruct", "src")
-    sdl = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl3"],
-                         capture_output=True, text=True, check=True
-                         ).stdout.split()
-    subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-Wall", "-Wextra",
-                    "-Wconversion", "-I", src, "-o", path,
-                    os.path.join(src, "game.c"),
-                    os.path.join(src, "sdl_io.c")] + sdl, check=True)
-    lib = ctypes.CDLL(path)
+    lib = lemmings.game_lib()
     lib.shift_row.restype = ctypes.c_uint8
     lib.shift_row.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint8,
                               ctypes.c_uint8, ctypes.POINTER(ctypes.c_uint8)]

@@ -64,6 +64,28 @@ src/%.o: src/%.c $(HDRS)
 %.o: %.cpp $(HDRS)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+# THE SHARED LIBRARY tools/ LOADS THROUGH ctypes, and it lives here because
+# it kept breaking everywhere else. Eight verifiers each hand-wrote a cc line
+# naming the port's sources, so every file the port has gained since broke all
+# eight at once and none of them said why: data.c did it, and adlib.c and the
+# OPL would have done it next. A file list written out nine times is a file
+# list that will differ - the same reason level_play_step exists.
+#
+# It is not built by `all`: a tool asks for it, and CLAUDE.md's rule about
+# checking the build succeeded is why they ask through make rather than
+# rebuild it themselves.
+LIB     := libgame.so
+PIC_OBJ := $(CORE:.c=.pic.o) $(OPL_SRC:.cpp=.pic.o)
+
+src/%.pic.o: src/%.c $(HDRS)
+	$(CC) $(CFLAGS) -fPIC -c -o $@ $<
+
+%.pic.o: %.cpp $(HDRS)
+	$(CXX) $(CXXFLAGS) -fPIC -c -o $@ $<
+
+$(LIB): $(PIC_OBJ)
+	$(CC) -shared -o $@ $^ $(LDFLAGS)
+
 # The menu's input, checked rather than eyeballed: the test pushes synthetic
 # SDL events and asserts what menu_run returns. SDL's dummy video driver means
 # it needs no display.
@@ -113,6 +135,7 @@ sanitize:
 
 clean:
 	rm -f src/*.o vendor/ymfm/*.o $(BIN) $(DEV_BIN) $(TEST_BIN) \
-	      $(SCREEN_BIN) $(OPL_BIN) tests/screens_asan tests/menu_input_asan
+	      $(SCREEN_BIN) $(OPL_BIN) tests/screens_asan tests/menu_input_asan \
+	      src/*.pic.o vendor/ymfm/*.pic.o $(LIB)
 
 .PHONY: all clean test sanitize

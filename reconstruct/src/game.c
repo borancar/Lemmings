@@ -3643,6 +3643,51 @@ static int dig_row(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh,
     return had;
 }
 
+/* IMAGE 0x02490 - AND WHAT IT DUG INTO MIGHT BE STEEL.
+ *
+ * Image 0x02446 and image 0x0244A test the bits image 0x05EBA just cleared,
+ * and BOTH arms of that test are used: `jne 0x2491` when something was
+ * there, and the fall-through at image 0x0244E when nothing was. The port
+ * had only the second, so a digger that reached steel dug straight on
+ * through it.
+ *
+ * Image 0x02491 asks the trigger map - the same cell arithmetic every other
+ * reader of it uses, `x >> 2` and `(y - 0x10) >> 2` on the lemming's own
+ * record coordinates, masked to the low nibble - and effect 9 is steel. On
+ * anything else image 0x024BA jumps to image 0x01FE8 and the dig carries on,
+ * which is why this is a stop rather than a test that has to be passed.
+ *
+ * On steel the lemming becomes a WALKER, and the conversion is the one image
+ * 0x027FC does for a blocker whose floor went away: the flag word cleared
+ * outright, the hot spot back to a walker's (-8, -10), the animation counter
+ * to zero, the state to 9 and image 0x02505's `and [si+0x24],1`. The four
+ * fields the port does not model - [si+0x0A], [si+0x0C], [si+0x10] = 0x5A
+ * and [si+0x12] = 0x3C - are set here too and are noted rather than
+ * invented; nothing in this port reads them.
+ *
+ * AND IT MAKES A SOUND, image 0x024CB's effect 0x0A, which is the one this
+ * repository has been carrying as "nothing to attach it to". This is what it
+ * attaches to. Note its mask is ds:0x25A7 & 3 - either setting - like every
+ * other effect and unlike the music.
+ */
+static int dig_hit_steel(lemming *a)
+{
+    uint8_t cell = (uint8_t)(level_trigger_cell((int32_t)a->x / TRIG_CELL,
+                        ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL) & 0x0F);
+    if (cell != 9) return 0;                  /* image 0x024B6 */
+
+    if (sound_driver_answered() && sound_enabled(3))   /* image 0x024BD */
+        sound_request(0x61, 4, 0x0A);                  /* image 0x024CB */
+
+    a->flags = 0;                             /* image 0x024D0 */
+    a->anim  = 0;                             /* image 0x024E9 */
+    a->hot_x = -8;                            /* image 0x024ED */
+    a->hot_y = -10;                           /* image 0x024F2 */
+    a->state = 9;                             /* image 0x024F7 */
+    a->extra &= 1;                            /* image 0x02505 */
+    return 1;
+}
+
 /* Transcribed from image 0x023F3, with its first frame at image 0x0250C.
  * Sixteen animation frames, digging on the two where the counter comes round
  * to 0 and to 8 - image 0x02406 and image 0x02408. */
@@ -3693,6 +3738,7 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
      * ledge, where the row dug is the last solid one and the row below is
      * already open. */
     int had = dig_row(a, lvl, cw, chh, dy_back);
+    if (had && dig_hit_steel(a)) return;      /* image 0x02448 / 0x0244C */
     if (!had) {
         /* Image 0x0244E: it dug nothing, so there is nothing to stand on.
          *

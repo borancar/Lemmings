@@ -39,6 +39,8 @@ AFTER_PARSE = 0x03742    # `mov al, [0xfe8]`, the first thing after the parse
 LEVEL_BUF = 0x0FCB       # DS-relative, from `mov di, 0xfcb` at 0x036B9
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import lemmings   # noqa: E402  (after sys.path)
 
 SKILLS = ("climber", "floater", "bomber", "blocker",
           "builder", "basher", "miner", "digger")
@@ -50,14 +52,7 @@ def build_lib(path):
     # layout rather than a split of our invention, so there is one file to
     # build here and not a hand-picked subset of modules. sdl_io.c comes with
     # it because game.c calls into the window layer.
-    sdl = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl3"],
-                         capture_output=True, text=True, check=True
-                         ).stdout.split()
-    subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-Wall", "-Wextra",
-                    "-Wconversion", "-I", src, "-o", path,
-                    os.path.join(src, "game.c"),
-                    os.path.join(src, "sdl_io.c")] + sdl, check=True)
-    lib = ctypes.CDLL(path)
+    lib = lemmings.game_lib()
     lib.level_header_fields.restype = ctypes.c_int
     lib.level_header_fields.argtypes = [
         ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,

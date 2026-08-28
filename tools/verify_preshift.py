@@ -78,14 +78,7 @@ def install(m):
 
 def build_lib(path):
     src = os.path.join(ROOT, "reconstruct", "src")
-    sdl = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl3"],
-                         capture_output=True, text=True, check=True
-                         ).stdout.split()
-    subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-Wall", "-Wextra",
-                    "-I", src, "-o", path,
-                    os.path.join(src, "game.c"),
-                    os.path.join(src, "sdl_io.c")] + sdl, check=True)
-    lib = ctypes.CDLL(path)
+    lib = lemmings.game_lib()
     lib.preshift_sprite.restype = None
     lib.preshift_sprite.argtypes = [
         ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint8, ctypes.c_uint8,

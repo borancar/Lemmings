@@ -46,6 +46,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import lemmings   # noqa: E402  (after sys.path)
 
 
 class Lem(ctypes.Structure):
@@ -59,13 +61,7 @@ class Lem(ctypes.Structure):
 def build():
     src = os.path.join(ROOT, "reconstruct", "src")
     so = os.path.join(ROOT, "out", "libdig.so")
-    sdl = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl3"],
-                         capture_output=True, text=True, check=True
-                         ).stdout.split()
-    subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-I", src, "-o", so,
-                    os.path.join(src, "game.c"),
-                    os.path.join(src, "sdl_io.c")] + sdl, check=True)
-    lib = ctypes.CDLL(so)
+    lib = lemmings.game_lib()
     lib.lemmings_step.argtypes = [ctypes.POINTER(Lem), ctypes.c_uint8,
                                   ctypes.POINTER(ctypes.c_uint8),
                                   ctypes.c_uint16, ctypes.c_uint16]

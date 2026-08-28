@@ -104,13 +104,7 @@ def main():
 
     src = os.path.join(ROOT, "reconstruct", "src")
     so = os.path.join(ROOT, "out", "libdigits.so")
-    sdl = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl3"],
-                         capture_output=True, text=True, check=True
-                         ).stdout.split()
-    subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-Wall", "-Wextra",
-                    "-I", src, "-o", so, os.path.join(src, "game.c"),
-                    os.path.join(src, "sdl_io.c")] + sdl, check=True)
-    lib = ctypes.CDLL(so)
+    lib = lemmings.game_lib()
     lib.digits3.restype = None
     lib.digits3.argtypes = [ctypes.c_uint8, ctypes.c_char_p]
 

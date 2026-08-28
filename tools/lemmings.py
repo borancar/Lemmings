@@ -48,6 +48,30 @@ PSP_SEG = 0x1000
 # the image base coincide, so a cs: offset is an image offset.
 CODE_BASE = 0
 
+
+def game_lib():
+    """The port, as a shared library, for a verifier to call routine by routine.
+
+    THROUGH THE MAKEFILE, not a cc line written out here. Eight tools each had
+    their own, naming game.c and sdl_io.c, so every source file the port has
+    gained since broke all eight at once - data.c did exactly that, and the
+    failure arrived as `undefined symbol: CRATER` from ctypes rather than as
+    anything about the port. The list of sources belongs in one place and the
+    Makefile already is that place; this asks it for `libgame.so`.
+
+    It also CHECKS THE BUILD SUCCEEDED, which is CLAUDE.md's rule and the
+    reason a tool must not compile the port itself and carry on: a `make` whose
+    output went to /dev/null once produced four identical measurements from a
+    binary that had never been built.
+    """
+    import ctypes
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rec = os.path.join(root, "reconstruct")
+    subprocess.run(["make", "-C", rec, "libgame.so"], check=True,
+                   stdout=subprocess.DEVNULL)
+    return ctypes.CDLL(os.path.join(rec, "libgame.so"))
+
 # Image offset of DGROUP. A `ds:XXXX` reference in the disassembly is image
 # offset DGROUP + XXXX; getting this wrong turns strings into garbage.
 DGROUP = 0x09A90
