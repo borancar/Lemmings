@@ -683,10 +683,15 @@ void level_results_palette(lem_rgb *out);
 /* What the results screen was dismissed with - image 0x047B4 takes the left
  * button on to the next level and image 0x047B9 takes the right one back to
  * the menu. */
+/* What image 0x046EB decided, before anything is drawn or any button read. */
+#define RESULTS_FAILED       0
+#define RESULTS_PASSED       1
+#define RESULTS_OUT_OF_GAME  2
+int level_results_judge(char *code);   /* image 0x046EB */
+
 #define RESULTS_MENU 0
 #define RESULTS_NEXT 1
-int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
-                       int timed_out, uint8_t level_no, const char *code,
+int level_show_results(const char *dir, uint8_t level_no, const char *code,
                        uint8_t scale, const char **err);
 
 void level_results_background(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
@@ -700,7 +705,9 @@ void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 
 /* The level's requirement as a percentage - image 0x04591, and it is
  * eight-bit arithmetic there. */
-uint8_t level_needed_percent(const level *lv);
+uint8_t level_needed_percent(const level *lv);  /* also sets ds:0x41 */
+uint8_t level_saved_pct(void);    /* ds:0x40, image 0x03AF4's own */
+uint8_t level_needed_pct(void);   /* ds:0x41, image 0x0459E's own */
 
 /* Whether the clock ran out, image 0x04710 - asked of the panel's own three
  * digits rather than passed in as a flag. */
@@ -734,9 +741,8 @@ void level_saved_reset(void);
 void level_lemming_saved(void);
 uint8_t level_saved_percent(const level *lv);
 
-/* How the last level_show ended - the rescued percentage (ds:0x40) and
- * whether image 0x001C8 called it over (ds:0x4F). */
-extern uint8_t g_level_saved;
+/* Whether image 0x001C8 called the level over - ds:0x4F. The rescued
+ * percentage is ds:0x40 and is level_saved_pct's, above. */
 extern uint8_t g_level_over;
 int level_over(const level *lv, uint8_t released, uint8_t live);
 

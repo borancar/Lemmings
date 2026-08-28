@@ -169,30 +169,23 @@ int main(int argc, char **argv)
                 }
                 if (!g_level_over) break;      /* the window was closed */
 
-                /* Image 0x04710 asks the CLOCK, not the caller. Image
-                 * 0x04591 takes the requirement off the header and image
-                 * 0x04720 judges the percentage against it. */
-                int timed_out = level_out_of_time();
-                uint8_t saved = g_level_saved;
-                uint8_t needed = level_needed_percent(&lv);
+                /* IMAGE 0x046EB JUDGES IT, not this loop. It reads ds:0x40
+                 * and ds:0x41 - written by the panel and the briefing - and
+                 * advances the level, the rating and the music flag itself.
+                 * main.c used to do all of that and hand the answers to a
+                 * drawing routine. */
                 char code[11] = "";
+                int verdict = level_results_judge(code);   /* image 0x046EB */
+                if (verdict == RESULTS_OUT_OF_GAME) break; /* image 0x04745 */
 
-                if (level_won(saved, needed)) {          /* image 0x04724 */
-                    if (!level_passed()) break;          /* image 0x0473E */
-                    level_code_generate(level_index(), 0, saved, code);
-                    if (level_show_results(data, saved, needed, timed_out,
-                                           (uint8_t)(level_index() + 1), code,
-                                           DEFAULT_SCALE, &err)
-                            != RESULTS_NEXT)
-                        break;                  /* image 0x047CB: the menu */
-                    continue;                   /* image 0x047D7: 0x04551 */
-                }
-                level_failed();                          /* image 0x04778 */
-                if (level_show_results(data, saved, needed, timed_out, 0, NULL,
+                uint8_t shown = (verdict == RESULTS_PASSED)
+                                ? (uint8_t)(level_index() + 1) : 0;
+                if (level_show_results(data, shown,
+                                       verdict == RESULTS_PASSED ? code : NULL,
                                        DEFAULT_SCALE, &err) != RESULTS_NEXT)
-                    break;
-                /* Image 0x047B4 on a lost level retries the same one - the
-                 * index was never advanced, so this loop simply goes round. */
+                    break;                      /* image 0x047CB: the menu */
+                /* image 0x047D7 goes back to 0x04551 either way; on a loss
+                 * the index was never advanced, so it is the same level. */
             }
             continue;
         }

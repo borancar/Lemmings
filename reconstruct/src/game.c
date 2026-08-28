@@ -2815,6 +2815,42 @@ void level_results_background(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     }
 }
 
+/* THE RESULTS SCREEN, image 0x046EB - what it DECIDES, which is everything.
+ *
+ *     0x0471D  al = ds:0x40                 the rescued percentage
+ *     0x04720  cmp al, ds:0x41              against the requirement
+ *     0x04724  jge 0x04729                  PASSED
+ *     0x04726  jmp 0x04778                  failed: ds:0x1F6D = 0
+ *     0x04729  ds:0x1F6D = 0xFF             passed: step the music
+ *     0x0472E  inc ds:0x1F6B                and the level
+ *     0x04737  ds:0x1F6E = ds:0x1F6B / 30   and the rating
+ *     0x0473E  cmp ds:0x1F6B, 0x78          out of game at 120
+ *     0x04752  call 0x05042                 the access code, for the level
+ *                                           it has just advanced TO
+ *
+ * None of that was here. main.c judged the level, advanced the index,
+ * generated the code and handed the answers to a drawing routine - so the
+ * screen drew whatever it was told, and every one of those decisions was the
+ * port's own arrangement of the game's.
+ *
+ * Returns RESULTS_OUT_OF_GAME when image 0x04745 has run off the end,
+ * RESULTS_PASSED or RESULTS_FAILED otherwise. What the screen then does with
+ * a button is image 0x047A9's, in sdl_io.c, because that is input.
+ */
+int level_results_judge(char *code)
+{
+    if (code) code[0] = '\0';
+    if (level_saved_pct() < level_needed_pct())   /* image 0x04720 */
+        { level_failed(); return RESULTS_FAILED; }/* image 0x04778 */
+
+    if (!level_passed()) return RESULTS_OUT_OF_GAME;  /* image 0x0473E */
+    /* image 0x04752, and note WHICH level it is for: the index has already
+     * been advanced by image 0x0472E, so the code names the level about to
+     * be played and not the one just finished. */
+    if (code) level_code_generate(level_index(), 0, level_saved_pct(), code);
+    return RESULTS_PASSED;
+}
+
 /* Image 0x046EB, in its own order. */
 void level_results_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                         const uint8_t *sec, uint32_t sec_len,
@@ -3013,6 +3049,22 @@ void level_saved_reset(void) { level_saved = 0; }
 /* Image 0x02335. */
 void level_lemming_saved(void) { level_saved++; }
 
+/* ds:0x40 and ds:0x41 - THE TWO PERCENTAGES THE RESULTS SCREEN READS.
+ *
+ * Image 0x0471D reads ds:0x40 and image 0x04720 compares it against ds:0x41.
+ * It takes neither as an argument: both are written long before, ds:0x40 by
+ * image 0x03AF4 as the panel draws its IN field every frame and ds:0x41 by
+ * image 0x0459E as the briefing works the requirement out.
+ *
+ * main.c passed both in, which meant it had to know when to compute them -
+ * and the port's results screen could be handed numbers the game would never
+ * have had at that moment. */
+static uint8_t g_saved_pct;     /* ds:0x40 */
+static uint8_t g_needed_pct;    /* ds:0x41 */
+
+uint8_t level_saved_pct(void)  { return g_saved_pct; }
+uint8_t level_needed_pct(void) { return g_needed_pct; }
+
 /* Image 0x03ACE: the saved count over the total. */
 uint8_t level_saved_percent(const level *lv)
 {
@@ -3061,9 +3113,13 @@ int level_over(const level *lv, uint8_t released, uint8_t live)
 uint8_t level_needed_percent(const level *lv)
 {
     uint8_t total = (uint8_t)lv->num_lemmings;
-    if (!total) return 0;
-    uint16_t ax = (uint16_t)((uint8_t)lv->num_to_rescue * 100u);
-    return (uint8_t)(ax / total);
+    uint8_t pct = 0;
+    if (total) {
+        uint16_t ax = (uint16_t)((uint8_t)lv->num_to_rescue * 100u);
+        pct = (uint8_t)(ax / total);
+    }
+    g_needed_pct = pct;                    /* image 0x0459E */
+    return pct;
 }
 
 /* DID THE CLOCK RUN OUT - transcribed from image 0x04710.
@@ -3086,8 +3142,10 @@ int level_out_of_time(void)
 
 /* Transcribed from image 0x03AF7: the panel's IN reading, with 100 written
  * out in full and no leading zero below it. */
+
 void level_status_in(uint8_t percent)
 {
+    g_saved_pct = percent;                 /* image 0x03AF4 */
     uint8_t al = percent, ah;
     if (al == 100) {                       /* image 0x03AFB */
         g_status[ST_IN_HUNDREDS] = '1';

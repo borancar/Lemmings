@@ -1885,8 +1885,12 @@ static int level_frame_tick(void *ctx, uint8_t *pix)
  * Returns 1 for the left button (image 0x047B4: on to the next level) and
  * 0 for anything else.
  */
-int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
-                       int timed_out, uint8_t level_no, const char *code,
+/* THE SCREEN'S I/O, and only that: load the file it draws from, hand the
+ * composing to game.c, put it on the display, and read a button. What it
+ * SHOWS - the verdict line, the percentages, whether the clock ran out - is
+ * image 0x046EB's and lives in game.c; this used to be given all of it as
+ * arguments by main.c. */
+int level_show_results(const char *dir, uint8_t level_no, const char *code,
                        uint8_t scale, const char **err)
 {
     char path[1024];
@@ -1907,11 +1911,14 @@ int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
         bg = mainf.sections[RESULTS_BG_SECTION].data;
         bg_len = mainf.sections[RESULTS_BG_SECTION].size;
     }
+    /* image 0x04710 asks the CLOCK for itself, and image 0x0471D and image
+     * 0x04720 read ds:0x40 and ds:0x41 - none of it comes from a caller. */
     level_results_draw(pix, MENU_W, MENU_H,
                        mainf.sections[RESULTS_FONT_SECTION].data,
                        mainf.sections[RESULTS_FONT_SECTION].size,
                        bg, bg_len,
-                       saved, needed, timed_out, lem_input_kind,
+                       level_saved_pct(), level_needed_pct(),
+                       level_out_of_time(), lem_input_kind,
                        level_no, code);
 
     /* THE SCREEN'S OWN WAIT, transcribed from image 0x047A9 - not the menu's
@@ -2002,7 +2009,6 @@ int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
 /* HOW THE LAST LEVEL ENDED, for the caller. The original keeps these in
  * ds:0x40 and ds:0x4F; the port has no DGROUP, so they live here beside the
  * loop that fills them. */
-uint8_t g_level_saved;
 uint8_t g_level_over;
 
 int level_show(const char *dir, const char *file, uint32_t which,
@@ -2095,7 +2101,10 @@ int level_show(const char *dir, const char *file, uint32_t which,
         /* How it ended, for the caller: image 0x001C8 sets A.over, and the
          * rescued count against the level's requirement is what image
          * 0x04720 then judges. */
-        g_level_saved = level_saved_percent(&A.lv);
+        /* ds:0x40 through its own routine, image 0x03AF4 - the panel writes
+         * it every frame and this is the last one. The port kept a second
+         * copy in a global of its own, which main.c then read instead. */
+        level_status_in(level_saved_percent(&A.lv));
         g_level_over  = A.over;
         free(A.panel); A.panel = NULL;
         if (have_main) dat_free(&mainf);
