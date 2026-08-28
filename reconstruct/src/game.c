@@ -6953,6 +6953,8 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define LABEL_STRIDE 8
 #define LABEL_PLANE  (LABEL_STRIDE * LABEL_H)
 #define LABEL_SPRITE (LABEL_PLANE * 4)
+#define LABEL_NONE (-1)       /* image 0x04E84: the bare plate, no label */
+
 /* WHICH LABEL, image 0x04E5A - and it is the SOUND SETTING that picks.
  *
  *     0x04E57  si = 0xEE30                 the default
@@ -6968,20 +6970,34 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
  * port already had, at the position it already had. What it did not have was
  * the choice: LABEL_FX was 1, so the plate always read "effects only"
  * whatever F3 was set to, and F3 changed nothing anybody could see. */
-uint8_t menu_label_sprite(void)
+int menu_label_sprite(void)
 {
+    if (!sound_enabled(3)) return LABEL_NONE;          /* image 0x04E5D */
     if (sound_enabled(2) && sound_driver_answered())   /* image 0x04E61 */
         return 0;                                      /* image 0x04E6C */
     return 1;                                          /* image 0x04E57 */
 }
 
-/* AND THE THIRD STATE IS NOT A LABEL AT ALL. With both bits of ds:0x25A7
- * clear, image 0x04E5F goes to image 0x04E84, which blits si=0xB120 with a
- * mask at si+0xAB9 to (324,120) - plate 2's own position, 68 + 2 * 128 - so
- * the whole FX plate is replaced rather than relabelled. NOT TRANSCRIBED:
- * that sprite's shape has not been read out of section 3, and drawing the
- * "effects only" label in its place would be a picture the game never shows.
- * The setting still takes effect; only its plate is wrong when silent. */
+/* AND THE THIRD STATE IS NO LABEL AT ALL.
+ *
+ * With both bits of ds:0x25A7 clear, image 0x04E5F goes to image 0x04E84,
+ * which blits si=0xB120 masked at si+0xAB9 to (324,120). Every one of those
+ * numbers is something this port already has:
+ *
+ *     0xB120  = 45344       = SIGN_SPRITE[2], the FX plate itself
+ *     +0xAB9  = 2745        = SIGN_PLANE * 3, its fourth plane, the mask
+ *     (324,120)             = plate 2's own position, 68 + 2 * 128
+ *     cx = 0x43D            = 0x400 | 61, and SIGN_H is 61
+ *     dx = 0x78             = 120, and SIGN_W is 120
+ *
+ * So it REDRAWS THE BARE PLATE - the label is not swapped, it is erased. The
+ * original has to redraw because it drew a label over the plate earlier; this
+ * port composes the screen in one pass, so not drawing the label is the same
+ * picture and the plate underneath is already right.
+ *
+ * Getting this wrong is what made F3 feel like it needed pressing repeatedly:
+ * with only two labels, silent and effects-only drew the SAME one, so two of
+ * the three presses changed nothing visible. */
 #define LABEL_X      351
 #define LABEL_Y      146
 
@@ -8873,15 +8889,18 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
      * opaque follows from what it is for - the label swaps between FX and its
      * alternate, so drawing one has to erase the other, and a keyed blit
      * cannot. */
-    for (uint16_t sy = 0; sy < LABEL_H; sy++) {
-        uint16_t y = (uint16_t)(LABEL_Y + sy);
-        if (y >= MENU_H) break;
-        for (uint16_t sx = 0; sx < LABEL_W; sx++) {
-            uint16_t x = (uint16_t)(LABEL_X + sx);
-            if (x >= BG_DRAWN_W) break;
-            m->pix[(size_t)y * MENU_W + x] =
-                planar(sec, LABEL_BASE + menu_label_sprite() * LABEL_SPRITE,
-                       LABEL_PLANE, LABEL_STRIDE, 4, sx, sy);
+    const int lab = menu_label_sprite();
+    if (lab != LABEL_NONE) {
+        for (uint16_t sy = 0; sy < LABEL_H; sy++) {
+            uint16_t y = (uint16_t)(LABEL_Y + sy);
+            if (y >= MENU_H) break;
+            for (uint16_t sx = 0; sx < LABEL_W; sx++) {
+                uint16_t x = (uint16_t)(LABEL_X + sx);
+                if (x >= BG_DRAWN_W) break;
+                m->pix[(size_t)y * MENU_W + x] =
+                    planar(sec, LABEL_BASE + (uint32_t)lab * LABEL_SPRITE,
+                           LABEL_PLANE, LABEL_STRIDE, 4, sx, sy);
+            }
         }
     }
 

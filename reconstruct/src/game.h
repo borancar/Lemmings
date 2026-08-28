@@ -305,7 +305,9 @@ void sound_driver_present(uint8_t yes);
 void sound_settings_cycle(void);   /* image 0x044B3 - the menu's F3 */
 uint8_t sound_setting(void);       /* ds:0x1F71 */
 uint8_t sound_driver_answered(void);  /* ds:0x2010 */
-uint8_t menu_label_sprite(void);      /* image 0x04E5A */
+/* Which label the FX plate wears, or -1 for the bare plate that image
+ * 0x04E84 draws when the sound is off entirely. */
+int menu_label_sprite(void);          /* image 0x04E5A */
 void music_choose(const level *lv);   /* image 0x0482F */
 void music_level_passed(uint8_t passed);  /* image 0x04729 / 0x04778 */
 void music_cold_start(void);              /* image 0x0454C */

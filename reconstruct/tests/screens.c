@@ -1440,13 +1440,13 @@ int main(int argc, char **argv)
         sound_driver_present(1);                 /* setting 2, both on */
         int lab = menu_label_sprite() == 0;
         sound_settings_cycle();                  /* -> silent */
-        lab = lab && menu_label_sprite() == 1;
+        lab = lab && menu_label_sprite() == -1;  /* image 0x04E84: no label */
         sound_settings_cycle();                  /* -> effects only */
         lab = lab && menu_label_sprite() == 1;
         sound_settings_cycle();                  /* -> both again */
         lab = lab && menu_label_sprite() == 0;
-        ck("and the FX plate's label follows the setting", lab,
-           "the label did not change");
+        ck("and the plate is DIFFERENT in all three", lab,
+           "two of the three drew the same plate");
 
         /* and with no driver the music setting is skipped entirely */
         sound_driver_present(0);
