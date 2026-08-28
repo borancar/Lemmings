@@ -50,18 +50,13 @@ sys.path.insert(0, HERE)
 import lemmings   # noqa: E402  (after sys.path)
 
 
-class Lem(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_int16), ("y", ctypes.c_int16),
-                ("hot_x", ctypes.c_int16), ("hot_y", ctypes.c_int16),
-                ("flags", ctypes.c_uint16), ("fall", ctypes.c_uint8),
-                ("alive", ctypes.c_uint8), ("dir", ctypes.c_int8),
-                ("anim", ctypes.c_uint8), ("state", ctypes.c_uint8)]
-
 
 def build():
     src = os.path.join(ROOT, "reconstruct", "src")
     so = os.path.join(ROOT, "out", "libdig.so")
     lib = lemmings.game_lib()
+    global Lem
+    Lem = lemmings.lem_struct(lib)   # checked against the C
     lib.lemmings_step.argtypes = [ctypes.POINTER(Lem), ctypes.c_uint8,
                                   ctypes.POINTER(ctypes.c_uint8),
                                   ctypes.c_uint16, ctypes.c_uint16]
@@ -113,7 +108,25 @@ def main():
     dy0 = start["y"]
     agree = differ = 0
     first = None
+    stopped = None
     for r in rows[1:]:
+        # WHERE THIS CHECK STOPS, and it has to say so.
+        #
+        # The port is re-simulated on TERRAIN ALONE - out/port.raw is the
+        # composed level with no trigger map behind it - so it has no exit to
+        # walk into and no trap to be caught by. The original's own record
+        # does: image 0x02F42 assigns the whole state word 0x2000 when a
+        # lemming reaches the exit, and from that frame on the two sides are
+        # not simulating the same thing.
+        #
+        # out/digtrace2.json is exactly that run. Scored to its end it
+        # reported 286 of 614 frames differing from frame 432 - the frame the
+        # original's digger, having broken through, walked out - and every
+        # one of those was this gap rather than anything about the digger.
+        # A number that large reads as a broken port; it is a broken claim.
+        if r["flags"] & 0x2000:
+            stopped = r["f"]
+            break
         lib.lemmings_step(L, 1, ground, W, H)
         want_dy = r["y"] - dy0
         got_dy = L[0].y - dy0
@@ -147,6 +160,12 @@ def main():
                         sfirst = (sh["x0"] + c, sh["y0"] + r, want, got)
 
     print(f"  digging frames compared : {agree + differ}")
+    if stopped is not None:
+        print(f"  stopped at frame {stopped}: the original's lemming reached "
+              "the EXIT,\n"
+              "  which this comparison has no objects to reproduce. Frames "
+              "after it\n"
+              "  are not scored, and are not evidence either way.")
     print(f"  agreed                  : {agree}")
     print(f"  differed                : {differ}")
     if sh:

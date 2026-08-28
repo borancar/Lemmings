@@ -125,18 +125,13 @@ def install(m):
                              print(f"  [hook] captured {len(rows)} frames")))
 
 
-class Lem(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_int16), ("y", ctypes.c_int16),
-                ("hot_x", ctypes.c_int16), ("hot_y", ctypes.c_int16),
-                ("flags", ctypes.c_uint16), ("fall", ctypes.c_uint8),
-                ("alive", ctypes.c_uint8), ("dir", ctypes.c_int8),
-                ("anim", ctypes.c_uint8), ("state", ctypes.c_uint8)]
-
 
 def build():
     src = os.path.join(ROOT, "reconstruct", "src")
     so = os.path.join(ROOT, "out", "libhit.so")
     lib = lemmings.game_lib()
+    global Lem
+    Lem = lemmings.lem_struct(lib)   # checked against the C
     lib.level_lemming_at.restype = ctypes.c_int16
     lib.level_lemming_at.argtypes = [ctypes.POINTER(Lem), ctypes.c_uint8,
                                      ctypes.c_uint16]

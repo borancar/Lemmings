@@ -458,6 +458,10 @@ typedef struct {
                            * keep calling it a BUILDER */
 } lemming;
 
+/* THE PORT'S OWN - sizeof(lemming), for the ctypes declarations in tools/ to
+ * assert against. See lemming_record_size in sdl_io.c for why. */
+uint32_t lemming_record_size(void);
+
 /* One pass of image 0x1F19 over the array, for the states that have been
  * read. `lvl` is the port's own TERRAIN canvas - the buffer the original
  * probes has no objects in it. */

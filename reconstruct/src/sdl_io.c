@@ -1135,6 +1135,21 @@ int view_run_anim(canvas *c, const lem_rgb *palette, const char *title,
     return rc;
 }
 
+/* THE PORT'S OWN, and it is a CONTROL rather than a convenience.
+ *
+ * tools/ reaches the lemming array through ctypes, which means a Python
+ * declaration of `lemming` sitting beside the C one. Two declarations of one
+ * struct is two declarations that will differ, and they did: verify_hit.py's
+ * stopped at `state` - sixteen bytes where this is thirty-four - so the C
+ * read every lemming after the first at the wrong stride and the tool
+ * reported 47 of 256 hits differing. It read exactly like a port bug, in the
+ * one routine CLAUDE.md already records as having been sixteen pixels wrong.
+ *
+ * So the size is exported and lemmings.lem_struct() asserts on it. A tool
+ * whose struct has drifted now fails on the assert instead of producing a
+ * number about itself. */
+uint32_t lemming_record_size(void) { return (uint32_t)sizeof(lemming); }
+
 /* ======================================================================
  * WHAT THE HARDWARE USED TO DO.
  *

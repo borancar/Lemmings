@@ -72,6 +72,45 @@ def game_lib():
                    stdout=subprocess.DEVNULL)
     return ctypes.CDLL(os.path.join(rec, "libgame.so"))
 
+
+def lem_struct(lib):
+    """`lemming` from game.h, declared ONCE and checked against the C.
+
+    Two tools each wrote their own and one of them stopped at `state` -
+    sixteen bytes where the record is thirty-four. ctypes then laid the array
+    out at the wrong stride, the C read every lemming after the first out of
+    the middle of its neighbour, and verify_hit reported 47 of 256 hits
+    differing. That number was about the declaration; the port scored the
+    identical 553/47 at a commit from before any of the work it appeared to
+    indict, which is what showed it.
+
+    The assert is the point. A field added to game.h and not to here now
+    fails loudly rather than producing a plausible measurement.
+    """
+    import ctypes
+
+    class Lem(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_int16), ("y", ctypes.c_int16),
+                    ("hot_x", ctypes.c_int16), ("hot_y", ctypes.c_int16),
+                    ("flags", ctypes.c_uint16), ("fall", ctypes.c_uint8),
+                    ("alive", ctypes.c_uint8), ("dir", ctypes.c_int8),
+                    ("anim", ctypes.c_uint8), ("state", ctypes.c_uint8),
+                    ("bricks", ctypes.c_uint8),
+                    ("under", ctypes.c_uint8 * 9),
+                    ("fscript", ctypes.c_int16), ("fuse", ctypes.c_uint8),
+                    ("tahead", ctypes.c_uint8), ("tcell", ctypes.c_uint8),
+                    ("floater", ctypes.c_uint8), ("extra", ctypes.c_uint8)]
+
+    lib.lemming_record_size.restype = ctypes.c_uint32
+    want = lib.lemming_record_size()
+    got = ctypes.sizeof(Lem)
+    if got != want:
+        raise SystemExit(
+            f"the lemming record is {want} bytes in the port and {got} here.\n"
+            "  Nothing measured through this struct means anything until the\n"
+            "  two agree - see lem_struct in tools/lemmings.py.")
+    return Lem
+
 # Image offset of DGROUP. A `ds:XXXX` reference in the disassembly is image
 # offset DGROUP + XXXX; getting this wrong turns strings into garbage.
 DGROUP = 0x09A90
