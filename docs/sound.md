@@ -65,6 +65,9 @@ INT 61h - `cs:0xF0` - eighteen, and these are the gameplay events:
     0x05   image 0x02E5C
     0x08   image 0x0229E   guarded by `and bh,bh` - a lemming reaching water
     0x0A   image 0x024CE, image 0x02A68, image 0x02D0B
+           image 0x024CE is the DIGGER MEETING STEEL: image 0x02448
+           sends a dig that found something to image 0x02491, which
+           reads the trigger map and stops on effect 9. Ported.
     0x0C   image 0x02D68, image 0x02EB0
     0x0D   image 0x030A3   just before image 0x030A6, the RELEASE
     0x10   image 0x02F9F

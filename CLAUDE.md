@@ -1039,6 +1039,78 @@ this repository scores throughout all five.** A number that moves is not
 evidence the reconstruction moved. Ask what the harness fed each side before
 reading a residue as the port's.
 
+## A ctypes struct is a SECOND declaration of the record
+
+`tools/verify_hit.py` reported 553 of 600 frames agreeing - 209 of 256 with
+the pointer over a lemming - and it read exactly like a fault in
+`level_lemming_at`, which this file already records as having shipped sixteen
+pixels wrong with a unit test that agreed with it. It was the tool's `Lem`.
+
+The declaration stopped at `state`: sixteen bytes where the port's record is
+thirty-four. ctypes laid the array out at its own stride, so the C read every
+lemming after the first out of the middle of its neighbour. Corrected, the
+same trace scores **600 of 600** and 256 of 256 over a lemming.
+
+What settled it in one run was the rule already here about a score getting
+worse: **build the port at an older commit and score the same trace.** A
+commit from before any of the work the number appeared to indict gave the
+identical 553/47, and a number that does not move when the code moves is a
+number about the instrument.
+
+So the struct is declared **once**, in `tools/lemmings.py`, and asserted
+against `sizeof(lemming)` through `lemming_record_size()`. A field added to
+`game.h` and not to there now fails on the assert rather than producing a
+plausible measurement. This is the same shape as the two `static` definitions
+of `g_tick`, one file further out: two spellings of one object, and the
+compiler cannot see across the boundary to complain.
+
+## A tool that will not link is a tool nobody has re-run
+
+Eight verifiers each hand-wrote a `cc` line naming `game.c` and `sdl_io.c`.
+Every source file the port has gained since broke all eight at once, and none
+of them said so in terms anyone would connect to the cause: `verify_dig` died
+on `undefined symbol: CRATER` from the `data.c` split, and `adlib.c` had
+already broken it before that - so it had not run since sound landed.
+
+The list of sources now lives once, in the Makefile, as `libgame.so`, and
+`lemmings.game_lib()` asks make for it and checks the build succeeded.
+
+That silence is worth naming on its own. `make test` passed throughout,
+`prove.sh` passed, every frame-by-frame comparison passed - because none of
+them goes through ctypes. **A check that has stopped running looks exactly
+like a check that has nothing to report**, and the only thing that
+distinguishes them is running it. When a source file is added to the port,
+run the verifiers, not just the tests.
+
+And when one does run again after a gap, **its number is about the whole gap,
+not about your change**. `verify_dig`'s second trace reported 286 of 614
+frames differing; the port is re-simulated on terrain alone, so it has no
+exit to walk into, and frame 432 is where the original's digger reached one.
+The comparison now stops there and says why - 328 of 328 agree up to it.
+
+## The port compensating for something is a routine not yet read
+
+`ds:0x4E` starts at 1 and the port set it to 4, with a comment saying so:
+image 0x0031E's third branch is the timed cues, something later must set bit
+2, and starting at 1 would have lost them. That comment was honest and it
+sat there for weeks.
+
+Bit 2 is set by **image 0x003C1's first instruction**, `or al, 4` - the fade
+in arms the cues, on every pass of it, and clears bit 0 when the palette
+stops moving. It explains the probe's own unexplained observation exactly:
+`ds:0x4E` at 5 and then 4 is the fade running with the cues already armed,
+and the frame after it finished.
+
+The port reached the right state and skipped the fade to get there, and no
+comparison here could see it: the fade is a palette, every check compares
+indices, and the harness has no display so it never ran.
+
+**A constant chosen to make the observed behaviour come out right is the same
+thing as a fitted compositing rule** - it narrows, it improves the number, and
+it is not the routine. The tell is the comment admitting it. When the port
+holds a value "because otherwise X does not happen", X has a routine and
+nobody has read it yet.
+
 ## The emulator is shared, not ours
 
 `dos_emulator` is used by other games' reconstructions, and their verification

@@ -43,7 +43,7 @@ numbers, re-measured on the current build:
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical |
 | the level sprite pre-builder vs the original's own body | 106 calls, byte-identical |
 | **the pointer's hit test** vs the original's own answer | **600 frames, 600 agreed — 256 of them with the pointer actually ON a lemming**. The guest sets `ds:0x1A` when its scan finds one, so that byte settles it (`tools/verify_hit.py`). The earlier figure here, 326 of 326, was a SHALLOW PASS: not one of those frames had the pointer over a lemming, so what it checked was that both sides say “nothing” when pointing at sky |
-| **the digger** vs the original digging | state **138 frames agreed**; the shaft it cuts **1,056 pixels, 1,056 agreed** (`tools/verify_dig.py`) |
+| **the digger** vs the original digging | state **138 frames agreed**; the shaft it cuts **1,056 pixels, 1,056 agreed** (`tools/verify_dig.py`). A second trace agrees on **328 of 328** frames and then STOPS: the port is re-simulated on terrain alone, so from the frame the original's lemming reaches the exit the two sides are not simulating the same thing, and the tool says so rather than scoring it |
 | **pace** | the level 170 frames in 10.01s against 17/s; the menu 350 passes in 5.01s against 70 Hz (`tools/verify_pace.py`) |
 | tests | `make test` 134 checks across two binaries, `make sanitize` clean under ASan + UBSan |
 
@@ -3461,8 +3461,15 @@ before the check existed.
   the port is decoding, it is not all of the sprite. That is the next thing to
   read, and it is worth more than the panel's remaining text.
 
-- **The level's opening sequence is transcribed** - image 0x0361, called from
-  the play loop's first line at image 0x019D:
+- **The level's phase machine is transcribed** - image 0x0031E, called from
+  the play loop's first line at image 0x019D. `ds:0x4E` carries three bits
+  and they are tested in this order:
+
+  | bit | branch | what it is |
+  | --- | --- | --- |
+  | 0 | image 0x0032C | the **fade in**, which runs to completion inside one call - a retrace and a DAC upload to a pass |
+  | 1 | image 0x0034D | the **fade out**, armed by image 0x002B3 when the level ends |
+  | 2 | image 0x00361 | the timed **cues**, on `ds:0x52` |
 
   | play-loop frame (`ds:0x52`) | what happens |
   | --- | --- |
@@ -3470,6 +3477,19 @@ before the check existed.
   | **35 (`0x23`)** | **image 0x394 sets `ds:0x55` to 0xFF - the trapdoor opens** |
   | 55 (`0x37`) | image 0x3AD, the music |
   | past 55 | bit 2 of `ds:0x4E` clears; the opening is over |
+
+  **What arms bit 2 is image 0x003C1's own first instruction, `or al, 4`** -
+  the fade in, every pass of it. This was recorded here and in `game.c` as
+  not found, and the port started `ds:0x4E` at 4 rather than image 0x00431's
+  1 to compensate; it reached the right state and skipped the fade to get
+  there. It also explains what the probe saw and could not account for,
+  `ds:0x4E` at 5 and then 4.
+
+  **Neither fade is a screen either side of the loop.** Image 0x002B3 ends a
+  level by setting `ds:0x4F`, ORing bit 1 into `ds:0x4E` and jumping *back*
+  to image 0x00105; image 0x001C8 sends every later pass to image 0x002C3,
+  which goes round again while bit 1 is set. The loop keeps composing and
+  drawing, which is what the fade is a fade *of*.
 
   That one byte holds back both the trapdoor (image 0x07C1E tests it before
   animating object id 1) and the lemmings (image 0x30B0 tests it before
