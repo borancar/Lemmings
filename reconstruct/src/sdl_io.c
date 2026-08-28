@@ -17,9 +17,11 @@
  * anything the original decided for itself; `scale` is whole-pixel
  * magnification and nothing more.
  */
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <SDL3/SDL.h>
 
@@ -84,10 +86,57 @@ static void view_shutdown(void)
     SDL_Quit();
 }
 
+/* ======================================================================
+ * THERE IS ONE WAY OUT, AND IT IS HERE.
+ *
+ * The original owns the machine: its screens end when the game says so, and
+ * there is no window to close and no shell to interrupt. So none of the
+ * loops transcribed from it has an escape - image 0x04C7E leaves on Enter
+ * AND NOTHING ELSE, and image 0x0445B only on one of seven keys. Faithful,
+ * and unusable the moment the host wants the process back.
+ *
+ * That shipped: pressing F2 entered image 0x04967's screen and the only exit
+ * was Enter on a valid code. SDL turns Ctrl+C into an SDL_EVENT_QUIT, and
+ * the entry loop dropped it along with every other key outside A-Z, so the
+ * process had to be killed.
+ *
+ * Threading a "has it closed" flag through every transcribed loop is the
+ * wrong shape - it puts a host concern inside routines that are supposed to
+ * read as the game. The window going away is IO, so it ends the process
+ * here, and no loop above needs to know it can happen.
+ *
+ * The signal handler calls _exit rather than this: almost nothing in SDL is
+ * safe to call from a signal, and the compositor reclaims a window from a
+ * process that is gone.
+ * ====================================================================== */
+void view_quit_now(void)
+{
+    /* Give the pointer back, then GO. Not exit(): view_shutdown is
+     * registered with atexit and tears the same window, renderer and
+     * SDL down again, which segfaulted on the close box - one teardown
+     * running over another's freed handles. _exit skips it, and the
+     * compositor reclaims a window from a process that is gone, which is
+     * what the signal path has always relied on. */
+    if (g_win) SDL_SetWindowRelativeMouseMode(g_win, false);
+    _exit(0);
+}
+
+static void on_signal(int sig)
+{
+    (void)sig;
+    _exit(130);                        /* 128 + SIGINT, as a shell reports it */
+}
+
 /* Returns 0 on success. Reuses what is already open when it fits. */
 static int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
 {
     static int registered;
+    static int signals_up;
+    if (!signals_up) {
+        signals_up = 1;
+        signal(SIGINT, on_signal);
+        signal(SIGTERM, on_signal);
+    }
     if (g_win && g_w == w && g_h == h && g_scale == scale) {
         SDL_SetWindowTitle(g_win, title);
         return 0;
@@ -166,8 +215,7 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT)
-                running = 0;
+            if (e.type == SDL_EVENT_QUIT) view_quit_now();
             else if (e.type == SDL_EVENT_KEY_DOWN) {
                 switch (e.key.key) {
                 case SDLK_ESCAPE: case SDLK_Q: running = 0; break;
@@ -297,7 +345,7 @@ int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
         while (SDL_PollEvent(&e)) {
             int32_t hit = VIEW_CLOSED;
             if (e.type == SDL_EVENT_QUIT) {
-                running = 0;
+                view_quit_now();
             } else if (e.type == SDL_EVENT_KEY_DOWN) {
                 if (input) hit = input(scancode_of(e.key.key));
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
@@ -729,7 +777,7 @@ void video_palette_upload(void)
      * window that answers nothing for that long is one the desktop reports
      * as hung. Only the close box is acted on. */
     while (SDL_PollEvent(&e))
-        if (e.type == SDL_EVENT_QUIT) g_lvl_live = 0;
+        if (e.type == SDL_EVENT_QUIT) view_quit_now();
 }
 
 static int level_run(struct level_frame *A, const canvas *c,
@@ -900,7 +948,7 @@ static int level_run(struct level_frame *A, const canvas *c,
 
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) running = 0;
+            if (e.type == SDL_EVENT_QUIT) view_quit_now();
             else if (e.type == SDL_EVENT_MOUSE_MOTION) {
                 seen_motion = 1;
                 if (grabbed) {
@@ -1516,6 +1564,8 @@ void dat_free(dat_file *d)
 void menu_free(menu_screen *m)
 {
     if (!m) return;
+    /* Never leave the page flip pointing at a buffer that has gone. */
+    if (video_screen_is(m->pix)) video_screen_set(NULL, NULL);
     free(m->pix);
     m->pix = NULL;
     free(m->gfx);
@@ -1544,7 +1594,7 @@ static void view_fade_out(const uint8_t *pix, uint16_t w, uint16_t h,
     for (;;) {
         SDL_Event e;
         while (SDL_PollEvent(&e))
-            if (e.type == SDL_EVENT_QUIT) return;
+            if (e.type == SDL_EVENT_QUIT) view_quit_now();
         int moved = palette_fade_step(g_fade_cur, g_fade_tgt, 16);
         if (g_split)
             moved |= palette_fade_step(g_fade_low_cur, g_fade_low_tgt, 16);
@@ -1733,6 +1783,19 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
  * ====================================================================== */
 static uint8_t  *g_menu_pix;
 static lem_rgb  *g_menu_pal;
+
+/* WHICH BUFFER THE PAGE FLIP PRESENTS. The original points the CRTC at
+ * whatever it has just composed; here that is a pointer, and the code screen
+ * is a DIFFERENT one from the menu's. Without this the flip went on showing
+ * the menu while the code screen was being typed into - which is exactly
+ * "nothing changes on screen when I type". */
+void video_screen_set(uint8_t *pix, lem_rgb *pal)
+{
+    g_menu_pix = pix;
+    g_menu_pal = pal;
+}
+
+int video_screen_is(const uint8_t *pix) { return g_menu_pix == pix; }
 static uint8_t   g_key_ring[32];
 static uint8_t   g_key_head, g_key_tail;
 static uint16_t  g_menu_buttons;      /* ds:0x14 */
@@ -1742,10 +1805,7 @@ static void menu_pump_events(void)
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_EVENT_QUIT) {
-            g_key_ring[g_key_tail] = 0x01;    /* the window closed: Esc's
-                                               * SCANCODE, image 0x04D4B
-                                               * translates it to 0x1B */
-            g_key_tail = (uint8_t)((g_key_tail + 1) % sizeof g_key_ring);
+            view_quit_now();
         } else if (e.type == SDL_EVENT_KEY_DOWN) {
             uint8_t next = (uint8_t)((g_key_tail + 1) % sizeof g_key_ring);
             if (next != g_key_head) {         /* full: drop, do not wrap */
@@ -1831,8 +1891,7 @@ menu_action menu_run(menu_screen *m, uint8_t scale)
     const char *cap;
     if (scale < 1) scale = 1;
     if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0) return MENU_EXIT;
-    g_menu_pix = m->pix;
-    g_menu_pal = m->palette;
+    video_screen_set(m->pix, m->palette);
     g_key_head = g_key_tail = 0;
     g_menu_buttons = 0;
     menu_wait_release();                 /* image 0x04453 */
@@ -2205,7 +2264,7 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
         }
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) { out = RESULTS_MENU; running = 0; }
+            if (e.type == SDL_EVENT_QUIT) view_quit_now();
             else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) released = 1;
             else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && released) {
                 if (e.button.button == SDL_BUTTON_LEFT) {

@@ -841,6 +841,12 @@ program will never look at.
   looked at. SDL's job stops at putting the port's own composed 8-bit buffer
   in a window and handing back input - it must not scale, filter or blend
   anything the original decided for itself.
+- **One way out, and it is `sdl_io.c`'s.** Closing the window and Ctrl+C both
+  end the process immediately, through `view_quit_now` - called from every
+  `SDL_EVENT_QUIT` site and from a `SIGINT`/`SIGTERM` handler - and it
+  `_exit`s so `view_shutdown` does not run over its own freed handles. No
+  transcribed loop is taught about windows: they leave on the keys the game
+  gives them, which is the transcription being right. See the section below.
 - **The port shows a screen by default.** `./lemmings` with no arguments opens
   the game; `--out` or `--raw` is what asks for a file instead. A
   reconstruction whose default output is a bitmap is a converter.
@@ -1179,6 +1185,45 @@ The general form: **presence and depth are different measurements, and the
 convention only demands the first.** When a routine has an address in the port
 and behaviour is still missing, ask how many bytes that address stands for
 before looking anywhere else.
+
+## A transcribed loop has no way out, because the original owns the machine
+
+Image 0x04C7E leaves on Enter and nothing else. Image 0x0445B leaves on one of
+seven keys. That is correct - the original owns the machine, its screens end
+when the game says so, and there is no window to close and no shell to
+interrupt. Transcribe such a loop faithfully and the port has **no escape at
+all**, which is not a bug in the transcription and is unusable anyway.
+
+It shipped: pressing F2 entered image 0x04967's screen, the only exit was
+Enter on a valid code, and SDL delivers Ctrl+C as an `SDL_EVENT_QUIT` that the
+entry loop dropped along with every other key outside A-Z. The process had to
+be killed.
+
+**The fix belongs in the IO layer and nowhere else.** Threading a "has it
+closed" flag through every transcribed loop puts a host concern inside
+routines that are supposed to read as the game, and it has to be remembered
+at every new loop - which is how it was missed here. `view_quit_now` ends the
+process where it stands, every `SDL_EVENT_QUIT` site calls it, and a
+`SIGINT`/`SIGTERM` handler does the same. No loop above needs to know it can
+happen.
+
+**And it must `_exit`, not `exit`.** The first version called `SDL_Quit()` and
+then `exit(0)`, which runs the `atexit` handler that destroys the same
+texture, renderer and window and calls `SDL_Quit()` again - one teardown over
+another's freed handles. Closing the window **segfaulted**, and only closing
+it: Ctrl+C went through the signal path, which was already `_exit`, so the
+bug was invisible from the terminal. Two ways out of a program are two
+teardowns that will differ, and the compositor reclaims a window from a
+process that is gone anyway.
+
+**And a window shows one buffer at a time, which a page flip has to be told
+about.** The same F2 report said "nothing changes on screen when I type": the
+flip still pointed at the menu's composed buffer while the code screen was
+being typed into. The original's image 0x04C20 points the CRTC at whatever it
+has just composed and cannot get this wrong; a port holding a pointer can, and
+silently. `video_screen_set` is called by every screen that runs its own loop,
+and `menu_free` clears it so the flip can never be left aiming at memory that
+has gone.
 
 ## The emulator is shared, not ours
 

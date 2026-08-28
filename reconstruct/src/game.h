@@ -1182,6 +1182,12 @@ void menu_wait_release(void);
  * the same image 0x01550 - and it is what caps this loop at the adapter's
  * 70 Hz rather than at whatever the host will run at. */
 void    video_page_flip(void);
+/* THE PORT'S OWN. The flip needs telling WHICH composed buffer is up - the
+ * code screen is not the menu's - and closing the window or pressing Ctrl+C
+ * ends the process where it stands. See view_quit_now in sdl_io.c. */
+void    video_screen_set(uint8_t *pix, lem_rgb *pal);
+void    view_quit_now(void);
+int     video_screen_is(const uint8_t *pix);
 uint8_t menu_key_read(void);
 uint16_t menu_buttons(void);
 

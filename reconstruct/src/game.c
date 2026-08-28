@@ -8149,6 +8149,12 @@ menu_action menu_code_run(menu_screen *m)
 {
     char line[40];
 
+    /* THE PAGE FLIP HAS TO BE POINTED AT THIS SCREEN. Image 0x04C20 puts the
+     * CRTC at whatever was just composed; here the composed screen is a
+     * pointer and the menu's was still in it, so the flip went on showing the
+     * menu while this one was typed into - "nothing changes when I type". */
+    video_screen_set(m->pix, m->palette);
+
     for (uint8_t i = 0; i < CODE_LEN; i++)
         g_code_cells[i] = '.';                  /* image 0x0497D */
     g_code_cells[CODE_LEN] = '\0';
