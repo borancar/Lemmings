@@ -3784,6 +3784,22 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
          * same lemming at the same place was drawn two rows out. */
         a->flags = (uint16_t)((a->flags & ~(uint16_t)DIG_BIT) | 4);
         a->anim  = 0;                          /* image 0x0246A */
+        /* AND THE FALL COUNTER GOES BACK TO 3 - image 0x0246E, one
+         * instruction between the two this used to cite, and skipped.
+         *
+         * A player found it on Fun 13, "We all fall down": dig through the
+         * beam and the original's lemming survives the drop off the bottom,
+         * because the fall it is about to take is measured from HERE. The
+         * port carried whatever ds:[si+0x23] already held - and on that
+         * level the lemmings arrive by falling a long way out of the
+         * entrance, and image 0x022A3's landing does NOT clear it - so the
+         * counter was already past image 0x02250's 0x3C and the lemming
+         * splatted on a drop of a few pixels.
+         *
+         * Nothing here could have caught it. The digger's own record agrees
+         * frame for frame either way while it is inside the ground, which is
+         * the exact gap verify_dig.py already says it has. */
+        a->fall  = 3;                          /* image 0x0246E */
         a->hot_x = FALL_HOT_X;                 /* image 0x02472 */
         a->hot_y = FALL_HOT_Y;                 /* image 0x02477 */
         a->state = 4;                          /* image 0x0247C */
@@ -4129,11 +4145,30 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
             a->dir = (int8_t)-a->dir;
             return;
         }
+        /* THREE ROWS, EACH PROBED WHERE THE LEMMING NOW IS. The original
+         * probes, then `inc [si+2]` and moves di down ONE row - image
+         * 0x02958 and image 0x0295B - so the second probe is at y+1 and the
+         * third at y+2. This added k to an ALREADY incremented y, so it
+         * looked at y, y+2 and y+4 and stepped over a row each time. */
         for (uint8_t k = 0; k < 3; k++) {
-            if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y + k)))
+            if (lem_solid(lvl, cw, chh, a->x, a->y))
                 return;                             /* image 0x02953 */
             a->y = (int16_t)(a->y + 1);             /* image 0x02958 */
         }
+        /* AND WITH NOTHING UNDER ANY OF THE THREE IT FALLS - image 0x0297D,
+         * which the port did not have at all: it stepped down and returned,
+         * so a basher that bashed its way into open air went on bashing in
+         * mid-air. Found by auditing every write to the fall counter in the
+         * image against the port; this site is one of the four that were
+         * missing. */
+        a->flags |= 4;                              /* image 0x0297D */
+        a->anim   = 0;                              /* image 0x02995 */
+        a->fall   = 3;                              /* image 0x02999 */
+        a->hot_x  = -8;                             /* image 0x0299D */
+        a->hot_y  = -10;                            /* image 0x029A2 */
+        a->state  = 4;                              /* image 0x029A7 */
+        a->extra &= 1;                              /* image 0x029B5 */
+        a->flags &= 0xFDFF;                         /* image 0x029B9 */
         return;
     }
     if (al < 2 || al > 5) return;                   /* 0x02890, 0x02897 */
@@ -4286,7 +4321,20 @@ static void lem_mine_move(lemming *a, uint8_t drop, uint8_t *lvl,
         a->flags &= 0xF7FF;
         return;
     }
-    /* Image 0x02C76: what it is standing on NOW, read fresh rather than out
+    /* AND THE ORIGINAL PROBES A SECOND TIME BEFORE THIS, which the port does
+     * not: image 0x02C2E is another `and al,ah / jne 0x2C76`, and its
+     * not-solid arm at image 0x02C32 is the same become-a-faller conversion
+     * as image 0x02B9D above, fall counter and all (image 0x02C4E). The port
+     * has one probe where the original has two, so a miner that cuts its own
+     * floor away between them keeps mining.
+     *
+     * NOT TRANSCRIBED - where the second probe is taken needs the whole of
+     * image 0x02B60..0x02C2E read, and guessing which of the two the port's
+     * single check corresponds to is how a plausible wrong structure gets
+     * written. Found by auditing every write to the fall counter in the
+     * image; recorded here rather than filled in.
+     *
+     * Image 0x02C76: what it is standing on NOW, read fresh rather than out
      * of the [si+0x2C] the previous frame left - the same cell arithmetic
      * level_trigger_at does. */
     uint8_t cell = (uint8_t)(level_trigger_cell((int32_t)a->x / TRIG_CELL,
