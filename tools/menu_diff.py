@@ -30,8 +30,17 @@ ATTR = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
         0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F]
 INV = {v: i for i, v in enumerate(ATTR)}
 
+# THE CAPTURE EACH SCREEN IS SCORED AGAINST, and the briefing's said
+# "menu.scrn" - the MAIN MENU. So `--screen briefing` rendered the briefing
+# and compared it with a picture of a different screen, and reported 30.23%.
+# The two share a background tile and a palette, which is why it came out as a
+# plausible-looking percentage rather than as nonsense.
+#
+# This is the rule this repository already states about a comparison being
+# only as good as the claim that the two sides are the same thing - and here
+# the claim was one line of table that nobody re-read.
 CAPTURES = {"menu": "menu10.scrn", "code": "mk_f2_1.scrn",
-            "input": "mk_f4_1.scrn", "briefing": "menu.scrn"}
+            "input": "mk_f4_1.scrn", "briefing": "briefing.scrn"}
 
 
 def main():

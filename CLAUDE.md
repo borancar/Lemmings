@@ -1048,6 +1048,20 @@ The tell was the shape, not the size: 728 pixels in one 26x53 block is a
 SPRITE, and a sprite that is wholly different rather than shifted is the wrong
 sprite being chosen - which is a state question, not a drawing one.
 
+**And the same rule caught a worse one in the same hour.** `menu_diff.py`'s
+table said the BRIEFING is scored against `menu.scrn` - the main menu. So it
+rendered one screen and compared it with a picture of another, and reported
+**30.23%**. The two share a background tile and a palette, which is exactly
+why it came out as a plausible percentage rather than as obvious nonsense;
+`{(3, 0): 28313, (0, 3): 23601}` in its own value-pair histogram is two
+different pictures, not a port that is 70% wrong. Pointed at
+`briefing.scrn` it is 0 of 224,000.
+
+Both were one line: the state to put the port in, and the file to compare it
+with. **Say which two things are being compared, and check the table that
+decides it** - a percentage from the wrong pairing looks exactly like a
+percentage from the right one.
+
 And the one that ties them together: **the port has been exact on every screen
 this repository scores throughout all five.** A number that moves is not
 evidence the reconstruction moved. Ask what the harness fed each side before
