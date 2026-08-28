@@ -717,7 +717,17 @@ const char *level_verdict_text(uint8_t saved, uint8_t needed);
 int level_won(uint8_t saved, uint8_t needed);
 /* What winning does - image 0x0472E: on to the next level, and the rating
  * recomputed from the index. Non-zero while there is another. */
-int level_advance(uint8_t *index, uint8_t *rating);
+/* WHICH LEVEL - ds:0x1F6B, and the rating derived from it. There is no
+ * separate "number": image 0x04566 computes it as index + 1 - rating * 30. */
+uint8_t level_index(void);          /* ds:0x1F6B */
+uint8_t level_rating(void);         /* ds:0x1F6E */
+uint8_t level_number(void);         /* image 0x04566 */
+int  level_passed(void);            /* image 0x04729 */
+void level_failed(void);            /* image 0x04778 */
+void level_from_menu(void);         /* image 0x0454C */
+void level_rating_up(void);         /* image 0x044EC */
+void level_rating_down(void);       /* image 0x0451C */
+void level_index_reset(void);
 
 extern uint8_t level_saved;
 void level_saved_reset(void);

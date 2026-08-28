@@ -785,16 +785,43 @@ int main(int argc, char **argv)
            "image 0x04720's cmp and image 0x04724's jge");
 
         /* Image 0x0472E: on to the next, with the rating recomputed as
-         * index / 30, and image 0x0473E's cap of 120. */
-        uint8_t idx = 29, rat = 0;
-        ck("the thirtieth level moves to the next rating",
-           level_advance(&idx, &rat) && idx == 30 && rat == 1,
+         * index / 30 at image 0x04737, and image 0x0473E's cap of 120.
+         *
+         * There is ONE index - ds:0x1F6B - so this drives it rather than
+         * passing one in. The number within a rating is image 0x04566's
+         * derivation and not a variable anybody keeps. */
+        level_index_reset();
+        int ok29 = 1;
+        for (int i = 0; i < 29; i++) ok29 = ok29 && level_passed();
+        ck("twenty-nine levels stay in the first rating",
+           ok29 && level_rating() == 0 && level_number() == 30,
+           "image 0x04566's index + 1 - rating * 30");
+        ck("the thirtieth moves to the next rating",
+           level_passed() && level_index() == 30
+           && level_rating() == 1 && level_number() == 1,
            "image 0x04737's divide by 30");
-        idx = 118; rat = 3;
+        level_index_reset();
+        int okall = 1;
+        for (int i = 0; i < 119; i++) okall = okall && level_passed();
         ck("and there are a hundred and twenty of them",
-           level_advance(&idx, &rat) && idx == 119
-           && (level_advance(&idx, &rat) == 0),
+           okall && level_index() == 119 && level_passed() == 0,
            "image 0x0473E caps at 0x78");
+
+        /* The rating keys set the FIRST level of their rating - image
+         * 0x04505 and image 0x04535 both write rating * 30 into ds:0x1F6B. */
+        level_index_reset();
+        level_rating_up();
+        ck("Up goes to the first level of the next rating",
+           level_rating() == 1 && level_index() == 30 && level_number() == 1,
+           "image 0x044EC");
+        level_rating_up(); level_rating_up(); level_rating_up();
+        ck("and caps at Mayhem",
+           level_rating() == MENU_RATING_MAX && level_index() == 90,
+           "image 0x044F9's cmp al, 3");
+        for (int i = 0; i < 5; i++) level_rating_down();
+        ck("Down floors at Fun",
+           level_rating() == 0 && level_index() == 0,
+           "image 0x04529's and al, al");
 
         ck("and the text follows the rung",
            strstr(level_verdict_text(100, 10), "Superb") != NULL

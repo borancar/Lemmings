@@ -2908,12 +2908,78 @@ int level_won(uint8_t saved, uint8_t needed) { return saved >= needed; }
 
 /* Transcribed from image 0x0472E. Returns non-zero while there is another
  * level; image 0x04745 leaves for the ending when there is not. */
-int level_advance(uint8_t *index, uint8_t *rating)
+/* ======================================================================
+ * WHICH LEVEL, and it is ONE BYTE.
+ *
+ * ds:0x1F6B is the index into the game's running order, 0..119, and ds:0x1F6E
+ * is its rating. Everything else is derived: image 0x04566 works the NUMBER
+ * within a rating out as
+ *
+ *     ah = ds:0x1F6E * 30        by four shifts and three adds
+ *     al = ds:0x1F6B + 1 - ah
+ *
+ * so there is no separate "number" anywhere in the game. main.c kept one, and
+ * a rating, and an index, and had to remember to move all three together.
+ *
+ * Four routines move it and they are the whole of it:
+ * ====================================================================== */
+static uint8_t g_level_index;      /* ds:0x1F6B */
+static uint8_t g_level_rating;     /* ds:0x1F6E */
+
+uint8_t level_index(void)  { return g_level_index; }
+uint8_t level_rating(void) { return g_level_rating; }
+
+/* image 0x04566: ds:0x1F6B + 1 - rating * 30, one-based. */
+uint8_t level_number(void)
 {
-    (*index)++;                                   /* image 0x0472E */
-    *rating = (uint8_t)(*index / LEVELS_PER_RATING);
-    return *index < LEVELS_TOTAL;                 /* image 0x0473E */
+    return (uint8_t)(g_level_index + 1
+                     - g_level_rating * LEVELS_PER_RATING);
 }
+
+/* image 0x04729, the results screen's PASS arm: the advance flag, the index,
+ * and the rating derived from it at image 0x04737's `div cl` by 30. Returns
+ * zero when image 0x0473E's `cmp byte [0x1f6b], 0x78` has run out of game. */
+int level_passed(void)
+{
+    music_level_passed(1);                        /* image 0x04729 */
+    g_level_index++;                              /* image 0x0472E */
+    g_level_rating = (uint8_t)(g_level_index / LEVELS_PER_RATING);
+    return g_level_index < LEVELS_TOTAL;          /* image 0x0473E */
+}
+
+/* image 0x04778, the FAIL arm: the same level again, and the same tune. */
+void level_failed(void) { music_level_passed(0); }
+
+/* image 0x0454C. F1 from the MENU clears the advance flag before falling into
+ * image 0x04551; the results screen's own "next level" at image 0x047DD jumps
+ * to 0x04551 and does NOT, which is the whole difference between replaying a
+ * level's tune and stepping to the next one.
+ *
+ * The port had no idea which way it had arrived, so the rotation advanced
+ * whenever it felt like it. */
+void level_from_menu(void) { music_level_passed(0); }   /* image 0x0454C */
+
+/* image 0x044EC and image 0x0451C: the rating plate's two keys. Up caps at 3
+ * (image 0x044F9), Down floors at 0 (image 0x04529), and both then set
+ * ds:0x1F6B to rating * 30 - the first level of the new rating. */
+void level_rating_up(void)
+{
+    if (g_level_rating >= MENU_RATING_MAX) return;      /* image 0x044F9 */
+    g_level_rating++;                                   /* image 0x04500 */
+    g_level_index = (uint8_t)(g_level_rating * LEVELS_PER_RATING);
+}
+
+/* image 0x0451C, the other way. */
+void level_rating_down(void)
+{
+    if (g_level_rating == 0) return;                    /* image 0x04529 */
+    g_level_rating--;                                   /* image 0x04530 */
+    g_level_index = (uint8_t)(g_level_rating * LEVELS_PER_RATING);
+}
+
+/* image 0x0454C's block wipes ds:0..0xFC9 at a cold start; ds:0x1F6B and
+ * ds:0x1F6E are above that and start at zero with the rest of BSS. */
+void level_index_reset(void) { g_level_index = 0; g_level_rating = 0; }
 
 const char *level_verdict_text(uint8_t saved, uint8_t needed)
 {

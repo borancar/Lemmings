@@ -85,59 +85,67 @@ int main(int argc, char **argv)
         }
     }
 
-    uint8_t rating = 0;             /* 0 Fun, 1 Tricky, 2 Taxing, 3 Mayhem */
-    uint32_t number = 1;            /* the GAME's level number, 1..30 */
-
+    /* WHICH LEVEL IS ds:0x1F6B's, and it lives in game.c. main.c used to
+     * keep a rating, a number and an index of its own and move all three by
+     * hand; the original has one byte and four routines. */
     menu_screen mm;
     /* sdl_io.c loads adlib.dat when the audio device opens, which is
      * after this point, so it has to be told where the files are. */
     lem_set_data_dir(data);
-    /* image 0x0454C: a cold start begins at rotation index 0. */
+    /* image 0x0454C's wipe: a cold start begins at the first level with the
+     * rotation at index 0. */
     music_cold_start();
+    level_index_reset();
 
-    if (menu_build_rating(data, rating, &mm, &err) != 0) {
+    if (menu_build_rating(data, level_rating(), &mm, &err) != 0) {
         fprintf(stderr, "PC Lemmings: %s\n"
                         "(looked in \"%s\"; pass the data directory as the "
                         "first argument)\n", err, data);
         return 1;
     }
 
-    uint8_t built = rating;      /* which rating `mm` was built for */
+    uint8_t built = level_rating();   /* which rating `mm` was built for */
 
     for (;;) {
         /* The menu screen is built per RATING, and finishing the last level
          * of one moves into the next - image 0x0472E's advance does not stop
          * at a boundary. Rebuild before showing it, or the plate names the
          * rating the player has just left. */
-        if (rating != built) {
+        if (level_rating() != built) {
             menu_screen next;
-            if (menu_build_rating(data, rating, &next, &err) == 0) {
+            if (menu_build_rating(data, level_rating(), &next, &err) == 0) {
                 menu_free(&mm);
                 mm = next;
-                built = rating;
-            } else {
-                rating = built;   /* keep the one that works */
+                built = level_rating();
             }
         }
         menu_action a = menu_run(&mm, DEFAULT_SCALE);
         if (a == MENU_EXIT) break;
 
         if (a == MENU_PLAY) {
-            /* menu -> briefing -> level -> menu. The briefing's own
-             * instruction is "Press mouse button to continue" and it means
-             * it; the original takes no key off that screen. */
-            /* BRIEFING -> LEVEL -> RESULTS -> THE NEXT LEVEL, which is the
-             * original's own loop: image 0x047B4 takes the left button on
-             * the results screen and jumps to image 0x4551, the next
-             * level's briefing, the index having already been advanced by
-             * image 0x0472E. The right button goes back to the menu. */
-            uint8_t index  = (uint8_t)(rating * 30 + (number - 1));
-            uint8_t rat    = rating;
+            /* THE GAME'S OWN LOOP, and its shape is the original's.
+             *
+             *   image 0x0454C  F1 from the MENU: clear ds:0x1F6D, then fall
+             *                  into image 0x04551
+             *   image 0x04551  set the level up from ds:0x1F6B and play it
+             *   image 0x046EB  the results
+             *   image 0x047D7  the LEFT button jumps back to image 0x04551 -
+             *                  NOT to 0x0454C, so the flag stays as the
+             *                  results screen left it
+             *   image 0x047CB  the right button, and any key, go to the menu
+             *
+             * That difference between the two entries is the whole of how
+             * the music steps: arriving from the menu clears the advance
+             * flag so the tune is the one this level already had, and
+             * arriving from the results leaves it set by image 0x04729 so
+             * the rotation moves on. main.c had one entry and no flag, so
+             * the track changed whenever it happened to. */
+            level_from_menu();              /* image 0x0454C */
             for (;;) {
                 char picked[64];
                 uint32_t which = 0;
-                uint8_t num = (uint8_t)(index % 30 + 1);
-                rat = (uint8_t)(index / 30);
+                uint8_t rat = level_rating();       /* ds:0x1F6E */
+                uint8_t num = level_number();       /* image 0x04566 */
                 if (level_locate(rat, num, picked, sizeof(picked),
                                  &which) != 0)
                     break;
@@ -161,50 +169,30 @@ int main(int argc, char **argv)
                 }
                 if (!g_level_over) break;      /* the window was closed */
 
-                /* Image 0x04720 judges it, and image 0x0472E advances the
-                 * index only when it was won. */
-                /* Image 0x04710 asks the CLOCK, not the caller. Passing a
-                 * constant 0 here put "All lemmings accounted for." on a
-                 * level that had timed out. */
+                /* Image 0x04710 asks the CLOCK, not the caller. Image
+                 * 0x04591 takes the requirement off the header and image
+                 * 0x04720 judges the percentage against it. */
                 int timed_out = level_out_of_time();
                 uint8_t saved = g_level_saved;
-                /* Image 0x04591 - the header carries a count and image
-                 * 0x04720 judges a percentage. */
                 uint8_t needed = level_needed_percent(&lv);
                 char code[11] = "";
-                /* Image 0x04729 sets ds:0x1F6D on a pass and image 0x04778
-                 * clears it on a failure, which is what steps the music to
-                 * the next tune - or replays the same one with the level. */
-                music_level_passed(level_won(saved, needed) ? 1 : 0);
-                if (level_won(saved, needed)) {
-                    uint8_t next = index, r2 = rat;
-                    if (!level_advance(&next, &r2)) break;   /* 0x04745 */
-                    /* IMAGE 0x0472E ADVANCES ds:0x1F6B THE MOMENT THE LEVEL
-                     * IS JUDGED, before the results screen is drawn, and
-                     * image 0x04737 derives the rating from it. That byte is
-                     * the MENU's plate as well as the play loop's index -
-                     * there is only one of it - so the menu has already
-                     * moved on by the time anything can return to it.
-                     *
-                     * The port kept the menu's rating and number separately
-                     * and never advanced them, so a player who finished a
-                     * level and went back to the menu found it still
-                     * offering the level they had just won. */
-                    rating = r2;                       /* image 0x04737 */
-                    number = (uint32_t)(next % 30 + 1);
-                    level_code_generate(next, 0, saved, code);
+
+                if (level_won(saved, needed)) {          /* image 0x04724 */
+                    if (!level_passed()) break;          /* image 0x0473E */
+                    level_code_generate(level_index(), 0, saved, code);
                     if (level_show_results(data, saved, needed, timed_out,
-                                           (uint8_t)(next + 1), code,
+                                           (uint8_t)(level_index() + 1), code,
                                            DEFAULT_SCALE, &err)
                             != RESULTS_NEXT)
-                        break;                  /* image 0x047BC: the menu */
-                    index = next;
-                    continue;
+                        break;                  /* image 0x047CB: the menu */
+                    continue;                   /* image 0x047D7: 0x04551 */
                 }
+                level_failed();                          /* image 0x04778 */
                 if (level_show_results(data, saved, needed, timed_out, 0, NULL,
                                        DEFAULT_SCALE, &err) != RESULTS_NEXT)
                     break;
-                /* Image 0x047B4 on a lost level retries the same one. */
+                /* Image 0x047B4 on a lost level retries the same one - the
+                 * index was never advanced, so this loop simply goes round. */
             }
             continue;
         }
@@ -220,7 +208,7 @@ int main(int argc, char **argv)
         if (a == MENU_FX) {
             sound_settings_cycle();
             menu_screen next;
-            if (menu_build_rating(data, rating, &next, &err) == 0) {
+            if (menu_build_rating(data, level_rating(), &next, &err) == 0) {
                 menu_free(&mm);
                 mm = next;
             }
@@ -241,19 +229,13 @@ int main(int argc, char **argv)
             /* Image 0x044EC and 0x0451C: cap at MENU_RATING_MAX, floor at 0,
              * and then ds:0x1F6B becomes rating * 30 - the first level of the
              * new rating, so the number restarts with it. */
-            uint8_t was = rating;
-            if (a == MENU_RATING_UP) { if (rating < MENU_RATING_MAX) rating++; }
-            else                     { if (rating > 0) rating--; }
-            if (rating == was) continue;
-            number = 1;
-            menu_screen next;
-            if (menu_build_rating(data, rating, &next, &err) != 0) {
-                rating = was;
-                continue;
-            }
-            menu_free(&mm);
-            mm = next;
-            built = rating;
+            uint8_t was = level_rating();
+            if (a == MENU_RATING_UP) level_rating_up();   /* image 0x044EC */
+            else                     level_rating_down(); /* image 0x0451C */
+            if (level_rating() == was) continue;
+            /* The rebuild happens at the top of the loop, which is where
+             * image 0x04E37 does it too - from the plate's own drawn state
+             * rather than at the moment the key arrives. */
             continue;
         }
         /* F3 "FX" changes nothing on the original's screen in this build -
