@@ -102,7 +102,23 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    uint8_t built = rating;      /* which rating `mm` was built for */
+
     for (;;) {
+        /* The menu screen is built per RATING, and finishing the last level
+         * of one moves into the next - image 0x0472E's advance does not stop
+         * at a boundary. Rebuild before showing it, or the plate names the
+         * rating the player has just left. */
+        if (rating != built) {
+            menu_screen next;
+            if (menu_build_rating(data, rating, &next, &err) == 0) {
+                menu_free(&mm);
+                mm = next;
+                built = rating;
+            } else {
+                rating = built;   /* keep the one that works */
+            }
+        }
         menu_action a = menu_run(&mm, DEFAULT_SCALE);
         if (a == MENU_EXIT) break;
 
@@ -163,6 +179,19 @@ int main(int argc, char **argv)
                 if (level_won(saved, needed)) {
                     uint8_t next = index, r2 = rat;
                     if (!level_advance(&next, &r2)) break;   /* 0x04745 */
+                    /* IMAGE 0x0472E ADVANCES ds:0x1F6B THE MOMENT THE LEVEL
+                     * IS JUDGED, before the results screen is drawn, and
+                     * image 0x04737 derives the rating from it. That byte is
+                     * the MENU's plate as well as the play loop's index -
+                     * there is only one of it - so the menu has already
+                     * moved on by the time anything can return to it.
+                     *
+                     * The port kept the menu's rating and number separately
+                     * and never advanced them, so a player who finished a
+                     * level and went back to the menu found it still
+                     * offering the level they had just won. */
+                    rating = r2;                       /* image 0x04737 */
+                    number = (uint32_t)(next % 30 + 1);
                     level_code_generate(next, 0, saved, code);
                     if (level_show_results(data, saved, needed, timed_out,
                                            (uint8_t)(next + 1), code,
@@ -206,6 +235,7 @@ int main(int argc, char **argv)
             }
             menu_free(&mm);
             mm = next;
+            built = rating;
             continue;
         }
         /* F3 "FX" changes nothing on the original's screen in this build -

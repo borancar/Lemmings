@@ -1855,6 +1855,17 @@ int level_show_results(const char *dir, uint8_t saved, uint8_t needed,
     int released = 0;                     /* image 0x047AF's wait */
     int running = 1, dirty = 1;
     while (running) {
+        /* image 0x047A9 reads ds:0x14 and tests it - the button STATE, not
+         * an edge - so a screen entered with nothing held passes this at
+         * once. Waiting for an UP EVENT instead meant a player had to click
+         * once for nothing, to manufacture the release, before any click
+         * counted. There is no event to wait for when the button is already
+         * up. */
+        if (!released) {
+            Uint32 held = SDL_GetMouseState(NULL, NULL);
+            if (!(held & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)))
+                released = 1;
+        }
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) { out = RESULTS_MENU; running = 0; }
