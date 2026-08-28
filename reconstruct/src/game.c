@@ -1762,7 +1762,7 @@ void level_release_step(void)
  * comparison scoring 10,333 of 10,333 was scoring a stream driven by a
  * script, not by the game.
  *
- * WHEN it starts was ALREADY transcribed, further up in level_start_step -
+ * WHEN it starts was ALREADY transcribed, further up in level_phase_step -
  * image 0x0361's opening sequence, whose two sound cues were deliberate
  * no-ops with a comment saying the port makes no sound. Adding a second copy
  * of that sequencer here is exactly the collision CLAUDE.md warns about with
@@ -1953,10 +1953,13 @@ uint8_t sound_setting(void) { return g_snd_setting; }
 uint8_t sound_driver_answered(void) { return g_snd_driver == 0xFF; }
 
 /* ======================================================================
- * THE LEVEL'S OPENING SEQUENCE - image 0x0361, called from the play loop's
- * first line at image 0x019D.
+ * THE LEVEL'S PHASE MACHINE - image 0x0031E, called from the play loop's
+ * first line at image 0x0019D.
  *
- *     al = [0x4e]            the phase flags
+ * THREE bits of ds:0x4E, tested in that order, and the port had the third:
+ *
+ *     test al,1 / jne        bit 0: the FADE IN, image 0x0032C
+ *     test al,2 / jne        bit 1: the FADE OUT, image 0x0034D
  *     test al,4 / je         bit 2 clear: the opening is over
  *     dl = [0x52]            the play loop's own frame counter, bumped at
  *                            image 0x01A3 once per pass
@@ -1966,6 +1969,13 @@ uint8_t sound_driver_answered(void) { return g_snd_driver == 0xFF; }
  *     cmp dl,0x37 / je       frame 55: image 0x3AD, the music
  *     jb / and al,0xfb       past 55: clear bit 2, the opening is done
  *     [0x4e] = al
+ *
+ * The two fades are not a screen the level passes through on the way in and
+ * on the way out - they are BRANCHES OF THE PLAY LOOP, and the loop keeps
+ * running while they happen. That is what image 0x002B3 does at the end: it
+ * sets ds:0x4F, ORs bit 1 into ds:0x4E and jumps back to image 0x00105,
+ * rather than leaving. The port ran its own fade after the loop had already
+ * exited, which is the same picture assembled a second way.
  *
  * ds:0x55 is what image 0x07C1E tests before animating object id 1, and what
  * image 0x30B0 tests before releasing a lemming - so this one byte holds back
@@ -2000,17 +2010,25 @@ static uint8_t g_entrance_open;    /* ds:0x55 */
  *     0x00436  ds:0x1FD4, ds:0x1FD3, ds:0x4F, ds:0x2A, ds:0x52, ds:0x55 = 0
  *     0x0044F  ss:0x12 for 0x42A0   the trigger map
  *
- * ds:0x4E STARTS AT 1, NOT 4. This set it to 4 - image 0x0031E's third
- * branch, the timed cues - and so skipped whatever the first branch does
- * before it. The cues still fire, because something later sets bit 2: the
- * probe caught image 0x0031E running with ds:0x4E at 5 and then 4. What
- * turns bit 2 on has NOT been found, so this keeps the port's 4 with that
- * said plainly rather than transcribing the 1 and losing the cues. */
+ * ds:0x4E STARTS AT 1, AND 1 IS THE FADE IN. The port started it at 4 -
+ * image 0x0031E's third branch, the timed cues - because what turned bit 2
+ * on had not been found, and starting at 1 would have lost the cues.
+ *
+ * IMAGE 0x003C1 IS WHAT TURNS IT ON, and it is the fade's own first
+ * instruction: `or al, 4`. The cues are armed BY the fade in, on every pass
+ * of it, and bit 0 clears when the palette stops moving (image 0x003D4).
+ * That is exactly what the probe saw and could not explain - ds:0x4E at 5
+ * and then 4: 5 is the fade running with the cues already armed, and 4 is
+ * the first frame after it finished.
+ *
+ * So the port's 4 was right about where the level ends up and wrong about
+ * how it gets there. It skipped the fade, and the level appeared at full
+ * brightness in a single frame. */
 void level_start_reset(void)
 {
     g_level_frame  = 0;              /* image 0x00444: ds:0x52 */
-    /* NOT image 0x00431's 1 - see above. */
-    g_level_phase  = 4;
+    g_level_phase  = 1;              /* image 0x00431: ds:0x4E */
+    g_level_over   = 0;              /* image 0x0043E: ds:0x4F */
     g_entrance_open = 0;             /* image 0x00447: ds:0x55 */
     g_skill    = 2;                  /* image 0x00422 */
     g_selected = PANEL_SEL_START;    /* image 0x00427 */
@@ -2051,14 +2069,62 @@ void level_start_reset(void)
 uint8_t level_entrance_open(void) { return g_entrance_open; }
 uint8_t level_frame_counter(void) { return g_level_frame; }
 
-/* Transcribed from image 0x0361, with the counter bumped where the play loop
- * bumps it - image 0x01A3, AFTER this call, not before. */
-void level_start_step(void)
+/* Image 0x003C1 - one pass of the fade IN, and the first thing it does is
+ * arm the cues. `al` is ds:0x4E on the way in and on the way out. */
+static uint8_t level_fade_in_step(uint8_t al)
 {
-    uint8_t al = g_level_phase;
-    if (al & 4) {
-        uint8_t dl = g_level_frame;
-        if (dl == 0x0F) {
+    al = (uint8_t)(al | 4);                     /* image 0x003C1 */
+    if (!level_fade_notch(0))                   /* image 0x003CE: call 0x534B */
+        al = (uint8_t)(al & 0xFE);              /* image 0x003D4 */
+    return al;
+}
+
+/* Image 0x003D7 - and the way out, clearing bit 1 when the palette has
+ * stopped moving. Note what it does NOT do: it never touches bit 2, so a
+ * level that ends before play-loop frame 55 fades out with its cues still
+ * armed. They are simply never reached again. */
+static uint8_t level_fade_out_step(uint8_t al)
+{
+    if (!level_fade_notch(1))                   /* image 0x003DE: call 0x5329 */
+        al = (uint8_t)(al & 0xFD);              /* image 0x003E4 */
+    return al;
+}
+
+/* Transcribed from image 0x0031E, with the counter bumped where the play
+ * loop bumps it - image 0x01A3, AFTER this call, not before. */
+void level_phase_step(void)
+{
+    uint8_t al = g_level_phase;                 /* image 0x0031E */
+
+    /* The fades hold the play loop. With a display present image 0x0032C
+     * runs the whole fade here and now, a retrace and a DAC upload to a
+     * pass; without one image 0x0033D takes a single step and returns, and
+     * the loop outside is what repeats it. */
+    if (al & 1) {                               /* image 0x00321 */
+        if (video_present()) {                  /* image 0x00325: ds:0x200E */
+            do {
+                al = level_fade_in_step(al);    /* image 0x0032C */
+                video_retrace_wait();           /* image 0x00330: call 0x1550 */
+                video_palette_upload();         /* image 0x00333: call 0x553D */
+            } while (al & 1);                   /* image 0x00339 */
+        } else {
+            al = level_fade_in_step(al);        /* image 0x0033D */
+        }
+    } else if (al & 2) {                        /* image 0x00342 */
+        if (video_present()) {                  /* image 0x00346 */
+            do {
+                al = level_fade_out_step(al);   /* image 0x0034D */
+                video_retrace_wait();           /* image 0x00351 */
+                video_palette_upload();         /* image 0x00354 */
+            } while (al & 2);                   /* image 0x0035A */
+        } else {
+            al = level_fade_out_step(al);       /* image 0x0035E */
+        }
+    }
+
+    if (al & 4) {                               /* image 0x00361 */
+        uint8_t dl = g_level_frame;             /* image 0x00365 */
+        if (dl == 0x0F) {                       /* image 0x00369 */
             /* image 0x0380: THE ENTRANCE OPENING, and it is heard twenty
              * frames BEFORE the trapdoor actually opens - which is what
              * makes it sound like doors working rather than an announcement
@@ -2081,11 +2147,70 @@ void level_start_step(void)
                 sound_request(0x61, 3, g_tune);                  /* image 0x03B4 */
                 sound_tick_now();                          /* image 0x03BB */
             }
-        } else if (dl > 0x37) {
-            g_level_phase = (uint8_t)(al & 0xFB);
+        } else if (dl > 0x37) {                 /* image 0x00378 */
+            al = (uint8_t)(al & 0xFB);          /* image 0x0037A */
         }
     }
-    g_level_frame++;                        /* image 0x01A3 */
+    g_level_phase = al;                         /* image 0x0037C */
+    g_level_frame++;                            /* image 0x001A3 */
+}
+
+/* ======================================================================
+ * IMAGE 0x002B3 - THE LEVEL IS OVER, and what that means is two bytes.
+ *
+ *     0x002B3  ds:0x4F = 0xFF      it has ended
+ *     0x002BB  ds:0x4E |= 2        arm the fade out
+ *     0x002C0  jmp 0x105           BACK ROUND THE PLAY LOOP
+ *
+ * It does not leave. Image 0x001C8 sees ds:0x4F on the next pass and sends
+ * the loop to image 0x002C3, which tests bit 1 and goes back round again
+ * while the fade is still running; only once it has cleared does the game
+ * reach the results. So the picture that fades is the level's own last
+ * composed frame, still being drawn by the loop that composed it.
+ * ====================================================================== */
+uint8_t g_level_over;                           /* ds:0x4F */
+
+void level_end_begin(void)
+{
+    g_level_over  = 0xFF;                           /* image 0x002B3 */
+    g_level_phase = (uint8_t)(g_level_phase | 2);   /* image 0x002BB */
+}
+
+/* Image 0x002C6's test, the one that lets the loop out. */
+int level_end_done(void)
+{
+    return g_level_over == 0xFF && !(g_level_phase & 2);
+}
+
+/* IMAGE 0x002CD - what happens once it has. The level is over, the fade has
+ * finished, and this is the last thing before image 0x00311 jumps to the
+ * results screen at image 0x046EB:
+ *
+ *     0x002CD  call 0x5447                          the screen off
+ *     0x002D0  ds:0x2010 != 0xFF && ds:0x25A7 & 1   ax=0x100, int 60h
+ *     0x002E3  ds:0x2010 != 0xFF && ds:0x25A7 & 1   ax=0,     int 60h
+ *     0x002F6  ds:0x2A = 0
+ *     0x002FB  call 0x16A9
+ *     0x002FE  ds:0x2010 == 0xFF && ds:0x25A7 & 3   ax=0x200, int 61h
+ *     0x00311  jmp 0x46EB
+ *
+ * THE LAST LINE IS THE ONE THE PORT WAS MISSING, and it is why the music
+ * would not change with the level: nothing ever stopped the driver, so the
+ * tune a level started was still running when the next one asked for its
+ * own at image 0x003B4 twenty frames in.
+ *
+ * Note the mask. The two INT 60h calls test bit 0 - EFFECTS - because the
+ * fallback device only ever made effects; the stop tests BOTH bits, because
+ * it is the device being shut down rather than a sound being made. The port
+ * would have written `sound_enabled(2)` here by symmetry with image 0x003AD
+ * and been wrong on the fx-only setting.
+ *
+ * The two INT 60h calls are the fallback's, on a machine where no driver
+ * answered - see sound_request, which has no such device. */
+void level_end_finish(void)
+{
+    if (g_snd_driver == 0xFF && sound_enabled(3))   /* image 0x002FE */
+        sound_request(0x61, 2, 0);                  /* image 0x0030C */
 }
 
 #define ST_IN_HUNDREDS 29
@@ -6231,7 +6356,7 @@ void level_anim_step(level_anim *st, const level *lv)
 /* One pass of the level's frame - as much of the chain at image 0x019C..
  * 0x01C5 as has been read, in its order:
  *
- *     image 0x019D  call 0x031E   the opening sequence
+ *     image 0x019D  call 0x031E   the phase machine: the fades and the cues
  *     image 0x01B0  call 0x30A6   release a lemming
  *     image 0x01B6  call 0x3944   which tail-jumps to 0x07C0A, the objects
  *     image 0x01BC  call 0x3634   walk the lemmings - NOT READ, so the OUT
@@ -6243,7 +6368,7 @@ void level_anim_step(level_anim *st, const level *lv)
  * cursor is over). */
 void level_frame_step(level_anim *st, const level *lv)
 {
-    level_start_step();
+    level_phase_step();
     level_release_step();
     (void)st; (void)lv;
     level_timer_step();

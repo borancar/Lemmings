@@ -263,7 +263,7 @@ int main(int argc, char **argv)
                      * frame, which is 1, so ink is 750. */
                     int shut = 1;
                     for (int k = 0; k < 35; k++) {
-                        level_start_step();
+                        level_phase_step();
                         level_anim_step(st, &lv);
                         if (st[0].ink != 750) shut = 0;
                     }
@@ -275,7 +275,7 @@ int main(int argc, char **argv)
                     };
                     int ok = (st[0].ink == WANT[0]);
                     for (int k = 1; k < 10; k++) {
-                        level_start_step();
+                        level_phase_step();
                         level_anim_step(st, &lv);
                         if (st[0].ink != WANT[k]) ok = 0;
                     }
@@ -283,7 +283,7 @@ int main(int argc, char **argv)
                        ok, "ink sequence differs from the emulator's blits");
                     /* One-shot: after the wrap it must STAY on frame 0. */
                     for (int k = 0; k < 20; k++) {
-                        level_start_step();
+                        level_phase_step();
                         level_anim_step(st, &lv);
                     }
                     ck("and then rests on frame 0, as a one-shot",
@@ -359,7 +359,7 @@ int main(int argc, char **argv)
         int ok = 1, k = 0;
         uint8_t was = 0;
         for (uint16_t f = 1; f <= 400; f++) {
-            level_start_step();
+            level_phase_step();
             level_release_step();
             if (level_released() != was) {
                 was = level_released();
@@ -373,7 +373,7 @@ int main(int argc, char **argv)
         {
             uint16_t f = 0;
             while (f < 60 && level_entrance_open() != 0xFF) {
-                level_start_step();
+                level_phase_step();
                 f++;
             }
             ck("and the entrance opens on pass 36", f == 36, "not pass 36");
@@ -403,7 +403,7 @@ int main(int argc, char **argv)
                  * version of this did, and then reported the empty run as
                  * "the release made a noise". Two conditions behind one
                  * message is how that happened; they are separate now. */
-                while (level_entrance_open() != 0xFF) level_start_step();
+                while (level_entrance_open() != 0xFF) level_phase_step();
                 opl_reset();
                 g_saw_any = 0;
                 opl_set_trace(saw_bd);
@@ -1397,24 +1397,24 @@ int main(int argc, char **argv)
         } else {
             ck("adlib.dat loads", 1, NULL);
             /* Frame 15 is the entrance opening, 35 opens it, 55 is the
-             * music - image 0x0361's chain, driven by level_start_step. */
+             * music - image 0x0361's chain, driven by level_phase_step. */
             g_saw_bd = 0; g_saw_any = 0;
             opl_reset();
             sound_driver_present(1);
             level_start_reset();
             opl_set_trace(saw_bd);
-            for (int i = 0; i < 15; i++) { level_start_step(); adlib_tick(); }
+            for (int i = 0; i < 15; i++) { level_phase_step(); adlib_tick(); }
             ck("silence before frame 15", g_saw_any == 0, NULL);
-            for (int i = 15; i < 20; i++) { level_start_step(); adlib_tick(); }
+            for (int i = 15; i < 20; i++) { level_phase_step(); adlib_tick(); }
             ck("the ENTRANCE is heard at frame 15", g_saw_any != 0, NULL);
             ck("and it is not the music", g_saw_bd == 0, NULL);
             ck("the trapdoor is still shut", level_entrance_open() != 0xFF,
                NULL);
-            for (int i = 20; i < 40; i++) { level_start_step(); adlib_tick(); }
+            for (int i = 20; i < 40; i++) { level_phase_step(); adlib_tick(); }
             ck("the trapdoor opens at frame 35",
                level_entrance_open() == 0xFF, NULL);
             ck("still no music", g_saw_bd == 0, NULL);
-            for (int i = 40; i < 60; i++) { level_start_step(); adlib_tick(); }
+            for (int i = 40; i < 60; i++) { level_phase_step(); adlib_tick(); }
             ck("the music starts at frame 55", g_saw_bd != 0, NULL);
             opl_set_trace(NULL);
 
@@ -1432,7 +1432,7 @@ int main(int argc, char **argv)
             sound_driver_present(0);
             level_start_reset();
             opl_set_trace(saw_bd);
-            for (int i = 0; i < 60; i++) { level_start_step(); adlib_tick(); }
+            for (int i = 0; i < 60; i++) { level_phase_step(); adlib_tick(); }
             ck("with no driver, nothing is asked for", g_saw_any == 0, NULL);
             opl_set_trace(NULL);
             sound_driver_present(1);

@@ -749,8 +749,9 @@ void level_saved_reset(void);
 void level_lemming_saved(void);
 uint8_t level_saved_percent(const level *lv);
 
-/* Whether image 0x001C8 called the level over - ds:0x4F. The rescued
- * percentage is ds:0x40 and is level_saved_pct's, above. */
+/* ds:0x4F - whether the level has ended. Image 0x002B3 sets it and image
+ * 0x001C8 tests it on every later pass. The rescued percentage is ds:0x40
+ * and is level_saved_pct's, above. */
 extern uint8_t g_level_over;
 int level_over(const level *lv, uint8_t released, uint8_t live);
 
@@ -798,14 +799,39 @@ typedef struct {
 void level_anim_init(level_anim *st, const level *lv, const ground *g);
 
 /* One pass of image 0x07C0A. */
-/* The level's opening sequence, image 0x0361: a frame counter, and the byte
- * at ds:0x55 that holds the trapdoor shut - and the lemmings in it - until
- * play-loop frame 35. Call level_start_step once per frame, before stepping
- * the animations. */
+/* THE LEVEL'S PHASE MACHINE, image 0x0031E - three bits of ds:0x4E, run
+ * once a frame from the play loop's first line at image 0x0019D: the fade
+ * in, the fade out, and the timed cues that open the trapdoor at play-loop
+ * frame 35 and start the music at 55. See level_phase_step in game.c. */
 void    level_start_reset(void);
-void    level_start_step(void);
+void    level_phase_step(void);
 uint8_t level_entrance_open(void);
 uint8_t level_frame_counter(void);
+
+/* Image 0x002B3: the level is over. It does not leave the play loop - it
+ * sets ds:0x4F and arms the fade out, and image 0x002C3 waits for that to
+ * finish before the results screen. level_end_done is that test. */
+void level_end_begin(void);
+int  level_end_done(void);
+/* Image 0x002CD: and once it has, the last thing before the results screen
+ * - which is where the driver is stopped. */
+void level_end_finish(void);
+
+/* ONE NOTCH OF THE LEVEL'S PALETTE FADE - image 0x0534B on the way in and
+ * image 0x05329 on the way out - and non-zero while anything is still
+ * moving. The DAC is the card's, so the port supplies these; the STEP they
+ * are built out of is image 0x056E2 and is transcribed, as
+ * palette_fade_step below. `out` selects the direction.
+ *
+ * The other two are the fade's loop, image 0x0032C: image 0x01550 waits a
+ * retrace and image 0x0553D pushes the palette at the DAC. video_present is
+ * ds:0x200E, which decides between that loop and image 0x0033D's single
+ * step - the original asks it because a machine with no display has nothing
+ * to fade, and the port asks it for the same reason. */
+int  level_fade_notch(uint8_t out);
+int  video_present(void);
+void video_retrace_wait(void);
+void video_palette_upload(void);
 
 void level_anim_step(level_anim *st, const level *lv);
 

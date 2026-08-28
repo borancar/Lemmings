@@ -736,7 +736,7 @@ static int adlib_live(const char *data, uint32_t seconds, const char *out)
     fprintf(g_adlib_log, "# tick divisor reg val   (PIT_HZ = 1193182)\n");
     opl_set_trace(adlib_log_write);
 
-    /* The level's own 17 frames a second drive level_start_step; the audio
+    /* The level's own 17 frames a second drive level_phase_step; the audio
      * clock drives the driver. Two different rates, which is the whole point
      * of the split - and getting them confused is how the music would end up
      * at the display's speed. */
@@ -747,7 +747,7 @@ static int adlib_live(const char *data, uint32_t seconds, const char *out)
     double frame_acc = 0.0;
     const double per_frame = (double)OPL_SAMPLE_RATE / LEVEL_FRAME_HZ;
     while (made < total) {
-        if (frame_acc < 1.0) { level_start_step(); frame_acc += per_frame; }
+        if (frame_acc < 1.0) { level_phase_step(); frame_acc += per_frame; }
         /* The DRIVER's own tick count, not one derived from the sample
          * count. Deriving it quantises every write to the chunk the audio
          * happens to be built in - 1024 samples, about two ticks - and the

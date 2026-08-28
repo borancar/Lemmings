@@ -389,7 +389,6 @@ struct level_frame {
     lemming      lem[LEMMING_MAX];
     uint8_t      released;   /* how many have come out of the trapdoor */
     uint16_t     view_x;     /* where the play area has scrolled to */
-    uint8_t      over;       /* image 0x001C8 said the level has finished */
     int          stepped;    /* the first frame is the state before a step */
 };
 
@@ -596,7 +595,7 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
  * the thing that stops a held mouse button. Both are the original's, and
  * neither is what a tidier reading would have produced.
  */
-static void level_key_button(struct level_frame *A, SDL_Keycode k)
+static void level_key_button(SDL_Keycode k)
 {
     switch (k) {
     case SDLK_F1: level_rate_click(0); return;   /* image 0x04068 */
@@ -621,6 +620,101 @@ static void level_key_button(struct level_frame *A, SDL_Keycode k)
     if (sound_enabled(3))                        /* image 0x03F70 */
         sound_request(0x61, 4, 0x01);                  /* image 0x03F77 */
     level_skill_select((uint8_t)button);         /* image 0x03F66 */
+}
+
+/* ======================================================================
+ * WHAT THE LEVEL'S FADE NEEDS FROM THE HARDWARE - image 0x0031E's four
+ * calls, and nothing else of it.
+ *
+ * The phase machine and both fade routines are transcribed in game.c. What
+ * cannot be is the DAC: image 0x0534B and image 0x05329 walk two palettes a
+ * notch, image 0x01550 waits a retrace and image 0x0553D pushes the result
+ * at the card. Those are here, and the STEP they are built from - image
+ * 0x056E2 - is game.c's palette_fade_step, so what lives in this file is
+ * only the pair of palettes and the moment they reach the screen.
+ *
+ * `g_lvl_top` and `g_lvl_bottom` are the palettes the screen is CURRENTLY
+ * shown through - the level carries two, swapped part-way down - and the
+ * `_tgt` pair is where the fade in is heading. A fade out heads for black.
+ *
+ * With no window there is nothing to fade, so video_present answers 0 and
+ * the current pair starts AT the target: image 0x0033D's single step then
+ * finds the palette already there and clears the bit on the first frame,
+ * which is the behaviour the harness had before any of this existed.
+ * ====================================================================== */
+static uint8_t     *g_lvl_screen;
+static lem_rgb      g_lvl_top[16], g_lvl_bottom[16];
+static lem_rgb      g_lvl_tgt_top[16], g_lvl_tgt_bottom[16];
+static SDL_Texture  *g_lvl_tex;
+static SDL_Renderer *g_lvl_ren;
+static int           g_lvl_live;        /* ds:0x200E - is there a display */
+
+/* The level's screen into the texture, through whatever the palettes hold
+ * now. One copy of this conversion, called by the play loop and by the
+ * fade: it was written out twice and the second copy only ever ran on the
+ * way out of a level, where nothing looks at it. */
+static void level_screen_upload(void)
+{
+    void *pixels = NULL;
+    int pitch = 0;
+    if (!g_lvl_tex || !g_lvl_screen) return;
+    if (!SDL_LockTexture(g_lvl_tex, NULL, &pixels, &pitch)) return;
+    for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
+        uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+        const uint8_t *src = g_lvl_screen + (size_t)y * LEVEL_SCREEN_W;
+        const lem_rgb *pal = (y < LEVEL_PLAY_H) ? g_lvl_top : g_lvl_bottom;
+        for (uint16_t x = 0; x < LEVEL_SCREEN_W; x++) {
+            lem_rgb q = pal[src[x]];
+            row[x] = ((uint32_t)q.r << 16) | ((uint32_t)q.g << 8) | q.b;
+        }
+    }
+    SDL_UnlockTexture(g_lvl_tex);
+}
+
+/* Image 0x0534B and image 0x05329, one notch. */
+int level_fade_notch(uint8_t out)
+{
+    lem_rgb black[16];
+    const lem_rgb *tt = g_lvl_tgt_top, *tb = g_lvl_tgt_bottom;
+    int moved;
+    /* Nothing on a display is nothing to fade, so the fade is already over.
+     * Image 0x0033D's single step reaches the same place a frame at a time;
+     * this reaches it on the first one, which is what a harness with a
+     * frame budget needs. */
+    if (!g_lvl_live) return 0;
+    if (out) {
+        memset(black, 0, sizeof black);
+        tt = tb = black;
+    }
+    moved  = palette_fade_step(g_lvl_top, tt, 16);
+    moved |= palette_fade_step(g_lvl_bottom, tb, 16);
+    return moved;
+}
+
+/* ds:0x200E, which image 0x00325 and image 0x00346 both test. */
+int video_present(void) { return g_lvl_live; }
+
+/* Image 0x01550 - the retrace the fade's loop waits for, once a pass. */
+void video_retrace_wait(void)
+{
+    if (g_lvl_live) SDL_DelayNS(SDL_NS_PER_SECOND / VIEW_REFRESH_HZ);
+}
+
+/* Image 0x0553D - the palette at the card, which is what makes a notch of
+ * the fade visible. The screen itself has not changed. */
+void video_palette_upload(void)
+{
+    SDL_Event e;
+    if (!g_lvl_live || !g_lvl_ren) return;
+    level_screen_upload();
+    SDL_RenderClear(g_lvl_ren);
+    SDL_RenderTexture(g_lvl_ren, g_lvl_tex, NULL, NULL);
+    SDL_RenderPresent(g_lvl_ren);
+    /* A fade holds the play loop for the best part of a second, and a
+     * window that answers nothing for that long is one the desktop reports
+     * as hung. Only the close box is acted on. */
+    while (SDL_PollEvent(&e))
+        if (e.type == SDL_EVENT_QUIT) g_lvl_live = 0;
 }
 
 static int level_run(struct level_frame *A, const canvas *c,
@@ -650,6 +744,9 @@ static int level_run(struct level_frame *A, const canvas *c,
 
     uint8_t *screen = calloc(LEVEL_SCREEN_W * LEVEL_SCREEN_H, 1);
     if (!screen) return -1;
+    g_lvl_screen = screen;
+    g_lvl_tex = tex;
+    g_lvl_ren = ren;
 
     /* Two palettes, and which one a row gets depends on where it is.
      *
@@ -662,6 +759,12 @@ static int level_run(struct level_frame *A, const canvas *c,
     for (uint8_t i = 0; i < 16; i++) top[i] = bottom[i] = palette[i];
     if (lem_machine == LEM_PC_HIGH)
         level_panel_palette(&bottom[8]);
+    /* And the fade's copy of them: `top` and `bottom` stay the level's own
+     * colours - the capture below writes them, and a capture must never
+     * hold a mid-fade palette - while the pair the screen is drawn through
+     * starts at black and climbs. */
+    memcpy(g_lvl_tgt_top, top, sizeof top);
+    memcpy(g_lvl_tgt_bottom, bottom, sizeof bottom);
 
     /* A frame sink, for checking THIS path rather than a second arrangement
      * of the same calls. Every measurement of the level goes through lemdev,
@@ -674,6 +777,18 @@ static int level_run(struct level_frame *A, const canvas *c,
      * and writes no files. Setting LEM_SCREEN_DIR is a developer asking for
      * one, the way LEM_FRAMES already asks for a frame budget. */
     const char *sink = SDL_getenv("LEM_SCREEN_DIR");
+    /* ds:0x200E. A capture harness is not a display: it has a frame budget,
+     * and a fade held inside frame 0 would spend a second of wall clock
+     * producing no frames while every frame it did produce carried a
+     * palette climbing out of black. */
+    g_lvl_live = (!sink && g_win) ? 1 : 0;
+    if (g_lvl_live) {
+        memset(g_lvl_top, 0, sizeof g_lvl_top);
+        memset(g_lvl_bottom, 0, sizeof g_lvl_bottom);
+    } else {
+        memcpy(g_lvl_top, g_lvl_tgt_top, sizeof g_lvl_top);
+        memcpy(g_lvl_bottom, g_lvl_tgt_bottom, sizeof g_lvl_bottom);
+    }
     /* THE PORT'S OWN LEMMING ARRAY, frame by frame.
      *
      * A screen comparison says two lemmings look different; it does not say
@@ -842,7 +957,7 @@ static int level_run(struct level_frame *A, const canvas *c,
                 }
                 /* image 0x03E6F reads the scancode the keyboard handler
                  * left behind, in the same routine that handles a click. */
-                level_key_button(A, e.key.key);
+                level_key_button(e.key.key);
                 switch (e.key.key) {
                 /* ESCAPE ENDS THE LEVEL; it does not leave it.
                  *
@@ -858,7 +973,10 @@ static int level_run(struct level_frame *A, const canvas *c,
                  * the menu and no result at all. Bit 0x20 is the same key the
                  * results screen tests at image 0x047C1, which is the
                  * corroboration: one key, two screens, both sending it on. */
-                case SDLK_ESCAPE: A->over = 1; running = 0;               break;
+                /* Escape ends the level rather than closing the window,
+                 * and it ends it the way anything else does - image
+                 * 0x002B3, so it fades out and reaches the results. */
+                case SDLK_ESCAPE: level_end_begin();                     break;
                 /* THE PORT'S OWN. The original has no way to abandon a level
                  * without a result; a window does. */
                 case SDLK_Q:      running = 0;                            break;
@@ -923,21 +1041,7 @@ static int level_run(struct level_frame *A, const canvas *c,
             level_lemming_at(A->lem, A->released, A->view_x) >= 0;
         level_cursor_draw(screen, LEVEL_SCREEN_W, LEVEL_SCREEN_H, A->view_x);
 
-        void *pixels = NULL;
-        int pitch = 0;
-        if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
-            for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
-                uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-                const uint8_t *src = screen + (size_t)y * LEVEL_SCREEN_W;
-                const lem_rgb *pal = (y < LEVEL_PLAY_H) ? top : bottom;
-                for (uint16_t x = 0; x < LEVEL_SCREEN_W; x++) {
-                    lem_rgb q = pal[src[x]];
-                    row[x] = ((uint32_t)q.r << 16) |
-                             ((uint32_t)q.g << 8) | q.b;
-                }
-            }
-            SDL_UnlockTexture(tex);
-        }
+        level_screen_upload();
         if (sink) {
             char path[1024];
             snprintf(path, sizeof(path), "%s/f%05ld.raw", sink, frame_no);
@@ -963,7 +1067,7 @@ static int level_run(struct level_frame *A, const canvas *c,
                     "\"saved\":%u,\"over\":%u,\"tick\":%u,\"view_x\":%d,\"lem\":[", frame_no,
                     (unsigned)A->released,
                     (unsigned)lemmings_live(A->lem, A->released),
-                    (unsigned)level_saved, (unsigned)A->over,
+                    (unsigned)level_saved, (unsigned)g_level_over,
                     (unsigned)level_tick_now(), (int)A->view_x);
             for (uint8_t k = 0; k < A->released && k < LEMMING_MAX; k++) {
                 const lemming *a = &A->lem[k];
@@ -996,57 +1100,22 @@ static int level_run(struct level_frame *A, const canvas *c,
             else due = now;          /* behind: start again from here */
         }
         if (budget && --budget == 0) running = 0;
-        if (A->over) running = 0;      /* image 0x001C8 */
+        /* IMAGE 0x001C8 AND IMAGE 0x002C6, which are two different tests.
+         * The first is "has the level ended" and sends the loop to image
+         * 0x002C3; the second is "has the fade finished", and only that one
+         * lets it out. Between them the loop keeps composing and drawing,
+         * which is what the fade is a fade OF. */
+        if (level_end_done()) running = 0;
     }
-    /* THE LEVEL FADES OUT, which it did not before and the original does.
-     *
-     * Reported from playing, watching the emulator: leaving a level fades it
-     * rather than cutting to the next screen. In the original the level ends
-     * by setting ds:0x4F to 0xFF - image 0x002B3 - and image 0x002C3 then
-     * takes one of two ways out depending on bit 1 of ds:0x4E, and both of
-     * them leave mode 0x0D behind rather than snapping to it.
-     *
-     * The port's fade machinery already exists for the menu, but the level
-     * carries TWO palettes - the play area's and the panel's, swapped
-     * part-way down the screen - so it walks both. Same conversion as the
-     * loop above, and the same `screen` buffer, deliberately: the last frame
-     * the game composed is the thing that should fade, and composing a
-     * second one here would be a second arrangement of the same sequence.
-     *
-     * Only for a real window. Under `sink` this is a capture harness with a
-     * frame budget, and extra frames after it would be scored as the game's.
-     */
-    if (!sink && g_win && tex && ren) {
-        lem_rgb black[16];
-        memset(black, 0, sizeof black);
-        for (;;) {
-            int moved = palette_fade_step(top, black, 16);
-            moved |= palette_fade_step(bottom, black, 16);
-            void *pixels = NULL;
-            int pitch = 0;
-            if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
-                for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
-                    uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-                    const uint8_t *src = screen + (size_t)y * LEVEL_SCREEN_W;
-                    const lem_rgb *pal = (y < LEVEL_PLAY_H) ? top : bottom;
-                    for (uint16_t x = 0; x < LEVEL_SCREEN_W; x++) {
-                        lem_rgb q = pal[src[x]];
-                        row[x] = ((uint32_t)q.r << 16) |
-                                 ((uint32_t)q.g << 8) | q.b;
-                    }
-                }
-                SDL_UnlockTexture(tex);
-            }
-            SDL_RenderClear(ren);
-            SDL_RenderTexture(ren, tex, NULL, NULL);
-            SDL_RenderPresent(ren);
-            SDL_Event fe;
-            while (SDL_PollEvent(&fe))
-                if (fe.type == SDL_EVENT_QUIT) { moved = 0; break; }
-            if (!moved) break;
-            SDL_DelayNS(SDL_NS_PER_SECOND / VIEW_REFRESH_HZ);
-        }
-    }
+    /* Image 0x002CD, which the loop above has just fallen out of at image
+     * 0x002C6: stop the driver before the results screen. */
+    level_end_finish();
+
+    /* No fade here. It is image 0x0031E's, it runs INSIDE the loop above,
+     * and it was written out a second time in this file for as long as the
+     * loop exited the moment the level ended - which meant the picture
+     * being faded was one nothing was still drawing. See level_end_begin. */
+    g_lvl_screen = NULL; g_lvl_tex = NULL; g_lvl_ren = NULL;
 
     /* Never leave the pointer captured by a window that is going away. */
     SDL_SetWindowRelativeMouseMode(g_win, false);
@@ -1195,8 +1264,22 @@ void sound_request(uint8_t vec, uint8_t ah, uint8_t id)
 {
     if (vec != 0x61) return;   /* the fallback device, which this port has not */
     if (!adlib_ready()) return;
-    if (ah == 4) adlib_effect(id);          /* driver +0x002A */
-    else         adlib_music(id);           /* driver +0x0022 */
+    /* THE DRIVER'S OWN DISPATCH, and it is a table of five - adlib.c has an
+     * entry transcribed for each. This was an if with two arms, so AH=2
+     * fell into the else and asked for TUNE ZERO instead of stopping the
+     * driver, and AH=5 did the same.
+     *
+     * That is why a level's music ran on into the next one. Image 0x002FE
+     * stops the driver when a level ends, and the port never made the call
+     * at all - so the request that arrives twenty frames into the next
+     * level (image 0x003B4) reached a driver already playing something. */
+    switch (ah) {
+    case 2: adlib_stop();      break;       /* driver +0x003A */
+    case 3: adlib_music(id);   break;       /* driver +0x0022 */
+    case 4: adlib_effect(id);  break;       /* driver +0x002A */
+    case 5: adlib_slot5(id);   break;       /* driver +0x0032 */
+    default: break;
+    }
 }
 
 /* image 0x003BB does this the instant it has asked for a tune. */
@@ -1853,12 +1936,14 @@ static int level_frame_tick(void *ctx, uint8_t *pix)
     if (a->stepped) {
         level_play_step(a->st, &a->lv, a->lem, &a->released,
                         a->from->pix, w, h);
-        /* Image 0x001C8: everyone released and none active, or the clock
-         * run out. Which of the two it was does not decide win or lose -
-         * that is the saved count against the level's requirement. */
-        if (level_over(&a->lv, a->released,
-                       lemmings_live(a->lem, a->released)))
-            a->over = 1;
+        /* Image 0x001E7 and image 0x001FA: everyone released and none
+         * active, or the clock run out. Which of the two it was does not
+         * decide win or lose - that is the saved count against the level's
+         * requirement. Both go to image 0x002B3, which does not end the
+         * loop: it arms the fade and lets it run. */
+        if (!g_level_over && level_over(&a->lv, a->released,
+                                        lemmings_live(a->lem, a->released)))
+            level_end_begin();                  /* image 0x002B3 */
     }
     a->stepped = 1;
     level_play_draw(a->st, &a->lv, a->sec, a->len,
@@ -2005,11 +2090,6 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
     return out;
 }
 
-/* HOW THE LAST LEVEL ENDED, for the caller. The original keeps these in
- * ds:0x40 and ds:0x4F; the port has no DGROUP, so they live here beside the
- * loop that fills them. */
-uint8_t g_level_over;
-
 int level_show(const char *dir, const char *file, uint32_t which,
                level *lv, uint8_t scale, const char **err)
 {
@@ -2056,7 +2136,6 @@ int level_show(const char *dir, const char *file, uint32_t which,
         A.pan_sec = NULL; A.pan_len = 0;
         A.view_x = lv->start_x;
         A.stepped = 0;
-        A.over = 0;
         level_saved_reset();
         level_triggers_set(&A.lv, &g);
         A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
@@ -2095,14 +2174,13 @@ int level_show(const char *dir, const char *file, uint32_t which,
         g_show_tick = level_frame_tick; g_show_ctx = &A; g_show_pix = c.pix;
         level_run(&A, &c, g.palette, "PC Lemmings", scale);
         g_show_tick = NULL; g_show_ctx = NULL; g_show_pix = NULL;
-        /* How it ended, for the caller: image 0x001C8 sets A.over, and the
-         * rescued count against the level's requirement is what image
-         * 0x04720 then judges. */
         /* ds:0x40 through its own routine, image 0x03AF4 - the panel writes
          * it every frame and this is the last one. The port kept a second
-         * copy in a global of its own, which main.c then read instead. */
+         * copy in a global of its own, which main.c then read instead.
+         *
+         * ds:0x4F needs nothing here any more: image 0x002B3 sets it inside
+         * the loop, which is where the original sets it. */
         level_status_in(level_saved_percent(&A.lv));
-        g_level_over  = A.over;
         free(A.panel); A.panel = NULL;
         if (have_main) dat_free(&mainf);
     } else if (rc == 0) {
