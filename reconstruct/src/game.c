@@ -3067,6 +3067,17 @@ void level_rating_down(void)
  * ds:0x1F6E are above that and start at zero with the rest of BSS. */
 void level_index_reset(void) { g_level_index = 0; g_level_rating = 0; }
 
+/* THE PORT'S OWN, and only for the harness. The original never sets ds:0x1F6B
+ * to an arbitrary level: it starts at 0, image 0x0472E advances it and the
+ * rating keys move it in thirties. `lemdev --rating taxing --number 2` has to
+ * get there somehow, and the alternative was every routine that reads the
+ * index taking a rating and a number instead - which is what they all did. */
+void level_index_set(uint8_t index)
+{
+    g_level_index  = index;
+    g_level_rating = (uint8_t)(index / LEVELS_PER_RATING);
+}
+
 const char *level_verdict_text(uint8_t saved, uint8_t needed)
 {
     return VERDICT[level_verdict(saved, needed)];
@@ -7712,10 +7723,11 @@ int menu_input_screen(const char *dir, menu_screen *m, const char **err)
  *
  * Confirmed on four levels: n = 22 and n = 42 have the bit and were
  * overridden; n = 39 and n = 43 do not and kept their own. */
-int level_odd_entry(uint8_t rating, uint8_t number)
+/* image 0x019C9, and it reads the same ds:0x1F6B image 0x0197D just did -
+ * the test is on the SAME n, three instructions later in the same routine. */
+int level_odd_entry(void)
 {
-    if (rating > 3 || number < 1 || number > 30) return -1;
-    uint8_t n = LEVEL_ORDER[rating * 30 + (number - 1)];
+    uint8_t n = LEVEL_ORDER[level_index() % LEVELS_TOTAL];
     if (n == 0 || !((n - 1) & 1)) return -1;    /* image 0x019C9 */
     return (n - 1) >> 1;                        /* image 0x019E0 */
 }
@@ -7774,11 +7786,23 @@ int level_apply_odd(const char *dir, level *lv, int entry, const char **err)
 
 /* Image 0x04551's table, LEVEL_ORDER - see level_odd_entry above for how
  * the same n decides whether ODDTABLE.DAT applies. */
-int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
-                 uint32_t *section)
+/* WHICH FILE AND WHICH SECTION - image 0x0197D, and it reads ONE byte.
+ *
+ *     0x0197D  bl = ds:0x1F6B          the level index
+ *     0x01983  si = 0x54EE             the running order, image 0x0EF7E
+ *     0x01987  cl = [bx+si]            n = LEVEL_ORDER[index]
+ *     0x01989  dec cl
+ *     0x0198E  cx >>= 1                and image 0x01992's three more shifts
+ *     0x01992  ax = (n - 1) >> 4       the FILE
+ *     0x01998  cx = (n - 1) >> 1 & 7   the SECTION
+ *     0x019A0  call 0x04BC2            the digits into the template
+ *
+ * This took a rating and a number and multiplied them back together. There is
+ * no rating or number to take: ds:0x1F6B is the index, and image 0x04566
+ * DERIVES a number from it for the briefing's text and nothing else. */
+int level_locate(char *file, size_t file_len, uint32_t *section)
 {
-    if (rating > 3 || number < 1 || number > 30) return -1;
-    uint8_t n = LEVEL_ORDER[rating * 30 + (number - 1)];
+    uint8_t n = LEVEL_ORDER[level_index() % LEVELS_TOTAL];  /* image 0x01987 */
     if (n == 0) return -1;
     /* The original writes the digits into a template rather than formatting a
      * name; digits3 is that routine, and using it here keeps the transcription

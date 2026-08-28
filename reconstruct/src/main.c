@@ -144,20 +144,18 @@ int main(int argc, char **argv)
             for (;;) {
                 char picked[64];
                 uint32_t which = 0;
-                uint8_t rat = level_rating();       /* ds:0x1F6E */
-                uint8_t num = level_number();       /* image 0x04566 */
-                if (level_locate(rat, num, picked, sizeof(picked),
-                                 &which) != 0)
+                /* image 0x0197D reads ds:0x1F6B and needs nothing else. */
+                if (level_locate(picked, sizeof(picked), &which) != 0)
                     break;
                 which += 1;         /* level_show takes 1-based sections */
                 /* Image 0x019C9: this plate may play its level under
                  * another name with other skills. Set once for the
                  * briefing and once for the level, because each parses. */
-                int odd = level_odd_entry(rat, num);
+                int odd = level_odd_entry();
                 level lv;
                 level_odd_pending(odd);
-                if (level_show_briefing(data, picked, which, rat,
-                                        num, DEFAULT_SCALE, &err) != 0) {
+                if (level_show_briefing(data, picked, which,
+                                        DEFAULT_SCALE, &err) != 0) {
                     fprintf(stderr, "  %s\n", err);
                     break;
                 }

@@ -1109,8 +1109,10 @@ int main(int argc, char **argv)
     char picked[64];
     const int forced_file = (file != NULL);   /* --file pins the container */
     if (!file) {
-        if (level_locate(rating, (uint8_t)number, picked, sizeof(picked),
-                         &which) != 0) {
+        /* ds:0x1F6B is what image 0x0197D reads; the harness's --rating and
+         * --number have to become one. */
+        level_index_set((uint8_t)(rating * 30 + (number - 1)));
+        if (level_locate(picked, sizeof(picked), &which) != 0) {
             fprintf(stderr, "no such level: rating %u number %u\n",
                     rating, number);
             return 1;
@@ -1125,7 +1127,7 @@ int main(int argc, char **argv)
          * different save requirements - the harness disagreeing with the game
          * it is supposed to be checking. */
         if (g_odd_entry < 0)
-            g_odd_entry = level_odd_entry(rating, (uint8_t)number);
+            g_odd_entry = level_odd_entry();
         file = picked;
         which += 1;               /* load_level takes 1-based sections */
         game_number = number;
@@ -1245,9 +1247,9 @@ int main(int argc, char **argv)
                     continue;              /* at the cap or the floor */
                 number = 1;                /* rating * 30 + 1, 1-based */
                 game_number = number;
-                g_odd_entry = level_odd_entry(rating, (uint8_t)number);
-                if (level_locate(rating, (uint8_t)number, picked,
-                                 sizeof(picked), &which) != 0) {
+                level_index_set((uint8_t)(rating * 30));
+                g_odd_entry = level_odd_entry();
+                if (level_locate(picked, sizeof(picked), &which) != 0) {
                     fprintf(stderr, "no such level: rating %u number %u\n",
                             rating, number);
                     rating = was;

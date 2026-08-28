@@ -237,13 +237,14 @@ void preshift_sprite(const uint8_t *src, uint8_t cols, uint8_t rows,
 /* ODDTABLE.DAT: half the game's plates play a level under another name with
  * other skills - image 0x019C9's bit 0 of n - 1. -1 means this plate uses the
  * level's own numbers. */
-int level_odd_entry(uint8_t rating, uint8_t number);
+int level_odd_entry(void);        /* image 0x019C9 */
 int level_apply_odd(const char *dir, level *lv, int entry, const char **err);
 /* The plate the next level parse belongs to; level_odd_taken consumes it. */
 void level_odd_pending(int entry);
 int  level_odd_taken(void);
-int level_locate(uint8_t rating, uint8_t number, char *file, size_t file_len,
-                 uint32_t *section);
+/* image 0x0197D: the file and section for ds:0x1F6B, which is the only input
+ * it has - see LEVEL_ORDER in data.c. */
+int level_locate(char *file, size_t file_len, uint32_t *section);
 
 /* The 15 header fields, flat and in the order the original stores them, for
  * tools/verify_level.py. Transcribed from image 0x036B6. */
@@ -741,6 +742,7 @@ void level_from_menu(void);         /* image 0x0454C */
 void level_rating_up(void);         /* image 0x044EC */
 void level_rating_down(void);       /* image 0x0451C */
 void level_index_reset(void);
+void level_index_set(uint8_t index);   /* THE PORT'S OWN - the harness */
 
 extern uint8_t level_saved;
 void level_saved_reset(void);
@@ -1021,8 +1023,7 @@ int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
  * THE PORT'S OWN, both of them - they exist so main.c can be the game's flow
  * and nothing else. In sdl_io.c. */
 int level_show_briefing(const char *dir, const char *file, uint32_t which,
-                        uint8_t rating, uint16_t number, uint8_t scale,
-                        const char **err);
+                        uint8_t scale, const char **err);
 int level_show(const char *dir, const char *file, uint32_t which,
                level *lv, uint8_t scale, const char **err);
 

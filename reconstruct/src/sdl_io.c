@@ -1793,9 +1793,11 @@ int ground_load(const char *path, ground *g, const char **err)
  * that knows how to open a level.
  * ====================================================================== */
 
+/* The briefing's I/O. Its TEXT is image 0x04566's, which derives the number
+ * from ds:0x1F6B and writes the requirement into ds:0x41 - so neither comes
+ * from a caller any more. */
 int level_show_briefing(const char *dir, const char *file, uint32_t which,
-                        uint8_t rating, uint16_t number, uint8_t scale,
-                        const char **err)
+                        uint8_t scale, const char **err)
 {
     char path[1024];
     dat_file levels;
@@ -1814,10 +1816,11 @@ int level_show_briefing(const char *dir, const char *file, uint32_t which,
     /* ODDTABLE.DAT, image 0x019F5 - half the plates play their level under
      * another name with other skills. */
     if (level_apply_odd(dir, &lv, level_odd_taken(), err) != 0) return -1;
-    lv.level_number = number;
+    lv.level_number = level_number();       /* image 0x04566 */
 
     menu_screen br;
-    if (menu_briefing_screen(dir, &lv, rating, &br, err) != 0) return -1;
+    if (menu_briefing_screen(dir, &lv, level_rating(), &br, err) != 0)
+        return -1;
     menu_show_until_dismissed(&br, "PC Lemmings", scale);
     menu_free(&br);
     return 0;
