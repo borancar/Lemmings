@@ -3572,11 +3572,18 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     /* Image 0x02693: sixteen frames, and only the wrap does anything. */
     a->anim = (uint8_t)((a->anim + 1) & 0x0F);
     if (a->anim) {
-        /* Image 0x026DE lays the brick on frame 9, and image 0x026A2's
-         * frame 10 is a warning noise when three or fewer are left - a
-         * deliberate non-goal here, this port has no sound. */
+        /* Image 0x026DE lays the brick on frame 9. */
         if (a->anim == 9)
             lem_build_brick(a, lvl, cw, chh);      /* image 0x05F0F */
+        /* AND FRAME 10 IS THE WARNING, image 0x026A2, when three or fewer
+         * bricks are left - image 0x026A6 reads [si+0x21] and image 0x026AB
+         * lets anything above three past without a sound. It is the noise a
+         * player counts the last bricks by, and this was a deliberate no-op
+         * for as long as the port had no sound. */
+        else if (a->anim == 0x0A && a->bricks <= 3) {   /* image 0x026A4 */
+            if (g_snd_driver == 0xFF && sound_enabled(3))  /* image 0x026C2 */
+                sound_request(4, 0x12);                    /* image 0x026D0 */
+        }
         return;                                    /* image 0x026DB */
     }
 
@@ -4410,6 +4417,10 @@ static int lem_fuse_step(lemming *a)
     a->anim  = 0;                                   /* image 0x02E2B */
     a->state = 0;                                   /* image 0x02E39 */
     a->extra &= 1;                                  /* image 0x02E47 */
+    /* THE FUSE HAS RUN OUT - image 0x02E59. This is the one the nuke makes
+     * over and over as it lights each lemming in turn. */
+    if (g_snd_driver == 0xFF && sound_enabled(3))   /* image 0x02E4B */
+        sound_request(4, 0x05);                     /* image 0x02E59 */
     return 0;                                       /* image 0x02E5E */
 }
 
@@ -4424,6 +4435,10 @@ static void lem_boom(lemming *a)
     a->anim  = 0;                                   /* image 0x02D33 */
     a->state = 0;                                   /* image 0x02D41 */
     a->extra &= 1;                                  /* image 0x02D53 */
+    /* THE EXPLOSION - image 0x02D65. The cloud's own sound at image 0x02374
+     * is a different one on the OTHER interrupt; this is the bang. */
+    if (g_snd_driver == 0xFF && sound_enabled(3))   /* image 0x02D57 */
+        sound_request(4, 0x0C);                     /* image 0x02D65 */
 }
 
 

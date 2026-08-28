@@ -589,6 +589,55 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
     }
 }
 
+/* THE FUNCTION KEYS, image 0x03E6F.
+ *
+ * The same routine that handles a panel CLICK reads the scancode the
+ * keyboard handler left in ds:0x1FD0 (image 0x016D4 stores it, and clears it
+ * on the key-up), so a key and a click reach the same places:
+ *
+ *     0x3B  F1              image 0x04068   the release rate, down
+ *     0x3C  F2              image 0x0403D   the release rate, up
+ *     0x3D..0x44  F3..F10   image 0x03F5C   the eight skills, buttons 2..9
+ *     0x4E  keypad +        image 0x04018   pause
+ *     0x57  F11             image 0x04018   pause
+ *     0x53  Del             image 0x03FEF   the nuke
+ *     0x58  F12             image 0x03FEF   the nuke
+ *
+ * NOTE WHERE THE SKILLS ENTER. Image 0x03E9C..0x03EEB jump to image 0x03F5C,
+ * which is PAST image 0x03F52's pause test and past image 0x03F2E's latch -
+ * so a function key arms a skill while the game is paused, where a click on
+ * the same button does not, and a held key is not stopped from repeating by
+ * the thing that stops a held mouse button. Both are the original's, and
+ * neither is what a tidier reading would have produced.
+ */
+static void level_key_button(struct level_frame *A, SDL_Keycode k)
+{
+    switch (k) {
+    case SDLK_F1: level_rate_click(0); return;   /* image 0x04068 */
+    case SDLK_F2: level_rate_click(1); return;   /* image 0x0403D */
+    case SDLK_KP_PLUS: case SDLK_F11:
+        level_pause_click();           return;   /* image 0x04018 */
+    case SDLK_DELETE: case SDLK_F12:
+        level_nuke_click();            return;   /* image 0x03FEF */
+    default: break;
+    }
+    /* image 0x03EA0 onwards: F3 is button 2 and each key after it is one
+     * more, which is why the original counts with `inc al` rather than a
+     * table. */
+    int button = -1;
+    if (k >= SDLK_F3 && k <= SDLK_F10)
+        button = 2 + (int)(k - SDLK_F3);
+    if (button < 0) return;
+
+    /* image 0x03F66 stores it, and image 0x03F77 makes the button's noise -
+     * the same one a click makes, because the key path joins the click path
+     * before it. */
+    if (sound_enabled(3))                        /* image 0x03F70 */
+        sound_request(4, 0x01);                  /* image 0x03F77 */
+    A->selected = (uint8_t)(button + 1);
+    A->skill    = (uint8_t)button;               /* image 0x03F66 */
+}
+
 static int level_run(struct level_frame *A, const canvas *c,
                      const lem_rgb *palette, const char *title, uint8_t scale)
 {
@@ -806,6 +855,9 @@ static int level_run(struct level_frame *A, const canvas *c,
                     SDL_SetWindowRelativeMouseMode(g_win, false);
                     break;
                 }
+                /* image 0x03E6F reads the scancode the keyboard handler
+                 * left behind, in the same routine that handles a click. */
+                level_key_button(A, e.key.key);
                 switch (e.key.key) {
                 /* ESCAPE ENDS THE LEVEL; it does not leave it.
                  *
