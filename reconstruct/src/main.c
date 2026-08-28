@@ -209,10 +209,21 @@ int main(int argc, char **argv)
             continue;
         }
 
-        /* Image 0x044B3 cycles the sound settings and goes straight back
-         * to the menu loop at image 0x0445B - it opens no screen. */
+        /* Image 0x044B3 cycles the sound settings and goes straight back to
+         * the menu loop at image 0x0445B - it opens no screen.
+         *
+         * It also sets ds:0x1F70, which image 0x04E46 compares against the
+         * plate's drawn state to decide the label needs redrawing. This port
+         * composes the whole screen once, so the equivalent is to compose it
+         * again; the plate's label comes from the setting (see label_sprite)
+         * and without this F3 changed a byte nobody could see. */
         if (a == MENU_FX) {
             sound_settings_cycle();
+            menu_screen next;
+            if (menu_build_rating(data, rating, &next, &err) == 0) {
+                menu_free(&mm);
+                mm = next;
+            }
             continue;
         }
 

@@ -1433,6 +1433,21 @@ int main(int argc, char **argv)
         ok = ok && sound_setting() == 2 && sound_enabled(2);
         ck("F3 cycles silent / effects / both", ok, "the cycle differs");
 
+        /* AND THE PLATE FOLLOWS IT. Image 0x04E61 picks label sprite 0 when
+         * bit 1 is set and a driver answered, and sprite 1 otherwise - which
+         * is the whole visible difference F3 makes. The port hard-coded 1, so
+         * pressing F3 changed a byte and nothing else. */
+        sound_driver_present(1);                 /* setting 2, both on */
+        int lab = menu_label_sprite() == 0;
+        sound_settings_cycle();                  /* -> silent */
+        lab = lab && menu_label_sprite() == 1;
+        sound_settings_cycle();                  /* -> effects only */
+        lab = lab && menu_label_sprite() == 1;
+        sound_settings_cycle();                  /* -> both again */
+        lab = lab && menu_label_sprite() == 0;
+        ck("and the FX plate's label follows the setting", lab,
+           "the label did not change");
+
         /* and with no driver the music setting is skipped entirely */
         sound_driver_present(0);
         int ok2 = sound_setting() == 1;             /* image 0x00596 */

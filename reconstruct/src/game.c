@@ -1925,6 +1925,9 @@ void sound_settings_cycle(void)
 /* THE PORT'S OWN - so a caller can show which setting is up. */
 uint8_t sound_setting(void) { return g_snd_setting; }
 
+/* ds:0x2010, which image 0x04E65 tests before choosing the label. */
+uint8_t sound_driver_answered(void) { return g_snd_driver == 0xFF; }
+
 /* ======================================================================
  * THE LEVEL'S OPENING SEQUENCE - image 0x0361, called from the play loop's
  * first line at image 0x019D.
@@ -6950,7 +6953,35 @@ static const char CREDIT_2[] = "A DMA Design Game";         /* image 0x0E587 */
 #define LABEL_STRIDE 8
 #define LABEL_PLANE  (LABEL_STRIDE * LABEL_H)
 #define LABEL_SPRITE (LABEL_PLANE * 4)
-#define LABEL_FX     1        /* sprite 1 is "FX"; 0 is the alternate */
+/* WHICH LABEL, image 0x04E5A - and it is the SOUND SETTING that picks.
+ *
+ *     0x04E57  si = 0xEE30                 the default
+ *     0x04E5A  al = ds:0x25A7
+ *     0x04E5D  test al, 3 / je 0x04E84     both bits clear: a DIFFERENT PLATE
+ *     0x04E61  test al, 2 / je 0x04E6F     bit 1 clear: keep 0xEE30
+ *     0x04E65  cmp ds:0x2010, 0xFF / jne   and only with a driver
+ *     0x04E6C  si = 0xEA50
+ *     0x04E6F  ax=0x15F bx=0x92 dx=0x40    (351,146), 64 wide
+ *
+ * 0xEA50 IS LABEL_BASE, and 0xEE30 is one LABEL_SPRITE past it - so the two
+ * offsets the original chooses between are sprites 0 and 1 of the pair this
+ * port already had, at the position it already had. What it did not have was
+ * the choice: LABEL_FX was 1, so the plate always read "effects only"
+ * whatever F3 was set to, and F3 changed nothing anybody could see. */
+uint8_t menu_label_sprite(void)
+{
+    if (sound_enabled(2) && sound_driver_answered())   /* image 0x04E61 */
+        return 0;                                      /* image 0x04E6C */
+    return 1;                                          /* image 0x04E57 */
+}
+
+/* AND THE THIRD STATE IS NOT A LABEL AT ALL. With both bits of ds:0x25A7
+ * clear, image 0x04E5F goes to image 0x04E84, which blits si=0xB120 with a
+ * mask at si+0xAB9 to (324,120) - plate 2's own position, 68 + 2 * 128 - so
+ * the whole FX plate is replaced rather than relabelled. NOT TRANSCRIBED:
+ * that sprite's shape has not been read out of section 3, and drawing the
+ * "effects only" label in its place would be a picture the game never shows.
+ * The setting still takes effect; only its plate is wrong when silent. */
 #define LABEL_X      351
 #define LABEL_Y      146
 
@@ -8849,7 +8880,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
             uint16_t x = (uint16_t)(LABEL_X + sx);
             if (x >= BG_DRAWN_W) break;
             m->pix[(size_t)y * MENU_W + x] =
-                planar(sec, LABEL_BASE + LABEL_FX * LABEL_SPRITE,
+                planar(sec, LABEL_BASE + menu_label_sprite() * LABEL_SPRITE,
                        LABEL_PLANE, LABEL_STRIDE, 4, sx, sy);
         }
     }
