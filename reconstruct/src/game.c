@@ -1935,9 +1935,21 @@ void sound_driver_present(uint8_t yes)
  */
 void sound_settings_cycle(void)
 {
-    /* image 0x044B3: one input mode leaves the plate inert. ds:0x1F72 is
-     * the plate's own state, image 0x04E41's, and the port does not model
-     * it - so this arm is a no-op with its address rather than a guess. */
+    /* IMAGE 0x044B3 - AND IT IS A REFUSAL, not the inert arm this used to
+     * call it. ds:0x1F72 holding 2 means the plate was changed last pass and
+     * still owes a second draw, and F3 is DROPPED for that pass: the handler
+     * jumps straight back to image 0x0445B without touching anything.
+     *
+     * The port had no ds:0x1F72 to ask, so it said so and moved on. It has
+     * one now - the plate redraws itself from its own dirty byte the way
+     * image 0x04E37 does - so the guard is a guard.
+     *
+     * This is a one-frame debounce and a player can feel it: held or
+     * hammered, F3 advances one step every two passes rather than one every
+     * pass. Both rating keys have exactly the same guard on their own plate,
+     * image 0x044EC and image 0x0451C against ds:0x1F6F. */
+    if (g_fx_drawn == 2) return;                    /* image 0x044B3 */
+    g_fx_dirty = (uint8_t)(g_fx_dirty ^ 0xFF);      /* image 0x044BA */
     uint8_t al = (uint8_t)(g_snd_setting + 1);      /* image 0x044BF */
     uint8_t ah = (g_snd_driver == 0xFF) ? 3 : 2;    /* image 0x044C4 */
     if (al == ah) al = 0;                           /* image 0x044D3 */
@@ -3175,6 +3187,9 @@ void level_from_menu(void) { music_level_passed(0); }   /* image 0x0454C */
  * ds:0x1F6B to rating * 30 - the first level of the new rating. */
 void level_rating_up(void)
 {
+    /* Image 0x044EC, the same refusal F3 has: while ds:0x1F6F holds 4 the
+     * rating plate still owes a draw, and the key is dropped for that pass. */
+    if (g_rating_drawn == 4) return;                    /* image 0x044EC */
     if (g_level_rating >= MENU_RATING_MAX) return;      /* image 0x044F9 */
     g_level_rating++;                                   /* image 0x04500 */
     g_level_index = (uint8_t)(g_level_rating * LEVELS_PER_RATING);
@@ -3183,6 +3198,7 @@ void level_rating_up(void)
 /* image 0x0451C, the other way. */
 void level_rating_down(void)
 {
+    if (g_rating_drawn == 4) return;                    /* image 0x0451C */
     if (g_level_rating == 0) return;                    /* image 0x04529 */
     g_level_rating--;                                   /* image 0x04530 */
     g_level_index = (uint8_t)(g_level_rating * LEVELS_PER_RATING);
@@ -9145,6 +9161,35 @@ static void draw_rating(uint8_t *dst, const uint8_t *font, uint8_t rating)
 }
 
 
+/* THE FX PLATE'S LABEL, which is not part of its plate bitmap - and which is
+ * drawn OPAQUELY, unlike everything else on this screen.
+ *
+ * Its own black is real, not transparent: keying it out leaves the plate's
+ * yellow showing where the original has black around the letters, and costs
+ * 94.04% against 98.79% over the label's neighbourhood. That it is opaque
+ * follows from what it is for - the label swaps between FX and its alternate,
+ * so drawing one has to erase the other, and a keyed blit cannot.
+ *
+ * It is a routine rather than a block inside the set-up because image 0x04444
+ * and image 0x04467 both reach it - once on the way in and once a pass
+ * thereafter, through the guard in menu_fx_plate. */
+static void draw_fx_label(uint8_t *dst, const uint8_t *sec)
+{
+    const int lab = menu_label_sprite();             /* image 0x04E5A */
+    if (lab == LABEL_NONE) return;                   /* image 0x04E84 */
+    for (uint16_t sy = 0; sy < LABEL_H; sy++) {
+        uint16_t y = (uint16_t)(LABEL_Y + sy);
+        if (y >= MENU_H) break;
+        for (uint16_t sx = 0; sx < LABEL_W; sx++) {
+            uint16_t x = (uint16_t)(LABEL_X + sx);
+            if (x >= BG_DRAWN_W) break;
+            dst[(size_t)y * MENU_W + x] =
+                planar(sec, LABEL_BASE + (uint32_t)lab * LABEL_SPRITE,
+                       LABEL_PLANE, LABEL_STRIDE, 4, sx, sy);
+        }
+    }
+}
+
 /*
  * Transcribed from image 0x04401 - the caller, which this file used to say
  * had not been found. It was found by scanning the image for a near `call`
@@ -9251,32 +9296,20 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
               CREDIT_1_CELL_X, CREDIT_1_CELL_Y);
     draw_text(m->pix, font, fontlen, CREDIT_2,
               CREDIT_2_CELL_X, CREDIT_2_CELL_Y);
-    draw_rating(m->pix, font, rating);               /* image 0x04EC2 */
 
-    /* The FX plate's label, which is not part of its plate bitmap - and which
-     * is drawn OPAQUELY, unlike everything else on this screen.
+    /* Image 0x04416 and image 0x0441B, before either plate is drawn: both owe
+     * a draw, whatever their guards go on to read. The set-up then draws them
+     * once at image 0x04441 and image 0x04444, and the loop's own calls take
+     * over from the pass after.
      *
-     * Its own black is real, not transparent: keying it out leaves the plate's
-     * yellow showing where the original has black around the letters, and
-     * costs 94.04% against 98.79% over the label's neighbourhood. That it is
-     * opaque follows from what it is for - the label swaps between FX and its
-     * alternate, so drawing one has to erase the other, and a keyed blit
-     * cannot. */
-    const int lab = menu_label_sprite();
-    if (lab != LABEL_NONE) {
-        for (uint16_t sy = 0; sy < LABEL_H; sy++) {
-            uint16_t y = (uint16_t)(LABEL_Y + sy);
-            if (y >= MENU_H) break;
-            for (uint16_t sx = 0; sx < LABEL_W; sx++) {
-                uint16_t x = (uint16_t)(LABEL_X + sx);
-                if (x >= BG_DRAWN_W) break;
-                m->pix[(size_t)y * MENU_W + x] =
-                    planar(sec, LABEL_BASE + (uint32_t)lab * LABEL_SPRITE,
-                           LABEL_PLANE, LABEL_STRIDE, 4, sx, sy);
-            }
-        }
-    }
-
+     * The set-up draws the rating it was GIVEN rather than ds:0x1F6E's,
+     * because `lemdev --rating` forces one the game does not know about. The
+     * two are the same in ./lemmings, and where they are not the loop's first
+     * pass redraws from ds:0x1F6E - which is the original's answer, since it
+     * has no such parameter to disagree with. */
+    menu_plates_arm();
+    draw_rating(m->pix, font, rating);               /* image 0x04441 */
+    draw_fx_label(m->pix, sec);                      /* image 0x04444 */
 
     draw_anim(m->pix, font, fontlen);
 
@@ -9288,9 +9321,176 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
         memcpy(m->gfx, font, fontlen);
         m->gfx_len = fontlen;
     }
+    /* And section 0, for the FX plate the loop redraws - see menu_fx_plate. */
+    m->menu_sec = malloc(seclen);
+    if (m->menu_sec) {
+        memcpy(m->menu_sec, sec, seclen);
+        m->menu_sec_len = seclen;
+    }
 
     dat_free(&d);
     return 0;
+}
+
+/* Image 0x04453: `ax = ds:0x14; test ax, 7; jne` back to itself - the set-up
+ * spins until every mouse button is RELEASED before image 0x0445B is entered.
+ *
+ * It is a debounce, and it has to be: image 0x0446D treats any button as F1,
+ * so without this the click that dismissed the previous screen would still be
+ * down on the menu's first pass and play a level immediately. The port had no
+ * such wait, and did not need one only because its input came off an event
+ * queue where a press is an edge. Polling makes it necessary again, and it is
+ * the original's own answer to the same problem. */
+void menu_wait_release(void)
+{
+    while (menu_buttons() & 7)                       /* image 0x04453 */
+        video_retrace_wait();
+}
+
+/* ======================================================================
+ * THE TWO PLATES REDRAW THEMSELVES - image 0x04EA2 and image 0x04E37.
+ *
+ * Both are called every pass of the loop and both are GUARDED, and the guard
+ * is what the port had been reproducing by other means. The rating's:
+ *
+ *     0x04EA2  al = ds:0x1F6F              what was drawn last
+ *     0x04EA5  cmp al, 4 / jne 0x4EB1
+ *     0x04EA9  ds:0x1F6F = ds:0x1F6E       the sentinel pass: catch up, draw
+ *     0x04EB1  cmp ds:0x1F6E, al / je      unchanged: RETURN without drawing
+ *     0x04EB7  ds:0x1F6F = 4               changed: arm one more pass, draw
+ *
+ * So a change draws on this pass AND the next - 4 is a sentinel meaning "one
+ * more", not a rating - and the set-up's 0xFF at image 0x04416 is neither 4
+ * nor any rating, so it takes the changed arm and draws.
+ *
+ * The port rebuilt the WHOLE SCREEN from a key press instead. That agrees on
+ * every capture, because the picture is the same; it is a different
+ * mechanism, and a mechanism that agrees on every state anyone has compared
+ * is exactly what this port has shipped wrong twice.
+ * ====================================================================== */
+uint8_t g_rating_drawn = 0xFF;   /* ds:0x1F6F */
+uint8_t g_fx_drawn     = 0xFF;   /* ds:0x1F72 */
+
+/* ds:0x1F70, AND IT IS NOT THE SETTING. Image 0x044BA flips it with
+ * `xor byte [0x1f70], 0xff`, so it holds 0x00 or 0xFF and carries no value
+ * at all - it exists only so that image 0x04E46's compare against ds:0x1F72
+ * comes out unequal after any F3 press. A "something changed" bit, and the
+ * setting itself is ds:0x1F71.
+ *
+ * Reading it as the setting index is the obvious mistake and it would have
+ * worked on two of the three states. */
+uint8_t g_fx_dirty;              /* ds:0x1F70 */
+
+void menu_plates_arm(void)
+{
+    g_rating_drawn = 0xFF;              /* image 0x04416 */
+    g_fx_drawn     = 0xFF;              /* image 0x0441B */
+    g_fx_dirty     = 0;                 /* image 0x04420 */
+}
+
+/* Image 0x04EA2. `font` is MAIN.DAT section 4, where the rating sprites are. */
+static void menu_rating_plate(uint8_t *pix, const uint8_t *font)
+{
+    uint8_t al = g_rating_drawn;                /* image 0x04EA2 */
+    if (al == 4) {                              /* image 0x04EA5 */
+        g_rating_drawn = level_rating();        /* image 0x04EA9 */
+    } else if (level_rating() == al) {          /* image 0x04EB1 */
+        return;                                 /* image 0x04EB5 */
+    } else {
+        g_rating_drawn = 4;                     /* image 0x04EB7 */
+    }
+    draw_rating(pix, font, level_rating());     /* image 0x04EC2 */
+}
+
+/* Image 0x04E37, the same shape on ds:0x1F72 against ds:0x1F70 - and its
+ * sentinel is 2 rather than 4, because the FX plate has three states where
+ * the rating has four. `sec` is MAIN.DAT section 0. */
+static void menu_fx_plate(uint8_t *pix, const uint8_t *sec)
+{
+    uint8_t al = g_fx_drawn;                    /* image 0x04E37 */
+    if (al == 2) {                              /* image 0x04E3A */
+        g_fx_drawn = g_fx_dirty;                /* image 0x04E3E */
+    } else if (g_fx_dirty == al) {              /* image 0x04E46 */
+        return;                                 /* image 0x04E4A */
+    } else {
+        g_fx_drawn = 2;                         /* image 0x04E4C */
+    }
+    draw_fx_label(pix, sec);                    /* image 0x04E51 onward */
+}
+
+/* ======================================================================
+ * IMAGE 0x0445B - THE MENU LOOP ITSELF.
+ *
+ * Every call in it had a transcribed counterpart already; what did not was
+ * the SEQUENCE, and this port has learnt twice over that a sequence written
+ * out a second way is a sequence that will differ. The play loop was the
+ * same debt and reading it found the fade, the cues and the music stop.
+ *
+ * This one carries less: its only state is the two dirty bytes above and
+ * ds:0x14. What it does carry is the ORDER - a retrace, then compose, then
+ * flip, then read input - and the rate that follows from it. The port's
+ * shared window loop paced itself the same 70 Hz by a constant of its own;
+ * here it is image 0x01550's retrace, which is where the number comes from.
+ * ====================================================================== */
+menu_action menu_loop(menu_screen *m)
+{
+    for (;;) {
+        video_retrace_wait();                   /* image 0x0445B: call 0x1550 */
+
+        if (m->gfx) {
+            menu_frame_step(m, m->pix);         /* image 0x0445E: call 0x7D0D */
+            /* Image 0x04461's own call, which menu_frame_step had absorbed.
+             * Two lines apart in the original and two routines. */
+            menu_anim_step();                   /* image 0x04461: call 0x4F96 */
+            draw_anim(m->pix, m->gfx, m->gfx_len);      /* image 0x04FD3 */
+            menu_rating_plate(m->pix, m->gfx);  /* image 0x04464: call 0x4EA2 */
+        }
+        if (m->menu_sec)
+            menu_fx_plate(m->pix, m->menu_sec); /* image 0x04467: call 0x4E37 */
+
+        video_page_flip();                      /* image 0x0446A: call 0x4C20 */
+
+        /* Image 0x0446D: ANY button, and it does not once look at where the
+         * pointer is - image 0x04473 jumps straight to image 0x0454C, which
+         * is key 0x80's own target. A click on this screen is F1. */
+        if (menu_buttons() & 7)
+            return MENU_PLAY;
+
+        /* Image 0x04478's call returns the SCANCODE INDEX and image 0x04D45
+         * translates it through ds:0x202E - the two are one routine in the
+         * original, and only the first half of it is the hardware's. */
+        uint8_t sc = menu_key_read();           /* image 0x04478: call 0x4D1A */
+        if (sc == 0xFF) continue;               /* image 0x04D2B: nothing down */
+        int32_t r = menu_dispatch(menu_key_code(sc));   /* image 0x0447B */
+
+        /* THREE OF THE SEVEN DO NOT LEAVE, and that is what the plates'
+         * dirty bytes are for. Image 0x044B3, image 0x044EC and image
+         * 0x0451C each do their work and `jmp 0x445B` - straight back to the
+         * top of this loop - so the screen is never rebuilt and the plate
+         * redraws itself on the next pass from its own guard.
+         *
+         * The port left the loop on all three, rebuilt the WHOLE menu from
+         * main.dat, and re-entered. Same picture; it also meant the guards
+         * could never refuse anything, because every press arrived at a
+         * freshly-armed screen. */
+        switch (r) {
+        case MENU_FX:                                  /* image 0x04486 */
+            sound_settings_cycle();                    /* image 0x044B3 */
+            continue;
+        case MENU_RATING_UP:                           /* image 0x04495 */
+            level_rating_up();                         /* image 0x044EC */
+            continue;
+        case MENU_RATING_DOWN:                         /* image 0x0449D */
+            level_rating_down();                       /* image 0x0451C */
+            continue;
+        default:
+            break;
+        }
+        /* And the four that do: image 0x0454C for play or a click, image
+         * 0x04967 for the code screen, image 0x04A01 for the input screen
+         * and image 0x004D0 for Esc. */
+        if (r >= 0) return (menu_action)r;
+    }
 }
 
 /*
@@ -9364,26 +9564,29 @@ int32_t menu_dispatch(uint8_t code)
  * the original does. */
 #define BANNER_PAUSE 100
 
-/* ONE PASS of the original's menu loop, image 0x07D0D: step the scroll four
- * pixels, hold for a hundred passes on a 0xFF marker, advance the walk-on
- * lemmings, and redraw the banner. The RATE is not transcribed - how often the
- * original takes a pass is inferred from its loop waiting on the display once
- * per pass - and neither is the loop itself, which is the port's and lives in
- * sdl_io.c. This is the game's half of it. */
+/* IMAGE 0x07D0D - THE RIBBON, and only the ribbon.
+ *
+ * It had the walk-on lemmings folded into it, which is a call the LOOP makes:
+ * image 0x0445E is 0x7D0D and image 0x04461 is 0x4F96, two lines apart and
+ * two different routines. Image 0x07D0D's own body is the pause counter at
+ * ds:0x23, the scroll at ds:0x21 stepping four, the 0xFF marker that reloads
+ * the pause with 0x64 - a hundred - and the redraw. Nothing else.
+ *
+ * The RATE is still not transcribed here, but it no longer has to be
+ * inferred: menu_loop waits image 0x01550's retrace once a pass, so a step
+ * per displayed frame is the structure rather than a reading of it. */
 int menu_frame_step(void *ctx, uint8_t *pix)
 {
     menu_screen *m = (menu_screen *)ctx;
     static uint16_t pause;
     if (!m->gfx) return 0;
-    if (pause) { pause--; return 0; }
-    uint32_t next = menu_get_scroll() + MENU_SCROLL_STEP;
+    if (pause) { pause--; return 0; }       /* image 0x07D10: ds:0x23 */
+    uint32_t next = menu_get_scroll() + MENU_SCROLL_STEP;   /* image 0x07D23 */
     /* A character boundary just crossed: if the one that entered was preceded
      * by a pause marker, hold. */
     if ((next % BAR_TILE_W) == 0 && scroll_pauses_at(next / BAR_TILE_W))
-        pause = BANNER_PAUSE;
-    menu_set_scroll(next);
-    menu_anim_step();
-    draw_anim(pix, m->gfx, m->gfx_len);
+        pause = BANNER_PAUSE;               /* image 0x07D3C: 0x64 */
+    menu_set_scroll(next);                  /* image 0x07D26 */
     draw_banner(pix, m->gfx, m->gfx_len, next,
                 (uint8_t)(((((next + BAR_SCROLL_INIT) >> 2)
                             - LEM_FRAME_BIAS)) & (LEM_FRAMES - 1)));

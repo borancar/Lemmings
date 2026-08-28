@@ -253,12 +253,6 @@ static uint8_t scancode_of(SDL_Keycode k)
     }
 }
 
-/* The menu's own two steps, transcribed in game.c. */
-static int32_t menu_input(uint8_t scancode)
-{
-    return menu_dispatch(menu_key_code(scancode));   /* image 0x0447B */
-}
-
 /* A screen with nothing on it to choose takes Esc, and a click. */
 static int32_t dismiss_input(uint8_t scancode)
 {
@@ -695,9 +689,30 @@ int level_fade_notch(uint8_t out)
 int video_present(void) { return g_lvl_live; }
 
 /* Image 0x01550 - the retrace the fade's loop waits for, once a pass. */
+/* IMAGE 0x01550 - and it is what SETS THE RATE for everything that waits on
+ * it. The menu loop calls it once a pass (image 0x0445B) and the level's
+ * fade calls it once a notch, so both run at the adapter's 70 Hz because
+ * that is what the retrace is, not because a constant here says so.
+ *
+ * Paced on an ABSOLUTE deadline rather than a sleep per pass, for the reason
+ * CLAUDE.md gives: a sleep is at the mercy of the host scheduler and of how
+ * long the pass took to compose, which would make the game's speed a
+ * property of the machine. Falling behind resets the deadline rather than
+ * building a debt the loop then sprints to repay.
+ *
+ * With no window there is nothing to wait for and it returns at once - a
+ * harness with a frame budget must not spend wall clock on a retrace that is
+ * not happening. */
 void video_retrace_wait(void)
 {
-    if (g_lvl_live) SDL_DelayNS(SDL_NS_PER_SECOND / VIEW_REFRESH_HZ);
+    static Uint64 due;
+    Uint64 now;
+    if (!g_win) return;
+    now = SDL_GetTicksNS();
+    if (due == 0 || now > due + SDL_NS_PER_SECOND) due = now;
+    due += SDL_NS_PER_SECOND / VIEW_REFRESH_HZ;
+    if (now < due) SDL_DelayNS(due - now);
+    else due = now;
 }
 
 /* Image 0x0553D - the palette at the card, which is what makes a notch of
@@ -1506,6 +1521,9 @@ void menu_free(menu_screen *m)
     free(m->gfx);
     m->gfx = NULL;
     m->gfx_len = 0;
+    free(m->menu_sec);
+    m->menu_sec = NULL;
+    m->menu_sec_len = 0;
 }
 
 /* The port's own. The original's own instruction on the briefing is "Press
@@ -1693,14 +1711,143 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
  *
  * What runs each pass IS the game's, and stays there: menu_frame_step is
  * image 0x07D0D. */
+/* ======================================================================
+ * WHAT IMAGE 0x0445B NEEDS FROM THE HARDWARE.
+ *
+ * The loop itself is game.c's now. These are its four outward calls, and
+ * every one of them replaces something a card or a BIOS did.
+ *
+ * THE KEY QUEUE is the one that is not a straight substitution. The original
+ * polls once a pass - image 0x04D1A reads the BIOS buffer, which has held
+ * anything typed since the last look - and SDL delivers presses as events
+ * whenever it feels like it. Draining the events into a ring and letting the
+ * poll take one a pass is what makes those the same thing: a press that
+ * arrives between two polls is HELD rather than lost, which is exactly what
+ * the BIOS buffer does for the original.
+ *
+ * It is a ring rather than a single slot on purpose. One slot would drop the
+ * second of two presses in a pass, and the loop deliberately takes only one
+ * a pass - the plate guards at image 0x044B3 and image 0x044EC refuse a
+ * second change in consecutive passes anyway, so a dropped press and a
+ * refused one would look identical and only one of them is the game.
+ * ====================================================================== */
+static uint8_t  *g_menu_pix;
+static lem_rgb  *g_menu_pal;
+static uint8_t   g_key_ring[32];
+static uint8_t   g_key_head, g_key_tail;
+static uint16_t  g_menu_buttons;      /* ds:0x14 */
+
+static void menu_pump_events(void)
+{
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_EVENT_QUIT) {
+            g_key_ring[g_key_tail] = 0x01;    /* the window closed: Esc's
+                                               * SCANCODE, image 0x04D4B
+                                               * translates it to 0x1B */
+            g_key_tail = (uint8_t)((g_key_tail + 1) % sizeof g_key_ring);
+        } else if (e.type == SDL_EVENT_KEY_DOWN) {
+            uint8_t next = (uint8_t)((g_key_tail + 1) % sizeof g_key_ring);
+            if (next != g_key_head) {         /* full: drop, do not wrap */
+                g_key_ring[g_key_tail] = scancode_of(e.key.key);
+                g_key_tail = next;
+            }
+        } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            g_menu_buttons |= 1;
+        } else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            g_menu_buttons = 0;
+        }
+    }
+}
+
+/* IMAGE 0x04D1A's FIRST HALF - one scancode that is down, or 0xFF.
+ *
+ * NOT TRANSCRIBED, and here is what is missing rather than a claim that it
+ * is only a keyboard read. Image 0x04D1A walks a table of 83 bytes at
+ * ds:0x0F78, one per scancode, kept by the game's own INT 9 handler: bit 7
+ * says the key is down and the low seven are a COUNTDOWN. Each poll
+ * decrements the first key it finds down; reaching 0 fires it and reloads
+ * with 0x86, and image 0x04D3C fires again at 0x93. That is an initial delay
+ * and a repeat rate, in the game's own units, and it is why holding F3 on
+ * the original cycles at a pace rather than as fast as the loop runs.
+ *
+ * This gives the poll a press per pass out of a queue instead. Holding a key
+ * still repeats, because SDL sends repeat events - but at SDL's rate, not
+ * the game's, and that difference is real and is not measured. Reading the
+ * INT 9 handler and the table is what would settle it.
+ *
+ * 0xFF for nothing is image 0x04D2B's own answer, not a convention invented
+ * here - and it matters, because 0 is a valid scancode index. */
+uint8_t menu_key_read(void)
+{
+    uint8_t k;
+    menu_pump_events();
+    if (g_key_head == g_key_tail) return 0xFF;   /* image 0x04D2B */
+    k = g_key_ring[g_key_head];
+    g_key_head = (uint8_t)((g_key_head + 1) % sizeof g_key_ring);
+    return k;
+}
+
+/* ds:0x14 - the button word image 0x0446D and image 0x04453 both test. */
+uint16_t menu_buttons(void)
+{
+    menu_pump_events();
+    return g_menu_buttons;
+}
+
+/* Image 0x04C20: point the CRTC at the page just composed and swap
+ * ds:0x1F76 with ds:0x1F78. One page here, so this is the present. */
+void video_page_flip(void)
+{
+    void *pixels = NULL;
+    int pitch = 0;
+    if (!g_ren || !g_tex || !g_menu_pix || !g_menu_pal) return;
+    if (SDL_LockTexture(g_tex, NULL, &pixels, &pitch)) {
+        for (uint16_t y = 0; y < MENU_H; y++) {
+            uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+            const uint8_t *src = g_menu_pix + (size_t)y * MENU_W;
+            for (uint16_t x = 0; x < MENU_W; x++) {
+                lem_rgb c = g_menu_pal[src[x]];
+                row[x] = ((uint32_t)c.r << 16)
+                       | ((uint32_t)c.g << 8) | c.b;
+            }
+        }
+        SDL_UnlockTexture(g_tex);
+    }
+    SDL_RenderClear(g_ren);
+    SDL_RenderTexture(g_ren, g_tex, NULL, NULL);
+    SDL_RenderPresent(g_ren);
+}
+
+/* THE WINDOW, and nothing else. The loop is image 0x0445B and lives in
+ * game.c; this opens the thing it draws into and hands it over.
+ *
+ * LEM_FRAMES still bounds a run, because a loop that only ends on a keypress
+ * cannot be driven by a test. It arrives as an Esc through the same queue a
+ * person's would, so the loop ends the way the original's does rather than
+ * by a second exit nothing else uses. */
 menu_action menu_run(menu_screen *m, uint8_t scale)
 {
-    /* image 0x0447B for a key, image 0x04473 for a click - which is F1. */
-    int32_t r = view_interact_anim(m->pix, MENU_W, MENU_H, m->palette,
-                                   "PC Lemmings", scale, menu_input,
-                                   MENU_PLAY, menu_frame_step, m);
-    if (r == VIEW_CLOSED) return MENU_EXIT;
-    return (menu_action)r;
+    const char *cap;
+    if (scale < 1) scale = 1;
+    if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0) return MENU_EXIT;
+    g_menu_pix = m->pix;
+    g_menu_pal = m->palette;
+    g_key_head = g_key_tail = 0;
+    g_menu_buttons = 0;
+    menu_wait_release();                 /* image 0x04453 */
+    cap = SDL_getenv("LEM_FRAMES");
+    if (cap) {
+        long budget = SDL_atoi(cap);
+        while (budget-- > 0) {
+            video_retrace_wait();
+            menu_frame_step(m, m->pix);
+            menu_anim_step();
+            video_page_flip();
+        }
+        return MENU_EXIT;
+    }
+    return menu_loop(m);                 /* image 0x0445B */
 }
 
 /* ======================================================================

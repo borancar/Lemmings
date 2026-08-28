@@ -92,8 +92,6 @@ static void usage(void)
 /* Image 0x0E691, four six-character slots: "Fun   TrickyTaxingMayhem". These
  * are for the port's own printf; the plate itself is drawn from the game's
  * copy of the same string. */
-static const char *const RATING_NAME[4] = { "Fun", "Tricky", "Taxing",
-                                            "Mayhem" };
 
 static int load_level(const char *data, const char *file, uint32_t which,
                       level *lv, const char **err)
@@ -1107,7 +1105,6 @@ int main(int argc, char **argv)
      * original's own table. --file forces a container, in which case --level
      * is a raw section index instead, which is what tools/prove.sh uses. */
     char picked[64];
-    const int forced_file = (file != NULL);   /* --file pins the container */
     if (!file) {
         /* ds:0x1F6B is what image 0x0197D reads; the harness's --rating and
          * --number have to become one. */
@@ -1225,56 +1222,19 @@ int main(int argc, char **argv)
                 menu_free(&sub);
                 continue;
             }
-            /* The rating plate. Up / ` raise it and Down / - lower it, and
-             * the original caps and floors rather than wrapping - image
-             * 0x044F9 bails when the rating is already 3, image 0x04529 when
-             * it is already 0. Then it recomputes the absolute level number
-             * as rating * 30, which lands on the FIRST level of the new
-             * rating, so the number restarts here too. */
-            if (a == MENU_RATING_UP || a == MENU_RATING_DOWN) {
-                if (forced_file) {
-                    printf("  --file pins the container, so the rating plate "
-                           "has nothing to choose\n");
-                    continue;
-                }
-                uint8_t was = rating;
-                if (a == MENU_RATING_UP) {
-                    if (rating < MENU_RATING_MAX) rating++;
-                } else {
-                    if (rating > 0) rating--;
-                }
-                if (rating == was)
-                    continue;              /* at the cap or the floor */
-                number = 1;                /* rating * 30 + 1, 1-based */
-                game_number = number;
-                level_index_set((uint8_t)(rating * 30));
-                g_odd_entry = level_odd_entry();
-                if (level_locate(picked, sizeof(picked), &which) != 0) {
-                    fprintf(stderr, "no such level: rating %u number %u\n",
-                            rating, number);
-                    rating = was;
-                    continue;
-                }
-                file = picked;
-                which += 1;                /* load_level takes 1-based */
-                menu_screen next;
-                if (menu_build_rating(data, rating, &next, &err) != 0) {
-                    fprintf(stderr, "  %s\n", err);
-                    rating = was;
-                    continue;
-                }
-                menu_free(&mm);
-                mm = next;
-                printf("  rating %s, back to level 1 (%s section %u)\n",
-                       RATING_NAME[rating], file, which);
-                continue;
-            }
-            /* F3 "FX" changes NOTHING on the original's screen in this build -
-             * measured with tools/probe_menu_keys.py, which finds only the
-             * scroller moving. There is no sound here to toggle either, so
-             * this is a faithful no-op rather than a missing feature. */
-            printf("  F3, \"FX\": the original's screen does not change here "
-                   "either, and there is no sound yet\n");
+            /* THE RATING PLATE AND F3 NEVER ARRIVE HERE ANY MORE.
+             *
+             * Image 0x044EC, image 0x0451C and image 0x044B3 each do their
+             * work and `jmp 0x445B` - back into the menu loop - so menu_loop
+             * handles all three and returns only the four that leave. What
+             * stood here changed `rating`, rebuilt the screen from main.dat
+             * and printed a line about it; it was a second copy of the
+             * game's own arithmetic living in the harness, and it would now
+             * be unreachable as well.
+             *
+             * --rating still works: it goes through level_index_set before
+             * the first menu_build_rating, above. What is gone is the
+             * harness answering a key the game answers. */
         }
         menu_free(&mm);
         return rc;

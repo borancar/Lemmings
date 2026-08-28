@@ -188,24 +188,6 @@ int main(int argc, char **argv)
             continue;
         }
 
-        /* Image 0x044B3 cycles the sound settings and goes straight back to
-         * the menu loop at image 0x0445B - it opens no screen.
-         *
-         * It also sets ds:0x1F70, which image 0x04E46 compares against the
-         * plate's drawn state to decide the label needs redrawing. This port
-         * composes the whole screen once, so the equivalent is to compose it
-         * again; the plate's label comes from the setting (see label_sprite)
-         * and without this F3 changed a byte nobody could see. */
-        if (a == MENU_FX) {
-            sound_settings_cycle();
-            menu_screen next;
-            if (menu_build_rating(data, level_rating(), &next, &err) == 0) {
-                menu_free(&mm);
-                mm = next;
-            }
-            continue;
-        }
-
         if (a == MENU_NEW_LEVEL || a == MENU_HELP) {
             menu_screen sub;
             int ok = (a == MENU_NEW_LEVEL) ? menu_code_screen(data, &sub, &err)
@@ -216,22 +198,16 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (a == MENU_RATING_UP || a == MENU_RATING_DOWN) {
-            /* Image 0x044EC and 0x0451C: cap at MENU_RATING_MAX, floor at 0,
-             * and then ds:0x1F6B becomes rating * 30 - the first level of the
-             * new rating, so the number restarts with it. */
-            uint8_t was = level_rating();
-            if (a == MENU_RATING_UP) level_rating_up();   /* image 0x044EC */
-            else                     level_rating_down(); /* image 0x0451C */
-            if (level_rating() == was) continue;
-            /* The rebuild happens at the top of the loop, which is where
-             * image 0x04E37 does it too - from the plate's own drawn state
-             * rather than at the moment the key arrives. */
-            continue;
-        }
-        /* F3 "FX" changes nothing on the original's screen in this build -
-         * measured with tools/probe_menu_keys.py - and there is no sound here
-         * to toggle, so it is a faithful no-op. */
+        /* F3 AND THE TWO RATING KEYS DO NOT GET HERE ANY MORE, and that is
+         * the original's shape rather than a tidy-up. Image 0x044B3, image
+         * 0x044EC and image 0x0451C each do their work and `jmp 0x445B` -
+         * back into the loop - so the menu is never left and never rebuilt.
+         * menu_loop handles all three; see game.c.
+         *
+         * What used to be here rebuilt the whole screen from main.dat on
+         * every one of those presses, which is why the plates' own dirty
+         * bytes had nothing to guard: each press met a freshly-armed
+         * screen. */
     }
 
     menu_free(&mm);

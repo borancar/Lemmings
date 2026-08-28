@@ -1098,6 +1098,12 @@ typedef struct {
      * animate. */
     uint8_t *gfx;
     uint32_t gfx_len;
+    /* And a copy of MAIN.DAT section 0, for the same reason one pass further
+     * on: image 0x0445B redraws the FX plate every loop pass, and its sprite
+     * lives here rather than in the font. Kept only by menu_build_rating -
+     * NULL on the screens that have no plates. */
+    uint8_t *menu_sec;
+    uint32_t menu_sec_len;
 } menu_screen;
 
 /* What the player chose. The names are the original's own, read off the signs
@@ -1114,6 +1120,57 @@ typedef enum {
     MENU_RATING_DOWN,
     MENU_HELP           /* F4    the "?" plate */
 } menu_action;
+
+/* ======================================================================
+ * THE MENU'S LOOP - image 0x0445B, six calls and two reads.
+ *
+ *     0x0445B  call 0x1550   wait a retrace
+ *     0x0445E  call 0x7D0D   the scrolling ribbon
+ *     0x04461  call 0x4F96   the walk-on lemmings
+ *     0x04464  call 0x4EA2   the RATING plate, guarded by ds:0x1F6F
+ *     0x04467  call 0x4E37   the FX plate, guarded by ds:0x1F72
+ *     0x0446A  call 0x4C20   the page flip
+ *     0x0446D  ds:0x14 & 7   a mouse button -> image 0x0454C, which is F1
+ *     0x04478  call 0x4D1A   a key -> image 0x0447B's compare chain
+ *
+ * The port ran an arrangement of these instead: a shared window loop with
+ * the ribbon and the animations hung off a per-frame callback, the plates
+ * rebuilt from a key press rather than from their own dirty bytes, and
+ * input taken off SDL's event queue rather than polled. Same picture; a
+ * different mechanism, which is how F3 came to need pressing twice.
+ * ====================================================================== */
+menu_action menu_loop(menu_screen *m);
+
+/* Image 0x04416 and image 0x0441B put 0xFF in both plates' dirty bytes, so
+ * the first pass of the loop draws them however the guards read.
+ *
+ * The three bytes themselves are shared because the KEYS read them: image
+ * 0x044B3, image 0x044EC and image 0x0451C all refuse while their plate still
+ * owes a draw. ds:0x1F70 is a toggle rather than a value - see game.c. */
+void menu_plates_arm(void);
+extern uint8_t g_rating_drawn;   /* ds:0x1F6F */
+extern uint8_t g_fx_drawn;       /* ds:0x1F72 */
+extern uint8_t g_fx_dirty;       /* ds:0x1F70 */
+
+/* Image 0x04453, and it is a DEBOUNCE: the set-up spins until every mouse
+ * button is released before the loop is entered, so the click that opened
+ * the menu is not also the click that leaves it. */
+void menu_wait_release(void);
+
+/* WHAT THE LOOP NEEDS FROM THE HARDWARE, and nothing else of it.
+ *
+ * video_page_flip is image 0x04C20 - it points the CRTC at the page just
+ * composed and swaps ds:0x1F76 with ds:0x1F78. menu_key_read is image
+ * 0x04D1A, which the original polls once a pass; the port drains SDL's
+ * events into a queue behind it, so a press between two polls is held
+ * rather than lost. menu_buttons is ds:0x14.
+ *
+ * The retrace wait is video_retrace_wait, declared with the level's - it is
+ * the same image 0x01550 - and it is what caps this loop at the adapter's
+ * 70 Hz rather than at whatever the host will run at. */
+void    video_page_flip(void);
+uint8_t menu_key_read(void);
+uint16_t menu_buttons(void);
 
 /* Compose the menu from `dir`/main.dat. Returns 0 on success. */
 int  menu_build(const char *dir, menu_screen *m, const char **err);
