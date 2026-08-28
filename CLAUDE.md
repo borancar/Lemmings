@@ -1139,6 +1139,47 @@ it is not the routine. The tell is the comment admitting it. When the port
 holds a value "because otherwise X does not happen", X has a routine and
 nobody has read it yet.
 
+## A cited address is not a transcribed routine
+
+`provenance.py` asks whether every function in the port says where it came
+from. It cannot ask the other question, and the other question is the one that
+shipped a bug a player found: **how much of that routine actually came
+across.**
+
+`menu_code_screen` carried `image 0x04967` and passed the check, having
+transcribed the SET-UP half of that routine and none of the loop under it - so
+typing a level code did nothing at all. `menu_caret_step` was worse: six lines
+carrying `image 0x04C7E`, which is a 156-byte entry loop with ten cells, a
+key read, backspace, Enter and a return. **A partial transcription reads
+exactly like a complete one.** Both carry an address, both are counted, and
+nothing looked at the size of what was claimed.
+
+`tools/transcribed_whole.py` measures that: for every call target the code map
+knows, the span up to the next one against the number of lines in the function
+whose comment block claims it. Twelve bytes of original per line of C or worse
+is the smell.
+
+Two things about the instrument, and the second is the important one:
+
+- **It is a smell, not a verdict.** A transcribed table is three lines for
+  eighty bytes and perfectly complete, and a routine honestly split across
+  several port functions needs the TOTAL column rather than the largest
+  claimant. Read the list; do not score it.
+- **The first version of it did not work, and only a control showed that.**
+  It counted how many distinct addresses inside a routine the port cites, and
+  by that measure `0x04C7E` scored *five* - because the port's comments
+  DESCRIBED the loop in detail while implementing the blink alone. Citation
+  density measures documentation. Rebuilt around function size it flags the
+  case at 26 bytes per line, and stops flagging it once the loop is there.
+  **Run a new check against the commit where the bug was live before believing
+  it works** - this repository has that rule for scorers already, and it
+  applies to a coverage tool exactly as it does to a sprite search.
+
+The general form: **presence and depth are different measurements, and the
+convention only demands the first.** When a routine has an address in the port
+and behaviour is still missing, ask how many bytes that address stands for
+before looking anywhere else.
+
 ## The emulator is shared, not ours
 
 `dos_emulator` is used by other games' reconstructions, and their verification
@@ -1182,6 +1223,8 @@ sweeps are the only thing that would catch a regression there. So:
 | `tools/decrypt_image.py` | builds `image/vgalemmi.decrypted.img` - records each instruction's plaintext as it executes and writes it back. Merges per-run records, so coverage only grows |
 | `tools/disasm.py` | disassemble the decrypted image at an image offset |
 | `tools/dat.py` | Lemmings DAT decompression, the Python oracle the C port was checked against |
+| **`tools/transcribed_whole.py`** | **is a cited routine transcribed WHOLE, or only where it starts?** `provenance.py` asks whether a function says where it came from; this asks how much of that routine came across, by weighing the span up to the next call target against the lines of the function claiming it. A partial transcription reads exactly like a complete one - `menu_caret_step` carried image 0x04C7E's 156-byte entry loop in six lines, and typing a level code did nothing until a player said so |
+| **`tools/probe_codein.py`** | the access-code VALIDATOR at image 0x051A2, driven - the verdict, the level index it sets, the rating and the percentage. The codes it is driven over come from the original's own generator in the same run, because the first version built them in Python from the measured bit table and the original refused 108 of 123 |
 | **`tools/verify_code.py`** | the access-code generator at image 0x05042, driven rather than read. Its ten mask-and-shift blocks are the sort of thing this port has twice mis-read by eye, so the bit table in `game.c` was **measured** - one input bit at a time - and this checks that measurement against 400 further many-bit inputs covering every rotation count, because a single-bit sweep determines a permutation only if the contributions never interact. It also prints how many codes pass the validator's checksum **and says that a wrong table passes it too**: all three deliberate faults tried here round-tripped happily |
 | **`tools/compare_play.py`** | **the port and the original PLAYING the same level**, frame by frame, from one input script both sides read. Every other frame-by-frame number here came from a level nobody touches, which exercises only the part of the game that needs no player - the skills, the panel's behaviour, the cursor's box and the level's ending are all behind a click and none of them was ever scored. It also makes the CURSOR part of the comparison rather than an excused 28 pixels, because with both pointers driven from one script they are in the same place. Refuses to report a happy figure for a run where the digger was never assigned |
 | **`tools/probe_cursor.py`** | the cursor's two shapes, **read out of the original's sprite store** rather than measured off a frame. Image 0x05827 puts them at 144 bytes a shift in segment `ds:0x1FEA`, and image 0x05854 adds 0x480 for the box it wears over a lemming |

@@ -2745,6 +2745,8 @@ static uint8_t code_bit(const char *c, uint8_t i, int8_t shift, uint8_t mask)
     return (uint8_t)(al & mask);
 }
 
+/* Image 0x051A2 itself - see the block above for what each step is, and
+ * tools/probe_codein.py for the original being driven over it. */
 int level_code_apply(const char *code)
 {
     char c[CODE_LEN];
@@ -8020,8 +8022,170 @@ int menu_code_screen(const char *dir, menu_screen *m, const char **err)
             cells[menu_caret_cell] = CODE_CARET;
         draw_at(m->pix, font, fontlen, cells, CODE_DOTS_X, CODE_DOTS_Y);
     }
+    /* KEEP THE FONT. Image 0x04C7E redraws the ten cells on every pass of
+     * its own loop - `call bp` at image 0x04CC9 - so this screen cannot free
+     * what it drew with, the way the menu keeps section 4 for its banner. */
+    m->gfx = malloc(fontlen);
+    if (m->gfx) {
+        memcpy(m->gfx, font, fontlen);
+        m->gfx_len = fontlen;
+    }
     dat_free(&d);
     return 0;
+}
+
+/* ======================================================================
+ * IMAGE 0x04C7E - TYPING THE CODE, and the port had one line of it.
+ *
+ * Ten cells at ds:0x4DF2, and the loop is:
+ *
+ *     0x04CA5  call 0x1550   wait a retrace
+ *     0x04CAD  dec ds:0x491E, and every 0x14 of them toggle the caret
+ *     0x04CC9  call bp       redraw - the code screen passes image 0x0503B
+ *     0x04CCB  call 0x4C20   the page flip
+ *     0x04CCE  call 0x4D1A   a key, translated through ds:0x202E
+ *     0x04CE0  0x7F -> image 0x04D02, backspace
+ *     0x04CE4  0x0D -> image 0x04D10, enter: put the real character back
+ *                     under the caret and return
+ *     0x04CE8  below 'A' or above 'Z' -> ignored. image 0x04C85 loads
+ *              bx = 0x5A41, which is those two letters as a word.
+ *
+ * THE CARET IS NOT A SEPARATE OVERLAY. `cl` holds the character that
+ * belongs in the cell and `ch` is '_', and image 0x04CB8 swaps the cell
+ * between them - so the blink WRITES into the field, and enter has to put
+ * `cl` back or the code would carry an underscore. That is why image 0x04D16
+ * exists and why this cannot be done by drawing a cursor over the top.
+ *
+ * The port had menu_caret_step, which is image 0x04CAD's four lines, and
+ * nothing else: no cells, no keys, no return. Typing did nothing, and a
+ * player found it.
+ * ====================================================================== */
+/* The four ratings, six characters each, exactly as they sit in the
+ * executable: "Fun   TrickyTaxingMayhem". Image 0x049AD copies six bytes of
+ * it into the code screen's line, and the briefing reads the same table. */
+static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
+
+char g_code_cells[CODE_LEN + 1] = "..........";   /* ds:0x4DF2 */
+
+const char *level_code_cells(void) { return g_code_cells; }
+
+/* One pass of the redraw image 0x04CC9 reaches through bp. */
+static void code_cells_draw(menu_screen *m)
+{
+    if (!m->gfx) return;
+    for (uint16_t y = CODE_DOTS_Y; y < CODE_DOTS_Y + FONT_H; y++)
+        for (uint16_t x = CODE_DOTS_X;
+             x < CODE_DOTS_X + (uint16_t)(CODE_LEN * FONT_W); x++)
+            if (y < MENU_H && x < BG_DRAWN_W)
+                m->pix[(size_t)y * MENU_W + x] = 0;
+    draw_at(m->pix, m->gfx, m->gfx_len, g_code_cells,
+            CODE_DOTS_X, CODE_DOTS_Y);
+}
+
+#define CODE_BLINK_TICKS 0x14        /* image 0x04C95 */
+
+static void menu_code_entry(menu_screen *m)
+{
+    uint8_t di = 0;                             /* image 0x04C8C: the cell */
+    char cl = '.', ch = CODE_CARET;             /* image 0x04C92: 0x5F2E */
+    uint8_t blink = CODE_BLINK_TICKS;
+
+    for (;;) {
+        video_retrace_wait();                   /* image 0x04CA5 */
+        if (--blink == 0) {                     /* image 0x04CAD */
+            blink = CODE_BLINK_TICKS;           /* image 0x04CB3 */
+            g_code_cells[di] = (g_code_cells[di] == cl) ? ch : cl;
+        }
+        code_cells_draw(m);                     /* image 0x04CC9 */
+        video_page_flip();                      /* image 0x04CCB */
+
+        uint8_t al = menu_key_code(menu_key_read());   /* image 0x04CCE */
+        if (al == 0xFF) continue;               /* image 0x04CD6 */
+        if (al == 0x7F) {                       /* image 0x04CE0 */
+            g_code_cells[di] = '.';             /* image 0x04D02 */
+            cl = '.';
+            if (di == 0) continue;              /* image 0x04D07 */
+            di--;                               /* image 0x04D0B */
+            cl = g_code_cells[di];
+            continue;
+        }
+        if (al == 0x0D) {                       /* image 0x04CE4 */
+            g_code_cells[di] = cl;              /* image 0x04D16 */
+            return;
+        }
+        if (al < 'A' || al > 'Z') continue;     /* image 0x04CE8, 0x04CEC */
+        if (di == CODE_LEN) continue;           /* image 0x04CF0 */
+        g_code_cells[di] = (char)al;            /* image 0x04CF4 */
+        di++;
+        cl = g_code_cells[di];                  /* image 0x04CF7 */
+        if (di == CODE_LEN) {                   /* image 0x04CF9 */
+            di--;
+            cl = g_code_cells[di];
+        }
+    }
+}
+
+/* ======================================================================
+ * IMAGE 0x04967's LOOP - the code screen, once through.
+ *
+ *     0x0497D  the ten cells to '.'
+ *     0x04983  the "Enter Code" prompt
+ *     0x04996  call 0x4C7E   type one
+ *     0x04999  call 0x51A2   take it back
+ *     0x0499C  jne 0x49EC    refused: "Incorrect Code", 0x3C retraces, and
+ *                            image 0x049FE goes back to the MENU
+ *     0x0499E  accepted: the level number and the rating name, then a wait
+ *                        of 0x78 retraces that any button or key cuts short
+ *                        (image 0x049D2), and image 0x049E9 goes back to the
+ *                        MENU as well
+ *
+ * Both arms end at image 0x04401. A code does not start a level - it sets
+ * ds:0x1F6B and returns, and F1 plays whatever that now names.
+ * ====================================================================== */
+#define CODE_HOLD_OK    0x78         /* image 0x049CC */
+#define CODE_HOLD_BAD   0x3C         /* image 0x049F6 */
+
+menu_action menu_code_run(menu_screen *m)
+{
+    char line[40];
+
+    for (uint8_t i = 0; i < CODE_LEN; i++)
+        g_code_cells[i] = '.';                  /* image 0x0497D */
+    g_code_cells[CODE_LEN] = '\0';
+
+    menu_code_entry(m);                         /* image 0x04996 */
+
+    if (!level_code_apply(g_code_cells)) {      /* image 0x04999 */
+        /* image 0x049EC: ds:0x4E27 */
+        draw_at(m->pix, m->gfx, m->gfx_len, "Incorrect Code",
+                CODE_DOTS_X, CODE_DOTS_Y);
+        video_page_flip();                      /* image 0x049F3 */
+        for (uint16_t n = 0; n < CODE_HOLD_BAD; n++)
+            video_retrace_wait();               /* image 0x049F9 */
+        return MENU_EXIT;                       /* image 0x049FE: the menu */
+    }
+
+    /* image 0x0499E: the level it named, and the rating. */
+    snprintf(line, sizeof line, "Code for Level %u",
+             (unsigned)(level_number()));
+    draw_at(m->pix, m->gfx, m->gfx_len, line, CODE_DOTS_X, CODE_DOTS_Y);
+    /* Image 0x049AD: six bytes of ds:0x4C01 indexed by the rating. */
+    {
+        char rn[7];
+        memcpy(rn, RATINGS + (level_rating() & 3) * 6, 6);
+        rn[6] = '\0';
+        snprintf(line, sizeof line, "Rating %s", rn);
+    }
+    draw_at(m->pix, m->gfx, m->gfx_len, line,
+            CODE_DOTS_X, (uint16_t)(CODE_DOTS_Y + FONT_H + 4));
+    video_page_flip();                          /* image 0x049C9 */
+    /* image 0x049CC: 0x78 retraces, cut short by a button or a key. */
+    for (uint16_t n = 0; n < CODE_HOLD_OK; n++) {
+        video_retrace_wait();
+        if (menu_buttons() & 7) break;          /* image 0x049D2 */
+        if (menu_key_read() != 0xFF) break;     /* image 0x049DA */
+    }
+    return MENU_EXIT;                           /* image 0x049E9: the menu */
 }
 
 /* The screen F4 reaches: the input-device chooser. Choosing is NOT
@@ -8184,10 +8348,6 @@ static const char T_RATE[]    = "Release Rate   ";         /* image 0x0E5FB */
 static const char T_TIME[]    = "Time   Minutes";          /* image 0x0E60E */
 static const char T_RATING[]  = "Rating  Mayhem";          /* image 0x0E620 */
 static const char T_CONTINUE[] = "Press mouse button to continue"; /* 0x0E633 */
-
-/* The four ratings, six characters each, exactly as they sit in the
- * executable: "Fun   TrickyTaxingMayhem". */
-static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
 
 /* Cell positions, MEASURED off the original's briefing screen. They are not a
  * rule: this screen's last line is centred exactly, the menu's credit lines

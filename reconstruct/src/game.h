@@ -1203,6 +1203,13 @@ int  menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
  * F2 shows a level-code entry screen and F4 an input-device chooser. Both are
  * the same tiled background and the same font as the menu. */
 int menu_code_screen(const char *dir, menu_screen *m, const char **err);
+/* Image 0x04C7E types one, image 0x04967 runs the screen round it: the cells
+ * to dots, one code typed, the validator, and either "Incorrect Code" or the
+ * level and rating it named - then back to the menu whichever it was. The
+ * code does not start a level; it sets ds:0x1F6B and F1 plays that. */
+menu_action menu_code_run(menu_screen *m);
+const char *level_code_cells(void);   /* ds:0x4DF2, for a test */
+
 int menu_input_screen(const char *dir, menu_screen *m, const char **err);
 
 /* The level briefing the original shows between the menu and the level.

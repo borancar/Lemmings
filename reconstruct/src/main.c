@@ -188,11 +188,31 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (a == MENU_NEW_LEVEL || a == MENU_HELP) {
+        if (a == MENU_NEW_LEVEL) {
+            /* Image 0x044AD jumps to image 0x04967, which TYPES a code and
+             * takes it back. This used to compose the screen and wait for a
+             * dismiss - so typing did nothing, and a player found it. */
             menu_screen sub;
-            int ok = (a == MENU_NEW_LEVEL) ? menu_code_screen(data, &sub, &err)
-                                           : menu_input_screen(data, &sub, &err);
-            if (ok != 0) continue;
+            if (menu_code_screen(data, &sub, &err) != 0) continue;
+            menu_code_run(&sub);                /* image 0x04967 */
+            menu_free(&sub);
+            /* Image 0x049E9 and image 0x049FE both go back to image 0x04401,
+             * and an accepted code has moved ds:0x1F6B - so the menu is
+             * rebuilt if that changed the rating. */
+            if (level_rating() != built) {
+                menu_screen next;
+                if (menu_build_rating(data, level_rating(), &next, &err) == 0) {
+                    menu_free(&mm);
+                    mm = next;
+                    built = level_rating();
+                }
+            }
+            continue;
+        }
+
+        if (a == MENU_HELP) {
+            menu_screen sub;
+            if (menu_input_screen(data, &sub, &err) != 0) continue;
             menu_show_until_dismissed(&sub, "PC Lemmings", DEFAULT_SCALE);
             menu_free(&sub);
             continue;
