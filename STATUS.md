@@ -4876,6 +4876,14 @@ has nothing to seed with here.
   other. And the `0x0E` is bits 3 and 2, so **every object blit asks for both
   clips**.
 
+  **And the TERRAIN path cannot express bit 5 at all** - a proof, where the
+  object result is a survey. Image `0x07C67` builds a piece's `bp` with
+  `shr dx,7 / and dx,0xC0 / or dx,0x0F`, then ORs `0x0F00` for erase and
+  `0x8000` for no-overwrite. The `and dx,0xC0` masks bit 5 out before
+  anything else runs and nothing later ORs `0x20`, so no terrain piece can
+  reach image `0x08FF7` whatever its flags hold. Both data-driven callers are
+  now excluded, one empirically and one structurally.
+
 - **`level_object.upside_down` is dead in every shipped level.** The port
   reads it as `e[7] == 0x8F` and `e[7]` is `0x0F` in all 454 objects. Left in
   place - it came from the published format description, and "no level

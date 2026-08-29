@@ -669,6 +669,18 @@ int blit_clips(uint16_t bp) { return (bp & (BLIT_CLIP_X | BLIT_CLIP_Y)) != 0; }
  *                  So what sets bp bit 5 is the open question, and it is a
  *                  question about the CALLERS of 1010:8822, not about a
  *                  caller of this.
+ *
+ *                  AND THE TERRAIN PATH CANNOT EXPRESS IT, which is a
+ *                  proof rather than a survey. Image 0x07C67 builds a
+ *                  piece's bp as `shr dx,7 / and dx,0xC0 / or dx,0x0F`,
+ *                  then ORs 0x0F00 for erase (image 0x07C75) and 0x8000
+ *                  for no-overwrite (image 0x07C83). The `and dx,0xC0`
+ *                  masks bit 5 OUT before anything else runs and nothing
+ *                  afterwards ORs 0x20, so no terrain piece can ask for
+ *                  this mode whatever its flags say. The object survey
+ *                  above is empirical - 454 objects, bit 5 never set - and
+ *                  this one is structural, so between them both
+ *                  data-driven callers are excluded.
  *   image 0x08D66  BLIT_SETRESET_ZERO, which forces planes 1..3 to zero so
  *                  the blit can only write 0 or 1.
  *                  -> the one-way arrows; CLAUDE.md records the reading.
