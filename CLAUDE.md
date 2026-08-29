@@ -850,6 +850,15 @@ program will never look at.
 - **The port shows a screen by default.** `./lemmings` with no arguments opens
   the game; `--out` or `--raw` is what asks for a file instead. A
   reconstruction whose default output is a bitmap is a converter.
+- **READ THE BUILD'S WARNINGS. Two bugs a player found were named by the
+  compiler and filtered out of my own output.** A mechanical rename of a
+  local into a global's name produced `g_lvl_tex = g_lvl_tex;`, which left the
+  level drawing nothing, and `int g_lv_grabbed = 1;` shadowing the global the
+  reader uses, which ate the first mouse click of every level. `-Wshadow` and
+  `-Wunused` are on and both printed the exact line; I was grepping the build
+  for `error` and saw neither. Grep for `warning:` too, and keep the build at
+  zero of them so a new one is visible.
+
 - **THREE FILES, AND THE THIRD IS THE ONE THAT KEEPS DRIFTING.** `game.c` is
   what the original does, `sdl_io.c` is what the hardware used to do, and
   **`harness.c` is what neither does** - the things that exist only so the port

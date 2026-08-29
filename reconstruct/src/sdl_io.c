@@ -882,7 +882,13 @@ int level_run(struct level_frame *A, const canvas *c,
      * draws its own cross-hair - and a window that lets the host pointer walk
      * out of it while the game still thinks it is moving does not reproduce
      * that. Held, the two agree; released, the game keeps the last position. */
-    int g_lv_grabbed = 1;
+    /* THE GLOBAL, not a local of the same name. This read `int g_lv_grabbed
+     * = 1;` for a while - a scoped rename turned a local into a shadow of the
+     * global view_level_input reads - so level_run grabbed the mouse while
+     * that function still believed it had not, and the FIRST CLICK of every
+     * level was eaten to "take the pointer back" from a window that already
+     * had it. -Wshadow named the line; I was grepping the build for `error`. */
+    g_lv_grabbed = 1;
     SDL_SetWindowRelativeMouseMode(g_win, true);
 
     /* PACE ON THE GAME'S RATE, and on an absolute clock.
@@ -907,7 +913,6 @@ int level_run(struct level_frame *A, const canvas *c,
     g_lv_due = SDL_GetTicksNS();
 
     g_lv_held = 0;          /* the button is down - a rate button repeats */
-    int running = 1;
     level_loop(A, c, screen, &scroll_x, max_x, budget);
 
 

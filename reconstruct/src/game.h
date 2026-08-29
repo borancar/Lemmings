@@ -307,7 +307,7 @@ int level_locate(char *file, size_t file_len, uint32_t *section);
 /* image 0x0197D's tail: the ground and graphics file names for a level, and
  * whether it is one of the four VGASPEC levels (return 1) or an ordinary one
  * (0). A VGASPEC file holds ONE section, not two - image 0x01A5A. */
-int level_graphics_names(const level *lv, char *ground, size_t gn,
+int level_graphics_names(const level *lv, char *gname, size_t gn,
                          char *gfx, size_t xn);
 
 /* The 15 header fields, flat and in the order the original stores them, for

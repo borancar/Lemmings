@@ -9278,14 +9278,14 @@ static const char T_VGASPEC[] = "vgaspec0.dat";   /* ds:0x2559, image 0x0BFE9 */
 #define VGAGR_DIGIT   5   /* ds:0x2539 - ds:0x2534 */
 #define VGASPEC_DIGIT 7   /* ds:0x2560 - ds:0x2559 */
 
-int level_graphics_names(const level *lv, char *ground, size_t gn,
+int level_graphics_names(const level *lv, char *gname, size_t gn,
                          char *gfx, size_t xn)
 {
     if (gn < sizeof(T_GROUND) || xn < sizeof(T_VGASPEC)) return -1;
 
     uint8_t gs = (uint8_t)(lv->graphics_set & 0xFF);
-    memcpy(ground, T_GROUND, sizeof(T_GROUND));
-    ground[GROUND_DIGIT] = (char)('0' + gs);        /* image 0x01A07 */
+    memcpy(gname, T_GROUND, sizeof(T_GROUND));
+    gname[GROUND_DIGIT] = (char)('0' + gs);         /* image 0x01A07 */
 
     uint8_t ext = (uint8_t)(lv->extended_graphics_set & 0xFF);
     if (ext == 0) {                                 /* image 0x01A2B */
