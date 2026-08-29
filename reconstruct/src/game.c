@@ -995,12 +995,73 @@ static uint8_t g_selected = PANEL_SEL_START;   /* ds:0x83, image 0x00427 */
 uint8_t level_skill(void)    { return g_skill; }
 uint8_t level_selected(void) { return g_selected; }
 
+/* THE SKILL STRIP'S DIVIDER - ds:0x84, and it does two jobs.
+ *
+ *     0x03B3F  cmp ds:0x84, 2
+ *     0x03B44  jne 0x03B53
+ *     0x03B46    ds:0x83 = ds:0x82     the DRAWN skill follows the selected
+ *     0x03B4E    ds:0x84 = 0xFF
+ *     0x03B53  inc ds:0x84
+ *
+ * So it is 0 on one frame in three, and image 0x03F15, image 0x03F5C, image
+ * 0x040B5 and image 0x040CD all refuse to act on any other - which is what
+ * stops a HELD key or button running through the skills. Image 0x03A1B sets
+ * it to 0 when the panel starts.
+ *
+ * AND THE HIGHLIGHT LAGS THE SELECTION, up to two frames of it, because
+ * ds:0x83 is only copied when the divider fires. The port set both at once,
+ * which is the tidier reading and not the original's. */
+static uint8_t g_skill_div;      /* ds:0x84 */
+
+uint8_t level_skill_div(void) { return g_skill_div; }
+
+/* image 0x03B3F, from the panel's own per-frame update. */
+void level_skill_div_step(void)
+{
+    if (g_skill_div == 2) {                        /* image 0x03B3F */
+        g_selected = (uint8_t)(g_skill + 1);       /* image 0x03B46: ds:0x83 */
+        g_skill_div = 0xFF;                        /* image 0x03B4E */
+    }
+    g_skill_div++;                                 /* image 0x03B53 */
+}
+
 /* image 0x03F66, reached by a click at image 0x03F27 and by a function key
- * at image 0x03EA0 - the same store either way. */
+ * at image 0x03EA0 - the same store either way.
+ *
+ * It stores ds:0x82 ONLY. ds:0x83, the box the panel draws, is image
+ * 0x03B46's and follows one frame in three - see level_skill_div_step. The
+ * `+ 1` is the port's: PANEL_SEL_X0 is 16 where the numbers start at
+ * PANEL_ART_X, 32, so the box for button k is drawn at k + 1. */
 void level_skill_select(uint8_t button)
 {
     g_skill = button;                              /* image 0x03F66 */
-    g_selected = (uint8_t)(button + 1);            /* ds:0x83 */
+}
+
+/* IMAGE 0x040B5 AND IMAGE 0x040CD - Z AND X, which step the selected skill.
+ *
+ *     0x040B5  cmp ds:0x84, 0 / jne     the divider, so a held key repeats
+ *     0x040BC  dec ds:0x82              one back
+ *     0x040C0  cmp ds:0x82, 1 / jne
+ *     0x040C7  ds:0x82 = 9              ... wrapping 1 to 9
+ *
+ *     0x040CD  the same upward: image 0x040D4 increments and image 0x040D8
+ *              wraps 10 to 2
+ *
+ * The eight skills are buttons 2..9, so the wrap is off the ends of that run.
+ * Image 0x04085 reaches both from the scancodes 0x2C and 0x2D.
+ *
+ * The port had neither: ds:0x82 was set from the panel click alone, so the
+ * keyboard selected nothing. */
+void level_skill_key(uint8_t up)
+{
+    if (g_skill_div != 0) return;                  /* image 0x040B5 */
+    if (up) {
+        g_skill++;                                 /* image 0x040D4 */
+        if (g_skill == 0x0A) g_skill = 2;          /* image 0x040D8 */
+    } else {
+        g_skill--;                                 /* image 0x040BC */
+        if (g_skill == 1) g_skill = 9;             /* image 0x040C0 */
+    }
 }
 
 /* image 0x02102's box, from the block comment above. */
@@ -2259,6 +2320,7 @@ void level_start_reset(void)
     g_entrance_open = 0;             /* image 0x00447: ds:0x55 */
     g_skill    = 2;                  /* image 0x00422 */
     g_selected = PANEL_SEL_START;    /* image 0x00427 */
+    g_skill_div = 0;                 /* image 0x03A1B: ds:0x84 */
     /* image 0x00489 calls image 0x0482F in the same block that clears these
      * three bytes, so the tune is chosen when the level begins and image
      * 0x03B4 twenty-odd frames later plays whatever it picked. The level is
@@ -7638,6 +7700,11 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
      * routine rather than in the callers for the reason the next paragraph
      * gives about the pointer: a sequence written out twice will differ. */
     level_rate_tick();                          /* image 0x03B8C */
+    /* AND THE SKILL STRIP'S, two instructions before it in the same routine:
+     * image 0x03B3F turns ds:0x84 and copies ds:0x82 into ds:0x83 when it
+     * fires, which is why the highlight follows the selection rather than
+     * arriving with it. */
+    level_skill_div_step();                     /* image 0x03B3F */
 
     /* What the pointer is over goes into the line BEFORE the line is drawn -
      * image 0x03CE9 runs in the play loop ahead of the panel. It lives here

@@ -386,6 +386,11 @@ static void level_key_button(SDL_Keycode k)
         level_pause_click();           return;   /* image 0x04018 */
     case SDLK_DELETE: case SDLK_F12:
         level_nuke_click();            return;   /* image 0x03FEF */
+    /* Z and X step the selected skill - image 0x04085 reaches image 0x040B5
+     * and image 0x040CD from scancodes 0x2C and 0x2D. Both are gated on the
+     * divider, so a held key steps one frame in three. */
+    case SDLK_Z: level_skill_key(0);   return;   /* image 0x040B5 */
+    case SDLK_X: level_skill_key(1);   return;   /* image 0x040CD */
     default: break;
     }
     /* image 0x03EA0 onwards: F3 is button 2 and each key after it is one

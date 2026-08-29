@@ -717,6 +717,12 @@ void        level_status_reset(const level *lv);
  * button 2..9. The panel draws these and not the level header's, which never
  * change. level_status_reset stocks them from the header. */
 void        level_skills_reset(const level *lv);
+/* ds:0x84 - image 0x03B3F's divider: 0 one frame in three, which is what
+ * lets a held key or button repeat without running through the skills. */
+uint8_t level_skill_div(void);
+void    level_skill_div_step(void);
+/* image 0x040B5 and image 0x040CD - Z and X. */
+void    level_skill_key(uint8_t up);
 uint8_t     level_skill_left(uint8_t button);
 void        level_skill_spend(uint8_t button);
 void        level_timer_step(void);

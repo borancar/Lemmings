@@ -1820,6 +1820,50 @@ int main(int argc, char **argv)
            level_paused() == 0, NULL);
     }
 
+    /* ==================================================================
+     * IMAGE 0x040B5 AND IMAGE 0x040CD - Z AND X.
+     *
+     * The port selected a skill from the panel click alone, so the keyboard
+     * did nothing. Both keys are gated on ds:0x84, image 0x03B3F's divider,
+     * which is 0 on one frame in three.
+     * ================================================================== */
+    {
+        level_start_reset();
+        /* Reach a frame the divider allows. It starts at 0 - image 0x03A1B -
+         * so the first press is taken; step it to prove the gate exists. */
+        int gate_blocks = 0;
+        level_skill_select(5);
+        while (level_skill_div() != 0) level_skill_div_step();
+        level_skill_key(1);
+        ck("X steps the skill up (image 0x040D4)",
+           level_skill() == 6, NULL);
+
+        /* THE GATE. With the divider non-zero the key must do nothing. */
+        level_skill_select(5);
+        level_skill_div_step();               /* 0 -> 1 */
+        if (level_skill_div() != 0) {
+            level_skill_key(1);
+            gate_blocks = (level_skill() == 5);
+        }
+        ck("and a key on the wrong frame is refused (image 0x040B5)",
+           gate_blocks, "the divider did not gate it");
+
+        /* THE WRAPS, which are where writing this by hand goes wrong: the
+         * eight skills are buttons 2..9, so down off 2 gives 9 and up off 9
+         * gives 2. */
+        while (level_skill_div() != 0) level_skill_div_step();
+        level_skill_select(2);
+        level_skill_key(0);
+        ck("down off button 2 wraps to 9 (image 0x040C0)",
+           level_skill() == 9, NULL);
+
+        while (level_skill_div() != 0) level_skill_div_step();
+        level_skill_select(9);
+        level_skill_key(1);
+        ck("up off button 9 wraps to 2 (image 0x040D8)",
+           level_skill() == 2, NULL);
+    }
+
     printf(fails ? "\n  %d FAILED\n" : "\n  all passed\n", fails);
     return fails ? 1 : 0;
 }

@@ -4826,6 +4826,13 @@ has nothing to seed with here.
 
 ## Next
 
+- **The panel's HIGHLIGHT now lags the selection, and no check here can see
+  it.** Image `0x03B46` copies `ds:0x82` into `ds:0x83` only when the divider
+  fires, so the box moves up to two frames after the click that chose the
+  skill. The port set both at once. It is transcribed now, but the only thing
+  that would score it is a click-driven comparison - `compare_play.py` - run
+  on frames 0..2 after an assignment, and that has not been done.
+
 - **`level_key_button` dispatches on an SDL keycode, not the scancode the
   original reads.** Image `0x03E6F` reads the byte the keyboard handler left
   at `ds:0x1FD0` - image `0x016D4` stores it and clears it on the key-up - and
