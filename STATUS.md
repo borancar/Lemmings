@@ -4862,6 +4862,22 @@ has nothing to seed with here.
   `uv`: every tool succeeding gives `fail=0` with those two SKIPPED, and
   every tool exiting 3 gives `fail=1` with each one named.
 
+  **And the stubs missed the fault the real run found.** They return the exit
+  codes you choose; tools return the ones they have. `verify_code.py` returned
+  1 for the one code in the shipped `lemmings.cod` that image `0x05042` does
+  not reproduce - Mayhem 2's `KNOHGONMHS`, a 1992 typo the ORIGINAL refuses
+  too, which that tool prints nine lines explaining - and inside a sweep only
+  the status survives, so a check that had just said the discrepancy was not
+  the port's reported FAILED. Its exit now follows the two halves that are
+  about the PORT, the generated and validated codes, with any shipped-list
+  difference reported and counted but not failing; controlled by forcing the
+  branch.
+
+  Run end to end with real tools the block gives **`fail=0`**: seven checks
+  run and pass, `verify_adlib.py` skips for want of its pair. What that cost
+  is worth writing down - the stub test, the per-tool runs and the whole-sweep
+  run were three layers, each necessary and none sufficient.
+
 
 
 - **Image 0x08FF7 is the one blitter mode with no counterpart in the port.**
