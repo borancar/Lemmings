@@ -1342,6 +1342,39 @@ silently. `video_screen_set` is called by every screen that runs its own loop,
 and `menu_free` clears it so the flip can never be left aiming at memory that
 has gone.
 
+## A recipe is prose that looks executable, so nobody runs it
+
+Five usage blocks in this repository specified something that does not work,
+and every one sits in the header of a check the port's claims rest on:
+
+| | |
+| --- | --- |
+| `verify_dig.py` | `LEM_DIG_SHAFT=1` - a flag that appears in that sentence and nowhere else in the code |
+| `verify_adlib.py` | `LEM_OPL_TUNE=1` - nothing reads it, so both sides record different tunes and score **0 of 54** |
+| `verify_adlib.py` | no `--start`, so the run parks on the title and captures six writes, all card detect |
+| `verify_data.py` | `--shots 1`, which is the emulator's whole shot budget: the run ends after 1.6 s and the dump is never written |
+| `play.py` | `--auto --shots 6 --shot-dir out` with no `--`, so argparse prints usage - and this is the line every other tool's recipe is copied from |
+
+They share a shape. **Each fails as something other than itself**: a
+percentage of zero, a `FileNotFoundError` naming a socket, a usage message
+that looks like the reader mistyping. So even running one does not
+automatically find the fault - I blamed the adlib duration when the cause was
+`--start`, and only the mechanism (`PIT ticks spanned: 0` means the timer ISR
+never ran) settled it.
+
+**The audit is cheap: parse every `--flag` a docstring hands to the tool it is
+RUNNING, and check it against that tool's own `add_argument` calls.** Two
+things make it useful rather than noisy, and without them it reported 71
+findings of which 69 were its own fault:
+
+- stop at `--`. Everything after it belongs to the emulator, not the script.
+- only attribute flags to a name preceded by `python`. A `LEM_HOOK=tools/x.py`
+  is a hook, not the command, and the flags on that line are someone else's.
+
+Tightened that way it reported two, and both were real. A scorer needs
+checking before its output is a finding - which is the same rule this file
+already states for `find_sprite.py`, one level out.
+
 ## A pipeline's exit status is the last command's, and that is usually `sed`
 
 `tools/verify_all.sh` printed a Python traceback and exited **0**. Four of its
