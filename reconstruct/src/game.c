@@ -6173,6 +6173,26 @@ static void lem_draw_fuse(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 /* Image 0x070A2 onwards - the blit that draws one lemming, which the port
  * splits by state because it indexes MAIN.DAT rather than the pre-shifted
  * store the original blits from. */
+/* WHY THIS FUNCTION IS A CHAIN OF FLAGS AND THE ORIGINAL'S IS NOT.
+ *
+ * The record's +0x14 is not a sprite base. It is a FUNCTION POINTER: image
+ * 0x070F0 pushes `[di+0x14]` and image 0x0715B is `call ax` after popping
+ * it, so each state carries the address of the routine that draws it. That
+ * is why every conversion in this file ends with the same two lines - image
+ * 0x022CE's `ax = ds:0x2E` then `[si+0x14] = ax`, and its siblings - which
+ * the port has been transcribing as "the sprite base" without a name for
+ * what ds:0x2E holds. It holds the WALKER's draw routine.
+ *
+ * So the original dispatches by pointer and this dispatches on the flag
+ * word. Both reach the same drawing for the same state; the port's is an
+ * arrangement, and this says so rather than leaving the reader to wonder why
+ * a transcription looks nothing like its original.
+ *
+ * It also explains the shape of image 0x0706F: everything before image
+ * 0x0715B is common - the on-screen test at image 0x07086, the frame index
+ * at image 0x070A2, the store address at image 0x070B6, the video offset at
+ * image 0x07100 - and only the last step differs per state.
+ */
 void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
                   const uint8_t *sec, uint32_t sec_len, const lemming *a)
 {
