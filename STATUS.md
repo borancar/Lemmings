@@ -1034,7 +1034,32 @@ of it on whichever page is hidden. **The per-frame sprite drawing therefore
 goes to a page at `0x02C2` or `0x27E2`, and nothing that draws a lemming
 touches `0x4A40` at all** - which is why the canvas filter found only the
 composition and the miner's clear, and why it can never answer this question.
-The next step is the same probe with `--stride 44` based on those pages.
+Pointed there - stride 44, base `0x02C2`, row 81, the bytes around column
+159, and still gated to the level - it names 56 instructions, and they fall
+into three groups that are the level's whole drawing path:
+
+| | |
+| --- | --- |
+| `0x07440`, `0x075B4` | the LEMMING blits: `lodsw`/`stosb` through the graphics controller's bit mask at index 8, **three bytes a row**, then `add di, 0x29` - 41, which is 44 minus 3 - to step the page |
+| `0x07178` | the background SAVE/RESTORE: `movsb` three times, `cx = 0x10`, the same `add di, 0x29`, with `ds` and `es` both `0xA000`. A 24 x 16 block copied inside video memory, **unmasked** |
+| `0x08188`, `0x0688D` | a rectangular `rep movsb`, and a further masked blit |
+
+**A lemming is drawn 24 columns wide, not 16.** Sixteen pixels at an arbitrary
+bit offset span three bytes, so the sprite is pre-shifted into them and the
+bit mask picks out the sixteen that are really it. The port draws exactly 16
+columns from an unshifted sprite, which lands the same pixels - but it means
+the port has no counterpart to the 24-wide window, and none to the
+save/restore either, because it composes every frame from nothing.
+
+That last difference is the leading explanation for the one pixel, and it has
+a mechanism rather than a fit: the original saves what is under a sprite and
+paints it back next frame, the restore covers the full 24 x 16 window with no
+mask, and the pointer is parked so that window sits still. A pixel that is
+saved as part of one sprite's background and painted back after another has
+moved is a ghost - fixed in SCREEN space, intermittent, and in a lemming's
+colours, which is every property this residue has. It is not yet proven: what
+would settle it is watching `0x07178`'s source and destination across the
+frames where the pixel changes.
 
 Two instrument faults were found on the way and both produced confident
 numbers: a scorer looking for `%05d.raw` where the port writes `f%05d.raw`
