@@ -127,7 +127,12 @@ DGROUP = 0x09A90
 # Both are digits, and the menu code confirms on a digit rather than waiting
 # for RETURN (image 0x1159: `mov bl,1` then `jmp` straight to the dispatch),
 # so no confirm key is needed.
-STARTUP_KEYS = ("1", "2")
+# LEM_MACHINE overrides the second answer, so any tool can record or probe a
+# machine type other than High Performance without its own flag. play.py has
+# had --machine for a while; record_level.py had no way to ask at all, which
+# is why every reference capture in this repository is machine 2 and the
+# compat path went unmeasured.
+STARTUP_KEYS = ("1", os.environ.get("LEM_MACHINE", "2"))
 
 
 class LemmingsVga(VgaDos):

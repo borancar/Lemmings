@@ -4837,7 +4837,40 @@ has nothing to seed with here.
   per-frame swap, and the briefing is the screen that reprograms it mid-life.
   Cosmetic, but it is a thing the original does and this port does not.
 
-- **THE SKILL BUTTONS ARE DRAWN WITH THE WRONG ATTRIBUTE, in BOTH modes.**
+- **THE PANEL IS DRAWN WITH DIFFERENT ATTRIBUTES PER MACHINE, and this is
+  MEASURED.** Two recordings of the original on the same level, Fun 1, frame
+  39 - `out/panel_ref` at machine 2 and `out/panel_ref_compat` at machine 1 -
+  counted over the panel's rows 176..199:
+
+  | DAC | high | compat |
+  | --- | --- | --- |
+  | 4 gold | 116 | **1442** |
+  | 5 red | 268 | 452 |
+  | 6 grey | 233 | 884 |
+  | 0 | 2964 | 3438 |
+  | 18, 19, 20, 22, 23 | 2680 total | **0** |
+
+  In compat the panel uses ONLY DAC 0..7. In high it uses 16..23 as well -
+  attributes 8..15 through the ATC - and those are the entries the mid-screen
+  swap replaces. The 2,680 pixels that were 18/19/20/22/23 reappear as 4, 5, 6
+  and 0.
+
+  So the port's `if (lem_machine == LEM_PC_HIGH)` gate on the PALETTE is
+  treating a difference that is in the DRAWING. Compat has one palette, as it
+  must, and the panel is drawn to fit it.
+
+  **Where the branch is has not been found.** `ds:0x200C` and `ds:0x200E` are
+  not read anywhere between image `0x03AC8` and image `0x03CDE`, so it is not
+  in the panel routine. Likeliest is a different source for the panel artwork
+  - a second MAIN.DAT section, or a remap as it is blitted.
+
+  `LEM_MACHINE=1` now makes any tool record or probe a machine type other than
+  High Performance; `record_level.py` had no way to ask, which is why every
+  reference capture here was machine 2 and this went unmeasured for so long.
+
+- ~~**THE SKILL BUTTONS ARE DRAWN WITH THE WRONG ATTRIBUTE**~~ - no; the art
+  decode is right, and the counts for attributes 1, 4, 5, 6 and 7 match the
+  original's high capture exactly.
   The original's button background is attribute 4, `b2b200`, gold. The port's
   is attribute 3, `f3d3d3`, pale pink. Attributes 0..7 are the FIXED ones -
   image `0x0C048`, level-independent - so this is wrong in high as well and
