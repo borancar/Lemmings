@@ -4946,7 +4946,8 @@ has nothing to seed with here.
   between them is unread. NOT fitted: trying frame indices until the number
   falls is narrowing without settling.
 
-- **A level's sound runs on into the next one, and it is the PORT'S BUFFER.**
+- **(fixed) A level's sound ran on into the next one, and it was the PORT'S
+  BUFFER.**
   Reported from playing: switching level leaves a moment of music and a couple
   of effects before it resets. Image 0x002FE stops the driver when a level
   ends and `level_end_finish` makes that call, so the OPL is keyed off at the
