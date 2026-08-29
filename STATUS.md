@@ -4702,13 +4702,6 @@ has nothing to seed with here.
 
 ## Next
 
-- **Group 3 of the sprite store is unaccounted for.** Image 0x059BB's build
-  table has fifteen groups and fourteen of their bases are exactly the port's
-  measured `*_SPR_BASE` constants. The exception is **group 3: base 2064, 16
-  frames of 48, two planes, twelve rows** - nothing in the port draws it. It
-  is between the digger (720) and the drowner (2832). Worth identifying:
-  either a state the port renders with the wrong artwork, or one it does not
-  render at all.
 
 - **Image 0x08FF7 is the one blitter mode with no counterpart in the port.**
   It is image 0x0909C's exact complement: image 0x09013 sets the graphics

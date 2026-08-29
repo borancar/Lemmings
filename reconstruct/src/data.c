@@ -1286,9 +1286,23 @@ const uint8_t MENU_XLAT[0x53] = {
  *     the other - the bases were measured long before image 0x059BB was
  *     read - and that is as strong as agreement gets here.
  *
- *     GROUP 3, at 2064 with 16 frames of 48, is the one nothing claims: a
- *     sprite the port does not draw. Two planes, twelve rows. Worth knowing
- *     it exists and is not accounted for.
+ *     GROUP 3 IS THE CLIMBER, and finding it closes the table. Its base
+ *     2064 is CLIMB_SPR_RIGHT and its geometry - two planes, twelve rows -
+ *     is CLIMB_SPR_H and CLIMB_SPR_PLANES. So all fifteen groups are
+ *     accounted for by the port's own measurements.
+ *
+ *     AND IT EXPLAINS THE DIRECTION RULE. CLIMB_SPR_LEFT is 2448, which is
+ *     2064 + 8 * 48 - exactly half way through group 3's sixteen frames. So
+ *     the group is eight right-facing frames followed by eight left-facing
+ *     ones, and that is what image 0x070AB reaches by ADDING THE STATE to
+ *     the animation counter when the direction byte is not 1.
+ *
+ *     The port expresses the same thing as two bases and picks between them;
+ *     the original expresses it as one base and an offset. Transcribing the
+ *     offset into a port that already has the two bases produced exactly the
+ *     collapse recorded in CLAUDE.md - three levels from 1,100 exact frames
+ *     to 88, 103 and 91 - because it applied the correction twice. The rule
+ *     was read correctly and the port already had it.
  *
  * AND IT CONFIRMS THE DIGGER'S GEOMETRY, which the port had already worked
  * out the hard way. An older comment beside lem_dig_start said the store's

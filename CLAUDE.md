@@ -1202,6 +1202,14 @@ one after the other and `+ state` reaches the second set. This port indexes
 said it "splits by state because it indexes MAIN.DAT rather than the
 pre-shifted store" - the warning was there and the reading walked past it.
 
+**And the port already had the rule, expressed differently.** Group 3 of the
+sprite store is the climber: `CLIMB_SPR_RIGHT` is 2064 and `CLIMB_SPR_LEFT`
+is 2448, which is 2064 + 8 * 48 - half way through that group's sixteen
+frames. Eight frames facing one way, eight the other. The original reaches the
+second half by adding the state; the port reaches it by having two bases. So
+applying image 0x070AB's offset ON TOP of the port's own choice corrected the
+direction twice, which is precisely what the collapse measured.
+
 **A transcription is of a routine's MEANING, not of its arithmetic.** When the
 original addresses a structure this port does not build - a pre-shifted store,
 a planar page, a prepared parallel array - its index arithmetic is about that
