@@ -8544,9 +8544,7 @@ static const char S_INPUT_3[]     = "3. Keyboard";         /* image 0x0E8F1 */
 #define INPUT_OPT_Y    128
 #define INPUT_OPT_STEP  32
 
-/*
- * NOT TRANSCRIBED, but all four of the original's set-up calls are read now.
- * Image 0x04967 and image 0x04A01 both open with the same sequence:
+/* IMAGE 0x04967 AND IMAGE 0x04A01'S SET-UP - the four calls both open with.
  *
  *   image 0x04DEF  CLEAR the page. `di = 0`, `cx = 0x6D60` - 28,000 bytes,
  *                  which is 640 x 350 / 8, the whole thing.
@@ -8555,46 +8553,70 @@ static const char S_INPUT_3[]     = "3. Keyboard";         /* image 0x0E8F1 */
  *                  scroll ds:0x1F7A = 0, then calls image 0x8808 with
  *                  ax = 0x280 (640), bx = 0x15E (350) and dx = the page.
  *
- *                  Image 0x8808 is worth naming: it stores ax in ds:0x66F2,
- *                  bx in ds:0x66F0 and ax >> 3 in ds:0x66F4. Those are the
- *                  BLITTER'S OWN bounds - the width it refuses a blit past
- *                  at image 0x09997, the height, and the row in bytes. So
- *                  the clip limit is simply whatever surface was last
- *                  declared: 640 here, and 352 in a level, which is what
- *                  tools/probe_clip.py measures from a running game.
+ *                  Image 0x8808 stores ax in ds:0x66F2, bx in ds:0x66F0 and
+ *                  ax >> 3 in ds:0x66F4. Those are the BLITTER'S OWN bounds -
+ *                  the width it refuses a blit past at image 0x09997, the
+ *                  height, and the row in bytes. So the clip limit is
+ *                  whatever surface was last declared: 640 here and 352 in a
+ *                  level, which is what tools/probe_clip.py measures.
  *   image 0x0531E  THE PALETTE. `al = 0, cx = 0x10, bx = 0x100`, then image
  *                  0x055B7, which branches on ds:0x1F7C - the adapter letter
- *                  - and indexes a table at ds:0x52D4. Sixteen entries.
- *   image 0x05017  THE LEVEL PREVIEW - `xor bx,bx / jmp 0x7E76`. See
- *                  draw_preview, which carries that whole chain.
+ *                  - and indexes the table at ds:0x52D4. Sixteen entries.
+ *   image 0x05017  THE LEVEL PREVIEW - `xor bx,bx / jmp 0x7E76`. Only the
+ *                  briefing reaches it, and draw_preview carries that whole
+ *                  chain; it is called from menu_briefing_screen rather than
+ *                  here, because here it would run for the code and input
+ *                  screens too.
  *
- * AND THE PORT'S DECOMPOSITION IS NOT THE ORIGINAL'S, which is the useful
- * thing to know and was hidden while the four calls were unread. Set them
- * beside what this routine actually does:
- *
- *   image 0x04DEF  clear the page      -> the calloc below, which is not the
- *                                        same act: the original clears VIDEO
- *                                        MEMORY it already owns
- *   image 0x04BF5  declare the surface -> nothing. The port has no blitter to
- *                                        bound, so ds:0x66F0/2/4 have no
- *                                        counterpart at all
- *   image 0x0531E  the palette         -> the MENU_PAL6 loop below. THE ONE
- *                                        THING THAT LINES UP
- *   image 0x05017  the level preview   -> draw_preview, a different routine
- *
- * and the two things this routine does that the original's sequence does not
- * contain at all: loading main.dat, which is DOS's work through image
- * 0x01D2E, and tiling the background.
- *
- * So the debt here is not "write out four calls". It is a DECISION about
- * where the port's boundary goes, and transcribing this routine means
- * restructuring around the original's split rather than filling in addresses.
- * That is worth doing deliberately or not at all - see level_panel_build and
- * dat_load, where the same question came up and the answer was that the
- * original had no such routine, and IO respectively. This one is neither:
- * the original's set-up sequence exists, and the port's is a different four
- * things.
+ * TWO OF THE FOUR HAVE NO WORK TO DO IN THIS PORT, and saying which is the
+ * whole point of writing the sequence out. This was owed for a long time
+ * because the port's decomposition is not the original's and the difference
+ * looked like a debt; it is not one, it is two no-ops and a routine that
+ * moved.
  */
+static void menu_screen_open(menu_screen *m, const uint8_t *sec,
+                             int tile_background)
+{
+    /* IMAGE 0x04DEF - nothing to do. The original clears VIDEO MEMORY it
+     * already owns; this port's page is a buffer of its own and the caller
+     * has just calloc'd it, which is the same act arrived at differently. */
+
+    /* IMAGE 0x04BF5 - A DELIBERATE NO-OP, and it is the interesting one.
+     * ds:0x66F0/2/4 are the blitter's clip bounds, and this port has no
+     * blitter to bound: every blit is an array write that carries its own
+     * extent, so there is nothing for the numbers to constrain. */
+
+    /* IMAGE 0x0531E - the palette, sixteen entries. */
+    for (uint8_t i = 0; i < 16; i++) {
+        m->palette[i].r = widen6(MENU_PAL6[i * 3 + 0]);
+        m->palette[i].g = widen6(MENU_PAL6[i * 3 + 1]);
+        m->palette[i].b = widen6(MENU_PAL6[i * 3 + 2]);
+    }
+
+    /* THE PORT'S OWN, and NOT one of the four: the original's background is
+     * already in video memory when these screens start - image 0x0445B's loop
+     * has been drawing it - so it has nothing to tile. This port composes
+     * every screen from nothing each time and has to put it back.
+     *
+     * `tile_background` is a vertical ORIGIN plus one, so 1 means "tile from
+     * row 0" and 0 means "do not tile". The briefing tiles the very same
+     * bitmap from row 78, which is the whole of what made it look like a
+     * different background for so long. */
+    if (tile_background) {
+        uint16_t org = (uint16_t)(tile_background - 1);
+        for (uint16_t y = org; y < MENU_H; y++)
+            for (uint16_t x = 0; x < BG_DRAWN_W; x++)
+                m->pix[(size_t)y * MENU_W + x] =
+                    planar(sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE,
+                           2, x % BG_W, (uint16_t)((y - org) % BG_H));
+    }
+}
+
+/* THE PORT'S OWN: main.dat opened and its sections found, then image
+ * 0x04967's set-up above. The original does no such thing here - the file was
+ * read once at start-up through image 0x01D2E and lives in memory - so this
+ * is DOS's work, done late because this port loads what a screen needs when
+ * the screen needs it. */
 static int screen_start(const char *dir, menu_screen *m, dat_file *d,
                         const uint8_t **sec, const uint8_t **font,
                         uint32_t *fontlen, int tile_background,
@@ -8620,23 +8642,7 @@ static int screen_start(const char *dir, menu_screen *m, dat_file *d,
         if (err) *err = "out of memory";
         return -1;
     }
-    for (uint8_t i = 0; i < 16; i++) {
-        m->palette[i].r = widen6(MENU_PAL6[i * 3 + 0]);
-        m->palette[i].g = widen6(MENU_PAL6[i * 3 + 1]);
-        m->palette[i].b = widen6(MENU_PAL6[i * 3 + 2]);
-    }
-    /* `tile_background` is a vertical ORIGIN plus one, so 1 means "tile from
-     * row 0" and 0 means "do not tile". The briefing tiles the very same
-     * bitmap from row 78, which is the whole of what made it look like a
-     * different background for so long. */
-    if (tile_background) {
-        uint16_t org = (uint16_t)(tile_background - 1);
-        for (uint16_t y = org; y < MENU_H; y++)
-            for (uint16_t x = 0; x < BG_DRAWN_W; x++)
-                m->pix[(size_t)y * MENU_W + x] =
-                    planar(*sec, BG_PLANE0, BG_PLANE1 - BG_PLANE0, BG_STRIDE,
-                           2, x % BG_W, (uint16_t)((y - org) % BG_H));
-    }
+    menu_screen_open(m, *sec, tile_background);
     return 0;
 }
 
