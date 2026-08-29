@@ -70,12 +70,36 @@ def install(m):
                         bits = "".join("#" if v >> (23 - i) & 1 else "."
                                        for i in range(24))
                         lines.append(f"    0x{v:06X},  /* {bits} */")
-        # THE RAW BYTES TOO. The report prints shift 0, and the question
-        # that matters is whether shifts 1..7 are the same shape translated or
-        # whether they LOSE bits off the end of the three bytes - image
-        # 0x060E6 picks the variant by x & 7, and the port keeps only shift 0
-        # and shifts it itself at pixel granularity, which is only equivalent
-        # if nothing falls off.
+        # AND ANSWER THE QUESTION, rather than leaving the bytes for a
+        # reader. The report prints shift 0, and what matters is whether
+        # shifts 1..7 are the same shape translated or whether they LOSE bits
+        # off the end of the three bytes - image 0x060E6 picks the variant by
+        # x & 7, and the port keeps only shift 0 and shifts it itself at pixel
+        # granularity, which is only equivalent if nothing falls off.
+        #
+        # It is equivalent: all 4 entries x 7 shifts x 13 rows are exactly
+        # shift 0 >> s. That is what licenses data.c keeping one shift of the
+        # four, and it had been ASSERTED in that comment and never measured -
+        # so this prints the count of variants that are not a pure shift, and
+        # a non-zero there is the assumption breaking.
+        if st["raw"] is not None:
+            odd = 0
+            checked = 0
+            for d in (0, LEFT):
+                for s0 in range(2):
+                    off = d + s0 * SLICE
+                    zero = [int.from_bytes(
+                        st["raw"][off + r * 3: off + r * 3 + 3], "big")
+                        for r in range(ROWS)]
+                    for sh in range(1, 8):
+                        for r in range(ROWS):
+                            o = off + sh * 39 + r * 3
+                            v = int.from_bytes(st["raw"][o:o + 3], "big")
+                            checked += 1
+                            if v != zero[r] >> sh:
+                                odd += 1
+            lines.append(f"  variants that are not shift0 >> s: "
+                         f"{odd} of {checked}")
         if st["raw"] is not None:
             try:
                 with open(OUT + ".bin", "wb") as f:

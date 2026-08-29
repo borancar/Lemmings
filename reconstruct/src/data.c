@@ -218,7 +218,18 @@ const uint32_t BASH_MASK[2][4][10] = {
  * eight shifts of THIRTEEN rows of three bytes. Only shift 0 is kept, for
  * the reason BASH_MASK keeps only shift 0 - the other seven are the same
  * shape pre-shifted for a byte-addressed plane, and this port's map is a
- * byte a pixel. Dumped by tools/verify_results.py, not read by eye. */
+ * byte a pixel. Dumped by tools/verify_results.py, not read by eye.
+ *
+ * AND THAT LAST SENTENCE IS NOW MEASURED rather than assumed. Keeping one
+ * shift of eight is only sound if the other seven are pure translations -
+ * a pre-shift into three fixed bytes could drop whatever runs off the end,
+ * and then the port, which shifts at pixel granularity and never truncates,
+ * would clear pixels the original leaves. tools/probe_mine.py reports the
+ * count: all 4 entries x 7 shifts x 13 rows are exactly shift 0 >> s, 364
+ * of 364, because no row of these masks has a bit within seven columns of
+ * the right-hand edge. The one pixel the miner still differs by on
+ * "Just dig!" is therefore NOT the mask - which is worth writing down,
+ * since the mask is where it obviously looks like it should be. */
 const uint32_t MINE_MASK[2][2][MINE_ROWS] = {
   { /* facing right */
     {   /* right, slice 0 */
