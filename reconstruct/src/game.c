@@ -432,6 +432,9 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
         o->no_overwrite    = (uint8_t)((e[6] & 0x80) != 0);
         o->only_on_terrain = (uint8_t)((e[6] & 0x40) != 0);
         o->upside_down     = (uint8_t)(e[7] == 0x8F);
+        /* Image 0x039A0 and image 0x039A6: the two bytes as a word, bit 0
+         * masked off, which is what the blitter is handed. */
+        o->bp = (uint16_t)((((uint16_t)e[6] << 8) | e[7]) & 0xFFFEu);
     }
 
     /* Terrain: 400 entries of 4 bytes at 0x120, FF FF FF FF terminates.
@@ -7559,6 +7562,51 @@ void level_anim_draw(const level_anim *st, const level *lv,
  * carries the whole chain. Whether the objects reach it through those blits
  * or are drawn separately is the question this routine's own transcription
  * turns on. */
+/* ======================================================================
+ * TRANSCRIBED FROM IMAGE 0x03981, the object composition pass.
+ *
+ *     0x03981  di = ds:0x0FEB, cx = 0x20    thirty-two entries
+ *     0x03988  ds:0x1FE4 = ds:0x1FF0        THE OBJECTS' graphics segment,
+ *                                           which is not the terrain's - the
+ *                                           blit probe reads 0x02900 here
+ *                                           against 0x07272 for a terrain
+ *                                           piece, and that is what tells
+ *                                           the two apart in one line
+ *     0x0398E  ax = [di]<<8 | [di+1]        x, big-endian
+ *     0x03993  and ax,ax / je               a zero x SKIPS this entry - it
+ *                                           goes to image 0x039C5, the step,
+ *                                           not out of the loop
+ *     0x0399A  bx = [di+2]<<8 | [di+3]      y
+ *     0x039A0  dx = [di+6]<<8 | [di+7]      the LVL's modifier bytes
+ *     0x039A6  bp = dx & 0xFFFE             AND THEY ARE THE BLIT'S FLAGS.
+ *                                           Bit 15 is e[6] & 0x80, the
+ *                                           no-overwrite level_parse reads;
+ *                                           the probe caught bp = 0x800E, so
+ *                                           bits 1..3 - clipping, image
+ *                                           0x08846 - come from the level
+ *                                           too. Bit 0 is masked off.
+ *     0x039AB  dl = [si+4], dh = 0          the width
+ *     0x039B0  cl = [si+5]                  the rows
+ *     0x039B3  di = [si+8] + [si+0x17]      the graphic, base plus the
+ *                                           frame's own offset
+ *     0x039BB  ch = 4                       FOUR planes
+ *     0x039BD  the blit
+ *     0x039C5  di += 8, si += 0x1C          the next object and the next
+ *                                           definition, in step
+ *
+ * The two pointers advance TOGETHER, so the original walks a prepared array
+ * in which each entry already sits beside its definition. The port keeps the
+ * LVL's list and the ground set apart and looks the definition up by `id`,
+ * which reaches the same pair; where the pairing is made is not read.
+ *
+ * WHAT THIS SETTLES about the old comment here. It claimed the debt was
+ * "pointed at the wrong address" because the original never composes objects
+ * into the level bitmap - and that was a fact about ONE INSTANT, image
+ * 0x0376A, where tools/prove.sh breaks. These five passes run after it:
+ * probe_pvsrc.py dumps the bitmap at image 0x07EB2, the packer's entry, and
+ * the port WITH objects differs by 19 pixels where WITHOUT it differs by 815,
+ * the 815 beginning exactly where this level's objects are.
+ * ====================================================================== */
 int render_objects(canvas *c, const level *lv, const ground *g,
                    const uint8_t *sec, uint32_t sec_len,
                    uint8_t frame, const char **err)
@@ -7571,10 +7619,27 @@ int render_objects(canvas *c, const level *lv, const ground *g,
         return -1;
     }
 
-    for (uint16_t i = 0; i < lv->num_objects; i++) {
+    /* Image 0x03985: thirty-two, however many the level filled in. */
+    for (uint16_t i = 0; i < lv->num_objects && i < LEVEL_MAX_OBJECTS; i++) {
         const level_object *o = &lv->objects[i];
         if (o->id >= GROUND_OBJECTS)
             continue;
+        /* Image 0x03993: a zero x skips the entry rather than ending the
+         * walk, so a hole in the list is passed over and the ones after it
+         * are still drawn. */
+        if (o->x == 0)
+            continue;
+        /* Image 0x039A6's `and bp, 0xfffe` - the level's own modifier bytes
+         * ARE the blit's flag word, so the path is the blitter's to choose
+         * rather than this routine's to decide. */
+        /* Image 0x039A6's flag word is carried on the object (o->bp) and
+         * NOT re-decided here: the pixel rule this port applies is
+         * object_pixel_combine's, which has image 0x096BA and image 0x0956B
+         * against it - the object blit's own paths, not the terrain's. Bit
+         * 15 of o->bp is the same no_overwrite the booleans hold, so the two
+         * agree by construction; the word is kept because it is what image
+         * 0x039BD hands the blitter, and a later reading of image 0x08822's
+         * modes will want it. */
         const ground_object *go = &g->objects[o->id];
         if (!go->width || !go->height)
             continue;

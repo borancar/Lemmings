@@ -171,6 +171,13 @@ typedef struct {
     uint8_t no_overwrite;    /* draw only where nothing is already */
     uint8_t only_on_terrain; /* draw only where terrain already is */
     uint8_t upside_down;
+    /* THE MODIFIER BYTES AS ONE WORD. Image 0x039A0 reads e[6] and e[7] into
+     * dx and image 0x039A6's `and bp, 0xfffe` hands them straight to the
+     * blitter as its flag word - so these are not three booleans the game
+     * derives, they are the blit's mode with bit 0 masked off. The booleans
+     * above stay because the port's own composition reads them; this is what
+     * blit_path_of is given. */
+    uint16_t bp;             /* image 0x039A6 */
 } level_object;
 
 typedef struct {
