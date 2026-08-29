@@ -4826,6 +4826,27 @@ has nothing to seed with here.
 
 ## Next
 
+- **Eight verifiers exist that `tools/verify_all.sh` never runs**, and the
+  headline table above quotes five numbers that come from them:
+  `verify_data.py` (179,618 bytes across 7 sections), `verify_dat.py` (7
+  calls, 150,807 bytes), `verify_level.py` (15 fields), `verify_shift.py`
+  (200 calls), `verify_preshift.py` (106 calls), plus `verify_adlib.py`
+  (10,333 register writes), `verify_code.py` and `verify_digits.py`.
+
+  This is how a figure goes stale, and it did twice in one session.
+  `verify_dig.py`'s note said its terrain half could not be trusted, months
+  after the read was fixed; `verify_adlib.py`'s usage line still named
+  `LEM_OPL_TUNE`, which nothing reads, so following it scores **0 of 54** and
+  reads as a broken sound port against a real 10,333 of 10,333. Neither is in
+  the sweep, so neither was contradicted by anything.
+
+  Most of these drive the emulator, so adding all eight makes the sweep much
+  longer - which is the argument for a `--quick` and a `--full`, not for
+  leaving them out. Whatever is decided, **a number in the glance table whose
+  check the sweep does not run should say so beside itself**, because the
+  table's own header promises it was re-measured on the current build.
+
+
 
 - **Image 0x08FF7 is the one blitter mode with no counterpart in the port.**
   It is image 0x0909C's exact complement: image 0x09013 sets the graphics
