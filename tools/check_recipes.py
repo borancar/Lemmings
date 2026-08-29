@@ -63,6 +63,13 @@ def findings(docs):
 
 
 def read_docs():
+    """Every place a recipe lives: tool docstrings AND the markdown.
+
+    CLAUDE.md is the most-read file here and carries commands of its own -
+    it is where the `--scale` separator trap is written down, having once
+    been the thing that file told you to do. STATUS.md and docs/ quote
+    commands too. A recipe is no less copied for being in prose.
+    """
     docs = []
     for path in sorted(glob.glob(os.path.join(HERE, "*.py"))):
         with open(path) as f:
@@ -73,6 +80,12 @@ def read_docs():
             continue
         if doc:
             docs.append((path, doc))
+    root = os.path.dirname(HERE)
+    md = (glob.glob(os.path.join(root, "*.md"))
+          + glob.glob(os.path.join(root, "docs", "*.md")))
+    for path in sorted(md):
+        with open(path) as f:
+            docs.append((path, f.read()))
     return docs
 
 
@@ -87,7 +100,7 @@ def main():
 
     docs = read_docs()
     if not docs:
-        print("  no docstrings read at all - that is a failure, not a pass")
+        print("  no sources read at all - that is a failure, not a pass")
         return 2
 
     if a.self_test:
@@ -102,11 +115,11 @@ def main():
         clean = [("PLANTED", "uv run python tools/play.py --auto -- --shots 6")]
         quiet = not findings(clean)
         print(f"  correct line ignored  : {'yes' if quiet else 'NO'}")
-        print(f"  ({len(docs)} docstrings would be scanned)")
+        print(f"  ({len(docs)} sources would be scanned)")
         return 0 if (ok and quiet) else 1
 
     bad = findings(docs)
-    print(f"  {len(docs)} tool docstrings scanned")
+    print(f"  {len(docs)} sources scanned (tool docstrings, CLAUDE.md, STATUS.md, docs/)")
     print(f"  flags handed to a tool that does not define them: {len(bad)}")
     for f, t, flag in sorted(set(bad)):
         print(f"    {f:24s} runs {t}.py {flag}")
