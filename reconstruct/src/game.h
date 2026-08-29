@@ -1217,6 +1217,12 @@ int menu_code_screen(const char *dir, menu_screen *m, const char **err);
  * level and rating it named - then back to the menu whichever it was. The
  * code does not start a level; it sets ds:0x1F6B and F1 plays that. */
 menu_action menu_code_run(menu_screen *m);
+/* The two messages image 0x0499E and image 0x049EC draw, on their own, so the
+ * harness that scores this screen against the original composes it exactly
+ * the way the loop does. */
+void menu_code_result_draw(menu_screen *m, int accepted);
+/* THE PORT'S OWN - the ten cells, for a harness to fill before drawing. */
+void level_code_type(const char *cells);
 const char *level_code_cells(void);   /* ds:0x4DF2, for a test */
 
 int menu_input_screen(const char *dir, menu_screen *m, const char **err);

@@ -4702,6 +4702,34 @@ has nothing to seed with here.
 
 ## Next
 
+- **A level's sound runs on into the next one, and it is the PORT'S BUFFER.**
+  Reported from playing: switching level leaves a moment of music and a couple
+  of effects before it resets. Image 0x002FE stops the driver when a level
+  ends and `level_end_finish` makes that call, so the OPL is keyed off at the
+  right instant - but `sound_pump` keeps **200 ms** of already-generated audio
+  queued in SDL (`SND_TARGET_MS`), and that is what goes on playing. The
+  original has no such buffer: its OPL is real time, so a key-off is silent
+  immediately.
+  The fix is IO and one line - clear the queued stream on the AH=2 stop in
+  `sound_request`, which is the moment the game says *silence* and the only
+  moment the port's buffer contradicts it. NOT DONE, and worth a measurement
+  rather than a guess: 200 ms at 17 frames a second is about three frames of
+  level, which matches "a couple of sounds" and should be confirmed by timing
+  the tail rather than by ear.
+
+- **Is the builder's warning the right LOUDNESS against the original?** Effect
+  0x12, image 0x026D0, fires on animation frame 10 when `[si+0x21]` is three
+  or fewer - transcribed, and a player confirmed hearing it. Rendered alone it
+  is the loudest effect in the game (peak 23,614, RMS 3,094, against 15,332
+  and 2,457 for the release), so nothing in the port attenuates it. What is
+  NOT measured is the same moment against DOSBox, the way the music was: that
+  needs a scripted run which assigns a builder and lets it down to three
+  bricks. Note also that `start_effect` (driver +0x0520) searches channels 8,
+  7, 6, 5 and DISCARDS the effect if all four are busy - the original's
+  behaviour - so under load it would be intermittent rather than quiet, and
+  the two are worth telling apart before changing anything.
+
+
 1. **Draw the interactive objects as sprites, not as terrain.** The terrain is
    exact. The objects are the remaining visual difference, and the earlier plan
    for them was wrong: breaking at image `0x03789`, the final `ret` after all

@@ -908,6 +908,7 @@ int main(int argc, char **argv)
      * those numbers. The level order is not the file order, and what
      * maps one to the other has not been traced yet. */
     const char *data = ".";
+    const char *typed = NULL;       /* --code: the ten cells to score */
     const char *file = NULL;        /* NULL = look it up in the game's table */
     uint8_t rating = 0;             /* 0 Fun, 1 Tricky, 2 Taxing, 3 Mayhem */
     uint32_t number = 1;            /* the GAME's level number, 1..30 */
@@ -938,6 +939,9 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc)       data = argv[++i];
         else if (!strcmp(argv[i], "--menu")) menu_forced = 1;
+        else if (!strcmp(argv[i], "--code") && i + 1 < argc) {
+            typed = argv[++i];         /* the ten cells, for --screen code */
+        }
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
             /* Which menu screen: the menu itself, or one of the two the
              * original reaches from it. For looking at and for diffing. */
@@ -1151,6 +1155,17 @@ int main(int argc, char **argv)
             built = which_screen == 1 ? menu_code_screen(data, &mm, &err)
                   : which_screen == 2 ? menu_input_screen(data, &mm, &err)
                                       : menu_build_rating(data, rating, &mm, &err);
+            /* THE CODE SCREEN AFTER ENTER, which is the half verify_menu
+             * cannot reach: it scores the screen as it OPENS - a prompt and
+             * ten dots - and the state that follows is where the port drew
+             * both messages over the input field. --code puts the same ten
+             * cells in as tools/probe_codescreen.py typed into the original,
+             * runs image 0x051A2 on them, and draws what image 0x0499E or
+             * image 0x049EC draws. Same routine the loop calls. */
+            if (built == 0 && which_screen == 1 && typed) {
+                level_code_type(typed);
+                menu_code_result_draw(&mm, level_code_apply(typed));
+            }
         }
         if (built != 0) {
             fprintf(stderr, "main menu: %s\n", err);

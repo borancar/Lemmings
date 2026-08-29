@@ -8069,6 +8069,17 @@ char g_code_cells[CODE_LEN + 1] = "..........";   /* ds:0x4DF2 */
 
 const char *level_code_cells(void) { return g_code_cells; }
 
+/* THE PORT'S OWN, and only for the harness: the original types into ds:0x4DF2
+ * a key at a time and has no way to set it. tools/probe_codescreen.py drives
+ * the ORIGINAL's own keyboard, so the port has to be put in the same state to
+ * be compared with it. */
+void level_code_type(const char *cells)
+{
+    for (uint8_t i = 0; i < CODE_LEN; i++)
+        g_code_cells[i] = cells[i] ? cells[i] : '.';
+    g_code_cells[CODE_LEN] = '\0';
+}
+
 /* One pass of the redraw image 0x04CC9 reaches through bp. */
 static void code_cells_draw(menu_screen *m)
 {
@@ -8145,9 +8156,114 @@ static void menu_code_entry(menu_screen *m)
 #define CODE_HOLD_OK    0x78         /* image 0x049CC */
 #define CODE_HOLD_BAD   0x3C         /* image 0x049F6 */
 
-menu_action menu_code_run(menu_screen *m)
+/* WHERE THE TWO MESSAGES GO, and they go UNDERNEATH the field.
+ *
+ * These are not chosen: they are the cell positions in the text records the
+ * original hands to image 0x04D4D, whose format is [x+1][y][flag] then the
+ * characters to a 0x0D, repeated, ended by a zero length:
+ *
+ *     ds:0x4DE1   (14, 7) "Enter Code"      (14, 9) ".........."
+ *     ds:0x4DFE   (10,11) "Code for Level     "
+ *                 (12,13) "Rating Mayhem"
+ *     ds:0x4E27   (12,11) "Incorrect Code"
+ *
+ * The port drew both messages at the FIELD's own position, which is the row
+ * the typed code is on - so the answer landed on top of what had just been
+ * typed. That was my arrangement and not a reading; a player saw it at once.
+ *
+ * ds:0x4E10 and ds:0x4E1F are not separate records. They point INTO the one
+ * above - at the five spaces after "Code for Level " and at "Mayhem" inside
+ * "Rating Mayhem" - so image 0x049A9 and image 0x049C0 patch those strings in
+ * place rather than drawing anything of their own. */
+#define CODE_CELL       16           /* FONT_W and FONT_H both */
+#define CODE_OK_X       (10 * CODE_CELL)
+#define CODE_OK_Y       (11 * CODE_CELL)
+#define CODE_RATING_X   (12 * CODE_CELL)
+#define CODE_RATING_Y   (13 * CODE_CELL)
+#define CODE_BAD_X      (12 * CODE_CELL)
+#define CODE_BAD_Y      (11 * CODE_CELL)
+/* "Code for Level " is fifteen characters; the number is right-aligned into
+ * the five that follow - image 0x049A9 writes it through ds:0x4E10. */
+#define CODE_NUM_AT     15
+#define CODE_NUM_W      5
+
+/* The two messages, drawn where image 0x04D4D's records put them. It is a
+ * routine because the LOOP draws them and so does the harness that scores
+ * this screen against the original - and a picture composed twice is a
+ * picture that will differ, which is the rule level_play_step exists for. */
+/* Black the strip a line of text is about to go on.
+ *
+ * THE RECORDS SAY WHICH LINES GET THIS. Image 0x04D5A reads the third byte of
+ * each record and turns it into bp - 2 when the byte is zero, 0 when it is
+ * not - and the code screen's records split exactly that way:
+ *
+ *     (14, 7) flag 0   "Enter Code"        drawn over the background
+ *     (14, 9) flag 8   ".........."        the input field
+ *     (10,11) flag 8   "Code for Level"
+ *     (12,13) flag 8   "Rating Mayhem"
+ *     (12,11) flag 8   "Incorrect Code"
+ *
+ * The port already blacked the field's strip - without it the tile showed
+ * between the dots and cost 1,230 pixels - and drew the two messages keyed
+ * like the title. Measured against the original's own refused screen that is
+ * 665 pixels: every glyph slightly wrong and the spaces exact, which is the
+ * signature of the background showing through a glyph's own black rather
+ * than of a wrong string or a wrong place. */
+/* A SPACE IS NOT BLACKED, and that is measured. Clearing the whole strip left
+ * 46 pixels differing in exactly one cell - the space between "Incorrect" and
+ * "Code" - where the original has the background's own ink and this had put
+ * black. So the line is not a box: each character's cell is blacked and the
+ * glyph drawn into it, and a space is passed over entirely.
+ *
+ * Which also says what image 0x04D78 does per character rather than per line,
+ * and matches the port having scored that cell exactly before any of this. */
+static void code_line_clear(menu_screen *m, uint16_t x, uint16_t y,
+                            const char *text)
+{
+    for (uint8_t i = 0; text[i]; i++) {
+        if (text[i] == ' ') continue;
+        uint16_t cx = (uint16_t)(x + i * FONT_W);
+        for (uint16_t yy = y; yy < y + FONT_H && yy < MENU_H; yy++)
+            for (uint16_t xx = cx; xx < cx + FONT_W && xx < BG_DRAWN_W; xx++)
+                m->pix[(size_t)yy * MENU_W + xx] = 0;
+    }
+}
+
+void menu_code_result_draw(menu_screen *m, int accepted)
 {
     char line[40];
+
+    if (!m->gfx) return;
+    if (!accepted) {
+        code_line_clear(m, CODE_BAD_X, CODE_BAD_Y, "Incorrect Code");
+        draw_at(m->pix, m->gfx, m->gfx_len, "Incorrect Code",
+                CODE_BAD_X, CODE_BAD_Y);        /* image 0x049EC: ds:0x4E27 */
+        return;
+    }
+    /* image 0x0499E: the level it named, and the rating - both BELOW the
+     * field, at the record's own cells. */
+    memcpy(line, "Code for Level     ", 20);
+    {
+        /* Image 0x049A9 through image 0x04B68: right-aligned into the five
+         * spaces, which is why the field is spaces rather than a format. */
+        char num[8];
+        int len = snprintf(num, sizeof num, "%u", (unsigned)level_number());
+        if (len > 0 && len <= CODE_NUM_W)
+            memcpy(line + CODE_NUM_AT + (CODE_NUM_W - len), num, (size_t)len);
+    }
+    code_line_clear(m, CODE_OK_X, CODE_OK_Y, line);
+    draw_at(m->pix, m->gfx, m->gfx_len, line, CODE_OK_X, CODE_OK_Y);
+    /* Image 0x049AD: six bytes of ds:0x4C01 indexed by the rating, copied
+     * over "Mayhem" in "Rating Mayhem" - so the word is six wide and padded,
+     * not trimmed. */
+    memcpy(line, "Rating Mayhem", 14);
+    memcpy(line + 7, RATINGS + (level_rating() & 3) * 6, 6);
+    code_line_clear(m, CODE_RATING_X, CODE_RATING_Y, line);
+    draw_at(m->pix, m->gfx, m->gfx_len, line, CODE_RATING_X, CODE_RATING_Y);
+}
+
+menu_action menu_code_run(menu_screen *m)
+{
 
     /* THE PAGE FLIP HAS TO BE POINTED AT THIS SCREEN. Image 0x04C20 puts the
      * CRTC at whatever was just composed; here the composed screen is a
@@ -8162,28 +8278,14 @@ menu_action menu_code_run(menu_screen *m)
     menu_code_entry(m);                         /* image 0x04996 */
 
     if (!level_code_apply(g_code_cells)) {      /* image 0x04999 */
-        /* image 0x049EC: ds:0x4E27 */
-        draw_at(m->pix, m->gfx, m->gfx_len, "Incorrect Code",
-                CODE_DOTS_X, CODE_DOTS_Y);
+        menu_code_result_draw(m, 0);            /* image 0x049EC */
         video_page_flip();                      /* image 0x049F3 */
         for (uint16_t n = 0; n < CODE_HOLD_BAD; n++)
             video_retrace_wait();               /* image 0x049F9 */
         return MENU_EXIT;                       /* image 0x049FE: the menu */
     }
 
-    /* image 0x0499E: the level it named, and the rating. */
-    snprintf(line, sizeof line, "Code for Level %u",
-             (unsigned)(level_number()));
-    draw_at(m->pix, m->gfx, m->gfx_len, line, CODE_DOTS_X, CODE_DOTS_Y);
-    /* Image 0x049AD: six bytes of ds:0x4C01 indexed by the rating. */
-    {
-        char rn[7];
-        memcpy(rn, RATINGS + (level_rating() & 3) * 6, 6);
-        rn[6] = '\0';
-        snprintf(line, sizeof line, "Rating %s", rn);
-    }
-    draw_at(m->pix, m->gfx, m->gfx_len, line,
-            CODE_DOTS_X, (uint16_t)(CODE_DOTS_Y + FONT_H + 4));
+    menu_code_result_draw(m, 1);                /* image 0x0499E */
     video_page_flip();                          /* image 0x049C9 */
     /* image 0x049CC: 0x78 retraces, cut short by a button or a key. */
     for (uint16_t n = 0; n < CODE_HOLD_OK; n++) {
