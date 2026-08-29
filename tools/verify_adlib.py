@@ -60,6 +60,36 @@ before using a capture:
 is a run that never played anything, and comparing it against the port would
 score the detect. A capture is a reference only when the channels line lists
 channels.
+
+AND `--start` IS WHAT REACHES THE MUSIC, not the duration. A 240-second run
+WITHOUT it scores the same six writes as a 90-second one, because the game
+sits on the title screen and its timer ISR never runs - which is exactly what
+`PIT ticks spanned: 0` is saying. With `--auto --start --click-tries 4` the
+same 240 seconds gives 10,512 writes over 10,726 ticks with all nine channels
+addressed.
+
+THE REQUEST LOG MUST START BEFORE THE MUSIC DOES. A capture whose register
+stream begins at tick 0 but whose first REQUEST is at tick 1,391 is only
+partially usable: the port replays the four requests it was given and
+produces 106 writes, the original's stream carries 10,505 because a tune was
+already running before the log's first entry, and this tool says so rather
+than averaging it away -
+
+    register and value agree : 106 of 106  (100.00%)
+    and at the same tick     : 106 of 106  (100.00%)
+    the GAP between writes   : 105 of 105  (100.00%)
+    NOTE: the streams are different lengths (10505 vs 106), so the
+    tail of the longer one was not compared at all.
+
+Those 106 agreeing exactly is worth having and is NOT the 10,333 figure. For
+that the run has to be arranged so every tune the stream contains was asked
+for inside the log - the driver plays what it is asked for, so a stream
+carrying more than the log does is a comparison of two different things by
+construction.
+
+`--adlib-ticks` cannot fix it either: image `adlib_script` rebases the script
+on its own first tick, so 600 and 11,000 produce the identical 106 writes and
+the budget is not what is short.
 """
 import argparse
 import sys
