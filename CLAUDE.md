@@ -196,6 +196,88 @@ Twice here a perfectly accurate number supported a wrong conclusion:
 Both cost a round. **An aggregate score is a poor way to decide what a screen
 contains** - it is a good way to decide whether you are finished.
 
+## Transcribe. Do not implement.
+
+**This is the rule the rest of this file exists to serve.** The failure is
+never that the invented code does not work. It works, it reads well, it passes
+every comparison anyone thought to run, and it is not what the program does -
+and it surfaces later as a player-visible bug nobody can trace.
+
+The temptation has a shape: you know how DOS games of the era work, so you know
+there is a BIOS key buffer, that INT 33h reports buttons in BX, that a screen
+loop polls and returns what was chosen. That knowledge is usually right about
+the era and wrong about this program, and it produces code confident enough
+that nobody goes and reads the routine.
+
+Three of them were in one subsystem here:
+
+- **A key queue.** The port drained SDL events into a ring, with a paragraph
+  explaining that image 0x04D1A "polls the BIOS buffer, which has held anything
+  typed since the last look". It does not touch the BIOS buffer. Image 0x016D4
+  keeps an 83-byte table at ds:0x0F78, one byte per scancode, and image 0x04D1A
+  SCANS it - with an auto-repeat countdown in the low seven bits: it fires at
+  0x93, the first decrement, then not again until the count runs out and
+  reloads with 0x86. The ring repeated at SDL's rate instead of the game's. The
+  comment was honest, detailed, and about a program that does not exist.
+
+- **Four readers of ds:0x14.** Each screen got the button handling it needed,
+  written where it was needed - `view_buttons` with its own state,
+  `menu_buttons` with its own pump, `view_screen_pump` with a callback, and
+  `lem_buttons`. The original has ONE byte and every screen polls it. Four
+  pumps on one queue meant three of them swallowed key RELEASES without telling
+  the handler, so ds:0x1FC7's bit stayed set: Escape ended a level, the fade
+  ate the key-up, and the next level ended the instant it started. A player
+  found it; nothing here could, because every check compares pictures.
+
+- **A shape the original does not have.** `menu_show_until_dismissed(screen)
+  -> what was chosen` is a sensible function and the original has nothing like
+  it. What it has is image 0x04566's tail: fade up, poll two words, fade down,
+  and JUMP to whichever screen the answer names. Written as a returning
+  function with a callback and a click id, the caller could not tell Escape
+  from a click and every briefing played the level.
+
+The rule:
+
+> If the original has a routine for it, go and read that routine. Do not write
+> what you believe it does, however confident the belief and however well the
+> result matches.
+
+**The only exception is IO, and it is narrower than it looks.** The card, the
+PIT, the DAC, the disk and the mouse driver have no counterpart here and must
+be replaced. Things that FEEL like IO and are not:
+
+- a palette is not the card. The original keeps its slots in DGROUP and image
+  0x0553D pushes one at the DAC; only that push was ever the hardware's, which
+  is why image 0x052F4's load and image 0x05329's notch are in `game.c`.
+- a keyboard handler is not the hardware. What port 0x60 produced is; the table
+  image 0x016D4 builds from it, and everything that reads that table, is the
+  game.
+- a loop that waits for a button is not the window. The wait is the game's; the
+  event queue behind the button is the host's.
+
+**How the drift happens**, because it is never a decision:
+
+1. A routine is needed and reading it would take an hour.
+2. Something plausible is written, and it works.
+3. A comment is added explaining the reasoning - which makes it look *more*
+   researched, not less.
+4. Nobody reads the original, because the comment says what it does.
+
+Step 3 is the dangerous one. A confidently worded comment on invented code is
+worse than no comment, because it stops the next reader going to look.
+`sub_1558` gets read; "the original polls a BIOS buffer" does not. This file
+already says a confident wrong name costs more than an honest `sub_1558` - the
+same applies to a confident wrong paragraph.
+
+**The tells that you are implementing:** the comment explains a MECHANISM
+rather than citing an address; it says "the original probably", "this is how
+DOS games", "so that a press is not lost"; the function's shape is a
+convenience the caller wanted; you are reasoning about what would be sensible
+rather than about what is at an offset. Any of those means stop and read the
+routine - nearly always faster than the rounds of measurement that follow a
+wrong implementation, and usually there is no measurement that would have
+caught it at all.
+
 ## Fitting narrows; only reading settles
 
 The menu's last residue is the cleanest example this project has, and it is
@@ -941,8 +1023,9 @@ program will never look at.
   widening, the assembly of a pixel out of four bit-planes, the frees DOS used
   to do, the window loop, and the flat header view `verify_level.py` needs.
   See "WHAT THE HARDWARE USED TO DO" there.
-- **Prefer transcribing to writing.** If a routine does something the original
-  does, go and read the original's. A behavioural match is only as good as the
+- **Prefer transcribing to writing** - see "Transcribe. Do not implement."
+  above, which is this rule with the three cases that cost the most. If a
+  routine does something the original does, go and read the original's. A behavioural match is only as good as the
   states you happened to compare, and this port has shipped several that
   agreed with every capture and were still wrong.
   `reconstruct/tests/provenance.py` counts what is transcribed, what is ours,
