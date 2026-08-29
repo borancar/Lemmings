@@ -5058,6 +5058,24 @@ has nothing to seed with here.
 4. **Prove the unpack by round-tripping** against the PKLITE stub's own output.
    Still the standard, still not done.
 
+- **(done) Five usage blocks specified something that cannot work**, each in
+  the header of a check the port's claims rest on: `verify_dig.py`'s
+  `LEM_DIG_SHAFT` (a flag that never existed), `verify_adlib.py`'s
+  `LEM_OPL_TUNE` (nothing reads it, so the two sides record different tunes
+  and score 0 of 54) and its missing `--start` (without which the run parks on
+  the title and captures six card-detect writes), `verify_data.py`'s
+  `--shots 1` (the emulator's whole shot budget, so the run ends after 1.6 s
+  and the dump is never written), and **`play.py`'s own first line**, which
+  omits the `--` separator that CLAUDE.md already warns about for `--scale`.
+
+  All five were found by accident, one at a time. `tools/check_recipes.py`
+  now finds the sixth on purpose - every `--flag` a recipe hands to the tool
+  it RUNS, against that tool's own `add_argument` calls, across 99 sources
+  including the markdown. It needs no emulator so it runs in the default
+  sweep, and `--self-test` plants a bad recipe to prove it can still catch
+  one. It checks a flag EXISTS and not that its value works: `--shots 1`
+  parses, and so does `--run-seconds 90`.
+
 - **(read) The machine-type menu is mapped AND explained.** Which flags each
   of the four options sets was already written down in
   [docs/machine-types.md](docs/machine-types.md); what those flags CHANGE is
