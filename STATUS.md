@@ -4826,6 +4826,17 @@ has nothing to seed with here.
 
 ## Next
 
+- **The screen is never blanked across a DAC write, and it shows.** Image
+  `0x054C6` and image `0x054B6` set and clear Sequencer register 1 bit 5 -
+  the screen-off bit - around the palette write, gated on `ds:0x200C`, which
+  image `0x01200` sets for PC compatibles. The port writes the palette with
+  the screen live.
+
+  A player sees it as snow in the LEVEL BRIEFING and nowhere else, which fits:
+  the menu programs the DAC once on entry, the level's writes are inside the
+  per-frame swap, and the briefing is the screen that reprograms it mid-life.
+  Cosmetic, but it is a thing the original does and this port does not.
+
 - **THE COMPAT PALETTE IS NOT TRANSCRIBED, and the port shows the terrain's
   oranges through the panel because of it.** A player reported the status text
   and skill buttons coming out orange under `--pc compat`.

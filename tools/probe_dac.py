@@ -33,7 +33,17 @@ FRAME_END = 0x018F          # image offset: the game's own end of frame
 # a fade is a long run of values that never repeat, and a mid-screen swap is
 # two that alternate forever.
 EVERY = 512                 # instructions between samples
-MAX_FRAMES = 196
+# How many of the game's own frames to sample before stopping.
+#
+# RAISE IT FOR A SLOW MACHINE TYPE. 196 is enough on High Performance, where
+# the fade is over in a few frames. On PC compatibles image 0x01200 sets
+# ds:0x200E, which makes the fade block one step per retrace and loop, so 196
+# frames all fall INSIDE the fade and the capture ends on a climbing palette
+# having never seen a settled one - which reads as "compat uploads only the
+# terrain's colours" and is really "the probe stopped too early". Three runs
+# at 120s, 300s and 700s of wall clock produced the identical 173 uploads,
+# because the limit is FRAMES and not seconds.
+MAX_FRAMES = int(os.environ.get("LEM_DAC_FRAMES", "196"))
 
 
 def install(m):
