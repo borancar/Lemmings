@@ -60,7 +60,15 @@ static lem_rgb       g_fade_low_cur[16], g_fade_low_tgt[16];
 
 static int fade_tick(void *ctx, uint8_t *pix)
 {
+    /* A NOTCH EVERY THIRD PASS, not every pass. Image 0x055B7 waits three
+     * retraces between notches - the port stepped once a retrace and faded
+     * three times too fast on every screen that fades. The loop above runs
+     * at one pass per retrace, so the counter here is what makes the rate
+     * the original's rather than the display's. */
+    static uint8_t wait;
     (void)ctx; (void)pix;
+    if (wait) { wait--; return 0; }
+    wait = (uint8_t)(palette_fade_retraces() - 1);   /* image 0x055EE */
     int moved = palette_fade_step(g_fade_cur, g_fade_tgt, 16);
     if (g_split)
         moved |= palette_fade_step(g_fade_low_cur, g_fade_low_tgt, 16);
@@ -1638,6 +1646,9 @@ static void view_fade_out(const uint8_t *pix, uint16_t w, uint16_t h,
         int moved = palette_fade_step(g_fade_cur, g_fade_tgt, 16);
         if (g_split)
             moved |= palette_fade_step(g_fade_low_cur, g_fade_low_tgt, 16);
+        /* Image 0x055EE: three retraces to a notch, the same as fade_tick. */
+        for (uint8_t k = 1; k < palette_fade_retraces(); k++)
+            video_retrace_wait();
 
         void *pixels = NULL;
         int pitch = 0;

@@ -6703,6 +6703,35 @@ static int fade_component(uint8_t *cur8, uint8_t tgt8)
 /* One pass, image 0x056E2: three components of every entry, and a non-zero
  * return while anything is still moving - the original's `bl` flag, which
  * image 0x0562F tests to decide whether to go round again. */
+/* ======================================================================
+ * IMAGE 0x055B7 - THE FADE LOOP, and it does not run at the display's rate.
+ *
+ *     si = table[bl]      the palette buffer being shown
+ *     di = table[bh]      the one it is heading for
+ *   loop:
+ *     0x055E1  call 0x5425   write cx entries from si at the card
+ *     0x055E9  call 0x563E   step si one notch toward di; ZF when arrived
+ *     0x055EC  je            arrived: return
+ *     0x055EE  call 0x1550   \
+ *     0x055F1  call 0x1550    > THREE retraces
+ *     0x055F4  call 0x1550   /
+ *     0x055FA  jmp
+ *
+ * THREE, not one. A notch every third retrace is 23 a second where the port
+ * ran one a retrace and faded at 70 - three times too fast, on every screen
+ * that fades. Nothing here could have seen it: every comparison in this
+ * repository scores INDICES, a fade is a palette, and the one tool that
+ * measures duration (verify_pace.py) times the play loop and the menu loop
+ * rather than the fade inside them.
+ *
+ * The LEVEL's fade is a different rate on purpose - image 0x0031E's branch
+ * calls image 0x01550 ONCE per notch (image 0x00330), so it runs at 70. Two
+ * fades, two rates, both the original's.
+ * ====================================================================== */
+#define FADE_RETRACES 3          /* image 0x055EE..0x055F4 */
+
+uint8_t palette_fade_retraces(void) { return FADE_RETRACES; }
+
 int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n)
 {
     int moved = 0;
@@ -8253,6 +8282,8 @@ static void code_line_clear(menu_screen *m, uint16_t x, uint16_t y,
     }
 }
 
+/* Image 0x0499E when the code was taken and image 0x049EC when it was not -
+ * the two messages, at the cells their records name. See the block above. */
 void menu_code_result_draw(menu_screen *m, int accepted)
 {
     char line[40];
@@ -8279,6 +8310,7 @@ void menu_code_result_draw(menu_screen *m, int accepted)
     draw_at(m->pix, m->gfx, m->gfx_len, line, CODE_RATING_X, CODE_RATING_Y);
 }
 
+/* Image 0x04967's own sequence - see the block above it. */
 menu_action menu_code_run(menu_screen *m)
 {
 

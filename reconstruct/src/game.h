@@ -883,6 +883,9 @@ typedef struct {
 level_hit level_pointer_hit(void);
 
 int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n);
+/* How many retraces image 0x055B7 waits between notches - THREE, where the
+ * level's own fade at image 0x0031E waits one. */
+uint8_t palette_fade_retraces(void);
 
 extern uint16_t lem_mouse_x, lem_mouse_y;
 /* Is the pointer over a lemming - the original's ds:0x1A, which is what
