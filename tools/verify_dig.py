@@ -16,8 +16,8 @@ state word frame by frame.
         --click-tries 4 -- --run-seconds 150
     uv run python tools/verify_dig.py --check out/digtrace.json
 
-WHAT THIS DOES NOT YET CATCH, and it matters
---------------------------------------------
+WHY THE STATE HALF IS NOT ENOUGH, and what fixed it
+---------------------------------------------------
 It compares the lemming's y, animation and state word, and those AGREE with
 both of the bugs a player found put back - the shaft starting a row low, and
 the fall testing the row below. Neither changes y or the animation while the
@@ -25,13 +25,19 @@ digger is still inside solid ground, so state alone cannot separate a digger
 cutting the right rows from one cutting the wrong ones. The control said so:
 reintroduce either bug and this still reports 138 of 138.
 
-What separates them is the TERRAIN, and the reference for that is not right
-yet. Reading plane 3 at image 0x05DC6's own `(y - 0x10) * 0xD0 + (x >> 3)`
-gives whole rows uniformly solid or uniformly empty - which no dug shaft
-looks like - so either the stride, the page or the plane is wrong, and a
-comparison against it would be reporting the instrument. The capture is still
-recorded in the trace, and LEM_DIG_SHAFT=1 turns the comparison on for
-whoever fixes the read.
+What separates them is the TERRAIN, and that reference now works. It did not
+at first: reading plane 3 at image 0x05DC6's own `(y - 0x10) * 0xD0 +
+(x >> 3)` gave whole rows uniformly solid or uniformly empty, which no dug
+shaft looks like. The missing piece was the base - image 0x05DEA adds 0x4A40,
+so the solidity map does not start at the segment - and tools/probe_digger.py
+adds it. The shaft is compared on every run that records one, which is every
+run: there is no flag to turn it on, and an earlier version of this note named
+an LEM_DIG_SHAFT that never existed in the code.
+
+So read the two halves separately below. The shaft is the half with the
+discrimination in it - 1,056 pixels, where the three faults found here differ
+by 34, 14 and 2 - and a run whose trace carries no shaft says so rather than
+scoring the state alone and looking complete.
 
 The first version of this file also filled the patch with 8s and passed with
 both bugs in place, for the same reason in a simpler form. A control is the
