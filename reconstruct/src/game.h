@@ -394,26 +394,11 @@ uint8_t sound_enabled(uint8_t bits);   /* ds:0x25A7 */
 void lem_set_data_dir(const char *dir);
 const char *lem_data_dir(void);
 
-/* THE PORT'S OWN. How many BYTES the audio pump would produce when the
- * device already holds `queued`, aiming for `target`.
- *
- * Split out of sound_pump so the decision can be measured WITHOUT an audio
- * device. The first attempt at that measurement drove the real pump under
- * SDL_AUDIODRIVER=dummy, and the dummy device never drains: a run at three
- * frames a second, which cannot possibly keep up, reported a full buffer and
- * zero underruns. The control failed to fail, which is the only reason the
- * instrument was caught.
- *
- * This is a claim about a RATE, and no comparison of register writes can see
- * it - 10,333 of 10,333 of those agreed while the game played chopped noise. */
-uint32_t sound_fill_bytes(int queued, int target);
 
 /* THE PORT'S OWN. One chunk of the pump's own output, without a device -
  * so the LIVE path can be traced. */
 void sound_build_chunk(int16_t *buf, uint32_t frames);
 
-/* THE PORT'S OWN - the target the game itself pumps to, in bytes. */
-int sound_target_bytes(void);
 
 /* Implemented in sdl_io.c - see "WHAT THE HARDWARE USED TO DO" there. */
 uint8_t widen6(uint8_t v);

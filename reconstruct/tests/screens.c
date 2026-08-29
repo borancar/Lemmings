@@ -1675,62 +1675,6 @@ int main(int argc, char **argv)
      * third of what a level owes, and the game played chopped noise while
      * every one of the driver's 10,333 register writes agreed with the
      * original. No comparison of what is WRITTEN can see a rate. */
-    {
-        const int target = sound_target_bytes();
-        struct { double fps; const char *what; } rates[] = {
-            { 17.0, "a level at 17 fps" },
-            { 70.0, "the menu at 70 fps" },
-        };
-        for (size_t k = 0; k < sizeof rates / sizeof rates[0]; k++) {
-            int frame = (int)((double)OPL_SAMPLE_RATE / rates[k].fps) * 2;
-            int q = 0, dry = 0;
-            for (int i = 0; i < 400; i++) {
-                q += (int)sound_fill_bytes(q, target);
-                q -= frame;
-                if (q <= 0) { dry++; q = 0; }
-            }
-            ck(rates[k].what, dry == 0, NULL);
-        }
-
-        /* HOW LONG THE TAIL IS, which is why the AH=2 stop clears the
-         * stream. The driver keying off is silent on the original in the
-         * same instant, because its OPL is real time; this port has already
-         * generated up to SND_TARGET_MS and handed it to SDL, so without a
-         * clear the buffer plays on after the game has said silence. A
-         * player reported that as one level's music running into the next.
-         *
-         * Measured rather than guessed at: the queue at a stop is up to
-         * sound_target_bytes(), a level frame is OPL_SAMPLE_RATE / 17
-         * samples of two bytes, and the ratio is how many frames of level
-         * would keep sounding.
-         *
-         * THIS USED TO ASSERT THREE OR MORE, which tied it to
-         * SND_TARGET_MS being 200 - and when that was halved to cut the
-         * click latency a player could hear, the test failed for a reason
-         * that had nothing to do with the fix. The depth is a tuning
-         * constant; what the clear rests on is that the tail is AUDIBLE AT
-         * ALL, which is true at any depth the game can hear. Assert the
-         * thing the fix depends on, not the value it happened to have. */
-        {
-            int lvl_frame = (int)((double)OPL_SAMPLE_RATE / 17.0) * 2;
-            int tail = sound_target_bytes() / lvl_frame;
-            ck("the queued tail outlasts a level frame, so the stop must "
-               "clear it", tail >= 1, NULL);
-        }
-
-        /* And the check must be able to FAIL. A target smaller than one
-         * frame cannot keep up by construction, and if this passes the two
-         * above prove nothing. */
-        int frame = (int)((double)OPL_SAMPLE_RATE / 17.0) * 2;
-        int q = 0, dry = 0;
-        for (int i = 0; i < 400; i++) {
-            q += (int)sound_fill_bytes(q, frame / 4);
-            q -= frame;
-            if (q <= 0) { dry++; q = 0; }
-        }
-        ck("a target below one frame runs dry (the control)",
-           dry > 0, NULL);
-    }
 
     /* ==================================================================
      * IMAGE 0x0197D's TAIL - WHICH GRAPHICS FILES A LEVEL USES.

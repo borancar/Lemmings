@@ -82,7 +82,6 @@ static uint16_t      g_w, g_h;
 static uint8_t       g_scale;
 
 static void sound_open(void);
-static void sound_pump(void);
 static void sound_close(void);
 
 static void view_shutdown(void)
@@ -337,14 +336,6 @@ void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
  * rather than build a debt the loop then sprints to repay. */
 void view_screen_pace(void)
 {
-    /* THE AUDIO DEVICE IS FED HERE, on every screen that waits. It used to be
-     * fed inside view_show, the scrollable viewer that was deleted as
-     * unreachable - and the briefing reached it through view_run_anim, so
-     * deleting it left the briefing's loop with nothing topping the queue up.
-     * A screen that waits is exactly where a queue drains, so the pump
-     * belongs with the pacing rather than in one caller. */
-    sound_pump();
-
     static Uint64 due;
     Uint64 period = 1000000000ull / VIEW_REFRESH_HZ;
     Uint64 now = SDL_GetTicksNS();
@@ -709,7 +700,6 @@ int view_level_input(struct level_frame *A, int32_t *scroll_x_p,
         }
     }
     *scroll_x_p = scroll_x;
-    sound_pump();          /* the audio device, not the frame */
     return g_lv_seen_motion;
 }
 
@@ -1064,10 +1054,17 @@ static double  g_tick_acc;             /* samples owed to the next tick */
  * site belonged to. Image 0x02374's fallback beep for the bomber's cloud is
  * AH=3, AL=0x0C on INT 60h, and it became adlib_music(12): a whole tune,
  * started by a bomb, on a setting where music is off. */
+/* EVERY REQUEST IS TAKEN UNDER THE STREAM'S LOCK. The driver's state is read
+ * on SDL's audio thread now, so a request that writes it - and adlib_stop,
+ * which walks the channel array - has to be held against a render happening
+ * at the same moment. The original needed nothing of the kind: the PIT ISR
+ * and the game ran on one processor and DOS turned interrupts off around the
+ * parts that mattered. This is that `cli`. */
 void sound_request(uint8_t vec, uint8_t ah, uint8_t id)
 {
     if (vec != 0x61) return;   /* the fallback device, which this port has not */
     if (!adlib_ready()) return;
+    if (g_snd_stream) SDL_LockAudioStream(g_snd_stream);
     /* THE DRIVER'S OWN DISPATCH, and it is a table of five - adlib.c has an
      * entry transcribed for each. This was an if with two arms, so AH=2
      * fell into the else and asked for TUNE ZERO instead of stopping the
@@ -1100,6 +1097,7 @@ void sound_request(uint8_t vec, uint8_t ah, uint8_t id)
     case 5: adlib_slot5(id);   break;       /* driver +0x0032 */
     default: break;
     }
+    if (g_snd_stream) SDL_UnlockAudioStream(g_snd_stream);
 }
 
 /* image 0x003BB does this the instant it has asked for a tune. */
@@ -1128,36 +1126,19 @@ void sound_tick_now(void)
  * of 10,333. This is the same shape of gap CLAUDE.md records for the level
  * running at sixty frames a second while every frame matched: a rate is not
  * visible to anything that compares frame N against frame N. */
-/* HOW FAR AHEAD OF THE GAME THE AUDIO RUNS, and it is a LATENCY: an effect
- * asked for on the frame of a click is rendered behind whatever is already
- * queued, so this number is how late the click sounds. The original has none
- * of it - image 0x0061's driver writes the OPL and the card sounds at once.
- *
- * 200 was safe and audible as a delay; a player heard it on every click in
- * the play area. THE FLOOR IS THE FRAME RATE: sound_pump runs once a level
- * frame, so the queue has to cover 1000/17 = 59ms plus whatever a late frame
- * costs. 120 is two frames - one may arrive a whole frame late without a gap
- * - and halves what the delay was.
- *
- * Going below one frame needs SDL to PULL instead, through an audio stream
- * callback, so the queue is topped up on the device's clock rather than the
- * game's. That is the way to make it inaudible and it is not done here. */
-#define SND_TARGET_MS 120
-#define SND_CHUNK     1024
+/* How many samples the callback renders at a time - a working buffer, not
+ * a queue depth: SDL asks for an amount and this is the slice it is built
+ * in. */
+#define SND_CHUNK 1024
 
-int sound_target_bytes(void)
-{
-    return (int)((OPL_SAMPLE_RATE * SND_TARGET_MS) / 1000u)
-           * (int)sizeof(int16_t);
-}
-
-uint32_t sound_fill_bytes(int queued, int target)
-{
-    const int chunk = SND_CHUNK * (int)sizeof(int16_t);
-    uint32_t made = 0;
-    while (queued < target) { queued += chunk; made += (uint32_t)chunk; }
-    return made;
-}
+/* THE QUEUE IS SDL'S NOW. There was an SND_TARGET_MS here - how far ahead of
+ * the game to generate - with sound_target_bytes and sound_fill_bytes to
+ * serve it, and a harness probe asking whether the pump kept up at N frames a
+ * second. None of that survives a device that PULLS: it asks for what it
+ * needs and the callback renders exactly that, so there is no target to miss
+ * and no rate to fall behind. They are deleted rather than left passing,
+ * because a check that models a mechanism the code no longer has is worse
+ * than no check - it keeps agreeing. */
 
 /* Build one chunk: tick the driver where the tick falls, render around it.
  *
@@ -1187,19 +1168,38 @@ void sound_build_chunk(int16_t *buf, uint32_t frames)
     }
 }
 
-static void sound_pump(void)
+/* THE DEVICE ASKS, THE WAY THE PIT DID.
+ *
+ * The original never pumps anything: image 0x017C7 is an INT 8 handler and
+ * the PIT calls it ~96.8 times a second whatever the game is doing, and the
+ * OPL sounds continuously in hardware. Nothing in the game loop is involved.
+ *
+ * This port used to PUSH - the game loop topped a queue up once a frame - and
+ * every consequence of that was a bug a player found: a fifth of a second of
+ * latency on a click, sound that froze on any screen whose loop forgot to
+ * pump, and a residue that resumed on the next screen that remembered. Four
+ * scattered pump calls were four chances to forget.
+ *
+ * SDL calls this from its own audio thread when the device wants more, which
+ * is the same relationship the card had with the PIT: sound_build_chunk
+ * already ticks image 0x017C7 at the rate the sample count implies, so the
+ * driver runs on the device's clock and the queue can be as shallow as SDL
+ * likes. */
+static void SDLCALL sound_stream_cb(void *userdata, SDL_AudioStream *stream,
+                                    int additional, int total)
 {
-    if (!g_snd_stream || !adlib_ready()) return;
-
-    const int target = sound_target_bytes();
-    int queued = SDL_GetAudioStreamQueued(g_snd_stream);
-    if (queued < 0) return;                 /* the device went away */
+    (void)userdata; (void)total;
+    if (!adlib_ready() || additional <= 0) return;
 
     int16_t buf[SND_CHUNK];
-    while (queued < target) {
-        sound_build_chunk(buf, SND_CHUNK);
-        SDL_PutAudioStreamData(g_snd_stream, buf, (int)sizeof buf);
-        queued += (int)sizeof buf;
+    while (additional > 0) {
+        uint32_t frames = SND_CHUNK;
+        if ((int)(frames * sizeof(int16_t)) > additional)
+            frames = (uint32_t)additional / sizeof(int16_t);
+        if (frames == 0) break;
+        sound_build_chunk(buf, frames);
+        SDL_PutAudioStreamData(stream, buf, (int)(frames * sizeof(int16_t)));
+        additional -= (int)(frames * sizeof(int16_t));
     }
 }
 
@@ -1240,8 +1240,11 @@ static void sound_open(void)
     want.freq = (int)OPL_SAMPLE_RATE;
     want.format = SDL_AUDIO_S16;
     want.channels = 1;
+    /* The callback is handed to SDL_OpenAudioDeviceStream, so the device has
+     * a source from the moment it exists: SDL calls it on its own thread when
+     * it wants more, and nothing in the game loop touches the queue. */
     g_snd_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
-                                             &want, NULL, NULL);
+                                             &want, sound_stream_cb, NULL);
     if (g_snd_stream)
         SDL_ResumeAudioStreamDevice(g_snd_stream);
 }
