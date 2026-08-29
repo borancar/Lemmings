@@ -190,6 +190,15 @@ static view_tick g_show_tick;
 static void     *g_show_ctx;
 static uint8_t  *g_show_pix;
 
+/* WHAT THE HARDWARE USED TO DO. The composed buffer the window shows, and the
+ * routine that fills it each pass. game.c's level_show aims these at its own
+ * frame composer; the original had no such indirection because it wrote
+ * straight into the page the CRTC was already pointing at. */
+void view_show_hook(view_tick tick, void *ctx, uint8_t *pix)
+{
+    g_show_tick = tick; g_show_ctx = ctx; g_show_pix = pix;
+}
+
 int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
               uint16_t view_w, uint16_t view_h,
               const lem_rgb *palette, const char *title,
@@ -464,23 +473,6 @@ int view_run(const canvas *c, const lem_rgb *palette, const char *title,
  * CANVAS rather than the screen, because view_show does the scrolling - so the
  * `scroll` the original applies at image 0x07BCF is zero here and the viewport
  * supplies it instead. */
-struct level_frame {
-    level        lv;
-    level_anim   st[LEVEL_ANIM_MAX];
-    const uint8_t *sec;
-    uint32_t     len;
-    canvas       *from;      /* the terrain each frame starts from - NOT
-                              * const, a digger removes some of it */
-    const uint8_t *lem_sec;  /* main.dat section 0, the lemming sprites */
-    uint32_t     lem_len;
-    const uint8_t *pan_sec;  /* main.dat section 2, the panel artwork */
-    uint32_t     pan_len;
-    uint8_t     *panel;      /* PANEL_LINE_W x PANEL_ART_H, rebuilt a frame */
-    lemming      lem[LEMMING_MAX];
-    uint8_t      released;   /* how many have come out of the trapdoor */
-    uint16_t     view_x;     /* where the play area has scrolled to */
-    int          stepped;    /* the first frame is the state before a step */
-};
 
 /* THE LEVEL'S SCREEN - mode 0x0D is 320x200 and it is two things stacked:
  * the play area at rows 0..159 and the control panel at 160..199. This port
@@ -811,7 +803,7 @@ void video_palette_upload(void)
         if (e.type == SDL_EVENT_QUIT) view_quit_now();
 }
 
-static int level_run(struct level_frame *A, const canvas *c,
+int level_run(struct level_frame *A, const canvas *c,
                      const lem_rgb *palette, const char *title, uint8_t scale)
 {
     if (scale < 1) scale = 1;
@@ -2201,49 +2193,6 @@ int level_show_briefing(const char *dir, const level *lv,
 }
 
 
-/* One frame of a level, in the order image 0x019C runs it: the release at
- * image 0x030A6, the simulation at image 0x01F19, the objects at image
- * 0x07BB8, and the lemmings LAST at image 0x01BC.
- *
- * This used to step the objects and nothing else, so the game you could
- * actually play showed an empty level while every frame-by-frame measurement
- * passed - the measurements go through lemdev, which drives the release and
- * the simulation itself. A harness that exercises what the game does not is
- * the failure this whole method is supposed to prevent, so the two now call
- * the same routines in the same order. */
-static int level_frame_tick(void *ctx, uint8_t *pix)
-{
-    struct level_frame *a = (struct level_frame *)ctx;
-    uint16_t w = a->from->w, h = a->from->h;
-
-    memcpy(pix, a->from->pix, (size_t)w * h);
-    /* The FIRST frame is the level as it stands before anything moves, and
-     * every frame after it is one step on. Stepping before the first draw
-     * instead put the whole game one frame ahead of the original: measured,
-     * the game's frame N matched the original's N+1 to 28 pixels - the mouse
-     * cursor - and its own N to 300. The original's loop at image 0x019C
-     * steps and then draws, but its first captured frame at image 0x018F is
-     * the one before any of that. */
-    if (a->stepped) {
-        level_play_step(a->st, &a->lv, a->lem, &a->released,
-                        a->from->pix, w, h);
-        /* Image 0x001E7 and image 0x001FA: everyone released and none
-         * active, or the clock run out. Which of the two it was does not
-         * decide win or lose - that is the saved count against the level's
-         * requirement. Both go to image 0x002B3, which does not end the
-         * loop: it arms the fade and lets it run. */
-        if (!g_level_over && level_over(&a->lv, a->released,
-                                        lemmings_live(a->lem, a->released)))
-            level_end_begin();                  /* image 0x002B3 */
-    }
-    a->stepped = 1;
-    level_play_draw(a->st, &a->lv, a->sec, a->len,
-                    a->lem_sec, a->lem_len, a->lem, a->released,
-                    pix, w, h, a->view_x);
-    return 1;
-}
-
-
 /* THE RESULTS SCREEN, image 0x046EB - the port's window for it.
  *
  * The composition is game.c's; this is the part the hardware used to do:
@@ -2381,141 +2330,3 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
     return out;
 }
 
-/* THE LEVEL ITSELF - IMAGE 0x00455, the level's set-up, and then image
- * 0x0454C's `jmp 0x000FB`, the loop whose frame is written out above
- * level_play_step.
- *
- *     0x00458  clear ss:0x42B2, 0x642 bytes   the trigger map
- *     0x00462  call 0x00FB2   int 10h ax=0x8D - mode 0x0D
- *     0x00465  call 0x052F4   the level palette, branching on ds:0x1F7C
- *     0x00468  call 0x015AD   the PIT divisor into ds:0x1FC9
- *     0x0046B  call 0x036B6   the header into the running state, and the
- *                             terrain composed - it calls image 0x0368E to
- *                             clear the master at 0x4A40 first
- *     0x0046E  if ds:0x1F73 != 0xFF: INT 33h AX=4 to (0x96, 0x64)
- *     0x00480  call 0x0410F   clear ds:0x0EA8, the on-screen column table
- *
- * It takes the level ALREADY LOADED, because image 0x0197D ran before the
- * briefing and its record is what both of them read.
- *
- * WHAT MAPS WHERE. The trigger map is level_triggers_set; the mode and the
- * palette are this file's, being what the card used to do; the divisor is
- * LEVEL_FRAME_HZ, which paces the loop; image 0x036B6's two halves are the
- * level_*_reset calls below and render_terrain. Image 0x0410F's table is
- * rebuilt per frame rather than here - see the note at image 0x07070.
- *
- * The pointer centring is NOT missing. Image 0x0046E skips it when ds:0x1F73
- * is 0xFF, which is the mouse, and this port always uses the mouse - so the
- * original does not do it either in the configuration being reconstructed.
- *
- * AND THE MASTER IS COMPOSED TWICE, once here and once for the briefing's
- * preview at image 0x0394F, which calls the same image 0x0368E. That is worth
- * stating because the opposite was believed here for a while: that the
- * briefing composed it and the play loop only windowed it through image
- * 0x07900. Image 0x036B6's first instruction refutes that in one line, and a
- * restructuring of this file was very nearly done on the strength of it. */
-int level_show(const char *dir, const level *lv, uint8_t scale,
-               const char **err)
-{
-    char path[1024];
-    dat_file gfx;
-    ground g;
-    int rc = 0;
-
-    /* image 0x0197D's tail names both files and says which kind this is. */
-    char gname[16], xname[16];
-    int special = level_graphics_names(lv, gname, sizeof gname,
-                                       xname, sizeof xname);
-    if (special < 0) { if (err) *err = "level names too long"; return -1; }
-    snprintf(path, sizeof(path), "%s/%s", dir, gname);
-    if (ground_load(path, &g, err) != 0) return -1;
-    if (special) {
-        /* NOT TRANSCRIBED - the VGASPEC terrain build, image 0x03742. The
-         * name is right now and the file exists; what is missing is the
-         * routine that lays one whole picture down as the terrain instead of
-         * composing pieces. Refusing here is deliberate: loading vgagr0.dat
-         * for these four is what the port did before, and it renders the
-         * wrong graphics set without saying so. */
-        if (err) *err = "VGASPEC level - image 0x03742 not transcribed";
-        return -1;
-    }
-    snprintf(path, sizeof(path), "%s/%s", dir, xname);
-    if (dat_load(path, &gfx, err) != 0) return -1;
-    if (gfx.count < 1) { dat_free(&gfx); if (err) *err = "no terrain section";
-                         return -1; }
-
-    canvas c, terrain;
-    if (canvas_init(&c) != 0 || canvas_init(&terrain) != 0) {
-        dat_free(&gfx); if (err) *err = "out of memory"; return -1;
-    }
-    /* Terrain into a pristine copy. The original never bakes the objects in -
-     * it animates them at display time, images 0x07BB8 and 0x07C0A - which is
-     * why tools/prove.sh composes terrain alone and matches to the pixel. So
-     * the terrain is composed once and each frame starts from it. */
-    rc = render_terrain(&terrain, lv, &g, gfx.sections[0].data,
-                        gfx.sections[0].size, err);
-    if (rc == 0 && gfx.count >= 2) {
-        static struct level_frame A;
-        static dat_file mainf;
-        int have_main = 0;
-        A.lv = *lv; A.sec = gfx.sections[1].data; A.len = gfx.sections[1].size;
-        A.from = &terrain;
-        A.lem_sec = NULL; A.lem_len = 0; A.released = 0;
-        A.pan_sec = NULL; A.pan_len = 0;
-        A.view_x = lv->start_x;
-        A.stepped = 0;
-        level_saved_reset();
-        level_triggers_set(&A.lv, &g);
-        A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
-
-        /* The lemming sprites live in main.dat, not in the level's own
-         * graphics - so the level path has to open it too. */
-        snprintf(path, sizeof(path), "%s/main.dat", dir);
-        {
-            const char *e2 = "unknown error";
-            if (dat_load(path, &mainf, &e2) == 0
-                    && mainf.count > LEM_SPRITE_SECTION) {
-                A.lem_sec = mainf.sections[LEM_SPRITE_SECTION].data;
-                A.lem_len = mainf.sections[LEM_SPRITE_SECTION].size;
-                have_main = 1;
-                if (mainf.count > PANEL_FONT_SECTION) {
-                    A.pan_sec = mainf.sections[PANEL_FONT_SECTION].data;
-                    A.pan_len = mainf.sections[PANEL_FONT_SECTION].size;
-                }
-            }
-        }
-
-        level_anim_init(A.st, &A.lv, &g);
-        /* One step before the first frame. Measured: without it the exit's
-         * flames are one animation frame behind the original's at every
-         * frame checked. */
-        level_anim_step(A.st, &A.lv);
-        /* image 0x04836 reads the level's extended graphics set. */
-        music_set_level(&A.lv);
-        level_start_reset();
-        level_release_reset(&A.lv);
-        level_status_reset(&A.lv);
-        lemmings_reset(A.lem);
-
-        /* The level gets its own screen - 320x200, play area over panel -
-         * rather than view_run_anim's window of the play area alone. */
-        g_show_tick = level_frame_tick; g_show_ctx = &A; g_show_pix = c.pix;
-        level_run(&A, &c, g.palette, "PC Lemmings", scale);
-        g_show_tick = NULL; g_show_ctx = NULL; g_show_pix = NULL;
-        /* ds:0x40 through its own routine, image 0x03AF4 - the panel writes
-         * it every frame and this is the last one. The port kept a second
-         * copy in a global of its own, which main.c then read instead.
-         *
-         * ds:0x4F needs nothing here any more: image 0x002B3 sets it inside
-         * the loop, which is where the original sets it. */
-        level_status_in(level_saved_percent(&A.lv));
-        free(A.panel); A.panel = NULL;
-        if (have_main) dat_free(&mainf);
-    } else if (rc == 0) {
-        view_run(&terrain, g.palette, "PC Lemmings", lv->start_x, scale);
-    }
-    canvas_free(&c);
-    canvas_free(&terrain);
-    dat_free(&gfx);
-    return rc;
-}

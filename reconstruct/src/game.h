@@ -1110,6 +1110,31 @@ int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
  * anything changed, so the texture is only re-uploaded when it has to be. */
 typedef int (*view_tick)(void *ctx, uint8_t *pix);
 
+struct level_frame {
+    level        lv;
+    level_anim   st[LEVEL_ANIM_MAX];
+    const uint8_t *sec;
+    uint32_t     len;
+    canvas       *from;      /* the terrain each frame starts from - NOT
+                              * const, a digger removes some of it */
+    const uint8_t *lem_sec;  /* main.dat section 0, the lemming sprites */
+    uint32_t     lem_len;
+    const uint8_t *pan_sec;  /* main.dat section 2, the panel artwork */
+    uint32_t     pan_len;
+    uint8_t     *panel;      /* PANEL_LINE_W x PANEL_ART_H, rebuilt a frame */
+    lemming      lem[LEMMING_MAX];
+    uint8_t      released;   /* how many have come out of the trapdoor */
+    uint16_t     view_x;     /* where the play area has scrolled to */
+    int          stepped;    /* the first frame is the state before a step */
+};
+
+/* image 0x00455 and the loop at image 0x000FB - see game.c. level_run is
+ * sdl_io.c's: the window, its events and the pointer. */
+int  level_frame_tick(void *ctx, uint8_t *pix);
+int  level_run(struct level_frame *A, const canvas *c,
+               const lem_rgb *palette, const char *title, uint8_t scale);
+void view_show_hook(view_tick tick, void *ctx, uint8_t *pix);
+
 /* The same, but animated. `pix` is written by `tick` rather than being fixed.
  * The menu needs this and nothing else does: its banner scrolls. */
 int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
