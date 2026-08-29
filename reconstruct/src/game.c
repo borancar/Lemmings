@@ -431,6 +431,13 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
         o->id = e[5];
         o->no_overwrite    = (uint8_t)((e[6] & 0x80) != 0);
         o->only_on_terrain = (uint8_t)((e[6] & 0x40) != 0);
+        /* DEAD IN EVERY SHIPPED LEVEL, and now known to be. e[7] is 0x0F
+         * in all 454 objects of all eighty levels, so this is never true.
+         * Left as it is rather than removed: it came from the published
+         * format description, the original's own use of the byte is bp's
+         * low bits, and "no level exercises it" is not the same as "it is
+         * wrong". Recorded so the next reader does not spend time on a rule
+         * nothing can reach. */
         o->upside_down     = (uint8_t)(e[7] == 0x8F);
         /* Image 0x039A0 and image 0x039A6: the two bytes as a word, bit 0
          * masked off, which is what the blitter is handed. */
@@ -637,6 +644,20 @@ int blit_clips(uint16_t bp) { return (bp & (BLIT_CLIP_X | BLIT_CLIP_Y)) != 0; }
  *                  -> NOT TRANSCRIBED, and it is the one mode with no
  *                  counterpart here. Nothing in the port's own composition
  *                  fills planes with ones.
+ *
+ *                  AND NOTHING IN THE SHIPPED GAME ASKS FOR IT. The only
+ *                  caller that could is image 0x03981's object pass, whose
+ *                  bp comes from the level file - and across all eighty
+ *                  levels, 454 objects, e[7] is 0x0F EVERY TIME and e[6] is
+ *                  one of 0x00, 0x40, 0x80 or 0xC0. Bit 5 is never set. Of
+ *                  the other fourteen call sites, one sets an immediate with
+ *                  bit 5 clear (image 0x04F0A, bp = 0xF42, which is bit 6 -
+ *                  an erase) and the rest compute bp from data that has just
+ *                  been shown not to contain it.
+ *
+ *                  So image 0x08FF7 is unreached in this build. That is a
+ *                  measurement over the whole game, not a guess from the
+ *                  levels this repository happens to compare.
  *
  *                  REACHED ONLY BY THE DISPATCH, at image 0x08902. An
  *                  earlier note here said it was also called directly from
@@ -7678,7 +7699,21 @@ void level_anim_draw(const level_anim *st, const level *lv,
  *                                           not out of the loop
  *     0x0399A  bx = [di+2]<<8 | [di+3]      y
  *     0x039A0  dx = [di+6]<<8 | [di+7]      the LVL's modifier bytes
- *     0x039A6  bp = dx & 0xFFFE             AND THEY ARE THE BLIT'S FLAGS.
+ *     0x039A6  bp = dx & 0xFFFE             AND THEY ARE THE BLIT'S FLAGS,
+ *                                           and the level files pin the
+ *                                           value: e[7] is 0x0F in all 454
+ *                                           objects of all eighty levels, so
+ *                                           the low byte is always 0x0E and
+ *                                           e[6] is 0x00, 0x40, 0x80 or
+ *                                           0xC0. An object with e[6] = 0x80
+ *                                           therefore blits with bp = 0x800E
+ *                                           - which is exactly the value the
+ *                                           blit probe caught, so the
+ *                                           arithmetic and the observation
+ *                                           agree without either being fitted
+ *                                           to the other. The 0x0E is bits 3
+ *                                           and 2: EVERY object blit asks
+ *                                           image 0x08846 for both clips.
  *                                           Bit 15 is e[6] & 0x80, the
  *                                           no-overwrite level_parse reads;
  *                                           the probe caught bp = 0x800E, so

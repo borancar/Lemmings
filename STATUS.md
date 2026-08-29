@@ -4714,8 +4714,27 @@ has nothing to seed with here.
   of the five modes as a routine head, because they are jump targets inside
   the blitter. An earlier note claimed a direct caller at image 0x068FA and
   that was a scratch byte-scan for `E8` matching bytes that are not an
-  instruction boundary - image 0x068FB is a `cli`. So the question is which
-  CALLER of 1010:8822 sets bp bit 5.
+  instruction boundary - image 0x068FB is a `cli`.
+
+  **AND NOTHING ASKS FOR IT.** There are fifteen far calls to 1010:8822. One
+  sets an immediate bp with bit 5 clear (image 0x04F0A, bp = 0xF42, an
+  erase); the rest compute it, and the only one whose bp comes from data is
+  image 0x03981's object pass. Across **all eighty levels, 454 objects**,
+  `e[7]` is `0x0F` every time and `e[6]` is one of 0x00, 0x40, 0x80, 0xC0 -
+  bit 5 never set. So image 0x08FF7 is unreached in this build, measured over
+  the whole game rather than over the levels this repository compares.
+
+  Two things fell out of that scan. An object with `e[6] = 0x80` blits with
+  **bp = 0x800E**, which is exactly the value the blit probe caught - the
+  arithmetic and the observation agree without either being fitted to the
+  other. And the `0x0E` is bits 3 and 2, so **every object blit asks for both
+  clips**.
+
+- **`level_object.upside_down` is dead in every shipped level.** The port
+  reads it as `e[7] == 0x8F` and `e[7]` is `0x0F` in all 454 objects. Left in
+  place - it came from the published format description, and "no level
+  exercises it" is not "it is wrong" - but recorded so nobody spends time on
+  a rule nothing can reach.
 
 - **The digger is drawn now, and 40 pixels short.** Image 0x059BB's build
   table settles its geometry - three planes of fourteen rows, 84 bytes a
