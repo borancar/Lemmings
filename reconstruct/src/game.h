@@ -1134,6 +1134,10 @@ struct level_frame {
 /* image 0x00455 and the loop at image 0x000FB - see game.c. level_run is
  * sdl_io.c's: the window, its events and the pointer. */
 int  level_frame_tick(void *ctx, uint8_t *pix);
+/* image 0x03EF9 - a click on the PANEL. The play area is image 0x03150 and
+ * not this routine; see game.c. */
+void level_play_click(struct level_frame *A);   /* image 0x03150 */
+void level_panel_click(struct level_frame *A, int32_t *scroll_x);
 int  level_run(struct level_frame *A, const canvas *c,
                const lem_rgb *palette, const char *title, uint8_t scale);
 void view_show_hook(view_tick tick, void *ctx, uint8_t *pix);

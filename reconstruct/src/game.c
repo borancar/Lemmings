@@ -11520,3 +11520,139 @@ int ground_load(const char *path, ground *g, const char **err)
     g->palette[7] = g->palette[8];      /* entry 7 tracks custom[0] */
     return 0;
 }
+/* IMAGE 0x03150 - A CLICK IN THE PLAY AREA, and it is a routine of its own.
+ *
+ * The frame loop calls it directly, twice a pass - image 0x001AD and image
+ * 0x001C5 - and image 0x03EF9 never reaches it: that routine leaves at image
+ * 0x03F04 for anything above the panel. The port had the two behind one hit
+ * enum, which made them read as arms of a decision the original does not make.
+ */
+void level_play_click(struct level_frame *A)
+{
+
+    /* Image 0x03150 opens on the pause flag: a click on a lemming
+     * assigns nothing while the game is stopped. */
+    if (level_paused() == 0xFF) return;
+    /* Image 0x03170: a skill is selected, so find what is under the
+     * pointer and give it one. */
+    /* Image 0x0320D opens by testing the count and image 0x03224
+     * spends it. The count lives in game.c now, because the PANEL has
+     * to draw the same number the assignment reads - it was drawing the
+     * level header's instead, which never moves. */
+    /* Image 0x03180 dispatches the selected button to its handler, and
+     * each opens by testing its own count - see level_skill_left. */
+    /* THE DISPATCH AND THE SOUND ARE game.c's - image 0x03150's, and
+     * every handler's own two exits. This used to play sound 0x04 here,
+     * on any click where the count was non-zero, so an empty patch of
+     * sky and a lemming that already had the skill both clicked. A
+     * player found it; see level_assign. */
+    if (level_skill_left(level_skill())) {
+        int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
+        if (k >= 0)
+            level_assign(&A->lem[k], level_skill());   /* image 0x03150 */
+    }
+}
+
+/* IMAGE 0x03EF9 - WHAT A CLICK ON THE PANEL DOES.
+ *
+ *     0x03EF9  ax = ds:0x12 + 8
+ *     0x03EFF  cmp 0xC0 / jge 0x03F07     below that is the PLAY AREA, and
+ *     0x03F04  jmp 0x03FE9                this routine does nothing with it
+ *     0x03F07  ax = ds:0x10 - 8
+ *     0x03F0D  cmp 0xD0 / jl 0x03F15
+ *     0x03F12  jmp 0x03F92                at or past it: the MINIMAP
+ *     0x03F15  cmp ds:0x84, 0 / jne away  the repeat divider gates the panel
+ *     0x03F1F  ax >>= 4                   the button, sixteen pixels each
+ *     0x03F27  cmp al, 2 / jge 0x03F2E
+ *     0x03F2B  jmp 0x04032                0 and 1 are THE RELEASE RATE, and
+ *                                         they reach it without the latch
+ *     0x03F2E  cmp ds:0x62, 0xFF / jne    THE LATCH: this press was handled
+ *     0x03F38  ds:0x62 = 0xFF             claim it
+ *     0x03F3D  al == 0x0A -> 0x04018      pause
+ *     0x03F44  al == 0x0B -> 0x03FEF      the nuke
+ *     0x03F4B  al == 0x0C -> 0x03FEE      a bare ret
+ *     0x03F52  cmp ds:0x2B, 0xFF          paused: no skill is selected
+ *     0x03F5C  cmp ds:0x84, 0             the divider again
+ *     0x03F66  ds:0x82 = al               the skill
+ *
+ * THE PLAY AREA IS NOT THIS ROUTINE'S. Image 0x03F04 leaves, and the click on
+ * a lemming is image 0x03150, which the frame loop calls for itself at image
+ * 0x001AD and image 0x001C5. The port had both in one function behind a hit
+ * enum of its own, so the two halves looked like arms of a decision the
+ * original never makes; they are kept apart here and level_play_click carries
+ * the second.
+ *
+ * TWO GATES ARE THE PORT'S TO SUBSTITUTE, and saying so is the point of
+ * naming them. ds:0x84 is the repeat divider and ds:0x62 the press latch, and
+ * both exist because the original POLLS ds:0x14 every frame: without them a
+ * held button would fire on all of them. This port is handed an edge by the
+ * window layer, so the latch is that edge - which is also why the rate
+ * buttons, the two that deliberately skip the latch at image 0x03F2E so they
+ * CAN repeat, are driven once a frame while held. Substituted, not missing;
+ * an edge is what the latch was for.
+ */
+void level_panel_click(struct level_frame *A, int32_t *scroll_x)
+{
+    /* Image 0x03EF9 decides what was clicked. */
+    level_hit h = level_pointer_hit();
+    if (h.what == LEVEL_HIT_MINIMAP)
+        *scroll_x = h.scroll;
+    else if (h.what == LEVEL_HIT_PLAY) {
+        /* image 0x03F04 LEAVES here - see level_play_click, which is the
+         * frame loop's own call at image 0x001AD, not this routine's. */
+        level_play_click(A);
+    }
+    else if (h.what == LEVEL_HIT_BUTTON) {
+        /* NOT EVERY BUTTON IS A SKILL, and the port had treated all thirteen
+         * as one - clicking the nuke selected "skill 11", which nothing
+         * dispatches, and quietly left the panel with no skill armed.
+         *
+         * Image 0x03F27 refuses anything below 2 outright, then image
+         * 0x03F3D..0x03F4D sends 10, 11 and 12 away before image 0x03F66
+         * stores the rest in ds:0x82:
+         *
+         *     0, 1   image 0x04032   THE RELEASE RATE - transcribed now
+         *     2..9   image 0x03F66   the eight skills
+         *     10     image 0x04018   pause - NOT TRANSCRIBED
+         *     11     image 0x03FEF   THE NUKE
+         *     12     image 0x03FEE   nothing at all, a bare `ret`
+         *
+         * The two marked not transcribed have their addresses here rather
+         * than a guess in their place; pause in particular is not a button
+         * on its own but a flag the whole frame loop reads (image 0x01F19
+         * returns early on it), so it is a change to the loop and not to
+         * this switch. */
+        /* BUTTONS 0 AND 1 ARE THE RELEASE RATE, and image 0x03F27 sends
+         * them there rather than refusing them: `cmp al,2 / jge 0x3f2e /
+         * jmp 0x4032`. This line read that as "refuses anything below 2
+         * outright", so the panel's minus and plus did nothing at all. A
+         * player found it.
+         *
+         * They also skip the latch at image 0x03F2E that the skill buttons
+         * take, which is what lets a held one repeat in the original. */
+        /* A BUTTON MAKES A NOISE whichever one it is - image 0x03F75 tests
+         * ds:0x25A7 bits 0-1 and image 0x03F77 asks for sound 0x01 with
+         * AH=4, before the dispatch below sorts out which button it was. */
+        if (sound_enabled(3))             /* image 0x03F75 */
+            sound_request(0x61, 4, 0x01);       /* image 0x03F77 */
+        if (h.button < 2) {               /* image 0x03F27 */
+            level_rate_click(h.button);   /* image 0x04032: 0 down, 1 up */
+            return;
+        }
+        if (h.button == 12) return;       /* image 0x03FEE: a bare `ret` */
+        if (h.button == 10) {             /* image 0x04041 */
+            level_pause_click();          /* image 0x04018 */
+            return;
+        }
+        if (h.button == 11) {             /* image 0x03F48 */
+            level_nuke_click();           /* image 0x03FEF */
+            return;
+        }
+        /* Image 0x03F52: no skill is selected while paused either. */
+        if (level_paused() == 0xFF) return;
+        /* The highlight sits one slot on from the number it belongs to -
+         * PANEL_SEL_X0 is 16 where the numbers start at PANEL_ART_X, 32 -
+         * so the box for button k is drawn at k + 1. */
+        level_skill_select(h.button);     /* image 0x03F66: ds:0x82 */
+    }
+}

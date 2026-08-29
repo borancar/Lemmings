@@ -563,89 +563,6 @@ static void script_load(const char *path)
  * and a real one go through this same function - written out twice, the two
  * would differ, which is the fault that had the window path showing an empty
  * cave while every harness frame matched. */
-static void level_click(struct level_frame *A, int32_t *scroll_x)
-{
-    /* Image 0x03EF9 decides what was clicked. */
-    level_hit h = level_pointer_hit();
-    if (h.what == LEVEL_HIT_MINIMAP)
-        *scroll_x = h.scroll;
-    else if (h.what == LEVEL_HIT_PLAY) {
-        /* Image 0x03150 opens on the pause flag: a click on a lemming
-         * assigns nothing while the game is stopped. */
-        if (level_paused() == 0xFF) return;
-        /* Image 0x03170: a skill is selected, so find what is under the
-         * pointer and give it one. */
-        /* Image 0x0320D opens by testing the count and image 0x03224
-         * spends it. The count lives in game.c now, because the PANEL has
-         * to draw the same number the assignment reads - it was drawing the
-         * level header's instead, which never moves. */
-        /* Image 0x03180 dispatches the selected button to its handler, and
-         * each opens by testing its own count - see level_skill_left. */
-        /* THE DISPATCH AND THE SOUND ARE game.c's - image 0x03150's, and
-         * every handler's own two exits. This used to play sound 0x04 here,
-         * on any click where the count was non-zero, so an empty patch of
-         * sky and a lemming that already had the skill both clicked. A
-         * player found it; see level_assign. */
-        if (level_skill_left(level_skill())) {
-            int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
-            if (k >= 0)
-                level_assign(&A->lem[k], level_skill());   /* image 0x03150 */
-        }
-    }
-    else if (h.what == LEVEL_HIT_BUTTON) {
-        /* NOT EVERY BUTTON IS A SKILL, and the port had treated all thirteen
-         * as one - clicking the nuke selected "skill 11", which nothing
-         * dispatches, and quietly left the panel with no skill armed.
-         *
-         * Image 0x03F27 refuses anything below 2 outright, then image
-         * 0x03F3D..0x03F4D sends 10, 11 and 12 away before image 0x03F66
-         * stores the rest in ds:0x82:
-         *
-         *     0, 1   image 0x04032   THE RELEASE RATE - transcribed now
-         *     2..9   image 0x03F66   the eight skills
-         *     10     image 0x04018   pause - NOT TRANSCRIBED
-         *     11     image 0x03FEF   THE NUKE
-         *     12     image 0x03FEE   nothing at all, a bare `ret`
-         *
-         * The two marked not transcribed have their addresses here rather
-         * than a guess in their place; pause in particular is not a button
-         * on its own but a flag the whole frame loop reads (image 0x01F19
-         * returns early on it), so it is a change to the loop and not to
-         * this switch. */
-        /* BUTTONS 0 AND 1 ARE THE RELEASE RATE, and image 0x03F27 sends
-         * them there rather than refusing them: `cmp al,2 / jge 0x3f2e /
-         * jmp 0x4032`. This line read that as "refuses anything below 2
-         * outright", so the panel's minus and plus did nothing at all. A
-         * player found it.
-         *
-         * They also skip the latch at image 0x03F2E that the skill buttons
-         * take, which is what lets a held one repeat in the original. */
-        /* A BUTTON MAKES A NOISE whichever one it is - image 0x03F75 tests
-         * ds:0x25A7 bits 0-1 and image 0x03F77 asks for sound 0x01 with
-         * AH=4, before the dispatch below sorts out which button it was. */
-        if (sound_enabled(3))             /* image 0x03F75 */
-            sound_request(0x61, 4, 0x01);       /* image 0x03F77 */
-        if (h.button < 2) {               /* image 0x03F27 */
-            level_rate_click(h.button);   /* image 0x04032: 0 down, 1 up */
-            return;
-        }
-        if (h.button == 12) return;       /* image 0x03FEE: a bare `ret` */
-        if (h.button == 10) {             /* image 0x04041 */
-            level_pause_click();          /* image 0x04018 */
-            return;
-        }
-        if (h.button == 11) {             /* image 0x03F48 */
-            level_nuke_click();           /* image 0x03FEF */
-            return;
-        }
-        /* Image 0x03F52: no skill is selected while paused either. */
-        if (level_paused() == 0xFF) return;
-        /* The highlight sits one slot on from the number it belongs to -
-         * PANEL_SEL_X0 is 16 where the numbers start at PANEL_ART_X, 32 -
-         * so the box for button k is drawn at k + 1. */
-        level_skill_select(h.button);     /* image 0x03F66: ds:0x82 */
-    }
-}
 
 /* THE FUNCTION KEYS, image 0x03E6F.
  *
@@ -954,7 +871,7 @@ int level_run(struct level_frame *A, const canvas *c,
                 seen_motion = 1;
             } else if (act->what == SCRIPT_DOWN) {
                 held = 1;
-                level_click(A, &scroll_x);
+                level_panel_click(A, &scroll_x);
             } else if (act->what == SCRIPT_UP) {
                 held = 0;
             }
@@ -1026,7 +943,7 @@ int level_run(struct level_frame *A, const canvas *c,
                         lem_buttons |= 2;
                     if (e.button.button == SDL_BUTTON_LEFT) {
                         held = 1;
-                        level_click(A, &scroll_x);      /* image 0x03168 */
+                        level_panel_click(A, &scroll_x);      /* image 0x03168 */
                     }
                 }
             }
