@@ -337,6 +337,14 @@ void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
  * rather than build a debt the loop then sprints to repay. */
 void view_screen_pace(void)
 {
+    /* THE AUDIO DEVICE IS FED HERE, on every screen that waits. It used to be
+     * fed inside view_show, the scrollable viewer that was deleted as
+     * unreachable - and the briefing reached it through view_run_anim, so
+     * deleting it left the briefing's loop with nothing topping the queue up.
+     * A screen that waits is exactly where a queue drains, so the pump
+     * belongs with the pacing rather than in one caller. */
+    sound_pump();
+
     static Uint64 due;
     Uint64 period = 1000000000ull / VIEW_REFRESH_HZ;
     Uint64 now = SDL_GetTicksNS();
@@ -1120,7 +1128,21 @@ void sound_tick_now(void)
  * of 10,333. This is the same shape of gap CLAUDE.md records for the level
  * running at sixty frames a second while every frame matched: a rate is not
  * visible to anything that compares frame N against frame N. */
-#define SND_TARGET_MS 200
+/* HOW FAR AHEAD OF THE GAME THE AUDIO RUNS, and it is a LATENCY: an effect
+ * asked for on the frame of a click is rendered behind whatever is already
+ * queued, so this number is how late the click sounds. The original has none
+ * of it - image 0x0061's driver writes the OPL and the card sounds at once.
+ *
+ * 200 was safe and audible as a delay; a player heard it on every click in
+ * the play area. THE FLOOR IS THE FRAME RATE: sound_pump runs once a level
+ * frame, so the queue has to cover 1000/17 = 59ms plus whatever a late frame
+ * costs. 120 is two frames - one may arrive a whole frame late without a gap
+ * - and halves what the delay was.
+ *
+ * Going below one frame needs SDL to PULL instead, through an audio stream
+ * callback, so the queue is topped up on the device's clock rather than the
+ * game's. That is the way to make it inaudible and it is not done here. */
+#define SND_TARGET_MS 120
 #define SND_CHUNK     1024
 
 int sound_target_bytes(void)

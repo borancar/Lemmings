@@ -1702,13 +1702,20 @@ int main(int argc, char **argv)
          * Measured rather than guessed at: the queue at a stop is up to
          * sound_target_bytes(), a level frame is OPL_SAMPLE_RATE / 17
          * samples of two bytes, and the ratio is how many frames of level
-         * would keep sounding. Three or more is "a couple of sounds", which
-         * is what was reported. */
+         * would keep sounding.
+         *
+         * THIS USED TO ASSERT THREE OR MORE, which tied it to
+         * SND_TARGET_MS being 200 - and when that was halved to cut the
+         * click latency a player could hear, the test failed for a reason
+         * that had nothing to do with the fix. The depth is a tuning
+         * constant; what the clear rests on is that the tail is AUDIBLE AT
+         * ALL, which is true at any depth the game can hear. Assert the
+         * thing the fix depends on, not the value it happened to have. */
         {
             int lvl_frame = (int)((double)OPL_SAMPLE_RATE / 17.0) * 2;
             int tail = sound_target_bytes() / lvl_frame;
-            ck("the queued tail is over three level frames, so the stop "
-               "must clear it", tail >= 3, NULL);
+            ck("the queued tail outlasts a level frame, so the stop must "
+               "clear it", tail >= 1, NULL);
         }
 
         /* And the check must be able to FAIL. A target smaller than one
