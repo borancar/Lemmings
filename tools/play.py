@@ -10,7 +10,20 @@ on one run misses on the next.
 
   uv run python tools/play.py                  # a window to play in
   uv run python tools/play.py --auto           # answer the menus, then play
-  uv run python tools/play.py --auto --shots 6 --shot-dir out   # headless
+  uv run python tools/play.py --auto -- --shots 6 --shot-dir out   # headless
+
+THE `--` IS NOT OPTIONAL and this line carried it wrong. `--shots` and
+`--shot-dir` are the EMULATOR's, not this script's; without the separator
+argparse rejects them and prints the usage message, which is a failure that
+looks like the user typing something silly rather than the documentation being
+wrong. CLAUDE.md states the same rule for `--scale` and says it was what the
+line there used to tell you to do.
+
+And `--shots N` on its own ENDS THE RUN after N shots: tools/prove.sh pairs it
+with `--shot-every 900` to mean "one shot, late". A bare `--shots 1` returns
+after about 1.6 seconds, having drawn the text mode and nothing else - which
+is what made tools/verify_data.py's own recipe unable to produce the dump it
+needs.
 """
 import argparse
 import os
