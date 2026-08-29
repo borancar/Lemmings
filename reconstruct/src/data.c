@@ -1264,10 +1264,31 @@ const uint8_t MENU_XLAT[0x53] = {
  * frame - the method CLAUDE.md describes under "Finding a sprite". Three of
  * those measurements land exactly on this table:
  *
- *     group  1  base     0   the walker, 18 frames of 40
- *     group  2  base   720   "the digger starts at 720 and its 16 frames of
- *                             84 end at 2064" - CLAUDE.md, measured
- *     group  9  base 14320   FALL_SPR_BASE, "10 rows, 2 planes"
+ *     EVERY ONE OF THE PORT'S FIFTEEN MEASURED BASES IS A GROUP BOUNDARY:
+ *
+ *       group  1      0  the walker      group  9  14320  FALL_SPR_BASE
+ *       group  2    720  DIG_SPR_BASE    group 10  14640  FLOAT_SPR_BASE
+ *       group  3   2064  (unclaimed)     group 11  16176  SPLAT_SPR_BASE
+ *       group  4   2832  DROWN_SPR_BASE  group 12  16816  EXIT_SPR_BASE
+ *       group  5   3472  HOIST_SPR_BASE  group 13  17232  BURN_SPR_BASE
+ *       group  6   4240  BUILD_SPR_BASE  group 14  18800  BLOCK_SPR_BASE
+ *       group  7   6736  BASH_SPR_BASE   group 15  19440  SHRUG_SPR_BASE
+ *       group  8  10576  MINE_SPR_BASE
+ *
+ *     and BLAST_SPR_BASE, the one that is not a boundary, is 20080 =
+ *     19440 + 16 * 40 - exactly half way through group 15's 32 frames. So
+ *     that group is sixteen shrug frames followed by sixteen blast ones,
+ *     which is why they share a stride.
+ *
+ *     Fourteen numbers found one at a time by matching pixels against
+ *     captured frames, plus one at a half-way point, ALL predicted by a
+ *     single table read out of the code. Neither derivation was fitted to
+ *     the other - the bases were measured long before image 0x059BB was
+ *     read - and that is as strong as agreement gets here.
+ *
+ *     GROUP 3, at 2064 with 16 frames of 48, is the one nothing claims: a
+ *     sprite the port does not draw. Two planes, twelve rows. Worth knowing
+ *     it exists and is not accounted for.
  *
  * AND IT CONFIRMS THE DIGGER'S GEOMETRY, which the port had already worked
  * out the hard way. An older comment beside lem_dig_start said the store's
