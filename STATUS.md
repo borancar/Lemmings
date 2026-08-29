@@ -4873,10 +4873,25 @@ has nothing to seed with here.
   difference reported and counted but not failing; controlled by forcing the
   branch.
 
-  Run end to end with real tools the block gives **`fail=0`**: seven checks
-  run and pass, `verify_adlib.py` skips for want of its pair. What that cost
-  is worth writing down - the stub test, the per-tool runs and the whole-sweep
-  run were three layers, each necessary and none sufficient.
+  Run end to end with real tools the block gives **`fail=0`** and **all eight
+  run**, none skipping:
+
+  | | |
+  | --- | --- |
+  | `verify_dat` | 7 calls, 0 differed |
+  | `verify_level` | 15 fields, 0 differing |
+  | `verify_digits` | 256 of 256, driven exhaustively |
+  | `verify_code` | 25/25 single-bit, 403/403 many-bit, 127/127 validated; the 1 shipped difference is the 1992 typo the ORIGINAL refuses too |
+  | `verify_shift` | 200 calls, 0 differed |
+  | `verify_preshift` | 40 calls, 0 differed (and 106 more `--driven`, inside a level) |
+  | `verify_data` | 7 sections byte-identical, 11 freed |
+  | `verify_adlib` | **10,505 of 10,505 registers and values, 100.00%**; gap 99.99%, worst 1 tick |
+
+  What that cost is worth writing down - the stub test, the per-tool runs and
+  the whole-sweep run were three layers, each necessary and none sufficient.
+  The stub test proved `PIPESTATUS` survives; the per-tool runs proved every
+  tool passes; only the whole-sweep run showed that `verify_code` returned 1
+  for a discrepancy it had just explained was not the port's.
 
 
 
