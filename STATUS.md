@@ -4736,7 +4736,20 @@ has nothing to seed with here.
   exercises it" is not "it is wrong" - but recorded so nobody spends time on
   a rule nothing can reach.
 
-- **The digger's residue is 40 pixels, and it is not new.** The port has
+- **The 40-pixel residue on the digger's run belongs to the FALLERS.** It was
+  attributed to the digger for several passes on proximity alone. At frame 298
+  the digger is at screen (162, 91) and the differing pixels are rows 102..111
+  columns 150..159 - ten rows from y = 102, and five fallers sit at
+  (158..164, 102) with ten rows being a faller's height. Scoring all sixteen
+  digger frames against the original in the digger's own rectangle gives a
+  flat 27-of-224 across four tied frames, which is what "the difference is
+  not here" looks like; a wrong frame index gives one near zero.
+  What is open, then, is five OVERLAPPING fallers at nearly one position -
+  and overlapping sprites drawn in different orders give different pixels.
+  Not yet read: the order image 0x03645's loop draws them in against the
+  port's array order.
+
+- **(superseded) The digger's residue is 40 pixels, and it is not new.** The port has
   drawn the digger since DIG_SPR_BASE was settled; a stale comment beside
   `lem_dig_start` still said "so it is not drawn", a later pass believed it
   and added a second draw path, and measured the two score identically - so
