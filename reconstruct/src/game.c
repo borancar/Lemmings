@@ -7786,6 +7786,10 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
         art = g_panel_compat_sec; art_len = g_panel_compat_len;
     }
     panel_frame(pp, PANEL_LINE_W, PANEL_ART_H, art, art_len, PANEL_ART_X, 0);
+    /* THE STATUS FONT AND THE BUTTON NUMBERS STAY ON SECTION 2. Routing them
+     * through section 6 as well was tried and measured: the green vanished
+     * entirely - attribute 2 went from 812 to 0 - and the button rows went
+     * from exact to 158 out. Only the ARTWORK moves. */
     panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
                  level_status_line(), 0, 0);
     panel_buttons(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, lv);
@@ -11477,6 +11481,7 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
     A.from = &terrain;
     A.lem_sec = NULL; A.lem_len = 0; A.released = 0;
     A.pan_sec = NULL; A.pan_len = 0;
+    free(A.pan_own); A.pan_own = NULL;
     A.stepped = 0;
     A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
 
@@ -11513,13 +11518,45 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
             if (mainf.count > PANEL_FONT_SECTION) {
                 A.pan_sec = mainf.sections[PANEL_FONT_SECTION].data;
                 A.pan_len = mainf.sections[PANEL_FONT_SECTION].size;
-                /* image 0x05976: the compat panel's own section. */
+                /* IMAGE 0x05976 - THE COMPAT PANEL, and it is TWO things
+                 * from one section.
+                 *
+                 * Image 0x059A1 unpacks section 6 from offset 0 through the
+                 * same image 0x057D1 panel_frame is transcribed from - that
+                 * is the ARTWORK. Then image 0x059B4 copies 0x720 bytes from
+                 * its 0x1900 over the FONT at 0xA0, and 0xA0 + 0x720 = 1984,
+                 * which is the font's whole size: image 0x0593C copies 0x3E0
+                 * words of it from section 2's own 0x1900. So the glyphs are
+                 * replaced and the 0xA0-byte table in front of them is not.
+                 *
+                 * Section 6 is 8,224 bytes = 6,400 of artwork + 1,824 of
+                 * glyphs, against section 2's 6,400 + 1,984: the compat font
+                 * carries no table of its own because it borrows section 2's.
+                 */
                 g_panel_compat_sec = NULL;
-                if (mainf.count > PANEL_COMPAT_SECTION) {
-                    g_panel_compat_sec =
-                        mainf.sections[PANEL_COMPAT_SECTION].data;
-                    g_panel_compat_len =
-                        mainf.sections[PANEL_COMPAT_SECTION].size;
+                if (lem_machine == LEM_PC_COMPATIBLE
+                        && mainf.count > PANEL_COMPAT_SECTION) {
+                    const dat_section *cs =
+                        &mainf.sections[PANEL_COMPAT_SECTION];
+                    if (cs->size >= PANEL_COMPAT_FROM + PANEL_COMPAT_LEN) {
+                        g_panel_compat_sec = cs->data;
+                        g_panel_compat_len = cs->size;
+                        /* The font, in the PORT's coordinates: its glyphs sit
+                         * at PANEL_FONT_OFF + 0xA0 of the section, not at
+                         * 0xA0 - which is where a first attempt put them, and
+                         * it matched nothing. */
+                        if (A.pan_len >= PANEL_FONT_OFF + 0xA0
+                                         + PANEL_COMPAT_LEN) {
+                            A.pan_own = malloc(A.pan_len);
+                            if (A.pan_own) {
+                                memcpy(A.pan_own, A.pan_sec, A.pan_len);
+                                memcpy(A.pan_own + PANEL_FONT_OFF + 0xA0,
+                                       cs->data + PANEL_COMPAT_FROM,
+                                       PANEL_COMPAT_LEN);
+                                A.pan_sec = A.pan_own;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -11562,6 +11599,7 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
          * the loop, which is where the original sets it. */
         level_status_in(level_saved_percent(&A.lv));
         free(A.panel); A.panel = NULL;
+        free(A.pan_own); A.pan_own = NULL;
         if (have_main) dat_free(&mainf);
     }
     canvas_free(&c);

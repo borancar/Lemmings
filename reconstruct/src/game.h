@@ -433,6 +433,8 @@ void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 #define PANEL_FONT_SECTION 2
 /* image 0x05976: a PC compatible unpacks its panel from this section. */
 #define PANEL_COMPAT_SECTION 6
+#define PANEL_COMPAT_FROM    0x1900
+#define PANEL_COMPAT_LEN     0x720
 extern const uint8_t *g_panel_compat_sec;
 extern uint32_t       g_panel_compat_len;
 /* MAIN.DAT section 4 carries the results screen's 16x16 font at 0x69B0 -
@@ -1127,6 +1129,7 @@ struct level_frame {
     const uint8_t *pan_sec;  /* main.dat section 2, the panel artwork */
     uint32_t     pan_len;
     uint8_t     *panel;      /* PANEL_LINE_W x PANEL_ART_H, rebuilt a frame */
+    uint8_t     *pan_own;    /* image 0x059B4's overlaid font, compat only */
     lemming      lem[LEMMING_MAX];
     uint8_t      released;   /* how many have come out of the trapdoor */
     uint16_t     view_x;     /* where the play area has scrolled to */

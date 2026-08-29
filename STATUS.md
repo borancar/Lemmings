@@ -4853,7 +4853,21 @@ has nothing to seed with here.
   | 6, grey | 233 / 233 | 884 / 884 |
   | 8..15 | 2680 / 2680 | 0 / 0 |
 
-  **Zero difference in both modes**, every attribute.
+  **AND THE STATUS TEXT ABOVE IT, which the first fix missed.** Image
+  `0x059B4` copies 1,824 bytes to offset `0xA0` - and `0xA0 + 0x720 = 1984`,
+  which is the FONT's whole size: image `0x0593C` copies `0x3E0` words of it
+  from section 2's own `0x1900`. So section 6 supplies the artwork from offset
+  0 AND the font's glyphs from `0x1900`, and the `0xA0` table in front of them
+  stays section 2's. Section 6 is 6,400 + 1,824 where section 2 is 6,400 +
+  1,984: the compat font carries no table because it borrows one.
+
+  The port's font glyphs live at `PANEL_FONT_OFF + 0xA0` of the section, not
+  at `0xA0` - putting them at `0xA0`, which is the original's offset in its own
+  prepared buffer, matched nothing.
+
+  **Verified: rows 160..199 - the whole panel, status text included - 0
+  differing pixels of 12,800, in BOTH machine types, across 35 frames of Fun 1
+  and 25 of Taxing 2 (a different graphics set).**
 
 - ~~**THE PANEL IS DRAWN WITH DIFFERENT ATTRIBUTES PER MACHINE**~~ - true, and
   this is why. Two recordings of the original on the same level, Fun 1, frame
