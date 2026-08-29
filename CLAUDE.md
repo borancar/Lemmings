@@ -850,6 +850,33 @@ program will never look at.
 - **The port shows a screen by default.** `./lemmings` with no arguments opens
   the game; `--out` or `--raw` is what asks for a file instead. A
   reconstruction whose default output is a bitmap is a converter.
+- **SOUND CAME FROM AN ISR, SO IT MUST NOT COME FROM THE GAME LOOP.** Image
+  0x017C7 is an INT 8 handler: the PIT calls it ~96.8 times a second whatever
+  the game is doing, and the OPL sounds continuously in hardware. Nothing in
+  the original's main loop touches audio at all.
+
+  A port that instead tops a queue up once a frame inherits three faults that
+  look unrelated and are one: **latency**, because an effect is rendered
+  behind whatever is queued; **freezing**, because any screen whose loop
+  forgets to pump stops the sound and the next screen that remembers resumes
+  it mid-decay; and **a residue** that outlives the driver's own stop. All
+  three were reported by a player here, one at a time, and each got its own
+  local fix before the shape was seen.
+
+  **The device's own callback is the ISR's counterpart** - SDL runs it on an
+  audio thread when the hardware wants more, which is the relationship the
+  card had with the PIT. `sound_build_chunk` already ticks image 0x017C7 at
+  the rate the sample count implies, so the driver runs on the DEVICE's clock
+  and the queue is one device period rather than a tuned number of
+  milliseconds. `sound_request` takes `SDL_LockAudioStream` around the
+  driver's state, which is this port's `cli`: the original's ISR and game
+  shared one processor.
+
+  Deleting the push model meant deleting the checks that measured it -
+  SND_TARGET_MS, sound_target_bytes, sound_fill_bytes and `--audio-probe`.
+  **A check that models a mechanism the code no longer has is worse than no
+  check, because it keeps agreeing.**
+
 - **READ THE BUILD'S WARNINGS. Two bugs a player found were named by the
   compiler and filtered out of my own output.** A mechanical rename of a
   local into a global's name produced `g_lvl_tex = g_lvl_tex;`, which left the
