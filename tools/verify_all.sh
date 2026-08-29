@@ -287,6 +287,15 @@ if [ $UNITS = 1 ]; then
     # SKIPPED, and every tool exiting 3 gives fail=1 with each one named. The
     # risk in this block was never the tools - it is PIPESTATUS surviving a
     # pipeline inside a loop inside an if, and that is what the stubs test.
+    #
+    # AND THE STUBS DID NOT CATCH THE REAL FAULT, which is worth knowing
+    # before trusting them again. Stubs return the exit codes I choose;
+    # tools return the ones they have. verify_code.py returned 1 for the one
+    # code in the shipped lemmings.cod that image 0x05042 does not reproduce
+    # - a 1992 typo the ORIGINAL refuses too, which that tool prints nine
+    # lines explaining - and inside a sweep only the status survives, so it
+    # read as FAILED. Found by running the whole thing, after the stub test
+    # and the per-tool runs had both passed. Run it for real once.
     for u in verify_dat verify_level verify_digits verify_code \
              verify_shift verify_preshift; do
         uv run python "tools/$u.py" 2>&1 \
