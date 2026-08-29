@@ -4837,7 +4837,26 @@ has nothing to seed with here.
   per-frame swap, and the briefing is the screen that reprograms it mid-life.
   Cosmetic, but it is a thing the original does and this port does not.
 
-- **COMPAT DRAWS THE PANEL WITH ATTRIBUTES 0..7, and the port uses 8..15.**
+- **THE SKILL BUTTONS ARE DRAWN WITH THE WRONG ATTRIBUTE, in BOTH modes.**
+  The original's button background is attribute 4, `b2b200`, gold. The port's
+  is attribute 3, `f3d3d3`, pale pink. Attributes 0..7 are the FIXED ones -
+  image `0x0C048`, level-independent - so this is wrong in high as well and
+  was only noticed in compat, where the eye is already on the panel.
+
+  **The palette is not involved and three diagnoses said it was.** A player's
+  DOSBox capture in machine type 1 samples to the port's own sixteen once the
+  scaler's checkerboard is averaged out: `bfd69b`/`ff9bd6` average to
+  attribute 3, `ac7d00`/`7dac00` to attribute 4, `557655`/`765576` to
+  attribute 6, and the greens to attribute 2. Compat uses the same DAC the
+  port has, which is exactly why capturing it three times kept answering "the
+  same as the port already has".
+
+  Next: compare the port's panel INDICES against the original's composed
+  panel, not its colours. `tools/compare_frame.py` scores the panel
+  separately already.
+
+- ~~**COMPAT DRAWS THE PANEL WITH ATTRIBUTES 0..7**~~ - wrong; there is no
+  machine branch in the panel drawing at all.
   NOT a missing palette - that was two wrong diagnoses ago. Measured, with a
   player's DOSBox capture in machine type 1 as the reference:
 
