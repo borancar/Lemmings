@@ -9023,6 +9023,65 @@ int level_locate(char *file, size_t file_len, uint32_t *section)
     return 0;
 }
 
+/* WHICH GRAPHICS FILES A LEVEL USES - image 0x0197D's tail, 0x01A00..0x01A7A,
+ * and the branch in it that nobody had read.
+ *
+ *     0x01A00  al = ds:0x0FE6      the graphics set
+ *     0x01A03  si = ds:0x2545      where the digit goes in "ground0o.dat"
+ *     0x01A07  add al, 0x30        ... as ASCII
+ *     0x01A0B  dx = ds:0x253F      and image 0x01A18 loads 0x1000 bytes raw
+ *     0x01A1B  the same digit into "vgagr0.dat" at ds:0x2539
+ *     0x01A26  al = ds:0x0FE8      THE EXTENDED SET, the header's +0x1C
+ *     0x01A2B  je 0x01A30          zero: the ordinary vgagr
+ *     0x01A2D  jmp 0x01A5A         non-zero: vgaspec
+ *
+ * THE TWO PATHS DIFFER IN MORE THAN THE NAME, which is why this returns which
+ * one it took. Image 0x01A30 opens the file and reads SECTION 0 into the
+ * terrain segment ds:0x1FF4 at +0x10 (image 0x01B79), then SECTION 1 into the
+ * sprite segment ds:0x1FF0 (image 0x01BA9). Image 0x01A5A reads section 0
+ * alone and closes: a VGASPEC level has no piece set, because its terrain is
+ * one whole picture instead of pieces.
+ *
+ * And the digit arithmetic differs. `add al, 0x30` for the graphics set;
+ * `add al, 0x2F` at image 0x01A5E for the extended one, which is 1-based - so
+ * extended set 1 is vgaspec0.dat. Four sections in the eighty have one, which
+ * is the same four music_choose's by-number table has entries for.
+ *
+ * The templates are the original's own strings and the digit's place in each
+ * is the difference between the two addresses the routine loads, not a count
+ * of characters here.
+ *
+ * Returns 1 for a VGASPEC level, 0 for an ordinary one, -1 if a buffer is too
+ * small to hold the name.
+ */
+static const char T_GROUND[]  = "ground0o.dat";   /* ds:0x253F, image 0x0BFCF */
+static const char T_VGAGR[]   = "vgagr0.dat";     /* ds:0x2534, image 0x0BFC4 */
+static const char T_VGASPEC[] = "vgaspec0.dat";   /* ds:0x2559, image 0x0BFE9 */
+#define GROUND_DIGIT  6   /* ds:0x2545 - ds:0x253F */
+#define VGAGR_DIGIT   5   /* ds:0x2539 - ds:0x2534 */
+#define VGASPEC_DIGIT 7   /* ds:0x2560 - ds:0x2559 */
+
+int level_graphics_names(const level *lv, char *ground, size_t gn,
+                         char *gfx, size_t xn)
+{
+    if (gn < sizeof(T_GROUND) || xn < sizeof(T_VGASPEC)) return -1;
+
+    uint8_t gs = (uint8_t)(lv->graphics_set & 0xFF);
+    memcpy(ground, T_GROUND, sizeof(T_GROUND));
+    ground[GROUND_DIGIT] = (char)('0' + gs);        /* image 0x01A07 */
+
+    uint8_t ext = (uint8_t)(lv->extended_graphics_set & 0xFF);
+    if (ext == 0) {                                 /* image 0x01A2B */
+        memcpy(gfx, T_VGAGR, sizeof(T_VGAGR));
+        gfx[VGAGR_DIGIT] = (char)('0' + gs);        /* image 0x01A24 */
+        return 0;
+    }
+    memcpy(gfx, T_VGASPEC, sizeof(T_VGASPEC));
+    /* image 0x01A5E adds 0x2F, not 0x30 - the extended set is 1-based. */
+    gfx[VGASPEC_DIGIT] = (char)('0' + (ext - 1));
+    return 1;
+}
+
 /* The level briefing, which the original shows between the menu and the level.
  *
  * The TEMPLATES are transcribed from the executable, with the addresses they
@@ -9578,8 +9637,12 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
         char gpath[256];
         ground g;
         const char *gerr = NULL;
-        snprintf(gpath, sizeof(gpath), "%s/ground%uo.dat", dir,
-                 (unsigned)(lv->graphics_set & 0x0F));
+        char gname[16], xname[16];
+        /* image 0x01A07 names it; the port used to build the same string
+         * inline with a mask the original does not apply. */
+        if (level_graphics_names(lv, gname, sizeof gname,
+                                 xname, sizeof xname) < 0) gname[0] = '\0';
+        snprintf(gpath, sizeof(gpath), "%s/%s", dir, gname);
         if (ground_load(gpath, &g, &gerr) == 0) {
             for (uint8_t i = 8; i < 16; i++)
                 m->palette[i] = g.preview[i - 8];

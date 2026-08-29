@@ -2381,9 +2381,24 @@ int level_show(const char *dir, const char *file, uint32_t which,
     if (rc != 0) return -1;
     if (level_apply_odd(dir, lv, level_odd_taken(), err) != 0) return -1;
 
-    snprintf(path, sizeof(path), "%s/ground%uo.dat", dir, lv->graphics_set);
+    /* image 0x0197D's tail names both files and says which kind this is. */
+    char gname[16], xname[16];
+    int special = level_graphics_names(lv, gname, sizeof gname,
+                                       xname, sizeof xname);
+    if (special < 0) { if (err) *err = "level names too long"; return -1; }
+    snprintf(path, sizeof(path), "%s/%s", dir, gname);
     if (ground_load(path, &g, err) != 0) return -1;
-    snprintf(path, sizeof(path), "%s/vgagr%u.dat", dir, lv->graphics_set);
+    if (special) {
+        /* NOT TRANSCRIBED - the VGASPEC terrain build, image 0x03742. The
+         * name is right now and the file exists; what is missing is the
+         * routine that lays one whole picture down as the terrain instead of
+         * composing pieces. Refusing here is deliberate: loading vgagr0.dat
+         * for these four is what the port did before, and it renders the
+         * wrong graphics set without saying so. */
+        if (err) *err = "VGASPEC level - image 0x03742 not transcribed";
+        return -1;
+    }
+    snprintf(path, sizeof(path), "%s/%s", dir, xname);
     if (dat_load(path, &gfx, err) != 0) return -1;
     if (gfx.count < 1) { dat_free(&gfx); if (err) *err = "no terrain section";
                          return -1; }

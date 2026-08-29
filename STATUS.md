@@ -4826,6 +4826,36 @@ has nothing to seed with here.
 
 ## Next
 
+- **THE FOUR VGASPEC LEVELS DO NOT LOAD, and until now they loaded the WRONG
+  FILE without saying so.** Transcribing image `0x0197D`'s tail
+  (`level_graphics_names`, image `0x01A00..0x01A7A`) turned up a branch nobody
+  had read: image `0x01A26` tests the level header's +0x1C, and when it is
+  non-zero the graphics come from `vgaspecN.dat` rather than `vgagrN.dat` -
+  with `add al, 0x2F` at image `0x01A5E`, because the extended set is 1-based.
+
+  The port built `vgagr%u.dat` for every level, so all four loaded graphics
+  set 0 and rendered the wrong pieces. Scanning all eighty sections for a
+  non-zero +0x1C finds exactly four, which is the same four `music_choose`'s
+  by-number table has entries for:
+
+  | | | |
+  | --- | --- | --- |
+  | `level000.dat` §1 | ext 1 | `What an AWESOME level` |
+  | `level000.dat` §2 | ext 2 | `MENACING !!` |
+  | `level000.dat` §4 | ext 3 | `A BeastII of a level` |
+  | `level001.dat` §3 | ext 4 | `A Beast of a level` |
+
+  The NAME is right now and `level_show` refuses these four with
+  `VGASPEC level - image 0x03742 not transcribed` rather than loading the
+  wrong graphics quietly. **What is owed is image `0x03742`**, the terrain
+  build that lays one whole picture down instead of composing pieces - image
+  `0x01A5A` reads section 0 alone, where the ordinary path reads two.
+
+  Refusing is deliberate and it is a REGRESSION IN WHAT RUNS, traded for a
+  gain in what is true: this repository's own rule is that a plausible wrong
+  answer costs more than a loud failure, and nothing here could see the fault
+  because no check ever opened one of these four.
+
 - **`verify_objects.py` says nothing about image `0x09709`, and there is a
   level that would fix it.** Its own output reports the gap honestly -
   `only-on-terrain NOT PRESENT - this run says nothing about image 0x09709` -

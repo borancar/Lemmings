@@ -1725,6 +1725,72 @@ int main(int argc, char **argv)
            dry > 0, NULL);
     }
 
+    /* ==================================================================
+     * IMAGE 0x0197D's TAIL - WHICH GRAPHICS FILES A LEVEL USES.
+     *
+     * The port built "vgagr%u.dat" for every level, so the four VGASPEC
+     * levels loaded graphics set 0 and rendered the wrong pieces without
+     * saying so. This is the check that would have caught it.
+     * ================================================================== */
+    {
+        /* The four, found by scanning all eighty sections for a non-zero
+         * header +0x1C - not by trusting a list. */
+        static const struct { const char *file; int sec; int ext;
+                              const char *want; } SPECIAL[] = {
+            { "level000.dat", 1, 1, "vgaspec0.dat" },
+            { "level000.dat", 2, 2, "vgaspec1.dat" },
+            { "level000.dat", 4, 3, "vgaspec2.dat" },
+            { "level001.dat", 3, 4, "vgaspec3.dat" },
+        };
+        int seen = 0, ok = 1;
+        for (uint32_t i = 0; i < sizeof(SPECIAL)/sizeof(SPECIAL[0]); i++) {
+            dat_file lf; level lv; char pp[512]; const char *e5 = NULL;
+            snprintf(pp, sizeof(pp), "%s/%s", dir, SPECIAL[i].file);
+            if (dat_load(pp, &lf, &e5) != 0) continue;
+            if ((uint32_t)SPECIAL[i].sec < lf.count
+                && level_parse(lf.sections[SPECIAL[i].sec].data,
+                               lf.sections[SPECIAL[i].sec].size, &lv, &e5) == 0) {
+                char gn[16], xn[16];
+                int sp = level_graphics_names(&lv, gn, sizeof gn,
+                                              xn, sizeof xn);
+                seen++;
+                if (lv.extended_graphics_set != (uint16_t)SPECIAL[i].ext
+                        || sp != 1 || strcmp(xn, SPECIAL[i].want) != 0)
+                    ok = 0;
+            }
+            dat_free(&lf);
+        }
+        /* 0 of 0 is not a pass - if the data is not here, say so. */
+        ck("the four VGASPEC levels name vgaspec0..3 (image 0x01A5A)",
+           seen == 4 && ok, seen == 4 ? "wrong name" : "levels not found");
+
+        /* The control: an ORDINARY level must still name vgagr, and the
+         * digit must follow its graphics set rather than being fixed. */
+        dat_file lf; level lv; char pp[512]; const char *e5 = NULL;
+        snprintf(pp, sizeof(pp), "%s/level000.dat", dir);
+        if (dat_load(pp, &lf, &e5) == 0) {
+            int checked = 0, good = 1;
+            for (uint32_t k = 0; k < lf.count && k < 8; k++) {
+                if (level_parse(lf.sections[k].data, lf.sections[k].size,
+                                &lv, &e5) != 0) continue;
+                if (lv.extended_graphics_set != 0) continue;
+                char gn[16], xn[16];
+                int sp = level_graphics_names(&lv, gn, sizeof gn,
+                                              xn, sizeof xn);
+                char wg[16], wx[16];
+                snprintf(wg, sizeof wg, "ground%uo.dat",
+                         (unsigned)lv.graphics_set);
+                snprintf(wx, sizeof wx, "vgagr%u.dat",
+                         (unsigned)lv.graphics_set);
+                checked++;
+                if (sp != 0 || strcmp(gn, wg) || strcmp(xn, wx)) good = 0;
+            }
+            ck("and an ordinary level still names ground/vgagr (image 0x01A24)",
+               checked > 0 && good, checked ? "wrong name" : "none checked");
+            dat_free(&lf);
+        }
+    }
+
     printf(fails ? "\n  %d FAILED\n" : "\n  all passed\n", fails);
     return fails ? 1 : 0;
 }
