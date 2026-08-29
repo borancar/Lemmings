@@ -4744,10 +4744,22 @@ has nothing to seed with here.
   digger frames against the original in the digger's own rectangle gives a
   flat 27-of-224 across four tied frames, which is what "the difference is
   not here" looks like; a wrong frame index gives one near zero.
-  What is open, then, is five OVERLAPPING fallers at nearly one position -
-  and overlapping sprites drawn in different orders give different pixels.
-  Not yet read: the order image 0x03645's loop draws them in against the
-  port's array order.
+  What is open is five fallers stacked at nearly one position (x 158..164,
+  all y 102). **Draw order is not it**: image 0x03645 walks `di` forward with
+  `add di, 0x2D` and the port walks `k` forward, both skipping
+  `[+0x26] == 0xFF`. Nor is the count - the panel's OUT agrees on 667 frames.
+
+  The pixels say the port draws MORE INK in the lower rows:
+
+      row 104  orig  ...1233332322     port  ...122333333
+      row 107  orig  .333.311113133    port  .333331113333
+      row 110  orig  ....313113133     port  ....331111
+
+  3s where the original has 2s and gaps, drifting further apart towards the
+  bottom of the sprite. Not a plane swap (that would exchange 1 and 2 and
+  leave 3), and not a shift. **Cause undetermined** - recorded at this level
+  of detail rather than guessed at, because the last four attributions of
+  these forty pixels were wrong.
 
 - **(superseded) The digger's residue is 40 pixels, and it is not new.** The port has
   drawn the digger since DIG_SPR_BASE was settled; a stale comment beside
