@@ -957,6 +957,52 @@ exactly where the basher's 1,920 bytes end, and they end at `0xC60` where the
 crater's begin: two directions of two slices of eight shifts of thirteen rows
 of three bytes. `tools/verify_results.py` dumps them; nothing was read by eye.
 
+**And keeping only shift 0 of the eight is now measured, not assumed.** The
+port shifts at pixel granularity rather than picking a pre-shifted variant,
+which is sound only if the other seven are pure translations - a pre-shift
+into three fixed bytes could drop whatever runs off the end. It does not:
+`tools/probe_mine.py` reports **0 of 364** variants differing from
+`shift0 >> s`, because no row of these masks carries a bit within seven
+columns of the right-hand edge. The probe had dumped the bytes and left the
+question in a comment for months; it now computes the answer and a non-zero
+there is the assumption breaking.
+
+#### One pixel of the miner is still unexplained
+
+The record comparison is 0 of 400. The **screen** is not: on `--number 1`
+driven by `out/s8.txt`, 134 of 400 frames differ by exactly one pixel at
+screen **(159, 81)**, where the original holds attribute 2 and the port 0.
+No frame differs by two, or three - the histogram is `[(1, 134), (28, 1)]`
+and the 28 is the cursor - so this is one rule, not noise.
+
+What it is **not**, each ruled out by measurement rather than by reading:
+
+- **not the mask** - 364 of 364 variants are pure shifts, above
+- **not the placement** - the original clears column `col + d` for each set
+  bit `d` (byte offset `col - s` plus the variant shifted by `s`), the port
+  clears `col + d - 16` on a canvas exactly sixteen to the left; the two
+  clear sets are identical by construction
+- **not the terrain** - `probe_mine.py` reads the guest's own solidity map
+  (image `0x05DC6`'s stride, image `0x05DEA`'s `0x4A40`) and it is **clear**
+  at that pixel on every frame sampled, including ones where the screen shows
+  2. Both sides cut the same tunnel; the 2 is drawn over it
+- **not an object** - the level's three sit at world x 720 and 864, and this
+  is at 799
+- **not the cursor's box** - `cur_bias` is 0 on all 215 frames of the run, so
+  image `0x05854`'s `0x480` shape never appears
+
+The pointer is parked, which is why a world that moves leaves the difference
+at a fixed screen spot. The next step is `tools/probe_writes.py` filtered to
+that row during a mining run: it attributes every EGA write to the
+instruction that made it, and that answers "who draws attribute 2 here"
+without another hypothesis.
+
+Two instrument faults were found on the way and both produced confident
+numbers: a scorer looking for `%05d.raw` where the port writes `f%05d.raw`
+compared **zero** frames and reported no differences, and a coverage test
+written `if lem["alive"]` skipped every living lemming, because `alive` is
+`0xFF` for DEAD. Each read as a fact about the game.
+
 ### The nuke
 
 **0 of 557 frames differ** in the RECORD, and the screen is exact on **541 of

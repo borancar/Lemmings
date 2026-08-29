@@ -17,10 +17,26 @@ Image 0x06085 bases the masks at ds:0x1FE8:0x780 - where the basher's 1,920
 bytes end - indexes slice * 312, and image 0x060E2 adds 0x270 for one facing
 left. 312 bytes is eight shifts of thirteen rows of three.
 
+AND THE SOLIDITY UNDER THE PIXEL, which is the half that settles it. The
+masks turned out to be faithful, so the disagreement is not what either side
+CLEARS - it is what the original still shows afterwards. A screen carries
+terrain, sprites, objects and cursor and cannot tell them apart, so this also
+reads the guest's own solidity map: image 0x05DC6 probes (y - 0x10) * 0xD0 +
+(x >> 3) in plane 3 and image 0x05DEA adds 0x4A40, the same read
+tools/probe_digger.py makes for the digger's shaft. If the map says CLEAR
+where the screen shows 2, the 2 is drawn by something and the port is simply
+not drawing it; if it says SOLID, the original really did leave terrain and
+the two sides clear differently after all.
+
+    LEM_EXTRA_HOOK=$PWD/tools/probe_mine.py LEM_MINE_FRAME=200 \
+    uv run python tools/record_level.py --frames 260 --out out/mine_solid \
+        --script out/s8.txt --skills 20 --lemmings --seconds 400
+
     LEM_EXTRA_HOOK=$PWD/tools/probe_mine.py \
     uv run python tools/record_level.py --frames 30 --out out/mine --seconds 240
 """
 import atexit
+import json
 import os
 
 FRAME_END = 0x018F
@@ -32,12 +48,20 @@ ROWS      = 13
 OUT = os.environ.get("LEM_MINE_OUT", "out/mine_mask.txt")
 DGROUP = 0x9A90
 
+# The frame to read the solidity map at, and the window to read. The default
+# is a frame on which the original's screen shows 2 at (159, 81) and the
+# port shows 0 - the whole of the disagreement.
+SOLID_FRAMES = sorted(int(v) for v in
+                      os.environ.get("LEM_MINE_FRAME", "200").split(",") if v)
+SOLID_X0, SOLID_X1 = 700, 900
+SOLID_Y0, SOLID_Y1 = 60, 130
+
 
 def install(m):
     from unicorn import UC_HOOK_CODE
 
     base = m.load_seg * 16
-    st = {"n": 0, "raw": None}
+    st = {"n": 0, "raw": None, "solid": {}}
 
     def on_frame(uc, ad, size, _):
         if ad - base != FRAME_END:
@@ -50,7 +74,34 @@ def install(m):
         st["seg"] = seg
         st["raw"] = bytes(uc.mem_read(seg * 16 + BASE, LEFT + 2 * SLICE))
 
+    def on_solid(uc, ad, size, _):
+        # A SECOND hook rather than more work in the first: the mask read
+        # happens once at frame 20 and this has to happen at a frame deep
+        # enough into the tunnel for there to BE a tunnel.
+        #
+        # SEVERAL frames, not one. The first version read a single frame and
+        # landed on one where the two sides AGREE - the disagreement at
+        # (159, 81) is on 134 frames of 400 and absent from the rest, so one
+        # capture has a two-in-three chance of saying nothing while looking
+        # like an answer.
+        if ad - base != FRAME_END:
+            return
+        if st["n"] not in SOLID_FRAMES or st["n"] in st["solid"]:
+            return
+        rows = []
+        for yy in range(SOLID_Y0, SOLID_Y1):
+            line = []
+            for xx in range(SOLID_X0, SOLID_X1):
+                off = (yy - 0x10) * 0xD0 + (xx >> 3) + 0x4A40
+                if off < 0 or off >= 0x10000:
+                    line.append(0)
+                    continue
+                line.append((m.planes[3][off] >> (7 - (xx & 7))) & 1)
+            rows.append(line)
+        st["solid"][st["n"]] = rows
+
     m.uc.hook_add(UC_HOOK_CODE, on_frame)
+    m.uc.hook_add(UC_HOOK_CODE, on_solid)
 
     def report():
         lines = [f"{st['n']} frames inside the level"]
@@ -104,6 +155,29 @@ def install(m):
             try:
                 with open(OUT + ".bin", "wb") as f:
                     f.write(st["raw"])
+            except OSError:
+                pass
+        # THE SOLIDITY, and it must say when it read nothing rather than
+        # printing a window of zeros that reads as "all clear".
+        if not st["solid"]:
+            lines.append(f"  solidity: NOT READ - the run never reached any of "
+                         f"{SOLID_FRAMES} inside a level, so this says nothing")
+        else:
+            missed = [f for f in SOLID_FRAMES if f not in st["solid"]]
+            for f in sorted(st["solid"]):
+                rows = st["solid"][f]
+                solid = sum(sum(r) for r in rows)
+                cells = len(rows) * len(rows[0])
+                lines.append(f"  solidity at frame {f}, window "
+                             f"x {SOLID_X0}..{SOLID_X1} y {SOLID_Y0}.."
+                             f"{SOLID_Y1}: {solid} solid of {cells}")
+            if missed:
+                lines.append(f"  frames asked for and NOT reached: {missed}")
+            try:
+                with open(OUT + ".solid.json", "w") as f:
+                    json.dump({"x0": SOLID_X0, "y0": SOLID_Y0,
+                               "frames": {str(k): v
+                                          for k, v in st["solid"].items()}}, f)
             except OSError:
                 pass
         text = "\n".join(lines)
