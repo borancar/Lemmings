@@ -525,14 +525,6 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
 }
 
 /* ======================================================================
- * NOT TRANSCRIBED - GROUNDxO.DAT, from the published description.
- * Where this lives in the original is not established.
- * ====================================================================== */
-
-
-
-
-/* ======================================================================
  * NOT TRANSCRIBED - VGAGRx.DAT, from the published description.
  * Where this lives in the original is not established.
  * ====================================================================== */
