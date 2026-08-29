@@ -630,17 +630,47 @@ uint16_t terrain_bp(const level_terrain *t)
     return bp;
 }
 
-/* NOT TRANSCRIBED, but PROVEN equivalent - and the boundary is now narrower
- * than it was. The original's loop is at image 0x03752..0x03768: four bytes
- * at a time from a table at ds:0x10EB, stopping on the first WORD being
- * 0xFFFF, each entry handed to a blitter at image 0x07C67.
+/* TRANSCRIBED from image 0x03752's loop and image 0x07C67's blit set-up, and
+ * what remains owed is named at the end - the same one thing draw_preview and
+ * menu_briefing_screen owe.
  *
- * That blitter's UNPACKING is transcribed now - level_parse's terrain entries
- * carry its addresses, and the x, the y and all three flags agree with it to
- * the instruction. What is still the port's own is the COMPOSITION below:
- * the original programs the card and blits a byte at a time, and this walks
- * pixels. tools/prove.sh compares against what the original composes: 49,741
- * pixels, zero differing. */
+ * The loop is image 0x03752..0x03768: four bytes at a time from a table at
+ * ds:0x10EB, stopping on the first WORD being 0xFFFF, each entry handed to
+ * image 0x07C67.
+ *
+ * THE UNPACK, which level_parse carries with these addresses on it and which
+ * agrees to the instruction - the x, the y and all three flags:
+ *
+ *     0x07C6C  dx = (ax >> 7) & 0xC0   AX bit 14 -> bp 7, bit 13 -> bp 6
+ *     0x07C72  dx |= 0x0F              the low nibble, always
+ *     0x07C75  test dx, 0x40 -> 0x07C7B  dx |= 0x0F00, the erase nibble
+ *     0x07C7F  rcl ax,1 -> 0x07C83     AX bit 15 -> bp 15, no-overwrite
+ *     0x07C8D  dx = bx & 0x3F          the piece's ID
+ *     0x07C90  sar bx, 7 then sub bx,4 the Y, biased by four
+ *     0x07C95  and ax, 0x1FFF          the X
+ *
+ * AND THE BLIT'S OWN PARAMETERS, which were never read until now:
+ *
+ *     0x07C9A  ax = 8 * id + 0x1D0B    an EIGHT-BYTE definition per piece,
+ *                                      in a table at ds:0x1D0B that the load
+ *                                      builds from GROUNDxO.DAT
+ *     0x07CA4  dl = [bx]               the width
+ *     0x07CA8  cl = [bx+1]             the rows
+ *     0x07CAB  si = [bx+2]             the graphic
+ *     0x07CAE  di = [bx+4]             the MASK, a pointer of its own
+ *     0x07CB3  ch = 4                  four planes
+ *     0x07CB5  lcall 1010:8822
+ *
+ * The port reads the same four numbers out of the ground set rather than out
+ * of a prepared table; where that table is built is not read, and it is the
+ * same shape as image 0x03981's parallel array for objects.
+ *
+ * WHAT REMAINS OWED is the ROUTE: image 0x07CB5 goes through 1010:8822 into
+ * video memory a byte at a time with the card programmed, and this walks
+ * pixels on a byte-per-pixel canvas. Reading it properly means reading image
+ * 0x08822's five modes - blit_path_of names them and picks between them, but
+ * none of the five is written out. tools/prove.sh compares what the original
+ * COMPOSES against what this composes: 49,741 pixels, zero differing. */
 int render_terrain(canvas *c, const level *lv, const ground *g,
                    const uint8_t *sec, uint32_t sec_len, const char **err)
 {
