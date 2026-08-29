@@ -1051,15 +1051,29 @@ columns from an unshifted sprite, which lands the same pixels - but it means
 the port has no counterpart to the 24-wide window, and none to the
 save/restore either, because it composes every frame from nothing.
 
-That last difference is the leading explanation for the one pixel, and it has
-a mechanism rather than a fit: the original saves what is under a sprite and
-paints it back next frame, the restore covers the full 24 x 16 window with no
-mask, and the pointer is parked so that window sits still. A pixel that is
-saved as part of one sprite's background and painted back after another has
-moved is a ghost - fixed in SCREEN space, intermittent, and in a lemming's
-colours, which is every property this residue has. It is not yet proven: what
-would settle it is watching `0x07178`'s source and destination across the
-frames where the pixel changes.
+**And that is the answer.** The master canvas holds attribute **0** at that
+pixel on every frame sampled - all four planes read, not just the solidity bit
+- while the displayed page shows 2, with frame 200 agreeing at 0 on both sides
+as the control. So the 2 is in neither the terrain nor any current sprite; it
+exists only on the page.
+
+The arithmetic closes it. At frame 190 the nearest lemming is at record
+x 789, so its sprite starts at 781 - and the blit takes `di` from `x >> 3`, so
+its window starts at `781 & ~7` = **776** and spans 24 columns to **799**,
+which is screen 136..159. The disputed pixel is the LAST COLUMN of that
+window: outside the sixteen the bit mask writes, inside the unmasked 24 x 16
+block image `0x07178` saves and paints back. The restore returns a value that
+was true when it was saved and is not true now.
+
+**The port cannot reproduce this by drawing better.** It composes each frame
+from the master plus the sprites, which is why it holds the honest 0; the
+original's page carries three columns of history either side of every lemming.
+Matching it pixel-for-pixel means transcribing the page model - the save at
+`0x07178`, the two pages `0x02C2`/`0x27E2` and the window copy between them -
+rather than adjusting any sprite or mask. That is a change to the port's frame
+model and a scope decision, so it is recorded here rather than made: **the one
+pixel is understood, and closing it is a choice about how much of the
+original's video memory the port should own.**
 
 Two instrument faults were found on the way and both produced confident
 numbers: a scorer looking for `%05d.raw` where the port writes `f%05d.raw`

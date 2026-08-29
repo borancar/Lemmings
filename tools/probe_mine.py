@@ -61,7 +61,7 @@ def install(m):
     from unicorn import UC_HOOK_CODE
 
     base = m.load_seg * 16
-    st = {"n": 0, "raw": None, "solid": {}}
+    st = {"n": 0, "raw": None, "solid": {}, "attr": {}}
 
     def on_frame(uc, ad, size, _):
         if ad - base != FRAME_END:
@@ -99,6 +99,26 @@ def install(m):
                 line.append((m.planes[3][off] >> (7 - (xx & 7))) & 1)
             rows.append(line)
         st["solid"][st["n"]] = rows
+        # AND THE MASTER'S FULL ATTRIBUTE, all four planes. Plane 3 alone is
+        # the solidity bit and cannot tell attribute 0 from attribute 2 -
+        # terrain carries plane 3 and a lemming's colours do not, so "plane 3
+        # is clear" is true of cleared ground AND of anything drawn in 1..7.
+        # Reading the other three says which, and that is what separates "the
+        # master still holds something" from "the page does".
+        att = []
+        for yy in range(SOLID_Y0, SOLID_Y1):
+            line = []
+            for xx in range(SOLID_X0, SOLID_X1):
+                off = (yy - 0x10) * 0xD0 + (xx >> 3) + 0x4A40
+                if off < 0 or off >= 0x10000:
+                    line.append(0)
+                    continue
+                v = 0
+                for pl in range(4):
+                    v |= ((m.planes[pl][off] >> (7 - (xx & 7))) & 1) << pl
+                line.append(v)
+            att.append(line)
+        st["attr"][st["n"]] = att
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame)
     m.uc.hook_add(UC_HOOK_CODE, on_solid)
@@ -177,7 +197,9 @@ def install(m):
                 with open(OUT + ".solid.json", "w") as f:
                     json.dump({"x0": SOLID_X0, "y0": SOLID_Y0,
                                "frames": {str(k): v
-                                          for k, v in st["solid"].items()}}, f)
+                                          for k, v in st["solid"].items()},
+                               "attr": {str(k): v
+                                        for k, v in st["attr"].items()}}, f)
             except OSError:
                 pass
         text = "\n".join(lines)
