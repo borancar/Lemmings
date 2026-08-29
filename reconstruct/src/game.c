@@ -632,13 +632,22 @@ int blit_clips(uint16_t bp) { return (bp & (BLIT_CLIP_X | BLIT_CLIP_Y)) != 0; }
  *                  had a name for. Image 0x09013 sets GC 0 to 0x0F and image
  *                  0x0901B sets GC 1 to the same bp nibble - so it writes
  *                  ONE to the selected planes where erase writes zero. The
- *                  two routines are identical but for that constant. It is
- *                  reached by the dispatch at image 0x08902 and called
- *                  directly from image 0x068FA.
+ *                  two routines are identical but for that constant, which
+ *                  is what makes the pairing certain rather than plausible.
  *                  -> NOT TRANSCRIBED, and it is the one mode with no
  *                  counterpart here. Nothing in the port's own composition
- *                  fills planes with ones; what image 0x068FA wants it for
- *                  is unread.
+ *                  fills planes with ones.
+ *
+ *                  REACHED ONLY BY THE DISPATCH, at image 0x08902. An
+ *                  earlier note here said it was also called directly from
+ *                  image 0x068FA; that was a scratch byte-scan for `E8`
+ *                  finding a sequence that is not an instruction boundary -
+ *                  image 0x068FB is a `cli`. The code map has none of the
+ *                  five modes as a routine head, because they are jump
+ *                  targets inside the blitter and nothing calls them.
+ *                  So what sets bp bit 5 is the open question, and it is a
+ *                  question about the CALLERS of 1010:8822, not about a
+ *                  caller of this.
  *   image 0x08D66  BLIT_SETRESET_ZERO, which forces planes 1..3 to zero so
  *                  the blit can only write 0 or 1.
  *                  -> the one-way arrows; CLAUDE.md records the reading.

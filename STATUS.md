@@ -4707,10 +4707,15 @@ has nothing to seed with here.
   controller's set/reset to 0x0F where the erase path sets it to 0, and both
   then set enable-set/reset to `bp` bits 11..8 - so one writes ONE to the
   selected planes and the other writes ZERO. The two routines are identical
-  but for that constant. Reached by the dispatch at image 0x08902 and called
-  directly from image 0x068FA, which is unread. Nothing in the port's own
-  composition fills planes with ones, so what it is FOR is the question -
-  not how it works.
+  but for that constant, which is what makes the pairing certain rather than
+  plausible. Nothing in the port's own composition fills planes with ones, so
+  what it is FOR is the question - not how it works.
+  It is reached ONLY by the dispatch at image 0x08902: the code map has none
+  of the five modes as a routine head, because they are jump targets inside
+  the blitter. An earlier note claimed a direct caller at image 0x068FA and
+  that was a scratch byte-scan for `E8` matching bytes that are not an
+  instruction boundary - image 0x068FB is a `cli`. So the question is which
+  CALLER of 1010:8822 sets bp bit 5.
 
 - **The digger is drawn now, and 40 pixels short.** Image 0x059BB's build
   table settles its geometry - three planes of fourteen rows, 84 bytes a

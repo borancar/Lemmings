@@ -1162,6 +1162,28 @@ not a line saying "FAIL".
 **Check `make test`'s exit status, not its output**, and after moving anything
 in `game.c` re-run `provenance.py` before believing the build is clean.
 
+## A byte-scan for callers finds callers that are not there
+
+Grepping the image for `E8 rel16` whose target matches an address is a quick
+way to ask "who calls this", and it is wrong often enough to have put a false
+claim in a commit message here. It scans BYTES, not decoded instructions, so
+a two-byte displacement that happens to compute to the target is reported
+even when those bytes sit in the middle of some other instruction.
+
+It said image 0x08FF7 was "called directly from image 0x068FA". Image 0x068FB
+is a `cli`; there is no call there. What settled it was `image/codemap.json`,
+which descends properly: none of the blitter's five modes is a routine head
+at all, because they are **jump** targets inside it and nothing calls them.
+
+The quick scan is still worth having - it finds jump targets a call-graph
+misses, which is how the seven `jmp 0x031E5` sites that decide whether the
+click sounds were found. But **cross-check anything it reports against the
+code map before writing it down**, and prefer "reached from" to "called by"
+unless the instruction boundary is confirmed.
+
+This is the same rule this file already states about instruments generally,
+one level down: when a scan disagrees with the map, suspect the scan.
+
 ## A cited address is not a transcribed routine
 
 `provenance.py` asks whether every function in the port says where it came
