@@ -1173,11 +1173,6 @@ int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
                          int32_t click_id, view_tick tick, void *ctx,
                          long budget);
 
-/* Open a window on an 8-bit indexed buffer and let the viewer scroll it.
- * `view_w`/`view_h` is the viewport onto a `src_w`x`src_h` picture; pass the
- * full size for a screen that is not scrolled. Returns 0 when it is closed. */
-int view_show(const uint8_t *pix, uint16_t w, uint16_t h,
-              const lem_rgb *palette, const char *title, uint8_t scale);
 
 /* Load one level out of `file` and show it, and show its briefing first.
  * THE PORT'S OWN, both of them - they exist so main.c can be the game's flow

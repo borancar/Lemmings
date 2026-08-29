@@ -202,36 +202,6 @@ void view_show_hook(view_tick tick, void *ctx, uint8_t *pix)
     g_show_tick = tick; g_show_ctx = ctx; g_show_pix = pix;
 }
 
-static int32_t dismiss_input(uint8_t scancode);
-
-/* THE HARNESS'S VIEWER, and it has no counterpart in the original - lemdev
- * showing a composed screen so a person can look at it.
- *
- * It used to be a scrollable canvas viewer: arrow keys, a start_x it centred
- * on, clamps at both edges. None of that was ever reachable. Its one caller
- * passes src_w == view_w, so the maximum scroll was zero and every key did
- * nothing, and the two functions that wrapped it for a scrolling look at a
- * level - view_run and view_run_anim - had no callers left at all once
- * level_show stopped falling back to them. CLAUDE.md already recorded the
- * cost of that arrangement: `lemdev --show` was a THIRD composition path, a
- * window of a static canvas with no panel and no lemmings, and every frame of
- * it matched while the game showed an empty cave.
- *
- * So this is what is left when the unreachable parts go: put the picture up,
- * wait for Escape or the close box.
- */
-int view_show(const uint8_t *pix, uint16_t w, uint16_t h,
-              const lem_rgb *palette, const char *title, uint8_t scale)
-{
-    if (scale < 1) scale = 1;
-    if (view_open(w, h, title, scale) != 0) return -1;
-    for (;;) {
-        if (view_screen_pump(dismiss_input, BRIEF_PLAY) != VIEW_CLOSED)
-            return 0;
-        view_screen_present(pix, w, h, palette);
-        view_screen_pace();
-    }
-}
 
 
 /* THE SCANCODE THE KEYBOARD PRODUCED - not what it means.
@@ -377,26 +347,6 @@ void view_screen_pace(void)
 
 
 
-/* One frame of a level: the terrain as composed, then every object over it at
- * whatever frame the stepper has reached. The objects are drawn into the
- * CANVAS rather than the screen, because view_show does the scrolling - so the
- * `scroll` the original applies at image 0x07BCF is zero here and the viewport
- * supplies it instead. */
-
-/* THE LEVEL'S SCREEN - mode 0x0D is 320x200 and it is two things stacked:
- * the play area at rows 0..159 and the control panel at 160..199. This port
- * had been showing a 320x160 window of the play area alone, so the panel -
- * every piece of which is transcribed and scores 100.00% against the
- * original - was never on screen in the game.
- *
- * The play area is a WINDOW onto the 1584-wide canvas; the panel is composed
- * fresh each frame because the minimap's dots and its viewport box move.
- *
- * The scrolling is THE PORT'S OWN. The original scrolls from the mouse at
- * the screen edges and from the minimap, and neither has been read, so this
- * offers the arrow keys and the mouse at the edges and says so rather than
- * inventing a rate and calling it transcribed.
- */
 
 
 /* WHAT THE PLAYER USED TO DO - a recorded input script.
