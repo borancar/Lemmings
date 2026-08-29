@@ -2193,10 +2193,33 @@ static uint8_t g_tick_pending;      /* ds:0x1FCD */
  * left is what the handler does to the GAME. */
 void timer_isr(void)
 {
-    /* image 0x01872: the driver's tick, every interrupt and not every
-     * frame. image 0x0185F's INT 60h twin runs on odd ticks only (image
-     * 0x0184A's `and al,1`), which this port does not have a path for. */
-    sound_tick_now();
+    /* IMAGE 0x01861 - AND THIS GATE IS THE ONLY THING THAT EVER STOPS THE
+     * MUSIC ON A SETTING.
+     *
+     *     0x01861  cmp byte ptr [0x2010], 0xff    a driver answered
+     *     0x01866  jne 0x1874
+     *     0x01868  test byte ptr [0x25a7], 3      the settings want sound
+     *     0x0186d  je 0x1874
+     *     0x0186f  mov ax, 0
+     *     0x01872  int 0x61                       the driver's TICK
+     *
+     * The port ticked unconditionally, and that is a bug the pull model made
+     * audible: with the device asking for samples for ever, a driver nothing
+     * gates is SEQUENCED for ever. Under the old push model a screen that did
+     * not pump stopped it by accident.
+     *
+     * The pair is the same pair image 0x002FE's stop is guarded on, and that
+     * is not a coincidence - it is why the original can afford to skip the
+     * stop. F3 issues NO request at all: image 0x044B3 writes ds:0x25A7 and
+     * returns, so with sound turned off the level's end asks for nothing and
+     * this test is what silences the tune. Transcribe one guard without the
+     * other and the game has no way to stop playing.
+     *
+     * image 0x0185F's INT 60h twin runs on odd ticks only (image 0x0184A's
+     * `and al,1`) and tests bit 0 alone - it is the fallback device, which
+     * this port does not have. */
+    if (g_snd_driver == 0xFF && sound_enabled(3))   /* image 0x01861, 0x01868 */
+        sound_tick_now();                           /* image 0x01872 */
     g_tick_pending++;               /* image 0x018A3 */
 }
 

@@ -1014,8 +1014,8 @@ int main(int argc, char **argv)
      */
     {
         enum { W = 64, H = 64 };
-        static uint8_t ground[W * H];
-        for (uint16_t i = 0; i < W * H; i++) ground[i] = 8;   /* all solid */
+        static uint8_t solid[W * H];
+        for (uint16_t i = 0; i < W * H; i++) solid[i] = 8;   /* all solid */
 
         lemming a;
         memset(&a, 0, sizeof a);
@@ -1030,7 +1030,7 @@ int main(int argc, char **argv)
            "image 0x0325x sets hot_y to -12");
 
         int16_t y0 = a.y;
-        lemmings_step(&a, 1, ground, W, H);
+        lemmings_step(&a, 1, solid, W, H);
         ck("the frame after, it is on anim 0 and has dug",
            a.anim == 0 && a.y == y0 + 1, "the first dig did not happen");
         /* The FIRST frame cuts three rows - image 0x0250C does y-2 and y-1
@@ -1040,32 +1040,32 @@ int main(int argc, char **argv)
          * leftmost pixel is the most significant bit. */
         const int32_t col = a.x - 4 - 16;
         ck("the first frame cuts three rows",
-           ground[(y0 - 2 - 16) * W + col] == 0
-           && ground[(y0 - 1 - 16) * W + col] == 0
-           && ground[(y0 - 16) * W + col] == 0,
+           solid[(y0 - 2 - 16) * W + col] == 0
+           && solid[(y0 - 1 - 16) * W + col] == 0
+           && solid[(y0 - 16) * W + col] == 0,
            "image 0x0250C's two extra rows are missing");
         ck("and stops there",
-           ground[(y0 + 1 - 16) * W + col] == 8
-           && ground[(y0 - 3 - 16) * W + col] == 8,
+           solid[(y0 + 1 - 16) * W + col] == 8
+           && solid[(y0 - 3 - 16) * W + col] == 8,
            "the shaft runs past what image 0x0250C cuts");
         ck("the span is x-4 to x+4",
-           ground[(y0 - 16) * W + (a.x - 4 - 16)] == 0
-           && ground[(y0 - 16) * W + (a.x + 4 - 16)] == 0
-           && ground[(y0 - 16) * W + (a.x - 5 - 16)] == 8
-           && ground[(y0 - 16) * W + (a.x + 5 - 16)] == 8,
+           solid[(y0 - 16) * W + (a.x - 4 - 16)] == 0
+           && solid[(y0 - 16) * W + (a.x + 4 - 16)] == 0
+           && solid[(y0 - 16) * W + (a.x - 5 - 16)] == 8
+           && solid[(y0 - 16) * W + (a.x + 5 - 16)] == 8,
            "the nine-pixel span is not where the mask puts it");
 
         int moved = 0;
         for (uint8_t i = 1; i <= 7; i++) {
             int16_t before = a.y;
-            lemmings_step(&a, 1, ground, W, H);
+            lemmings_step(&a, 1, solid, W, H);
             if (a.anim != i || a.y != before) moved = 1;
         }
         ck("anims 1..7 animate and do not dig", !moved,
            "it dug on a frame the original does not");
 
         int16_t y8 = a.y;
-        lemmings_step(&a, 1, ground, W, H);
+        lemmings_step(&a, 1, solid, W, H);
         ck("and anim 8 digs again", a.anim == 8 && a.y == y8 + 1,
            "the second dig is not on anim 8");
 
@@ -1728,7 +1728,7 @@ int main(int argc, char **argv)
                 char gn[16], xn[16];
                 int sp = level_graphics_names(&lv, gn, sizeof gn,
                                               xn, sizeof xn);
-                char wg[16], wx[16];
+                char wg[24], wx[24];
                 snprintf(wg, sizeof wg, "ground%uo.dat",
                          (unsigned)lv.graphics_set);
                 snprintf(wx, sizeof wx, "vgagr%u.dat",
@@ -1845,6 +1845,70 @@ int main(int argc, char **argv)
         }
         ck("and no phase of the divider moves it (image 0x03B3F)",
            !drifted, "the highlight followed the counter");
+    }
+
+    /* ==================================================================
+     * DOES THE LEVEL'S STOP ACTUALLY SILENCE THE CHIP?
+     *
+     * A player reports notes still sounding once a level ends or is cancelled.
+     * It matters more than it did: the audio device PULLS, so anything the
+     * driver keeps sequencing is rendered for ever, where the old push model
+     * simply stopped feeding when nothing pumped.
+     *
+     * This drives the GAME's path, not the driver's - image 0x003B4 asks for
+     * the tune and image 0x002FE stops it - because the fault could be at
+     * either end and a test of adlib_stop alone cannot tell which.
+     * ================================================================== */
+    {
+        const char *e9 = NULL;
+        if (adlib_load(dir, &e9) == 0) {
+            enum { CH = 2048 };
+            static int16_t buf[CH];
+
+            sound_driver_present(1);            /* image 0x005A4: a card */
+            sound_request(0x61, 3, 6);          /* image 0x003B4: the tune */
+            for (int i = 0; i < CH * 4; i += CH) sound_build_chunk(buf, CH);
+
+            long playing = 0;
+            for (uint32_t k = 0; k < CH; k++)
+                if (buf[k] > 64 || buf[k] < -64) playing++;
+            ck("the level's tune is sounding (image 0x003B4)", playing > 0,
+               "silent - the rest of this proves nothing");
+
+            level_end_finish();                 /* image 0x002CD */
+
+            /* Ten seconds of the device pulling, the way it does on the
+             * results screen and the next briefing. */
+            long frames = (long)OPL_SAMPLE_RATE * 10, done = 0, tail = 0;
+            while (done < frames) {
+                uint32_t n = (uint32_t)((frames - done) < CH ? (frames - done) : CH);
+                sound_build_chunk(buf, n);
+                for (uint32_t k = 0; k < n; k++)
+                    if ((buf[k] > 64 || buf[k] < -64)
+                            && done + (long)k > OPL_SAMPLE_RATE * 2) tail++;
+                done += n;
+            }
+            ck("and it is silent two seconds after the level's stop "
+               "(image 0x002FE)", tail == 0, "still sounding");
+
+            /* THE SETTINGS ARE THE OTHER HALF, and F3 makes no request at
+             * all - image 0x044B3 writes ds:0x25A7 and returns. What silences
+             * the game is image 0x01861 IN THE ISR: the driver is ticked only
+             * while a driver answered and ds:0x25A7 still wants sound. Image
+             * 0x002FE's stop is guarded on the same pair, so with sound off
+             * the level's end issues NOTHING and the ISR is the only thing
+             * that stops the tune. */
+            sound_driver_present(1);
+            sound_request(0x61, 3, 6);
+            for (int i = 0; i < 4; i++) sound_build_chunk(buf, CH);
+            sound_state_set(0, 1);              /* F3 round to silent */
+            uint32_t t0 = adlib_tick_count();
+            for (long d = 0; d < OPL_SAMPLE_RATE * 2; d += CH)
+                sound_build_chunk(buf, CH);
+            ck("and the timer stops ticking the driver when the settings say "
+               "silent (image 0x01861)", adlib_tick_count() == t0,
+               "the driver is still being sequenced");
+        }
     }
 
     printf(fails ? "\n  %d FAILED\n" : "\n  all passed\n", fails);
