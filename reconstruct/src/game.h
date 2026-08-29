@@ -1160,9 +1160,61 @@ void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
                          const lem_rgb *palette);
 void view_screen_pace(void);
 /* image 0x000FB's two hardware shares - see game.c's level_loop. */
-int  view_level_input(struct level_frame *A, int32_t *scroll_x_p,
+/* WHAT THE HARDWARE USED TO DO for a level frame: ds:0x10, ds:0x12, ds:0x14
+ * and ds:0x1FD0 brought up to date from the host's queue. It decides nothing;
+ * the decisions are image 0x04085's and image 0x03E6F's, in game.c. */
+/* THE PORT'S OWN KEYS. The original has none of them - it owns the machine,
+ * so there is nothing to abandon a level for and its scroll is the pointer
+ * pushed against the edge - and having no scancode they are named here rather
+ * than reaching game.c as SDL's own numbering. */
+typedef enum {
+    PORT_KEY_NONE = 0, PORT_KEY_ABANDON, PORT_KEY_LEFT,
+    PORT_KEY_RIGHT, PORT_KEY_HOME, PORT_KEY_END
+} port_key;
+
+typedef struct {
+    uint8_t  pressed;   /* the left button went down this pass */
+    uint8_t  moved;     /* the pointer has been somewhere definite */
+    port_key port_key;  /* the port's own, above */
+} level_input;
+level_input view_level_pump(void);
+void view_input_drain(void);
+
+/* IMAGE 0x016D4 - the keyboard handler, and the three things it keeps. The
+ * readers run it first, the way an interrupt has already run. */
+void    keyboard_isr(uint8_t code);
+uint8_t key_last(void);
+void    key_last_clear(void);
+int     key_held(uint16_t mask);
+int     key_is_down(uint8_t sc);
+/* ds:0x1FC7's bits, which are KEY_WATCH's order - see data.c. */
+#define KEY_ESCAPE 0x0020
+#define KEY_ENTER  0x0040
+extern const uint8_t KEY_WATCH[16];
+void view_level_present(void);
+void view_level_bind(uint8_t *screen);
+void view_level_unbind(void);
+void view_level_palettes(const lem_rgb *top, const lem_rgb *bottom, int live);
+void view_level_period(uint16_t hz);
+void view_level_grab(int on);
+void view_level_pace(void);
+const lem_rgb *view_level_palette(void);
+
+/* image 0x04085's input step and image 0x00105/0x00164's show - both game.c's,
+ * both carrying their addresses. */
+int  level_input_step(struct level_frame *A, int32_t *scroll_x_p,
                       int32_t max_x);
-void view_level_show(const uint8_t *screen, struct level_frame *A);
+void level_frame_show(const uint8_t *screen, struct level_frame *A);
+void level_key_button(uint8_t scancode);
+
+/* THE HARNESS'S, and nothing in the original - see harness.c. */
+void harness_level_begin(void);
+void harness_level_end(void);
+int  harness_sink_active(void);
+long harness_frame_no(void);
+void harness_sink_frame(const uint8_t *screen, const lem_rgb *top,
+                        struct level_frame *A);
+int  harness_script_step(struct level_frame *A, int32_t *scroll_x);
 /* image 0x000FB - the level's loop. */
 void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
                 int32_t *scroll_x, int32_t max_x, long budget);
@@ -1363,8 +1415,21 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * bit 0x40 plays; bit 0x20 - Esc here - goes back to the menu. */
 #define BRIEF_PLAY  1
 #define BRIEF_MENU  2
-int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
-                                  uint8_t scale);
+/* IMAGE 0x04566's tail - a screen shown, waited on, and faded away on both
+ * answers. game.c owns the sequence; the window and the DAC slots are
+ * sdl_io.c's. */
+int32_t menu_screen_show(const menu_screen *m, const char *title,
+                         uint8_t scale);
+int32_t menu_dismiss_input(uint8_t scancode);
+int     menu_fade_tick(void *ctx, uint8_t *pix);
+
+/* THE MENU SCREEN'S TWO PALETTE SLOTS - what the DAC used to hold. The loops
+ * that walk them are game.c's, carrying image 0x045EF and image 0x046A2. */
+void menu_fade_arm(const lem_rgb *pal, const lem_rgb *low, uint16_t split);
+void menu_fade_to_black(void);
+void menu_fade_disarm(void);
+int  menu_fade_notch(void);
+const lem_rgb *menu_fade_palette(void);
 /* ds:0x14 and the page, for game.c's level_results_wait - image 0x047A9.
  * Reading the buttons pumps the event queue and costs ~10ms; see sdl_io.c. */
 /* The window, which is this port's `int 10h` - image 0x00462 set mode 0x0D

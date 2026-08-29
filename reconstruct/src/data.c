@@ -1354,3 +1354,31 @@ const lem_sprite LEM_SPRITE[LEM_SPRITE_N] = {
     {  18800,  16,  2, 10,  40, 1 },   /* image 0x05A98 */
     {  19440,  32,  2, 10,  40, 1 },   /* image 0x05AA8 */
 };
+
+/* ds:0x201F - THE SIXTEEN KEYS THE HANDLER WATCHES, in bit order. Image
+ * 0x016F8 loads this address with cx = 1 and shifts cx left for each entry, so
+ * entry i is bit i of ds:0x1FC7, and the walk ends when the shift carries out
+ * - sixteen, no terminator. An 0xFF entry is a hole image 0x0175A skips.
+ *
+ * Two of these are corroboration rather than guesswork: bit 5 is Escape and
+ * bit 6 is Enter, which is exactly the 0x20 and 0x40 that image 0x002AB tests
+ * to end a level and image 0x0468E and image 0x04693 test to leave a briefing
+ * for the menu or for the game. */
+const uint8_t KEY_WATCH[16] = {
+    0x10,   /* bit  0  Q */
+    0x1E,   /* bit  1  A */
+    0x18,   /* bit  2  O */
+    0x19,   /* bit  3  P */
+    0x39,   /* bit  4  Space */
+    0x01,   /* bit  5  Escape */
+    0x1C,   /* bit  6  Enter */
+    0x02,   /* bit  7  1 */
+    0x03,   /* bit  8  2 */
+    0x04,   /* bit  9  3 */
+    0x7C,   /* bit 10 */
+    0x7B,   /* bit 11 */
+    0x7A,   /* bit 12 */
+    0x79,   /* bit 13 */
+    0x77,   /* bit 14 */
+    0x4C,   /* bit 15  keypad 5 */
+};

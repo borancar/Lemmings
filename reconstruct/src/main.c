@@ -226,7 +226,7 @@ int main(int argc, char **argv)
         if (a == MENU_HELP) {
             menu_screen sub;
             if (menu_input_screen(data, &sub, &err) != 0) continue;
-            menu_show_until_dismissed(&sub, "PC Lemmings", DEFAULT_SCALE);
+            menu_screen_show(&sub, "PC Lemmings", DEFAULT_SCALE);
             menu_free(&sub);
             continue;
         }

@@ -15,6 +15,9 @@
 
 #include <stdlib.h>
 #include "game.h"
+/* The key table under test is a mapping FROM SDL's keycodes, so the test
+ * has to name them - see the block on image 0x03E6F below. */
+#include <SDL3/SDL.h>
 #include "opl.h"
 #include "adlib.h"
 
@@ -1845,6 +1848,49 @@ int main(int argc, char **argv)
         }
         ck("and no phase of the divider moves it (image 0x03B3F)",
            !drifted, "the highlight followed the counter");
+    }
+
+    /* ==================================================================
+     * EVERY KEY IMAGE 0x03E6F NAMES MUST REACH IT.
+     *
+     * The level's keys travel as ds:0x1FD0 scancodes now, and the port's table
+     * had only the menu's eleven - so F5..F10, F11, F12, Del and keypad plus
+     * all answered 0xFF and six of the eight SKILL keys did nothing. That is a
+     * key that does nothing rather than a key that means something else, which
+     * is the quiet kind: nothing crashes and no comparison here scores a
+     * keyboard.
+     * ================================================================== */
+    {
+        static const struct { int32_t k; uint8_t sc; const char *name; } KEYS[] = {
+            { SDLK_ESCAPE, 0x01, "Escape" },
+            { SDLK_F1, 0x3B, "F1" },   { SDLK_F2, 0x3C, "F2" },
+            { SDLK_F3, 0x3D, "F3" },   { SDLK_F4, 0x3E, "F4" },
+            { SDLK_F5, 0x3F, "F5" },   { SDLK_F6, 0x40, "F6" },
+            { SDLK_F7, 0x41, "F7" },   { SDLK_F8, 0x42, "F8" },
+            { SDLK_F9, 0x43, "F9" },   { SDLK_F10, 0x44, "F10" },
+            { SDLK_F11, 0x57, "F11" }, { SDLK_F12, 0x58, "F12" },
+            { SDLK_DELETE, 0x53, "Del" }, { SDLK_KP_PLUS, 0x4E, "keypad +" },
+        };
+        int bad = 0;
+        char why[128] = "";
+        for (size_t i = 0; i < sizeof KEYS / sizeof KEYS[0]; i++) {
+            uint8_t got = view_scancode_of(KEYS[i].k);
+            if (got != KEYS[i].sc) {
+                bad++;
+                if (!*why)
+                    snprintf(why, sizeof why, "%s gave 0x%02X, not 0x%02X",
+                             KEYS[i].name, got, KEYS[i].sc);
+            }
+        }
+        ck("every key image 0x03E6F names has a scancode", bad == 0, why);
+
+        /* And the eight skills are CONTIGUOUS, which is why image 0x03EA0
+         * counts with `inc al` rather than a table. */
+        int run = 1;
+        for (int32_t k = SDLK_F3; k < SDLK_F10; k++)
+            if (view_scancode_of(k + 1) != view_scancode_of(k) + 1) run = 0;
+        ck("and F3..F10 run consecutively (image 0x03EA0's `inc al`)",
+           run, "the skill keys are not a run");
     }
 
     /* ==================================================================

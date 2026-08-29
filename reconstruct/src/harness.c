@@ -158,3 +158,133 @@ void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
         view_screen_pace();
     }
 }
+
+/* ======================================================================
+ * THE LEVEL'S FRAME SINK AND ITS INPUT SCRIPT.
+ *
+ * NOTHING IN THE ORIGINAL. Both exist only so the port can be DRIVEN and
+ * MEASURED: the sink writes the 320x200 screen the game actually displays so
+ * tools/compare_screen.py can score THAT rather than a second arrangement of
+ * the same calls, and the script replays a recorded run so both sides of
+ * tools/compare_play.py see one set of clicks.
+ *
+ * They lived in sdl_io.c among the window's own state, which is the drift
+ * this file exists to stop: sdl_io.c is what the CARD did, and a card does
+ * not write JSON.
+ * ====================================================================== */
+static const char *g_sink_dir;
+static FILE       *g_sink_state;
+static long        g_sink_frame;
+static uint32_t    g_script_at;
+
+/* A LEVEL IS ABOUT TO RUN AND SOMETHING WANTS TO WATCH IT. All three are
+ * environment variables because the game has no command line and writes no
+ * files: setting one is a developer asking, not the game doing it.
+ *
+ *   LEM_SCREEN_DIR    the 320x200 screen the game actually displays, so
+ *                     tools/compare_screen.py can score THAT rather than a
+ *                     second arrangement of the same calls
+ *   LEM_STATE_FILE    the port's lemming array frame by frame. A screen
+ *                     comparison says two lemmings look different; it does
+ *                     not say whether the x, the y, the flags or the
+ *                     animation counter is the one that moved
+ *   LEM_INPUT_SCRIPT  a recorded run, so a comparison can cover the parts of
+ *                     the game that need a player
+ */
+void harness_level_begin(void)
+{
+    const char *state  = getenv("LEM_STATE_FILE");
+    const char *script = getenv("LEM_INPUT_SCRIPT");
+    g_sink_dir   = getenv("LEM_SCREEN_DIR");
+    g_sink_state = state ? fopen(state, "w") : NULL;
+    g_sink_frame = 0;
+    g_script_at  = 0;
+    if (script) harness_script_load(script);
+}
+
+void harness_level_end(void)
+{
+    if (g_sink_state) fclose(g_sink_state);
+    g_sink_state = NULL;
+}
+
+int  harness_sink_active(void) { return g_sink_dir != NULL; }
+long harness_frame_no(void)    { return g_sink_frame; }
+
+/* One frame out: the raw screen with its palette, and a line of state. The
+ * container holds ONE palette and the play area is what gets scored, so it is
+ * the top one - the split is a fact about the screen, not about this file. */
+void harness_sink_frame(const uint8_t *screen, const lem_rgb *top,
+                        struct level_frame *A)
+{
+    if (g_sink_dir) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/f%05ld.raw", g_sink_dir, g_sink_frame);
+        FILE *f = fopen(path, "wb");
+        if (f) {
+            uint16_t wh[2] = { LEVEL_SCREEN_W, LEVEL_SCREEN_H };
+            fwrite("LEMRW2", 1, 6, f);
+            fwrite(wh, sizeof(uint16_t), 2, f);
+            for (uint8_t i = 0; i < 16; i++) {
+                fputc(top[i].r, f); fputc(top[i].g, f); fputc(top[i].b, f);
+            }
+            fwrite(screen, 1, LEVEL_SCREEN_W * LEVEL_SCREEN_H, f);
+            fclose(f);
+        }
+    }
+    if (g_sink_state) {
+        fprintf(g_sink_state, "{\"frame\":%ld,\"released\":%u,\"live\":%u,"
+                "\"saved\":%u,\"over\":%u,\"tick\":%u,\"view_x\":%d,\"lem\":[",
+                g_sink_frame, (unsigned)A->released,
+                (unsigned)lemmings_live(A->lem, A->released),
+                (unsigned)level_saved, (unsigned)g_level_over,
+                (unsigned)level_tick_now(), (int)A->view_x);
+        for (uint8_t k = 0; k < A->released && k < LEMMING_MAX; k++) {
+            const lemming *a = &A->lem[k];
+            /* The FUSE and the direction are in here because the nuke is a
+             * thing that happens to the fuse and to nothing else for
+             * seventy-nine frames: a comparison of position and flags alone
+             * agrees all the way from the double click to the first
+             * explosion, and would have said the cascade was right whatever
+             * order it lit them in. */
+            fprintf(g_sink_state,
+                    "%s{\"x\":%d,\"y\":%d,\"hot_x\":%d,\"hot_y\":%d,"
+                    "\"flags\":%u,\"anim\":%u,\"alive\":%u,"
+                    "\"fuse\":%u,\"dir\":%d,\"state\":%u}",
+                    k ? "," : "", a->x, a->y, a->hot_x, a->hot_y,
+                    (unsigned)a->flags, (unsigned)a->anim,
+                    (unsigned)a->alive, (unsigned)a->fuse,
+                    (int)a->dir, (unsigned)a->state);
+        }
+        fprintf(g_sink_state, "]}\n");
+    }
+    g_sink_frame++;
+}
+
+/* The recorded run, replayed. It speaks BEFORE the host's queue is read, so a
+ * scripted frame behaves the same whether or not an event was waiting.
+ *
+ * A scripted pointer is re-asserted rather than set once: under
+ * SDL_VIDEODRIVER=dummy pygame still delivers a MOUSEMOTION and the pointer
+ * wanders back, which CLAUDE.md records costing two rounds of reading
+ * disassembly for a clamp that does not exist. */
+int harness_script_step(struct level_frame *A, int32_t *scroll_x)
+{
+    int moved = 0;
+    while (g_script_at < harness_script_n
+            && harness_script[g_script_at].frame <= g_sink_frame) {
+        const script_act *act = &harness_script[g_script_at++];
+        if (act->what == SCRIPT_MOVE) {
+            /* The script is in SCREEN pixels; the game's own pointer sits
+             * eight further on, which is where image 0x0426D clamps. */
+            lem_mouse_move(act->x + 8, act->y + 8);
+            moved = 1;
+        } else if (act->what == SCRIPT_DOWN) {
+            lem_buttons |= 1;                       /* ds:0x14 bit 0 */
+            level_panel_click(A, scroll_x);         /* image 0x03168 */
+        } else if (act->what == SCRIPT_UP) {
+            lem_buttons &= (uint8_t)~1u;
+        }
+    }
+    return moved;
+}

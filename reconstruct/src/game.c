@@ -618,7 +618,7 @@ int blit_clips(uint16_t bp) { return (bp & (BLIT_CLIP_X | BLIT_CLIP_Y)) != 0; }
  *                  0x0E, GC 5 = 0, GC 3 = 0, then four passes - the first
  *                  masked through GC 8 clearing planes 1..3, the other three
  *                  OR-ing their plane in unmasked.
- *                  -> blit_sprite carries it, with those addresses.
+ *                  -> blit() below carries it, with those addresses.
  *   image 0x08B42  BLIT_NO_OVERWRITE, reached from image 0x088F3 BEFORE
  *                  erase is ever tested - which is why a terrain piece
  *                  carrying both flags is drawn.
@@ -1689,7 +1689,7 @@ void level_anim_init(level_anim *st, const level *lv, const ground *g)
 /* ======================================================================
  * PUTTING A NUMBER IN THE STATUS LINE - image 0x04B68.
  *
- * Not the same routine as the briefing's put_num below, which is still
+ * Not the same routine as the briefing's put_num3 below, which is still
  * unread and right-aligns; this one is the status line's own and is
  * left-aligned. digits3 at image 0x04BC2 is a third.
  *
@@ -8385,8 +8385,10 @@ int menu_label_sprite(void)
 
 /* Where the six plates land. NOT a table in the original - image 0x04F31 runs
  * two loops, four from (68,120) and two from (196,197), each `add ax, 0x80`.
- * This exists only because menu_hotspots needs the boxes, and it is written as
- * the loops so there is one source of truth rather than two.
+ * It is written as the loops rather than as a table of six positions so there
+ * is one source of truth. The hotspot matcher that used to need the boxes is
+ * gone - image 0x04473 makes a click F1 wherever it lands, see menu_dispatch -
+ * and what is left reading this is the drawing.
  *
  * SIGN_ROW is the loop's own parameters; draw_plate_row takes the same ones. */
 static const struct { uint8_t first, count; uint16_t x, y; } SIGN_ROW[2] = {
@@ -11185,7 +11187,7 @@ int level_frame_tick(void *ctx, uint8_t *pix)
  *                              for - it does not return to its caller
  *     0x046A2  the fade out, on both answers
  *
- * THE PORT HAD ONE ANSWER. menu_show_until_dismissed returned void and its
+ * THE PORT HAD ONE ANSWER. menu_screen_show returned void and its
  * input handler gave Esc the same code as a click, so both played and there
  * was no way back to the menu from a briefing - a screen the original can be
  * left from without playing the level.
@@ -11197,7 +11199,7 @@ int level_show_briefing(const char *dir, const level *lv,
     menu_screen br;
     if (menu_briefing_screen(dir, lv, level_rating(), &br, err) != 0)
         return -1;
-    int32_t how = menu_show_until_dismissed(&br, "PC Lemmings", scale);
+    int32_t how = menu_screen_show(&br, "PC Lemmings", scale);
     menu_free(&br);
     /* image 0x0468E's 0x20 is the only one that does not play. */
     return how == BRIEF_MENU ? BRIEF_MENU : 0;
@@ -11314,8 +11316,8 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
      * dismissed the level being read again by this screen.
      */
     /* IMAGE 0x047A9's WAIT. The decision is here; the polling is
-     * view_results_wait's, because ds:0x14 was a byte the mouse driver kept
-     * up to date and its counterpart is an SDL event queue.
+     * view_buttons's, because ds:0x14 was a byte the mouse driver kept up to
+     * date and its counterpart is an SDL event queue.
      *
      *     0x047A9  ax = ds:0x14 / test ax,7 / jne 0x047A9   wait for RELEASE
      *     0x047B1  ax = ds:0x14
@@ -11974,6 +11976,508 @@ int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
     }
 }
 
+/* Image 0x0468E's `test ax, 0x20 / jne 0x0469B` - the one key that answers a
+ * waiting screen with "back to the menu" rather than "on with it". Anything
+ * else the screen does not know about, which is what -1 says. */
+int32_t menu_dismiss_input(uint8_t scancode)
+{
+    return menu_key_code(scancode) == 0x1B ? BRIEF_MENU : -1;
+}
+
+/* A NOTCH EVERY THIRD PASS, not every pass. Image 0x055B7 waits three retraces
+ * between notches - the port stepped once a retrace and faded three times too
+ * fast on every screen that fades. menu_screen_wait runs at one pass per
+ * retrace, so the counter here is what makes the rate the original's rather
+ * than the display's.
+ *
+ * Non-zero re-uploads the frame, which is what makes a notch visible; once
+ * nothing moves the screen is simply held. */
+int menu_fade_tick(void *ctx, uint8_t *pix)
+{
+    static uint8_t wait;
+    (void)ctx; (void)pix;
+    if (wait) { wait--; return 0; }
+    wait = (uint8_t)(palette_fade_retraces() - 1);   /* image 0x055EE */
+    return menu_fade_notch();                        /* image 0x05329 */
+}
+
+/* THE FUNCTION KEYS, image 0x03E6F.
+ *
+ * The same routine that handles a panel CLICK reads the scancode the
+ * keyboard handler left in ds:0x1FD0 (image 0x016D4 stores it, and clears it
+ * on the key-up), so a key and a click reach the same places:
+ *
+ *     0x3B  F1              image 0x04068   the release rate, down
+ *     0x3C  F2              image 0x0403D   the release rate, up
+ *     0x3D..0x44  F3..F10   image 0x03F5C   the eight skills, buttons 2..9
+ *     0x4E  keypad +        image 0x04018   pause
+ *     0x57  F11             image 0x04018   pause
+ *     0x53  Del             image 0x03FEF   the nuke
+ *     0x58  F12             image 0x03FEF   the nuke
+ *
+ * NOTE WHERE THE SKILLS ENTER. Image 0x03E9C..0x03EEB jump to image 0x03F5C,
+ * which is PAST image 0x03F52's pause test and past image 0x03F2E's latch -
+ * so a function key arms a skill while the game is paused, where a click on
+ * the same button does not, and a held key is not stopped from repeating by
+ * the thing that stops a held mouse button. Both are the original's, and
+ * neither is what a tidier reading would have produced.
+ */
+void level_key_button(uint8_t scancode)
+{
+    switch (scancode) {
+    case 0x3B: level_rate_click(0); return;      /* F1,  image 0x04068 */
+    case 0x3C: level_rate_click(1); return;      /* F2,  image 0x0403D */
+    case 0x4E: case 0x57:
+        level_pause_click();        return;      /* +/F11, image 0x04018 */
+    case 0x53: case 0x58:
+        level_nuke_click();         return;      /* Del/F12, image 0x03FEF */
+    default: break;
+    }
+    /* image 0x03EA0 onwards: F3 is button 2 and each key after it is one
+     * more, which is why the original counts with `inc al` rather than a
+     * table. */
+    int32_t button = -1;
+    if (scancode >= 0x3D && scancode <= 0x44)
+        button = 2 + (int32_t)(scancode - 0x3D);
+    if (button < 0) return;
+
+    /* image 0x03F66 stores it, and image 0x03F77 makes the button's noise -
+     * the same one a click makes, because the key path joins the click path
+     * before it. */
+    if (sound_enabled(3))                        /* image 0x03F70 */
+        sound_request(0x61, 4, 0x01);                  /* image 0x03F77 */
+    level_skill_select((uint8_t)button);         /* image 0x03F66 */
+}
+
+/* ======================================================================
+ * IMAGE 0x016D4 - THE KEYBOARD HANDLER, AND THE THREE THINGS IT KEEPS.
+ *
+ * The port had one of them, and passed a scancode straight from the host's
+ * event to whatever wanted it. The original does what games of the era
+ * generally do: an ISR takes the byte off port 0x60 and leaves STATE behind,
+ * and every reader reads that state rather than an event.
+ *
+ *   ds:0x0F78[0x53]   ONE BYTE PER SCANCODE. Image 0x01780 indexes it by the
+ *                     low seven bits, refuses anything from 0x53 up, and
+ *                     writes 0x94 while the key is down and 0 when it comes
+ *                     up (image 0x01790's `and cl,0x80 / xor cl,0x80` is the
+ *                     release bit inverted, and image 0x0179B ors in 0x14).
+ *
+ *   ds:0x1FC7         A SIXTEEN-BIT HELD MASK over the keys at ds:0x201F -
+ *                     KEY_WATCH in data.c. Image 0x0176E sets the bit on the
+ *                     way down and image 0x01776 clears it on the way up.
+ *                     This is what image 0x002AB tests to end a level and
+ *                     image 0x0468E and image 0x04693 test to leave a
+ *                     briefing, and it is a HELD state, not an edge.
+ *
+ *   ds:0x1FD0         THE LAST SCANCODE PRESSED, and it is cleared by ANY
+ *                     release (image 0x01736) as well as by the reader. Image
+ *                     0x03E6F takes the function keys off this one.
+ *
+ * The distinction between the second and the third is not decoration. A held
+ * mask answers "is Escape down now", which is what a loop polling once a frame
+ * needs; a last-scancode byte answers "what was just pressed", which is what a
+ * one-shot like a skill assignment needs. The port drove both from one event
+ * and could not have expressed either faithfully.
+ *
+ * `code` is the byte as it comes off port 0x60: bit 7 set is a release.
+ * ====================================================================== */
+uint8_t  g_key_down[0x53];       /* ds:0x0F78 */
+uint16_t g_key_held;             /* ds:0x1FC7 */
+uint8_t  g_key_last;             /* ds:0x1FD0 */
+
+void keyboard_isr(uint8_t code)
+{
+    uint8_t sc = (uint8_t)(code & 0x7F);
+    uint8_t up = (uint8_t)(code & 0x80);
+
+    if (!up) g_key_last = sc;              /* image 0x01707 */
+    else     g_key_last = 0;               /* image 0x01736 */
+
+    /* image 0x016F8's walk: entry i is bit i, and the loop ends when the
+     * shift carries out rather than on a terminator. */
+    for (uint8_t i = 0; i < 16; i++) {
+        uint16_t bit = (uint16_t)(1u << i);
+        if (KEY_WATCH[i] == 0xFF) continue;      /* image 0x0175A's hole */
+        if (KEY_WATCH[i] != sc) continue;
+        if (!up) g_key_held = (uint16_t)(g_key_held | bit);   /* image 0x0176E */
+        else {
+            g_key_held = (uint16_t)(g_key_held & ~bit);       /* image 0x01776 */
+            g_key_last = 0;                                   /* image 0x0177A */
+        }
+        break;                                                /* image 0x01772 */
+    }
+
+    /* image 0x01780's per-key array. */
+    if (sc < 0x53) g_key_down[sc] = up ? 0 : 0x94;
+}
+
+/* THE READERS, and each one runs the handler first.
+ *
+ * That is what an interrupt does: by the time the game looks at ds:0x1FC7 the
+ * handler has already run, at whatever moment the key arrived. A port that
+ * instead drains the host's queue once a frame reads state that is up to a
+ * frame stale, and the staleness is invisible - it looks like a key that
+ * needed pressing twice. view_input_drain is the one queue, so the mouse is
+ * brought up to date on the same pass whoever asked. */
+uint8_t key_last(void)          { view_input_drain(); return g_key_last; }
+void    key_last_clear(void)    { g_key_last = 0; }
+int     key_held(uint16_t mask) { view_input_drain();
+                                  return (g_key_held & mask) != 0; }
+int     key_is_down(uint8_t sc) { view_input_drain();
+                                  return sc < 0x53 && g_key_down[sc] != 0; }
+
+/* IMAGE 0x04085 - THE LEVEL'S INPUT, called at image 0x001A0 from the frame
+ * loop. It is one routine and it does three things:
+ *
+ *     0x04088  ds:0x1FD0 == 0x2C -> 0x040B5    Z: the skill selection down
+ *     0x0408F  ds:0x1FD0 == 0x2D -> 0x040CD    X: and up
+ *     0x04096  otherwise the EDGE SCROLL       level_scroll_step, below
+ *
+ * Z and X are transcribed at level_skill_key and deliberately not reached -
+ * image 0x00194 clears ds:0x1FD0 three instructions before image 0x001A0 gets
+ * here, so the original cannot see them either, which is what a player found
+ * in DOSBox.
+ *
+ * The function keys are image 0x03E6F's, reached from the same routine that
+ * handles a panel click. Escape is image 0x002AB's, which does NOT leave the
+ * level: it sets ds:0x4F and the loop ends the way it would have on its own.
+ *
+ * This was level_input_step in sdl_io.c, with the decisions and the event
+ * queue in one function. What is left there is view_level_pump, which brings
+ * ds:0x10, ds:0x12, ds:0x14 and ds:0x1FD0 up to date and decides nothing -
+ * the relationship the mouse driver and the game actually had.
+ *
+ * The return is the port's own: under a dummy driver the pointer reads as
+ * present and somewhere definite when it is neither, so a scroll that has not
+ * been asked for must not start.
+ */
+int level_input_step(struct level_frame *A, int32_t *scroll_x_p, int32_t max_x)
+{
+    int32_t scroll_x = *scroll_x_p;
+    static int seen_motion;
+
+    /* The recorded run speaks first - nothing in the original. */
+    if (harness_script_step(A, &scroll_x)) seen_motion = 1;
+
+    /* A HELD RATE BUTTON REPEATS. The original polls the button from the
+     * panel's own per-frame update (image 0x03B3F) and divides with ds:0x69,
+     * so holding the minus or plus walks the rate one frame in three. A press
+     * is an edge for the skills - image 0x03170's latch gives them one
+     * assignment however long the button is down - but the rate buttons were
+     * left doing a single step per click.
+     *
+     * Only these two repeat, which is the original's own split: buttons from
+     * 2 up go through the latch at image 0x03F2E and 0 and 1 never touch it.
+     *
+     * ds:0x14 is read directly, because that is what image 0x040F0 does. */
+    if (lem_buttons & 1) {
+        level_hit rh = level_pointer_hit();
+        if (rh.what == LEVEL_HIT_BUTTON && rh.button < 2)
+            level_rate_click(rh.button);         /* image 0x04032 */
+    }
+
+    level_input in = view_level_pump();
+    if (in.moved) seen_motion = 1;
+    if (in.pressed) level_panel_click(A, &scroll_x);   /* image 0x03168 */
+
+    /* ds:0x1FD0, which image 0x016D4 left behind and image 0x03E6F reads. It
+     * is taken rather than peeked: a scancode sits there until the key comes
+     * up, and a skill assigned once a frame for as long as a key is held is
+     * not what image 0x03F2E's latch does. */
+    {
+        uint8_t sc = key_last();
+        if (sc && sc != 0xFF) {
+            key_last_clear();
+            level_key_button(sc);                 /* image 0x03E6F */
+        }
+    }
+
+    /* ESCAPE ENDS THE LEVEL; IT DOES NOT LEAVE IT. Image 0x002AB tests bit
+     * 0x20 of the key word ds:0x1FC7 and jumps to image 0x002B3, which sets
+     * ds:0x4F to 0xFF - the same byte image 0x001C8 tests when everyone is out
+     * or the clock has run down. So the play loop ends exactly as it would
+     * have on its own, image 0x002FB fades, and image 0x00311 goes to the
+     * results screen with whatever was rescued.
+     *
+     * The port took Escape as "close the level", so a player got the menu and
+     * no result at all. Bit 0x20 is the same key the results screen tests at
+     * image 0x047C1: one key, two screens, both sending it on.
+     *
+     * AND IT IS THE HELD MASK, not the last scancode. Bit 5 of ds:0x1FC7 is
+     * Escape - see KEY_WATCH - and image 0x002AB asks once a pass whether it
+     * is down, which is a different question from "was it just pressed" and
+     * the reason the handler keeps both. */
+    if (key_held(KEY_ESCAPE)) level_end_begin();       /* image 0x002AB */
+
+    /* THE PORT'S OWN, all of it. The original has no way to abandon a level
+     * without a result and no keyboard scroll - it has an edge to push the
+     * pointer against, which level_scroll_step transcribes. */
+    switch (in.port_key) {
+    case PORT_KEY_ABANDON: *scroll_x_p = scroll_x; return -1;
+    case PORT_KEY_LEFT:  scroll_x -= LEVEL_SCROLL * 2; break;
+    case PORT_KEY_RIGHT: scroll_x += LEVEL_SCROLL * 2; break;
+    case PORT_KEY_HOME:  scroll_x = 0;                 break;
+    case PORT_KEY_END:   scroll_x = max_x;             break;
+    default: break;
+    }
+
+    *scroll_x_p = scroll_x;
+    return seen_motion;
+}
+
+/* IMAGE 0x00455's TAIL AND IMAGE 0x0454C - THE LEVEL SET RUNNING.
+ *
+ * level_show above transcribes image 0x00455 down to image 0x0046B, where the
+ * header and the terrain are built. This is the rest of it and the jump out
+ * of it, and every line has an address:
+ *
+ *     0x00462  call 0x00FB2    int 10h ax=0x8D - MODE 0x0D, the window here
+ *     0x00465  call 0x052F4    the level palette, branching on ds:0x1F7C
+ *     0x00468  call 0x015AD    the PIT divisor into ds:0x1FC9 - a frame's
+ *                              length, which is what paces the loop
+ *     0x0372D  ds:0x00 = the header's start_x, LESS SIXTEEN
+ *     0x040E8  the scroll ceiling, 0x500, which is the GAME's and not the
+ *                              canvas's
+ *     0x0454C  jmp 0x000FB     the play loop, level_loop below
+ *
+ * IT WAS level_run IN sdl_io.c, written as a window routine that happened to
+ * call the game's loop in the middle - so half of image 0x00455 was
+ * transcribed in game.c and the other half implemented next door, which is
+ * exactly the split this project's own rule says not to make. What is left in
+ * sdl_io.c is five primitives, one per line above, doing what the card and the
+ * mouse driver did and deciding nothing.
+ *
+ * The scale, the title and the frame budget are the port's own: the original
+ * owns the machine and takes no arguments about it.
+ */
+int level_run(struct level_frame *A, const canvas *c,
+              const lem_rgb *palette, const char *title, uint8_t scale)
+{
+    if (scale < 1) scale = 1;
+    /* image 0x00462's mode set. */
+    if (view_open(LEVEL_SCREEN_W, LEVEL_SCREEN_H, title, scale) != 0)
+        return -1;
+
+    /* THE ORIGINAL'S OWN CEILING, not the canvas width: image 0x040E8 stops at
+     * 0x500 and this port's view_x is sixteen less. Deriving it from `c->w`
+     * was right only while the canvas was the displayed width. */
+    int32_t max_x = LEVEL_SCROLL_MAX;
+    if (max_x > (int32_t)c->w - LEVEL_SCREEN_W)
+        max_x = (int32_t)c->w - LEVEL_SCREEN_W;
+    if (max_x < 0) max_x = 0;
+    /* IMAGE 0x0372D. The level header's start_x IS the viewport's left edge,
+     * not its centre. tools/compare_run.py fits 624 for "Just dig!" and the
+     * header says 624; centring on it, which is what the old 320x160 view did,
+     * put the play area 160 pixels out and scored 36%. */
+    int32_t scroll_x = (int32_t)A->lv.start_x;
+
+    uint8_t *screen = calloc(LEVEL_SCREEN_W * LEVEL_SCREEN_H, 1);
+    if (!screen) return -1;
+    view_level_bind(screen);
+
+    /* IMAGE 0x00465 - TWO PALETTES, and which one a row gets depends on where
+     * it is. The game swaps attributes 8..15 part-way down the screen, so the
+     * play area keeps the terrain's browns and the panel below gets greens and
+     * greys. The lower eight never change.
+     *
+     * THE SPLIT IS A MACHINE CAPABILITY. A High Performance PC can reprogram
+     * the DAC part-way down the frame; a PC compatible cannot - image 0x01200
+     * sets ds:0x200C, which is used to turn the screen OFF across a palette
+     * write - so the whole frame must live on ONE palette, and that palette has
+     * to serve the terrain AND show the skills UI in green.
+     *
+     * NOT TRANSCRIBED: that single compat palette. Leaving compat on the
+     * level's own sixteen is what a player saw as orange status text and orange
+     * skill buttons - the terrain's colours running through the panel because
+     * nothing replaced them. The gate below is right and the missing half is
+     * the palette it should select. tools/probe_dac.py --machine 1 is the
+     * instrument: capture what the original uploads in compat and read the
+     * sixteen off it, the way PANEL_PAL6 was measured for high.
+     *
+     * Two earlier readings of this were wrong and are worth not repeating.
+     * "--pc selects whether the swap happens" was right about the gate and
+     * silent about the palette; "it is the adapter, so always swap" mistook
+     * image 0x055B7's ds:0x1F7C - which picks the palette FORMAT, EGA
+     * attributes against VGA triples - for the thing that decides the split. */
+    lem_rgb top[16], bottom[16];
+    for (uint8_t i = 0; i < 16; i++) top[i] = bottom[i] = palette[i];
+    if (lem_machine == LEM_PC_HIGH)
+        level_panel_palette(&bottom[8]);
+
+    /* NOTHING IN THE ORIGINAL: the frame sink, the state file and the recorded
+     * input, all env-gated, all harness.c's. A run being measured is not being
+     * displayed, which is the ds:0x200E the palettes are told about. */
+    harness_level_begin();
+    view_level_palettes(top, bottom, !harness_sink_active());
+
+    view_level_grab(1);
+    /* IMAGE 0x00468's divisor. A frame is FIVE ticks of the game's own timer -
+     * image 0x00186 waits for ds:0x1FCD to exceed 4 - and a tick is a vertical
+     * retrace, because image 0x017FE waits for one before reloading the PIT.
+     * So the level runs at TIMER_HZ/5, fourteen frames a second on a 70 Hz
+     * adapter.
+     *
+     * It used to pace at 17, on the reading that ds:0x85's 0x11 was the frame
+     * rate. It is not: that counter is how many frames the game counts before
+     * stepping its DISPLAYED clock, so a level's five minutes takes rather more
+     * than five real ones - which is what DOSBox does and what this did not.
+     * Before that it slept 16 ms a frame, which was sixty. */
+    view_level_period(LEVEL_FRAME_HZ);
+
+    {
+        const char *cap = getenv("LEM_FRAMES");   /* the port's own budget */
+        level_loop(A, c, screen, &scroll_x, max_x,
+                   cap ? (long)atoi(cap) : 0);    /* image 0x0454C */
+    }
+
+    /* No fade here. It is image 0x0031E's, it runs INSIDE the loop above, and
+     * it was written out a second time in sdl_io.c for as long as the loop
+     * exited the moment the level ended - which meant the picture being faded
+     * was one nothing was still drawing. See level_end_begin. */
+    view_level_unbind();
+    view_level_grab(0);          /* never leave a going window holding it */
+    harness_level_end();
+    free(screen);
+    return 0;
+}
+
+/* IMAGE 0x00105 AND IMAGE 0x00164 - the composed page shown, and the wait
+ * before the next one.
+ *
+ *     0x00105  ds:0x1F76 <-> ds:0x1F78     the two pages exchanged, and the
+ *                                          ISR hands the CRTC the new one
+ *     0x00164  ds:0x1FCD counted to 5      five of the timer's ticks, which
+ *                                          is what makes a level 17 a second
+ *
+ * The sink between them is the harness's and has no counterpart: the original
+ * writes no files. It goes here rather than inside the present because what
+ * is being captured is the frame the GAME decided to show. */
+void level_frame_show(const uint8_t *screen, struct level_frame *A)
+{
+    view_level_present();                            /* image 0x00105 */
+    harness_sink_frame(screen, view_level_palette(), A);
+    /* A run with a sink is being measured, not played, and must not spend
+     * wall clock waiting for a display that is not there. */
+    if (!harness_sink_active()) view_level_pace();   /* image 0x00164 */
+}
+
+/* ======================================================================
+ * IMAGE 0x045EF - UP FROM BLACK, and image 0x046A2 back down. The two halves
+ * of image 0x04566's tail, with image 0x04660's wait between them.
+ *
+ *     0x045EF  call 0x04DEF           the page cleared
+ *     0x045F2  cx = 0x10, dx = 0x10   reloaded every pass - image 0x05329's
+ *                                     two slot numbers
+ *     0x045F8  call 0x05329           one notch of BOTH slots
+ *     0x045FB  jne 0x045F2            while it still moved
+ *     0x045FD  al = 1
+ *     0x04600  call 0x053FE           show slot 1, all sixteen
+ *
+ * ONE THING IN THAT ORDER DOES NOT CARRY OVER, and it is worth saying rather
+ * than quietly matching. The original clears the page BEFORE it fades, and
+ * only draws the screen afterwards at image 0x04603 - so what fades up on the
+ * original is an EMPTY page. This port is handed a menu_screen whose pixels
+ * are already composed, which is the state image 0x0465D leaves the original
+ * in, so the clear at image 0x045EF has no counterpart here: its counterpart
+ * happened when the screen was built. The fade is of the composed picture.
+ *
+ * That is a real difference in what a player sees and nothing here has
+ * measured which is right, so it is recorded and not fitted.
+ * ====================================================================== */
+static void menu_screen_fade_in(const uint8_t *pix, uint16_t w, uint16_t h)
+{
+    for (;;) {                                   /* image 0x045F2 */
+        int moved = menu_fade_notch();           /* image 0x045F8: call 0x5329 */
+        /* The frame put up again, which is the DAC write the original does
+         * not need - see sdl_io.c. */
+        view_screen_present(pix, w, h, menu_fade_palette());
+        view_screen_pump(NULL, VIEW_CLOSED);     /* the close box only */
+        view_screen_pace();
+        if (!moved) break;                       /* image 0x045FB */
+    }
+    /* image 0x04600's `al = 1 / call 0x053FE` - the slot shown whole once the
+     * notches are done. Here the last notch has already arrived at it. */
+}
+
+/* IMAGE 0x046A2 - AND BACK DOWN. A routine of its own: image 0x0469B calls it
+ * and image 0x04689 and image 0x04698 jump to it, which is why both answers
+ * fade.
+ *
+ *     0x046A2  call 0x046B9     a retrace
+ *     0x046A5  al = 0
+ *     0x046A8  call 0x053CA     show slot 0's UPPER EIGHT
+ *     0x046AB  cx = 0x10, dx = 0x10
+ *     0x046B1  call 0x05329     one notch of both slots
+ *     0x046B4  jne 0x046A2      while it still moved
+ *     0x046B6  jmp 0x04DEF      and the page cleared behind it
+ *
+ * This was view_fade_out in sdl_io.c, written as a window loop with a texture
+ * upload in the middle of it - a routine the original HAS, living in the file
+ * that is meant to hold only what the card did.
+ *
+ * The original fades the screen away before it draws the next one; cutting
+ * straight to the level is the thing that looks wrong even when every pixel
+ * is right.
+ */
+static void menu_screen_fade_out(const uint8_t *pix, uint16_t w, uint16_t h)
+{
+    menu_fade_to_black();                        /* image 0x046AB's targets */
+    for (;;) {
+        video_retrace_wait();                    /* image 0x046A2: call 0x46B9 */
+        int moved = menu_fade_notch();           /* image 0x046B1: call 0x5329 */
+        view_screen_present(pix, w, h, menu_fade_palette());
+        view_screen_pump(NULL, VIEW_CLOSED);
+        if (!moved) break;                       /* image 0x046B4 */
+    }
+    /* image 0x046B6's `jmp 0x04DEF` - the page cleared behind the fade. The
+     * port's counterpart is the screen being torn down by the caller. */
+}
+
+/* IMAGE 0x04566's TAIL - A SCREEN SHOWN, WAITED ON, AND FADED AWAY.
+ *
+ * The three stages are the original's own and each is above:
+ *
+ *     0x045EF  the fade up            menu_screen_fade_in
+ *     0x04660  the wait               menu_screen_wait
+ *     0x046A2  the fade down          menu_screen_fade_out, on BOTH answers
+ *
+ * The head of image 0x04566 - image 0x04566..0x045ED, which derives the level
+ * number from ds:0x1F6B and ds:0x1F6E, works the percentage out of ds:0x0FD0
+ * and ds:0x0FCE, and copies the graphics set's palette - is the BRIEFING's
+ * text and lives with the briefing, not here. What is left is the shape every
+ * screen that waits shares, which is why the port's other screens reach it
+ * too.
+ *
+ * It was menu_screen_show in sdl_io.c. The window it opens is the
+ * card's and stays there; the sequence is the game's.
+ */
+int32_t menu_screen_show(const menu_screen *m, const char *title, uint8_t scale)
+{
+    int32_t how;
+
+    if (scale < 1) scale = 1;
+    if (view_open(MENU_W, MENU_H, title, scale) != 0) return VIEW_CLOSED;
+
+    /* The briefing is two pictures stacked with different palettes - see
+     * menu_screen.split. Every other screen leaves split at zero. */
+    menu_fade_arm(m->palette, m->palette_low, m->split);
+    menu_screen_fade_in(m->pix, MENU_W, MENU_H);        /* image 0x045EF */
+
+    {
+        const char *cap = getenv("LEM_FRAMES");
+        how = menu_screen_wait(m->pix, MENU_W, MENU_H, menu_fade_palette(),
+                               menu_dismiss_input, BRIEF_PLAY,
+                               menu_fade_tick, NULL,
+                               cap ? (long)atoi(cap) : 0);
+    }
+
+    menu_screen_fade_out(m->pix, MENU_W, MENU_H);       /* image 0x046A2 */
+    menu_fade_disarm();
+    return how;                                  /* image 0x0469F against the
+                                                  * fall through past 0x046B6 */
+}
+
 /* IMAGE 0x04096 - THE EDGE SCROLL, and the two routines it reaches.
  *
  *     0x04096  ds:0x12 + 8 >= 0xC0 -> ret      only in the PLAY AREA
@@ -12036,10 +12540,10 @@ static void level_scroll_step(int32_t *sx, int32_t max_x)
  * reaches five, which is the seventeen frames a second. Then image 0x0018F
  * runs the frame, and image 0x001C8 asks whether it was the last.
  *
- *     view_level_input    ds:0x10, ds:0x12, ds:0x14 and ds:0x1FD0, which a
+ *     level_input_step    ds:0x10, ds:0x12, ds:0x14 and ds:0x1FD0, which a
  *                         driver kept current and an event queue stands in for
  *     level_frame_compose IMAGE 0x0018F's frame, written out above it
- *     view_level_show     image 0x00105's flip and image 0x00164's wait
+ *     level_frame_show     image 0x00105's flip and image 0x00164's wait
  *     level_end_done      IMAGE 0x001C8 and IMAGE 0x002C6, two different
  *                         tests: the first is "has the level ended" and the
  *                         second "has the fade finished". Only the second
@@ -12049,17 +12553,17 @@ static void level_scroll_step(int32_t *sx, int32_t max_x)
  *     level_end_finish    IMAGE 0x002CD, once it has fallen out
  *
  * `budget` is the port's: a loop that ends only when the level does cannot be
- * driven by a test. So is the -1 from view_level_input, which is the window
+ * driven by a test. So is the -1 from level_input_step, which is the window
  * being closed - the original has no way to abandon a level without a result.
  */
 void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
                 int32_t *scroll_x, int32_t max_x, long budget)
 {
     for (;;) {
-        int seen = view_level_input(A, scroll_x, max_x);
+        int seen = level_input_step(A, scroll_x, max_x);
         if (seen < 0) break;
         level_frame_compose(A, c, screen, scroll_x, max_x, seen);
-        view_level_show(screen, A);              /* image 0x00105 */
+        level_frame_show(screen, A);             /* image 0x00105 */
         if (budget && --budget == 0) break;
         if (level_end_done()) break;             /* image 0x001C8, 0x002C6 */
     }

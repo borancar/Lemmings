@@ -432,15 +432,6 @@ static int render_level(const char *data, const char *file, uint32_t which,
                 level_panel_build(pp, sec, seclen, &lv, terrain, c.w, c.h,
                                   g_lem, level_released(), lv.start_x,
                                   PANEL_SEL_BUTTON);
-                /* The status line is NOT drawn. It belongs sixteen rows down
-                 * - screen row 176, which is PANEL_BASE / PANEL_STRIDE - but
-                 * what writes the counts into the template has not been read,
-                 * and panel_status blanks the cells it is given, so drawing
-                 * the bare template puts "230." where the original has real
-                 * counts and erases the artwork under the rest. Measured: the
-                 * artwork alone scores 89.31% of the panel, the artwork plus
-                 * the bare template 65.65%. Drawing a placeholder is worse
-                 * than drawing nothing, and it would flatter nobody. */
                 FILE *pf = fopen(panel_out, "wb");
                 if (!pf) {
                     fprintf(stderr, "%s: cannot open for writing\n", panel_out);
@@ -1179,7 +1170,7 @@ int main(int argc, char **argv)
                     lv.level_number = (uint16_t)game_number;
                     menu_screen br;
                     if (menu_briefing_screen(data, &lv, rating, &br, &err) == 0) {
-                        menu_show_until_dismissed(&br, "PC Lemmings", scale);
+                        menu_screen_show(&br, "PC Lemmings", scale);
                         menu_free(&br);
                     }
                 }
@@ -1199,7 +1190,7 @@ int main(int argc, char **argv)
                     fprintf(stderr, "  %s\n", err);
                     continue;
                 }
-                menu_show_until_dismissed(&sub, "PC Lemmings", scale);
+                menu_screen_show(&sub, "PC Lemmings", scale);
                 menu_free(&sub);
                 continue;
             }
