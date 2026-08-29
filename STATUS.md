@@ -4826,6 +4826,29 @@ has nothing to seed with here.
 
 ## Next
 
+- **THE LEVEL'S Z AND X KEYS SELECT NOTHING.** Reading image `0x000FB`, the
+  main loop, turned up a per-frame call the port has no counterpart for:
+  image `0x04085` reads the pending scan code at `ds:0x1FD0` and steps the
+  selected skill at `ds:0x82` - image `0x040BC` down, wrapping 1 to 9, image
+  `0x040D4` up, wrapping 10 to 2 - both gated on `ds:0x84`, the same repeat
+  divider the release-rate buttons use, so a held key steps one frame in
+  three.
+
+  The port sets `ds:0x82` from `level_skill_click` (image `0x03F66`) alone, so
+  the panel works and the keyboard does not. Transcribing it needs `ds:0x84`
+  as well, which the port has only in comments - image `0x03B8C` catches it
+  at 2 and image `0x03B9C` wraps it.
+
+  The same routine also does the EDGE SCROLL: `ds:0x10` at 8 goes to image
+  `0x0414F` and at 0x148 to image `0x040E5`, with `ds:0x12 + 8 < 0xC0`
+  bounding it to the play area.
+
+- **Image `0x03150` is called TWICE a frame** - image `0x001AD` and image
+  `0x001C5`, the same routine either side of the draw. The port calls its
+  equivalent once. Whether that second call can do anything the first did not
+  is unread; it is recorded because a loop read once should not have to be
+  read again to find it.
+
 - **THE FOUR VGASPEC LEVELS DO NOT LOAD, and until now they loaded the WRONG
   FILE without saying so.** Transcribing image `0x0197D`'s tail
   (`level_graphics_names`, image `0x01A00..0x01A7A`) turned up a branch nobody

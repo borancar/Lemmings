@@ -1696,10 +1696,16 @@ void level_tick(void) { g_nuke_tick++; }         /* image 0x00199 */
  *     image 0x03FEF  the nuke refuses
  *     image 0x04032  the release rate refuses
  *
- * NOTHING RESETS ds:0x2B or ds:0x53. Leaving a level paused leaves the game
- * paused, and the first press of the next level measures its debounce
- * against a stale ds:0x53 - the original's behaviour, transcribed rather
- * than tidied.
+ * NOTHING RESETS ds:0x2B OR ds:0x53 BY NAME, and this block used to conclude
+ * from that "leaving a level paused leaves the game paused - the original's
+ * behaviour, transcribed rather than tidied". That was wrong, and wrong in
+ * the direction that excuses a bug: image 0x04551 clears BOTH, because they
+ * are inside the 0xFCA bytes it wipes at every level entry.
+ *
+ * The reading was a search for a reset OF THIS VARIABLE, and the original
+ * does not reset variables one at a time - it erases the whole of ds:0..0xFC9
+ * and lets the level fill it in again. level_state_wipe is that, and a level
+ * now starts unpaused because the original starts it unpaused.
  * ====================================================================== */
 static uint8_t g_paused;         /* ds:0x2B */
 static uint8_t g_pause_at;       /* ds:0x53 */
@@ -7453,6 +7459,61 @@ void level_panel_palette(lem_rgb *out)
  * `terrain` is the buffer with NO objects on it, because that is what the
  * original's lemmings probe. `released` is carried across frames.
  */
+/* ======================================================================
+ * IMAGE 0x000FB - THE MAIN LOOP, AND THE ORDER OF A FRAME.
+ *
+ * The original has ONE loop and every screen jumps into it: image 0x0454C
+ * ends `jmp 0x000FB` and so do the others. Its head flips the page - image
+ * 0x00105 swaps ds:0x1F76 with ds:0x1F78, image 0x00142 hands the CRTC the
+ * new start address through registers 0x0C and 0x0D - and image 0x00164
+ * spins until ds:0x1FCD, the retrace ISR's counter, has reached five. THAT
+ * IS THE SEVENTEEN FRAMES A SECOND: five retraces at 70 Hz.
+ *
+ * Then image 0x0018F runs the frame, and this is the whole of it:
+ *
+ *     0x0018F  ds:0x1FCD = 0     the ticks are spent
+ *     0x00194  ds:0x1FD0 = 0     and the pending key
+ *     0x00199  inc ds:0x1FD3     the nuke's own frame counter
+ *     0x0019D  call 0x0031E      the fade, and the timed cues it arms
+ *     0x001A0  call 0x04085      THE LEVEL'S KEYS and the edge scroll
+ *     0x001A3  inc ds:0x52       the level frame counter
+ *     0x001A7  call 0x080FD      the EGA set up for the frame's copies -
+ *                                map mask 0x0F, GC mode 0x105, latched
+ *     0x001AA  call 0x07900      window the master terrain onto the page
+ *     0x001AD  call 0x03150      a click assigns a skill
+ *     0x001B0  call 0x030A6      the entrance lets one out
+ *     0x001B3  call 0x01F19      THE LEMMINGS STEP
+ *     0x001B6  call 0x03944      the objects step, through image 0x07C0A
+ *     0x001B9  call 0x07BB8      the objects are DRAWN
+ *     0x001BC  call 0x03634      the lemmings are DRAWN, counting ds:0x45
+ *     0x001BF  call 0x03CDE      the status line's text
+ *     0x001C2  call 0x03AC8      the panel
+ *     0x001C5  call 0x03150      a click assigns a skill AGAIN
+ *     0x001C8  the end-of-frame tests - level_over and the rest
+ *
+ * FOUR OF THESE SKIP THEMSELVES WHEN PAUSED, each testing ds:0x2B at its own
+ * head: 0x03150, 0x030A6, 0x01F19 and 0x03944. The pause is not a branch in
+ * this loop, which is why the loop reads as an unconditional list.
+ *
+ * WHAT THIS CONFIRMS, and it is the reason to write it down: the port's split
+ * below is the original's order. Step is 0x03150, 0x030A6, 0x01F19, 0x03944 -
+ * click, release, lemmings, objects - and draw is 0x07BB8 then 0x03634,
+ * objects then lemmings. Both halves already carried a MEASURED justification
+ * for that order; this is the routine those measurements were measuring.
+ *
+ * TWO THINGS HERE ARE NOT IN THE PORT, and neither is in this function:
+ *
+ *   - image 0x04085's KEYS. Scan 0x2C and 0x2D - Z and X - step ds:0x82
+ *     through the skills, image 0x040BC down with a wrap from 1 to 9 and
+ *     image 0x040D4 up with a wrap from 10 to 2, both gated on ds:0x84, the
+ *     same repeat divider the rate buttons use. The port sets ds:0x82 from
+ *     the panel click alone, so the keyboard selects nothing.
+ *   - image 0x03150 is called TWICE a frame, at 0x001AD and 0x001C5. Both
+ *     are the same routine; the port calls its equivalent once.
+ *
+ * Neither is invented here. They are named so the next reader finds them
+ * already located rather than reading this loop again to find them.
+ * ====================================================================== */
 void level_play_step(level_anim *st, const level *lv, lemming *lem,
                      uint8_t *released, uint8_t *terrain,
                      uint16_t w, uint16_t h)
