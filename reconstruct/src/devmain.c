@@ -1203,8 +1203,8 @@ int main(int argc, char **argv)
         }
 
         if (which_screen) {       /* a sub-screen: draw it and stop */
-            view_show(mm.pix, MENU_W, MENU_H, MENU_W, MENU_H, mm.palette,
-                      "PC Lemmings", 0, scale);
+            view_show(mm.pix, MENU_W, MENU_H, mm.palette,
+                      "PC Lemmings", scale);
             menu_free(&mm);
             return rc;
         }

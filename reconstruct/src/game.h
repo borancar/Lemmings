@@ -1176,10 +1176,8 @@ int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
 /* Open a window on an 8-bit indexed buffer and let the viewer scroll it.
  * `view_w`/`view_h` is the viewport onto a `src_w`x`src_h` picture; pass the
  * full size for a screen that is not scrolled. Returns 0 when it is closed. */
-int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
-              uint16_t view_w, uint16_t view_h,
-              const lem_rgb *palette, const char *title,
-              uint16_t start_x, uint8_t scale);
+int view_show(const uint8_t *pix, uint16_t w, uint16_t h,
+              const lem_rgb *palette, const char *title, uint8_t scale);
 
 /* Load one level out of `file` and show it, and show its briefing first.
  * THE PORT'S OWN, both of them - they exist so main.c can be the game's flow
@@ -1192,15 +1190,10 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
                const char **err);
 
 /* The level, in the original's own 320x160 viewport. */
-int view_run(const canvas *c, const lem_rgb *palette, const char *title,
-             uint16_t start_x, uint8_t scale);
 
 /* The same, with a per-frame tick so the level's objects can animate over the
  * terrain. `tick` is handed the canvas to redraw into and returns non-zero
  * when it changed something. */
-int view_run_anim(canvas *c, const lem_rgb *palette, const char *title,
-                  uint16_t start_x, uint8_t scale,
-                  view_tick tick, void *ctx);
 
 #endif /* LEM_GAME_H */
 

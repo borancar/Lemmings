@@ -202,94 +202,35 @@ void view_show_hook(view_tick tick, void *ctx, uint8_t *pix)
     g_show_tick = tick; g_show_ctx = ctx; g_show_pix = pix;
 }
 
-int view_show(const uint8_t *pix, uint16_t src_w, uint16_t src_h,
-              uint16_t view_w, uint16_t view_h,
-              const lem_rgb *palette, const char *title,
-              uint16_t start_x, uint8_t scale)
+static int32_t dismiss_input(uint8_t scancode);
+
+/* THE HARNESS'S VIEWER, and it has no counterpart in the original - lemdev
+ * showing a composed screen so a person can look at it.
+ *
+ * It used to be a scrollable canvas viewer: arrow keys, a start_x it centred
+ * on, clamps at both edges. None of that was ever reachable. Its one caller
+ * passes src_w == view_w, so the maximum scroll was zero and every key did
+ * nothing, and the two functions that wrapped it for a scrolling look at a
+ * level - view_run and view_run_anim - had no callers left at all once
+ * level_show stopped falling back to them. CLAUDE.md already recorded the
+ * cost of that arrangement: `lemdev --show` was a THIRD composition path, a
+ * window of a static canvas with no panel and no lemmings, and every frame of
+ * it matched while the game showed an empty cave.
+ *
+ * So this is what is left when the unreachable parts go: put the picture up,
+ * wait for Escape or the close box.
+ */
+int view_show(const uint8_t *pix, uint16_t w, uint16_t h,
+              const lem_rgb *palette, const char *title, uint8_t scale)
 {
     if (scale < 1) scale = 1;
-    if (view_w > src_w) view_w = src_w;
-    if (view_h > src_h) view_h = src_h;
-
-    /* THE SAME WINDOW the menu uses. This built and destroyed one of its own,
-     * so starting a level opened a SECOND window beside the menu's - which is
-     * what the persistent window in view_open was added to stop, and this
-     * function was simply missed when it was.
-     *
-     * The viewport is a different size from the menu's, so view_open rebuilds
-     * rather than reuses; that is one window changing size, not two. */
-    if (view_open(view_w, view_h, title, scale) != 0)
-        return -1;
-    SDL_Renderer *ren = g_ren;
-    SDL_Texture  *tex = g_tex;
-    const Uint64 period = SDL_NS_PER_SECOND / VIEW_REFRESH_HZ;
-    Uint64 due = SDL_GetTicksNS();
-
-    int32_t scroll_x = (int32_t)start_x - view_w / 2;
-    int32_t max_x = (int32_t)src_w - view_w;
-    int32_t max_y = (int32_t)src_h - view_h;
-    int32_t scroll_y = 0;
-    if (max_x < 0) max_x = 0;
-    if (max_y < 0) max_y = 0;
-
-    int running = 1;
-    while (running) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) view_quit_now();
-            else if (e.type == SDL_EVENT_KEY_DOWN) {
-                switch (e.key.key) {
-                case SDLK_ESCAPE: case SDLK_Q: running = 0; break;
-                case SDLK_LEFT:   scroll_x -= 16; break;
-                case SDLK_RIGHT:  scroll_x += 16; break;
-                case SDLK_UP:     scroll_y -= 16; break;
-                case SDLK_DOWN:   scroll_y += 16; break;
-                case SDLK_HOME:   scroll_x = 0; break;
-                case SDLK_END:    scroll_x = max_x; break;
-                default: break;
-                }
-            }
-        }
-        if (scroll_x < 0) scroll_x = 0;
-        if (scroll_x > max_x) scroll_x = max_x;
-        if (scroll_y < 0) scroll_y = 0;
-        if (scroll_y > max_y) scroll_y = max_y;
-
-        sound_pump();
-        if (g_show_tick && g_show_pix)
-            g_show_tick(g_show_ctx, g_show_pix);
-
-        void *pixels = NULL;
-        int pitch = 0;
-        if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
-            for (uint16_t y = 0; y < view_h; y++) {
-                uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-                const uint8_t *src =
-                    pix + (size_t)(scroll_y + y) * src_w + scroll_x;
-                for (uint16_t x = 0; x < view_w; x++) {
-                    lem_rgb c = (g_split && y >= g_split && g_split_pal)
-                              ? g_split_pal[src[x]] : palette[src[x]];
-                    row[x] = ((uint32_t)c.r << 16) |
-                             ((uint32_t)c.g << 8) | c.b;
-                }
-            }
-            SDL_UnlockTexture(tex);
-        }
-        SDL_RenderClear(ren);
-        SDL_RenderTexture(ren, tex, NULL, NULL);
-        SDL_RenderPresent(ren);
-        /* One pass per retrace - see VIEW_REFRESH_HZ. An absolute
-         * deadline, for the reason level_run gives. */
-        due += period;
-        {
-            Uint64 now = SDL_GetTicksNS();
-            if (now < due) SDL_DelayNS(due - now);
-            else due = now;
-        }
+    if (view_open(w, h, title, scale) != 0) return -1;
+    for (;;) {
+        if (view_screen_pump(dismiss_input, BRIEF_PLAY) != VIEW_CLOSED)
+            return 0;
+        view_screen_present(pix, w, h, palette);
+        view_screen_pace();
     }
-
-    /* The window stays open; it is torn down at exit. */
-    return 0;
 }
 
 
@@ -435,18 +376,6 @@ void view_screen_pace(void)
 }
 
 
-/* The level viewport: the original shows 320x160 of the 1584-wide level, with
- * the control panel below it. The panel is not reconstructed yet, so this is
- * the same viewport and no panel - a way to look at what has been built, not a
- * reimplementation of the game's display loop. That has to be transcribed and
- * checked against the original like anything else. */
-int view_run(const canvas *c, const lem_rgb *palette, const char *title,
-             uint16_t start_x, uint8_t scale)
-{
-    g_show_tick = NULL; g_show_ctx = NULL; g_show_pix = NULL;
-    return view_show(c->pix, c->w, c->h, 320, 160, palette, title,
-                     start_x, scale);
-}
 
 /* One frame of a level: the terrain as composed, then every object over it at
  * whatever frame the stepper has reached. The objects are drawn into the
@@ -1081,16 +1010,6 @@ int level_run(struct level_frame *A, const canvas *c,
     return 0;
 }
 
-int view_run_anim(canvas *c, const lem_rgb *palette, const char *title,
-                  uint16_t start_x, uint8_t scale,
-                  view_tick tick, void *ctx)
-{
-    g_show_tick = tick; g_show_ctx = ctx; g_show_pix = c->pix;
-    int rc = view_show(c->pix, c->w, c->h, 320, 160, palette, title,
-                       start_x, scale);
-    g_show_tick = NULL; g_show_ctx = NULL; g_show_pix = NULL;
-    return rc;
-}
 
 /* THE PORT'S OWN, and it is a CONTROL rather than a convenience.
  *
