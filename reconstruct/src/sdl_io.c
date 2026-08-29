@@ -1,10 +1,23 @@
 /* sdl_io.c - the window, input and timing, through SDL3.
  *
- * THIS FILE IS THE PORT'S OWN. It is not a reconstruction of anything in
- * vgalemmi.exe and carries no image offsets, because there are none to carry:
- * the original talked to an EGA card and a BIOS, and this talks to SDL. The
- * boundary between this and game.c is a boundary the PORT chose - what a
- * modern backend has to replace - not one the binary proves.
+ * THIS FILE IS THE PORT'S OWN - what the hardware used to do. Nothing in it is
+ * a transcription: the original talked to an EGA card, a PIT, a mouse driver
+ * and a BIOS, and this talks to SDL. The boundary between it and game.c is a
+ * boundary the PORT chose - what a modern backend has to replace - not one the
+ * binary proves. (provenance.py reads that first sentence literally, and every
+ * function here is counted as the port's own on the strength of it.)
+ *
+ * It DOES carry image offsets, and this file used to say it carried none
+ * "because there are none to carry". Whole transcribed routines then drifted
+ * in behind that sentence - menu_show_until_dismissed, view_level_input,
+ * view_level_show and level_run were all image 0x04566's, image 0x04085's,
+ * image 0x00105's and image 0x00455's, living here. An offset in this file
+ * names what a primitive STANDS IN FOR, so a reader can find it: image
+ * 0x01550's retrace, image 0x0553D's palette upload, image 0x00105's flip.
+ *
+ * A routine with a SEQUENCE in it belongs in game.c however much hardware it
+ * touches. The check that the split is honest is that game.c contains no SDL_
+ * at all - grep for it after moving anything.
  *
  * SDL3 is a hard dependency, never a platform-specific library and never an
  * optional path beside a file writer: a reconstruction's claim is that it is
@@ -31,7 +44,6 @@
 #include "opl.h"
 
 
-
 /* ONE window, kept across calls.
  *
  * This used to create a window and call SDL_Quit on every call, and menu_run
@@ -43,20 +55,6 @@
  * So the window, renderer and texture live here and are reused whenever the
  * size and scale match. SDL is shut down once, at exit. */
 static SDL_Window   *g_win;
-
-/* A screen whose palette changes part-way down it - the briefing, and the
- * level, which has its own loop. The original swaps the palette across a band
- * of black scanlines, so the rows from `g_split` down take `g_split_pal`.
- * Zero means one palette for the whole screen, which is every other screen. */
-static uint16_t      g_split;
-static const lem_rgb *g_split_pal;
-
-/* The palette the screen is CURRENTLY showing while it fades, and the one it
- * is heading for. The original does not cut to a screen - image 0x055B7
- * walks the palette there a notch a retrace - so a port that cuts is missing
- * something the original spends real time on. */
-static lem_rgb       g_fade_cur[16], g_fade_tgt[16];
-static lem_rgb       g_fade_low_cur[16], g_fade_low_tgt[16];
 
 static SDL_Renderer *g_ren;
 static SDL_Texture  *g_tex;
@@ -167,44 +165,19 @@ int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
 }
 
 
-static view_tick g_show_tick;
-static void     *g_show_ctx;
-static uint8_t  *g_show_pix;
-
-/* WHAT THE HARDWARE USED TO DO. The composed buffer the window shows, and the
- * routine that fills it each pass. game.c's level_show aims these at its own
- * frame composer; the original had no such indirection because it wrote
- * straight into the page the CRTC was already pointing at. */
-void view_show_hook(view_tick tick, void *ctx, uint8_t *pix)
-{
-    g_show_tick = tick; g_show_ctx = ctx; g_show_pix = pix;
-}
-
-
-
 /* THE SCANCODE THE KEYBOARD PRODUCED - not what it means.
  *
- * The original's keyboard handler at image 0x016D4 reads port 0x60 and keeps
- * an 83-entry state table at ds:0x0F78; image 0x04D1A scans it and translates
- * through ds:0x202E. This replaces the first half of that - the hardware -
- * and menu_key_code and menu_dispatch in game.c are the second, transcribed.
+ * This is the only part of the keyboard that is the HARDWARE's: what byte
+ * port 0x60 would have produced. Everything after it is transcribed and lives
+ * in game.c - image 0x016D4's handler keeps ds:0x0F78, ds:0x1FC7 and
+ * ds:0x1FD0, and image 0x04D1A scans the first of those and translates it
+ * through ds:0x202E.
  *
  * This used to be a key ENUM and a table of boxes. The enum was the port's
  * invention standing where the game has scancodes, and the boxes stood where
  * the game has nothing at all.
  */
-static uint8_t scancode_of(SDL_Keycode k);
-
-
-/* Exported for the test in tests/screens.c: every letter a player can type
- * has to reach the entry loop as the character the game's own table names,
- * and for a long time none of them did. */
-uint8_t view_scancode_of(int32_t keycode)
-{
-    return scancode_of((SDL_Keycode)keycode);
-}
-
-static uint8_t scancode_of(SDL_Keycode k)
+uint8_t scancode_of(uint32_t k)
 {
     switch (k) {
     case SDLK_ESCAPE:    return 0x01;
@@ -238,10 +211,10 @@ static uint8_t scancode_of(SDL_Keycode k)
 
     /* THE LETTERS, BACKSPACE AND ENTER, and they are not listed here.
      *
-     * The eleven above are the menu's, and for a long time they were all the
-     * port had - so image 0x04C7E's entry loop, which takes A-Z, got 0xFF for
-     * every letter typed and correctly ignored it. Nothing appeared on
-     * screen, which is what a player reported.
+     * The switch above is the menu's keys and the level's, and for a long
+     * time it held only the menu's eleven - so image 0x04C7E's entry loop,
+     * which takes A-Z, got 0xFF for every letter typed and correctly
+     * ignored it. Nothing appeared on screen, which a player reported.
      *
      * Rather than write out a scancode set from memory, this INVERTS the
      * game's own table. MENU_XLAT is ds:0x202E, the xlat image 0x04D4B reads,
@@ -267,12 +240,6 @@ static uint8_t scancode_of(SDL_Keycode k)
                     * found it */
 }
 
-/* A screen with nothing on it to choose takes Esc, and a click. */
-/* IMAGE 0x04683's THREE ANSWERS, kept apart. A mouse button and ds:0x1FC7's
- * 0x40 both go to image 0x046A2 and play; its 0x20 goes to image 0x0469B,
- * which pops the stack and jumps to image 0x04401 - the MENU. This used to
- * return 1 for Esc and take 1 as the click id too, so the caller could not
- * tell them apart and every briefing played. */
 /* ds:0x14 - THE BUTTON WORD, and there is one of it.
  *
  * The port had FOUR readers of this: view_buttons with its own state,
@@ -299,8 +266,7 @@ void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
         for (uint16_t y = 0; y < h; y++) {
             uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
             const uint8_t *src = pix + (size_t)y * w;
-            const lem_rgb *pl = (g_split && y >= g_split && g_split_pal)
-                                    ? g_split_pal : palette;
+            const lem_rgb *pl = menu_split_palette(y, palette);
             for (uint16_t x = 0; x < w; x++) {
                 lem_rgb c = pl[src[x]];
                 row[x] = ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
@@ -328,36 +294,16 @@ void view_screen_pace(void)
 }
 
 
-
-
-
-
-/* One press of the left button, wherever the pointer is. A scripted click
- * and a real one go through this same function - written out twice, the two
- * would differ, which is the fault that had the window path showing an empty
- * cave while every harness frame matched. */
-
 /* ======================================================================
- * THE LEVEL'S SCREEN AND ITS TWO PALETTES - WHAT THE CARD USED TO HOLD.
+ * THE LEVEL'S SCREEN - WHAT THE CARD USED TO HOLD.
  *
- * image 0x055B7 waits three retraces to a notch, image 0x01550 waits a
- * retrace and image 0x0553D pushes the result
- * at the card. Those are here, and the STEP they are built from - image
- * 0x056E2 - is game.c's palette_fade_step, so what lives in this file is
- * only the pair of palettes and the moment they reach the screen.
- *
- * `g_lvl_top` and `g_lvl_bottom` are the palettes the screen is CURRENTLY
- * shown through - the level carries two, swapped part-way down - and the
- * `_tgt` pair is where the fade in is heading. A fade out heads for black.
- *
- * With no window there is nothing to fade, so video_present answers 0 and
- * the current pair starts AT the target: image 0x0033D's single step then
- * finds the palette already there and clears the bit on the first frame,
- * which is the behaviour the harness had before any of this existed.
+ * The PALETTES are not here any more and were the last thing to leave. They
+ * are the game's own slots, image 0x052F4's and image 0x05329's, and they live
+ * in game.c beside the routines that load and walk them; image 0x0553D's push
+ * at the DAC is the only part of a palette that was ever the card's, and with
+ * no DAC to push at, this file's share is reading them when it draws.
  * ====================================================================== */
 static uint8_t     *g_lvl_screen;
-static lem_rgb      g_lvl_top[16], g_lvl_bottom[16];
-static lem_rgb      g_lvl_tgt_top[16], g_lvl_tgt_bottom[16];
 static SDL_Texture  *g_lvl_tex;
 static SDL_Renderer *g_lvl_ren;
 static int           g_lvl_live;        /* ds:0x200E - is there a display */
@@ -386,7 +332,8 @@ static void level_screen_upload(void)
     for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
         uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
         const uint8_t *src = g_lvl_screen + (size_t)y * LEVEL_SCREEN_W;
-        const lem_rgb *pal = (y < LEVEL_PLAY_H) ? g_lvl_top : g_lvl_bottom;
+        const lem_rgb *pal = (y < LEVEL_PLAY_H) ? g_lvl_pal_top
+                                                : g_lvl_pal_bottom;
         for (uint16_t x = 0; x < LEVEL_SCREEN_W; x++) {
             lem_rgb q = pal[src[x]];
             row[x] = ((uint32_t)q.r << 16) | ((uint32_t)q.g << 8) | q.b;
@@ -395,30 +342,10 @@ static void level_screen_upload(void)
     SDL_UnlockTexture(g_lvl_tex);
 }
 
-/* Image 0x0534B and image 0x05329, one notch. */
-int level_fade_notch(uint8_t out)
-{
-    lem_rgb black[16];
-    const lem_rgb *tt = g_lvl_tgt_top, *tb = g_lvl_tgt_bottom;
-    int moved;
-    /* Nothing on a display is nothing to fade, so the fade is already over.
-     * Image 0x0033D's single step reaches the same place a frame at a time;
-     * this reaches it on the first one, which is what a harness with a
-     * frame budget needs. */
-    if (!g_lvl_live) return 0;
-    if (out) {
-        memset(black, 0, sizeof black);
-        tt = tb = black;
-    }
-    moved  = palette_fade_step(g_lvl_top, tt, 16);
-    moved |= palette_fade_step(g_lvl_bottom, tb, 16);
-    return moved;
-}
 
 /* ds:0x200E, which image 0x00325 and image 0x00346 both test. */
 int video_present(void) { return g_lvl_live; }
 
-/* Image 0x01550 - the retrace the fade's loop waits for, once a pass. */
 /* IMAGE 0x01550 - and it is what SETS THE RATE for everything that waits on
  * it. The menu loop calls it once a pass (image 0x0445B) and the level's
  * fade calls it once a notch, so both run at the adapter's 70 Hz because
@@ -476,18 +403,6 @@ static Uint64      g_lv_due, g_lv_period;
 static int         g_lv_grabbed;
 static port_key    g_port_key;
 
-/* WHAT THE HARDWARE USED TO DO for a level's frame: ds:0x10, ds:0x12 and
- * ds:0x14, which the mouse driver kept current, and ds:0x1FD0, where the
- * keyboard handler left a scancode. Here they come from an event queue and
- * from a recorded script.
- *
- * The ROUTINES that read them are game.c's - image 0x03EF9 for the panel,
- * image 0x03150 for the play area, image 0x04085 for the keys and the edge.
- *
- * Returns 1 once the pointer has really moved, 0 before that, and -1 when the
- * window asks to stop. That last is the PORT'S OWN exit: the original has no
- * way to abandon a level without a result, and a window does.
- */
 /* WHAT THE HARDWARE USED TO DO: ONE DRAIN OF THE HOST'S QUEUE, dispatched the
  * way the two interrupts did.
  *
@@ -660,28 +575,6 @@ void view_level_unbind(void)
     g_lvl_screen = NULL; g_lvl_tex = NULL; g_lvl_ren = NULL;
 }
 
-/* IMAGE 0x052F4's load, the level's palette at the card - two of them, because
- * the level swaps attributes 8..15 part-way down the screen.
- *
- * `live` is ds:0x200E. With a display the pair the screen is drawn through
- * starts at BLACK and image 0x0031E's fade climbs out of it; without one there
- * is nothing to fade, so it starts at the target and image 0x0033D's single
- * step clears the bit on the first frame. A capture harness has a frame budget
- * and a fade inside frame 0 would spend a second of wall clock producing
- * nothing, every frame of it carrying a palette climbing out of black. */
-void view_level_palettes(const lem_rgb *top, const lem_rgb *bottom, int live)
-{
-    memcpy(g_lvl_tgt_top, top, sizeof g_lvl_tgt_top);
-    memcpy(g_lvl_tgt_bottom, bottom, sizeof g_lvl_tgt_bottom);
-    g_lvl_live = (live && g_win) ? 1 : 0;
-    if (g_lvl_live) {
-        memset(g_lvl_top, 0, sizeof g_lvl_top);
-        memset(g_lvl_bottom, 0, sizeof g_lvl_bottom);
-    } else {
-        memcpy(g_lvl_top, g_lvl_tgt_top, sizeof g_lvl_top);
-        memcpy(g_lvl_bottom, g_lvl_tgt_bottom, sizeof g_lvl_bottom);
-    }
-}
 
 /* IMAGE 0x015AD - the PIT divisor into ds:0x1FC9, which is what sets a frame's
  * length. Here it is the period view_level_pace counts against. */
@@ -777,9 +670,6 @@ const char *lem_data_dir(void) { return g_data_dir; }
 static SDL_AudioStream *g_snd_stream;
 static double  g_tick_acc;             /* samples owed to the next tick */
 
-/* The game asks through INT 60h (fn 3) or INT 61h (fn 4) - see docs/sound.md
- * for which call site asks for which, and why the two are alternatives
- * rather than two faces of one driver. */
 /* WHICH INTERRUPT MATTERS AS MUCH AS WHICH AH.
  *
  * The game asks for sound two ways and they are not the same device:
@@ -1030,91 +920,28 @@ void canvas_free(canvas *c)
     c->pix = NULL;
 }
 
-/* The port's own: the original frees through its DOS allocator. */
-void dat_free(dat_file *d)
-{
-    if (!d) return;
-    for (uint32_t i = 0; i < d->count; i++)
-        free(d->sections[i].data);
-    free(d->sections);
-    d->sections = NULL;
-    d->count = 0;
-}
-
-/* The port's own. */
-void menu_free(menu_screen *m)
-{
-    if (!m) return;
-    /* Never leave the page flip pointing at a buffer that has gone. */
-    if (video_screen_is(m->pix)) video_screen_set(NULL, NULL);
-    free(m->pix);
-    m->pix = NULL;
-    free(m->gfx);
-    m->gfx = NULL;
-    m->gfx_len = 0;
-    free(m->menu_sec);
-    m->menu_sec = NULL;
-    m->menu_sec_len = 0;
-}
-
-/* The port's own. The original's own instruction on the briefing is "Press
- * mouse button to continue", so a click dismisses these screens; Esc does too,
- * which is the port's addition and harmless - the original has no other way
- * off the briefing, but a window that only closes on a mouse click is a poor
- * thing on a machine with a keyboard. */
-/* ======================================================================
- * THE MENU SCREEN'S TWO PALETTE SLOTS - WHAT THE DAC USED TO HOLD.
+/* NOT TRANSCRIBED, AND IT IS AN INVENTION RATHER THAN A REPLACEMENT - which
+ * is a distinction worth making, because most of this file replaces something.
  *
- * The LOOPS that walk them are the game's and live in game.c, carrying image
- * 0x045EF and image 0x046A2. What is left here is the state a notch moves and
- * the one thing the original did not have to do: re-upload the frame, because
- * this port has no DAC and a palette only becomes visible when the picture is
- * put through it again.
+ * The original never turns a planar bitmap into bytes. It blits planar to
+ * planar with the card programmed: image 0x07CB5 hands a graphic, a mask, a
+ * width and four planes to 1010:8822, and image 0x08822's five modes do the
+ * rest a byte at a time. This walks the four planes and assembles a pixel,
+ * because the port's canvas is byte-per-pixel - a representation the PORT
+ * chose, and the reason there is no address to put here.
  *
- * The level's fade is split exactly this way already - level_fade_notch here,
- * the loop in level_phase_step - and two fades arranged differently would
- * drift, which is what this file's own notes keep finding.
- * ====================================================================== */
-
-/* Image 0x045F2's set-up: both slots aimed at the screen's palettes and the
- * current pair blacked, so the first notch starts from nothing. */
-void menu_fade_arm(const lem_rgb *pal, const lem_rgb *low, uint16_t split)
-{
-    g_split = split;
-    for (uint8_t i = 0; i < 16; i++) {
-        g_fade_tgt[i] = pal[i];
-        g_fade_low_tgt[i] = low[i];
-        g_fade_cur[i].r = g_fade_cur[i].g = g_fade_cur[i].b = 0;
-        g_fade_low_cur[i].r = g_fade_low_cur[i].g = g_fade_low_cur[i].b = 0;
-    }
-    g_split_pal = split ? g_fade_low_cur : NULL;
-}
-
-/* Image 0x046AB's: both slots aimed at black. */
-void menu_fade_to_black(void)
-{
-    for (uint8_t i = 0; i < 16; i++) {
-        g_fade_tgt[i].r = g_fade_tgt[i].g = g_fade_tgt[i].b = 0;
-        g_fade_low_tgt[i].r = g_fade_low_tgt[i].g = g_fade_low_tgt[i].b = 0;
-    }
-}
-
-void menu_fade_disarm(void) { g_split = 0; g_split_pal = NULL; }
-
-/* IMAGE 0x05329 - ONE NOTCH OF BOTH SLOTS, which is the call image 0x045F8
- * and image 0x046B1 both make. Non-zero while it still has somewhere to go,
- * which is what image 0x045FB's and image 0x046B4's `jne` test. */
-int menu_fade_notch(void)
-{
-    int moved = palette_fade_step(g_fade_cur, g_fade_tgt, 16);
-    if (g_split)
-        moved |= palette_fade_step(g_fade_low_cur, g_fade_low_tgt, 16);
-    return moved;
-}
-
-/* The upper slot as it stands, for the frame the loop puts up each notch. */
-const lem_rgb *menu_fade_palette(void) { return g_fade_cur; }
-
+ * So what is owed against it is exactly what render_terrain says it owes:
+ * image 0x08822's five modes, none of which is written out. blit_path_of names
+ * them and picks between them.
+ *
+ * It is here rather than in game.c under this port's rule that the assembly of
+ * a pixel out of four bit-planes is the card's - see planar above, which is
+ * the same idiom for one pixel.
+ *
+ * The comment saying all this had gone missing, and nothing caught it:
+ * provenance.py reads the FILE marker at the top and counts everything in here
+ * as the port's own, so a function in this file can lose its provenance
+ * silently in a way one in game.c cannot. */
 int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
                  uint8_t w, uint8_t h, uint8_t *out)
 {
@@ -1142,10 +969,9 @@ int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
     return 0;
 }
 
-/* NOT TRANSCRIBED - the 1-bit transparency mask beside a bitmap.
- *
- * NOT TRANSCRIBED. As vgagr_decode above. Owed.
- */
+/* NOT TRANSCRIBED - the 1-bit transparency mask beside a bitmap, one plane
+ * rather than four. Image 0x07CAE loads its pointer; what consumes it is image
+ * 0x08822's modes, as above. */
 int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
                       uint8_t w, uint8_t h, uint8_t *out)
 {
@@ -1163,33 +989,21 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
     return 0;
 }
 
-/* The menu's loop. THE PORT'S OWN, and here rather than in game.c because the
- * original has no such thing: image 0x0447B reads a key, jumps to whichever
- * screen it names, and never returns a value to anyone. A function that shows
- * a picture, waits, and hands back what was chosen is a shape this port needs
- * and the original does not have.
- *
- * What runs each pass IS the game's, and stays there: menu_frame_step is
- * image 0x07D0D. */
 /* ======================================================================
- * WHAT IMAGE 0x0445B NEEDS FROM THE HARDWARE.
+ * WHAT IMAGE 0x0445B NEEDS FROM THE HARDWARE, and it is one thing: the page.
  *
- * The loop itself is game.c's now. These are its four outward calls, and
- * every one of them replaces something a card or a BIOS did.
+ * The loop is game.c's and so is its entry, image 0x04401. What is left here
+ * is image 0x04C20's flip and the pointer telling it WHICH composed buffer is
+ * up.
  *
- * THE KEY QUEUE is the one that is not a straight substitution. The original
- * polls once a pass - image 0x04D1A reads the BIOS buffer, which has held
- * anything typed since the last look - and SDL delivers presses as events
- * whenever it feels like it. Draining the events into a ring and letting the
- * poll take one a pass is what makes those the same thing: a press that
- * arrives between two polls is HELD rather than lost, which is exactly what
- * the BIOS buffer does for the original.
- *
- * It is a ring rather than a single slot on purpose. One slot would drop the
- * second of two presses in a pass, and the loop deliberately takes only one
- * a pass - the plate guards at image 0x044B3 and image 0x044EC refuse a
- * second change in consecutive passes anyway, so a dropped press and a
- * refused one would look identical and only one of them is the game.
+ * There used to be a key QUEUE here as well, with a paragraph explaining that
+ * a ring was needed because SDL delivers presses as events where the original
+ * polls a BIOS buffer once a pass. That reading was wrong about the original:
+ * image 0x04D1A does not read the BIOS buffer at all - it SCANS ds:0x0F78, the
+ * 83-byte table the game's own INT 9 handler keeps, and the "held rather than
+ * lost" behaviour the ring was built for is the handler's, not a buffer's.
+ * With image 0x016D4 transcribed the table is here and image 0x04D1A is a
+ * transcription over it, so the ring is gone.
  * ====================================================================== */
 static uint8_t  *g_menu_pix;
 static lem_rgb  *g_menu_pal;
@@ -1230,25 +1044,6 @@ void video_page_flip(void)
     SDL_RenderPresent(g_ren);
 }
 
-/* THE WINDOW, and nothing else. The loop is image 0x0445B and lives in
- * game.c; this opens the thing it draws into and hands it over.
- *
- * LEM_FRAMES still bounds a run, because a loop that only ends on a keypress
- * cannot be driven by a test. It arrives as an Esc through the same queue a
- * person's would, so the loop ends the way the original's does rather than
- * by a second exit nothing else uses. */
-menu_action menu_run(menu_screen *m, uint8_t scale)
-{
-    const char *cap;
-    if (scale < 1) scale = 1;
-    if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0) return MENU_EXIT;
-    video_screen_set(m->pix, m->palette);
-    menu_wait_release();                 /* image 0x04453 */
-    cap = SDL_getenv("LEM_FRAMES");
-    /* -1 is unbounded. The cap goes INTO the loop rather than into a copy of
-     * it here - see menu_loop, and the four-of-seven calls this used to be. */
-    return menu_loop(m, cap ? SDL_atoi(cap) : -1);   /* image 0x0445B */
-}
 
 /* ======================================================================
  * READING THE FILES.
@@ -1272,24 +1067,6 @@ uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
  * The port's own: as be16 above - an idiom, not a routine.
  */
 uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
-
-
-/* ======================================================================
- * SHOWING A LEVEL.
- *
- * The port's own: loading a container, composing the terrain and putting it
- * in a window is a sequence the original has no single routine for - it
- * streams the level in as it goes. These exist so main.c can be the game's
- * flow and nothing else, and so devmain.c does not have to be the only place
- * that knows how to open a level.
- * ====================================================================== */
-
-/* The briefing's I/O. Its TEXT is image 0x04566's, which derives the number
- * from ds:0x1F6B and writes the requirement into ds:0x41 - so neither comes
- * from a caller any more. */
-
-
-
 
 
 /* The picture, uploaded and shown. Nothing on this screen animates - image

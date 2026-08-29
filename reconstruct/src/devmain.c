@@ -1181,7 +1181,7 @@ int main(int argc, char **argv)
              * entry and an input-device chooser - and the port draws both.
              * What they DO with the answer is not reconstructed, so they come
              * straight back. */
-            if (a == MENU_NEW_LEVEL || a == MENU_HELP) {
+            if (a == MENU_NEW_LEVEL || a == MENU_INPUT) {
                 menu_screen sub;
                 int ok = (a == MENU_NEW_LEVEL)
                     ? menu_code_screen(data, &sub, &err)

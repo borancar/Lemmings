@@ -1239,7 +1239,7 @@ int main(int argc, char **argv)
     {
         int all = 1, bad = 0;
         for (int c = 'A'; c <= 'Z'; c++) {
-            uint8_t sc = view_scancode_of(c >= 'a' ? c : c + ('a' - 'A'));
+            uint8_t sc = scancode_of(c >= 'a' ? c : c + ('a' - 'A'));
             if (sc == 0xFF || menu_key_code(sc) != (uint8_t)c) {
                 all = 0;
                 if (!bad) bad = c;
@@ -1248,9 +1248,9 @@ int main(int argc, char **argv)
         ck("every letter A-Z reaches the code screen as itself", all, NULL);
         /* SDL's own keycodes for these two are the ASCII values. */
         ck("backspace is 0x7F to the entry loop",
-           menu_key_code(view_scancode_of(0x08)) == 0x7F, NULL);
+           menu_key_code(scancode_of(0x08)) == 0x7F, NULL);
         ck("and Enter is 0x0D",
-           menu_key_code(view_scancode_of(0x0D)) == 0x0D, NULL);
+           menu_key_code(scancode_of(0x0D)) == 0x0D, NULL);
     }
 
     /* THE FX PLATE HAS THREE STATES AND THEY MUST BE THREE PICTURES.
@@ -1907,7 +1907,7 @@ int main(int argc, char **argv)
         int bad = 0;
         char why[128] = "";
         for (size_t i = 0; i < sizeof KEYS / sizeof KEYS[0]; i++) {
-            uint8_t got = view_scancode_of(KEYS[i].k);
+            uint8_t got = scancode_of(KEYS[i].k);
             if (got != KEYS[i].sc) {
                 bad++;
                 if (!*why)
@@ -1921,7 +1921,7 @@ int main(int argc, char **argv)
          * counts with `inc al` rather than a table. */
         int run = 1;
         for (int32_t k = SDLK_F3; k < SDLK_F10; k++)
-            if (view_scancode_of(k + 1) != view_scancode_of(k) + 1) run = 0;
+            if (scancode_of(k + 1) != scancode_of(k) + 1) run = 0;
         ck("and F3..F10 run consecutively (image 0x03EA0's `inc al`)",
            run, "the skill keys are not a run");
     }

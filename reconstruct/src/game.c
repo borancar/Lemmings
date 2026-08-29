@@ -11074,7 +11074,7 @@ int32_t menu_dispatch(uint8_t code)
     case 0x80: return MENU_PLAY;        /* image 0x0447B */
     case 0x81: return MENU_NEW_LEVEL;   /* image 0x04482 */
     case 0x82: return MENU_FX;          /* image 0x04486 */
-    case 0x83: return MENU_HELP;        /* image 0x0448A */
+    case 0x83: return MENU_INPUT;        /* image 0x0448A */
     case 0x1B: return MENU_EXIT;        /* image 0x0448E */
     case 0x8A: case 0x60: return MENU_RATING_UP;    /* image 0x04495 */
     case 0x8B: case 0x2D: return MENU_RATING_DOWN;  /* image 0x0449D */
@@ -11612,9 +11612,7 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
 
         /* The level gets its own screen - 320x200, play area over panel -
          * rather than the harness viewer's window of the play area alone. */
-        view_show_hook(level_frame_tick, &A, c.pix);
         level_run(&A, &c, g.palette, "PC Lemmings", scale);
-        view_show_hook(NULL, NULL, NULL);
         /* ds:0x40 through its own routine, image 0x03AF4 - the panel writes
          * it every frame and this is the last one. The port kept a second
          * copy in a global of its own, which main.c then read instead.
@@ -12353,7 +12351,7 @@ int level_run(struct level_frame *A, const canvas *c,
      * input, all env-gated, all harness.c's. A run being measured is not being
      * displayed, which is the ds:0x200E the palettes are told about. */
     harness_level_begin();
-    view_level_palettes(top, bottom, !harness_sink_active());
+    level_palette_set(top, bottom, !harness_sink_active());
 
     view_level_grab(1);
     /* IMAGE 0x00468's divisor. A frame is FIVE ticks of the game's own timer -
@@ -12404,6 +12402,168 @@ void level_frame_show(const uint8_t *screen, struct level_frame *A)
     /* A run with a sink is being measured, not played, and must not spend
      * wall clock waiting for a display that is not there. */
     if (!harness_sink_active()) view_level_pace();   /* image 0x00164 */
+}
+
+/* THE FREES DOS USED TO DO - and they go with the routines that ALLOCATE,
+ * which is why they moved here.
+ *
+ * A free is the counterpart of INT 21h AH=49h and by this port's convention
+ * that puts it with the hardware. But dat_load and menu_build_rating are in
+ * this file, and a free next door has to know their structures field by field:
+ * add one to menu_screen here and the free that does not learn about it leaks
+ * silently. That is the same two-spellings-of-one-object hazard this port has
+ * already been bitten by twice - the ctypes Lem and the two static g_ticks -
+ * and pairing them is what stops it. canvas_init and canvas_free were already
+ * together, in sdl_io.c, and stay there for the same reason.
+ */
+/* THE PORT'S OWN - the original frees through its DOS allocator, and each
+ * section is one of this port's mallocs. */
+void dat_free(dat_file *d)
+{
+    if (!d) return;
+    for (uint32_t i = 0; i < d->count; i++)
+        free(d->sections[i].data);
+    free(d->sections);
+    d->sections = NULL;
+    d->count = 0;
+}
+
+/* THE PORT'S OWN. The menu screen's three allocations, and the flip pointer
+ * that may be aiming at one of them - video_screen_set is sdl_io.c's. */
+void menu_free(menu_screen *m)
+{
+    if (!m) return;
+    /* Never leave the page flip pointing at a buffer that has gone. */
+    if (video_screen_is(m->pix)) video_screen_set(NULL, NULL);
+    free(m->pix);
+    m->pix = NULL;
+    free(m->gfx);
+    m->gfx = NULL;
+    m->gfx_len = 0;
+    free(m->menu_sec);
+    m->menu_sec = NULL;
+    m->menu_sec_len = 0;
+}
+
+/* ======================================================================
+ * THE PALETTE SLOTS, ds:0x100 AND ds:0x200 - THE GAME'S OWN MEMORY.
+ *
+ * These were in sdl_io.c on the reading that a palette is the card's. It is
+ * not: the original keeps its slots in DGROUP and image 0x0553D PUSHES one at
+ * the DAC, and only that push was ever the hardware's. What sat next door with
+ * them were two transcribed routines - image 0x052F4's load and image
+ * 0x05329's notch - and a routine lives where the binary puts it.
+ *
+ * `_cur` is what the screen shows at this moment and `_tgt` is where a fade is
+ * heading. The level carries TWO, swapped part-way down the screen, so the
+ * play area keeps the terrain's browns and the panel below gets greens and
+ * greys; a menu screen carries two only when it is the briefing, which is two
+ * pictures stacked.
+ *
+ * sdl_io.c reads them when it draws and writes none of them.
+ * ====================================================================== */
+lem_rgb g_lvl_pal_top[16], g_lvl_pal_bottom[16];
+static lem_rgb g_lvl_pal_tgt_top[16], g_lvl_pal_tgt_bottom[16];
+
+static lem_rgb g_menu_pal_cur[16], g_menu_pal_tgt[16];
+static lem_rgb g_menu_pal_low_cur[16], g_menu_pal_low_tgt[16];
+static uint16_t g_menu_split;          /* the row the second slot starts at */
+
+/* IMAGE 0x052F4 - THE LEVEL'S PALETTE LOADED, both slots.
+ *
+ * `live` is ds:0x200E. With a display the pair the screen is drawn through
+ * starts at BLACK and image 0x0031E's fade climbs out of it; without one there
+ * is nothing to fade, so it starts AT the target and image 0x0033D's single
+ * step clears the bit on the first frame. A capture harness has a frame budget
+ * and a fade inside frame 0 would spend a second of wall clock producing
+ * nothing, every frame of it carrying a palette climbing out of black. */
+void level_palette_set(const lem_rgb *top, const lem_rgb *bottom, int live)
+{
+    memcpy(g_lvl_pal_tgt_top, top, sizeof g_lvl_pal_tgt_top);
+    memcpy(g_lvl_pal_tgt_bottom, bottom, sizeof g_lvl_pal_tgt_bottom);
+    if (live) {
+        memset(g_lvl_pal_top, 0, sizeof g_lvl_pal_top);
+        memset(g_lvl_pal_bottom, 0, sizeof g_lvl_pal_bottom);
+    } else {
+        memcpy(g_lvl_pal_top, g_lvl_pal_tgt_top, sizeof g_lvl_pal_top);
+        memcpy(g_lvl_pal_bottom, g_lvl_pal_tgt_bottom,
+               sizeof g_lvl_pal_bottom);
+    }
+}
+
+/* IMAGE 0x0534B AND IMAGE 0x05329 - ONE NOTCH of the level's pair. `out`
+ * selects the direction: towards the loaded slot, or towards black.
+ *
+ * Nothing on a display is nothing to fade, so the fade is already over. Image
+ * 0x0033D's single step reaches the same place a frame at a time; this reaches
+ * it on the first one, which is what a harness with a frame budget needs. */
+int level_fade_notch(uint8_t out)
+{
+    lem_rgb black[16];
+    const lem_rgb *tt = g_lvl_pal_tgt_top, *tb = g_lvl_pal_tgt_bottom;
+    int moved;
+    if (!video_present()) return 0;                      /* ds:0x200E */
+    if (out) {
+        memset(black, 0, sizeof black);
+        tt = tb = black;
+    }
+    moved  = palette_fade_step(g_lvl_pal_top, tt, 16);   /* image 0x056E2 */
+    moved |= palette_fade_step(g_lvl_pal_bottom, tb, 16);
+    return moved;
+}
+
+/* Image 0x045F2's set-up: both slots aimed at the screen's palettes and the
+ * current pair blacked, so the first notch starts from nothing. */
+void menu_fade_arm(const lem_rgb *pal, const lem_rgb *low, uint16_t split)
+{
+    g_menu_split = split;
+    for (uint8_t i = 0; i < 16; i++) {
+        g_menu_pal_tgt[i] = pal[i];
+        g_menu_pal_low_tgt[i] = low[i];
+        g_menu_pal_cur[i].r = g_menu_pal_cur[i].g = g_menu_pal_cur[i].b = 0;
+        g_menu_pal_low_cur[i].r = g_menu_pal_low_cur[i].g =
+            g_menu_pal_low_cur[i].b = 0;
+    }
+}
+
+/* Image 0x046AB's: both slots aimed at black. */
+void menu_fade_to_black(void)
+{
+    for (uint8_t i = 0; i < 16; i++) {
+        g_menu_pal_tgt[i].r = g_menu_pal_tgt[i].g = g_menu_pal_tgt[i].b = 0;
+        g_menu_pal_low_tgt[i].r = g_menu_pal_low_tgt[i].g =
+            g_menu_pal_low_tgt[i].b = 0;
+    }
+}
+
+/* THE PORT'S OWN: the original leaves the split where it is and the next
+ * screen's image 0x052F4 overwrites it. Here a stale split would send rows of
+ * the NEXT screen through a palette nothing is filling. */
+void menu_fade_disarm(void) { g_menu_split = 0; }
+
+/* IMAGE 0x05329 - ONE NOTCH OF BOTH SLOTS, which is the call image 0x045F8
+ * and image 0x046B1 both make. Non-zero while it still has somewhere to go,
+ * which is what image 0x045FB's and image 0x046B4's `jne` test. */
+int menu_fade_notch(void)
+{
+    int moved = palette_fade_step(g_menu_pal_cur, g_menu_pal_tgt, 16);
+    if (g_menu_split)
+        moved |= palette_fade_step(g_menu_pal_low_cur, g_menu_pal_low_tgt, 16);
+    return moved;
+}
+
+/* The upper slot as it stands, for the frame a fade puts up each notch. */
+const lem_rgb *menu_fade_palette(void) { return g_menu_pal_cur; }
+
+/* WHICH SLOT A ROW TAKES. The briefing is two pictures stacked and the level
+ * swaps attributes 8..15 part-way down, so the rows from the split take the
+ * second. Zero means one palette for the whole screen, which is every other
+ * screen. sdl_io.c asks this per row while it draws - the decision is the
+ * game's, the drawing is the card's. */
+const lem_rgb *menu_split_palette(uint16_t y, const lem_rgb *upper)
+{
+    if (g_menu_split && y >= g_menu_split) return g_menu_pal_low_cur;
+    return upper;
 }
 
 /* ======================================================================
@@ -12476,6 +12636,66 @@ static void menu_screen_fade_out(const uint8_t *pix, uint16_t w, uint16_t h)
     }
     /* image 0x046B6's `jmp 0x04DEF` - the page cleared behind the fade. The
      * port's counterpart is the screen being torn down by the caller. */
+}
+
+/* IMAGE 0x04401 - THE MENU, ENTERED. The routine the code screen, the input
+ * chooser, the results screen and a briefing's Escape all jump back to, and
+ * the port had four of its lines.
+ *
+ *     0x04401  ds:0x1F76 = 0, ds:0x1F78 = 0x6D60, ds:0x1F7A = 0
+ *                                  the page pair - one page here, so nothing
+ *     0x04413  call 0x04C32        the CRTC start address
+ *     0x04416  ds:0x1F6F = 0xFF    the RATING plate owes a draw
+ *     0x0441B  ds:0x1F72 = 0xFF    and so does the FX plate
+ *     0x04420  ds:0x1F70 = 0
+ *     0x04425  call 0x0531E        the palette to BLACK
+ *     0x04428  call 0x04DEF        the page cleared
+ *     0x0442B..0x04447             the screen composed - menu_build_rating,
+ *                                  which carries this address for that half
+ *     0x0444A  call 0x01550        a retrace
+ *     0x0444D  call 0x04C32        the start address again
+ *     0x04450  call 0x0536C        THE PALETTE UP, sixteen from ds:0x200
+ *     0x04453  ds:0x14 & 7         wait for every button to be RELEASED
+ *     0x0445B  the loop
+ *
+ * It was menu_run in sdl_io.c and it was four of those lines: view_open, the
+ * buffer pointer, image 0x04453's wait and image 0x0445B's call. So one
+ * routine was transcribed in two files that did not name each other -
+ * menu_build_rating had the composition and this had the frame around it.
+ *
+ * WHAT MOVING IT ADDS is the FADE. Image 0x04425 takes the palette to black
+ * before anything is drawn and image 0x04450 brings it up, so the menu ARRIVES
+ * the way every other screen does; the port cut straight to it. That is the
+ * same gap this file records elsewhere: the original does not cut, and a port
+ * that does is missing something the original spends real time on.
+ *
+ * The page pair and the two calls to image 0x04C32 have no counterpart here -
+ * one page, and the flip is image 0x04C20's in video_page_flip.
+ */
+menu_action menu_run(menu_screen *m, uint8_t scale)
+{
+    const char *cap;
+
+    if (scale < 1) scale = 1;
+    if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0) return MENU_EXIT;
+    video_screen_set(m->pix, m->palette);     /* which buffer the flip shows */
+
+    menu_plates_arm();          /* image 0x04416, 0x0441B, 0x04420 */
+
+    /* image 0x04425's black, then image 0x04450's climb out of it. What image
+     * 0x04428's clear stood in front of has already happened: the caller
+     * composed the screen, which is image 0x0442B..0x04447. */
+    menu_fade_arm(m->palette, m->palette, 0);    /* image 0x0531E */
+    menu_screen_fade_in(m->pix, MENU_W, MENU_H); /* image 0x04450 */
+    menu_fade_disarm();
+
+    menu_wait_release();                         /* image 0x04453 */
+
+    /* THE PORT'S OWN: -1 is unbounded, and the cap goes INTO the loop rather
+     * than into a copy of it here. A loop that only ends on a keypress cannot
+     * be driven by a test. */
+    cap = getenv("LEM_FRAMES");
+    return menu_loop(m, cap ? (long)atoi(cap) : -1);   /* image 0x0445B */
 }
 
 /* IMAGE 0x04566's TAIL - A SCREEN SHOWN, WAITED ON, AND FADED AWAY.

@@ -223,7 +223,7 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (a == MENU_HELP) {
+        if (a == MENU_INPUT) {
             menu_screen sub;
             if (menu_input_screen(data, &sub, &err) != 0) continue;
             menu_screen_show(&sub, "PC Lemmings", DEFAULT_SCALE);

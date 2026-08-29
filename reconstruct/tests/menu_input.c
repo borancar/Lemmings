@@ -54,7 +54,7 @@ int main(void)
     check("F3 (0x3D) is the sound settings",
           menu_dispatch(menu_key_code(0x3D)), MENU_FX);
     check("F4 (0x3E) is the ? plate",
-          menu_dispatch(menu_key_code(0x3E)), MENU_HELP);
+          menu_dispatch(menu_key_code(0x3E)), MENU_INPUT);
     check("Esc (0x01) exits to DOS",
           menu_dispatch(menu_key_code(0x01)), MENU_EXIT);
     /* The rating plate. All four are the original's own, read off its

@@ -1149,7 +1149,6 @@ void level_frame_compose(struct level_frame *A, const canvas *c,
 void level_panel_click(struct level_frame *A, int32_t *scroll_x);
 int  level_run(struct level_frame *A, const canvas *c,
                const lem_rgb *palette, const char *title, uint8_t scale);
-void view_show_hook(view_tick tick, void *ctx, uint8_t *pix);
 
 /* The same, but animated. `pix` is written by `tick` rather than being fixed.
  * The menu needs this and nothing else does: its banner scrolls. */
@@ -1194,7 +1193,7 @@ extern const uint8_t KEY_WATCH[16];
 void view_level_present(void);
 void view_level_bind(uint8_t *screen);
 void view_level_unbind(void);
-void view_level_palettes(const lem_rgb *top, const lem_rgb *bottom, int live);
+void level_palette_set(const lem_rgb *top, const lem_rgb *bottom, int live);
 void view_level_period(uint16_t hz);
 void view_level_grab(int on);
 void view_level_pace(void);
@@ -1289,7 +1288,12 @@ typedef enum {
      * Down / - / keypad-minus lower it; see MENU_RATING_MAX below. */
     MENU_RATING_UP,
     MENU_RATING_DOWN,
-    MENU_HELP           /* F4    the "?" plate */
+    /* F4's plate. It is the INPUT DEVICE chooser - keyboard, joystick,
+     * mouse - and image 0x04A01 is the screen it reaches; this was called
+     * MENU_HELP on the strength of the plate looking like a "?", and the
+     * behaviour underneath it was right the whole time. A player read the
+     * name and expected help. */
+    MENU_INPUT
 } menu_action;
 
 /* ======================================================================
@@ -1347,7 +1351,12 @@ void    video_screen_set(uint8_t *pix, lem_rgb *pal);
 void    view_quit_now(void);
 /* THE PORT'S OWN - a host keycode as the scancode the game's keyboard handler
  * would have produced. Exported so a test can check every letter arrives. */
-uint8_t view_scancode_of(int32_t keycode);
+/* The one thing about the keyboard that is the HARDWARE's: what byte port
+ * 0x60 would have produced for a host key. SDL_Keycode is a Uint32, so this
+ * needs no SDL type to declare - it used to have a one-line view_scancode_of
+ * wrapping it for that reason, which was two names for one function and the
+ * duplication this port keeps being bitten by. */
+uint8_t scancode_of(uint32_t keycode);
 int     video_screen_is(const uint8_t *pix);
 uint8_t key_scan(void);         /* image 0x04D1A, in game.c */
 
@@ -1423,6 +1432,8 @@ int     menu_fade_tick(void *ctx, uint8_t *pix);
 /* THE MENU SCREEN'S TWO PALETTE SLOTS - what the DAC used to hold. The loops
  * that walk them are game.c's, carrying image 0x045EF and image 0x046A2. */
 void menu_fade_arm(const lem_rgb *pal, const lem_rgb *low, uint16_t split);
+const lem_rgb *menu_split_palette(uint16_t y, const lem_rgb *upper);
+extern lem_rgb g_lvl_pal_top[16], g_lvl_pal_bottom[16];
 void menu_fade_to_black(void);
 void menu_fade_disarm(void);
 int  menu_fade_notch(void);
