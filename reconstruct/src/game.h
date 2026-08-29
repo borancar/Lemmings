@@ -808,6 +808,10 @@ uint8_t level_number(void);         /* image 0x04566 */
 int  level_passed(void);            /* image 0x04729 */
 void level_failed(void);            /* image 0x04778 */
 void level_from_menu(void);         /* image 0x0454C */
+/* image 0x04551's rep stosb: the level's running state back to zero. Both
+ * entries to a level run it - the menu's F1 and the results screen's next
+ * level, which jumps past level_from_menu straight to the wipe. */
+void level_state_wipe(void);
 void level_rating_up(void);         /* image 0x044EC */
 void level_rating_down(void);       /* image 0x0451C */
 void level_index_reset(void);

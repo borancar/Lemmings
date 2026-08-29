@@ -144,6 +144,11 @@ int main(int argc, char **argv)
             for (;;) {
                 char picked[64];
                 uint32_t which = 0;
+                /* image 0x04551, and it is inside the loop because BOTH
+                 * entries run it: the results screen's next level jumps to
+                 * 0x04551 rather than to 0x0454C, taking the wipe and
+                 * skipping only the advance flag above it. */
+                level_state_wipe();
                 /* image 0x0197D reads ds:0x1F6B and needs nothing else. */
                 if (level_locate(picked, sizeof(picked), &which) != 0)
                     break;

@@ -1791,6 +1791,35 @@ int main(int argc, char **argv)
         }
     }
 
+    /* ==================================================================
+     * IMAGE 0x04551 - THE WIPE BETWEEN LEVELS.
+     *
+     * ds:0x2B is toggled by image 0x04028 and cleared by nothing, so a level
+     * that ended while paused left the NEXT one paused. main.c plays levels
+     * in a loop, so this was reachable by playing and by nothing here.
+     * ================================================================== */
+    {
+        level_state_wipe();
+        ck("a level starts unpaused", level_paused() == 0, NULL);
+
+        /* Pause it the way the game does - through image 0x04018's own
+         * entry, not by poking the byte, so the debounce is exercised too. */
+        level_start_reset();
+        int toggled = 0;
+        for (int i = 0; i < 40 && !toggled; i++) {
+            if (level_pause_click()) toggled = 1;
+            level_phase_step();   /* image 0x001A3 advances ds:0x52 */
+        }
+        ck("and image 0x04018 can pause it (the positive control)",
+           toggled && level_paused() == 0xFF, "never toggled");
+
+        /* THE POINT: entering the next level clears it. Without the wipe
+         * this is 0xFF and the level starts frozen. */
+        level_state_wipe();
+        ck("and the next level is not still paused (image 0x04551)",
+           level_paused() == 0, NULL);
+    }
+
     printf(fails ? "\n  %d FAILED\n" : "\n  all passed\n", fails);
     return fails ? 1 : 0;
 }

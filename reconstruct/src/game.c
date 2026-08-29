@@ -3582,6 +3582,53 @@ static uint8_t g_needed_pct;    /* ds:0x41 */
 uint8_t level_saved_pct(void)  { return g_saved_pct; }
 uint8_t level_needed_pct(void) { return g_needed_pct; }
 
+/* IMAGE 0x04551 - THE WIPE, and the rest of image 0x0454C's chain.
+ *
+ *     0x0454C  mov byte [0x1F6D], 0    the advance flag - level_from_menu
+ *     0x04551  es = ds, di = 0
+ *     0x04556  cx = 0xFCA
+ *     0x0455B  rep stosb               ds:0x0000..0x0FC9 to zero
+ *     0x0455D  call 0x0197D            the level's files
+ *     0x04560  call 0x04566            the briefing
+ *     0x04563  jmp 0x000FB             the one main loop
+ *
+ * FOUR THOUSAND AND FORTY-TWO BYTES, which is every byte of the level's
+ * running state: the counters, the flags, the skill and status cells, and
+ * everything up to the level record the load then writes at ds:0x0FCB. The
+ * original starts a level by ERASING, and the two entries share it - image
+ * 0x047DD, the results screen's "next level", jumps to 0x04551 and not to
+ * 0x0454C, which is how it skips the advance flag and keeps the wipe.
+ *
+ * The port has no contiguous DGROUP to memset, so this is the wipe's MEANING
+ * rather than its `rep stosb`: the state that lives in that range goes to
+ * zero. Most of it is already covered by the resets the level start calls -
+ * level_skills_reset, level_status_reset, level_release_reset,
+ * level_start_reset, level_saved_reset and lemmings_reset - and these five
+ * were covered by NONE of them:
+ *
+ *     ds:0x2B  g_paused      toggled by image 0x04028 and never cleared, so
+ *                            a level paused when it ended left the NEXT one
+ *                            paused. main.c plays them in a loop, so this is
+ *                            reachable by playing.
+ *     ds:0x53  g_pause_at    that toggle's debounce stamp - image 0x0402D
+ *     ds:0x40  g_saved_pct   image 0x03AF4 writes it every panel frame
+ *     ds:0x41  g_needed_pct  image 0x0459E writes it from the briefing
+ *     ds:0x54  g_tune        image 0x04866 picks it per level
+ *
+ * The last three are written before anything reads them, so only the first
+ * two could be SEEN - which is exactly why a wipe is the right shape and
+ * five separate resets are not. Wiping the state is one decision; remembering
+ * which of sixty variables still needs it is sixty.
+ */
+void level_state_wipe(void)
+{
+    g_paused     = 0;            /* ds:0x2B */
+    g_pause_at   = 0;            /* ds:0x53 */
+    g_saved_pct  = 0;            /* ds:0x40 */
+    g_needed_pct = 0;            /* ds:0x41 */
+    g_tune       = 0;            /* ds:0x54 */
+}
+
 /* Image 0x03ACE: the saved count over the total. */
 uint8_t level_saved_percent(const level *lv)
 {
