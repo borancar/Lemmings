@@ -109,6 +109,26 @@ so the driver sequences the tune correctly and the script path was starving
 it. Commit 76be635 recorded this - "fed back, they make start_music refuse to
 start" - and this recipe did not, which is how it was walked into again.
 
+WITH THE slot5 LINES STRIPPED THE PAIR SCORES, and this is what a good run
+looks like:
+
+    register and value agree : 10505 of 10505  (100.00%)
+    and at the same tick     :   106 of 10505  (1.01%)
+    the GAP between writes   : 10503 of 10504  (99.99%)
+    worst gap difference     : 1 ticks, at write #106
+
+The tick column is EXPECTED to be low and is not a fault: the replay rebases
+on the script's first tick while the original's stream is stamped from the
+run's start, so the two differ by a constant. That is exactly why this tool
+scores the GAP as well - it is the part that survives the offset. The single
+one-tick gap difference is the instrument, per 76be635: a request is stamped
+with the PIT tick at the moment the guest stores the byte, and a tick counter
+cannot say whether the driver's tick for that count had already run.
+
+Read the three columns together. Register-and-value alone would pass a stream
+played at the wrong speed; the gap alone would pass one playing the wrong
+notes in the right rhythm.
+
 This tool EXITS 1 on a partial pair, which is right and has a consequence
 worth knowing: leaving one in out/ makes `verify_all.sh --units` fail, and
 the failure reads as a broken sound port rather than as an incomplete
