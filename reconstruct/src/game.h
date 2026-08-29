@@ -201,7 +201,12 @@ blit_path blit_path_of(uint16_t bp);
  * axis. Image 0x07E76's preview passes 0x0C and asks for both. */
 int blit_clips(uint16_t bp);
 
-/* ONE ENTRY OF THE SPRITE STORE'S BUILD TABLE - image 0x059BB.
+/* THE SPRITE STORE - image 0x058D2 builds it once at start-up, and this port
+ * builds none of it. See the block above LEM_SPRITE in data.c for what each
+ * of its routines does and why pre-shifting is a question a byte-per-pixel
+ * canvas does not have.
+ *
+ * ONE ENTRY OF THE SPRITE STORE'S BUILD TABLE - image 0x059BB.
  *
  * The builder walks the lemming artwork in fifteen groups, each a count, a
  * geometry word in dx as (planes << 8) | rows, and a stride it adds to si.

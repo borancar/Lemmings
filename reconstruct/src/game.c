@@ -6945,31 +6945,49 @@ static int fade_component(uint8_t *cur8, uint8_t tgt8)
  *
  * The selectors over it, and who calls each:
  *
- *   0x0536C  fade slot 0 to slot 2, sixteen entries - THE FADE IN, and every
- *            screen runs it: image 0x04450 (the menu), 0x047A6 (results),
- *            0x04807, 0x04993 (the code screen), 0x04A2B (the input
- *            chooser), 0x04AE5 and 0x04B38. Seven callers, one routine.
- *   0x052F4  show slot 1, sixteen - image 0x00465, the level's set-up
- *   0x05377  copy slot 5 into slot 6 - image 0x00486, also the level's
- *   0x053CA  show slot AL's UPPER EIGHT, registers 8..15 - image 0x0466E
- *            and image 0x046A8. This is the swap CLAUDE.md records: the play
- *            area keeps the terrain's colours and the panel gets its own.
- *   0x053F6  show slot AL, eight
- *   0x053FE  show slot AL, sixteen - image 0x04600
- *   0x05473  image 0x017DD and image 0x0524C
+ *   image 0x0536C  fade slot 0 to slot 2, sixteen entries - THE FADE IN, and
+ *                  every screen runs it: image 0x04450 (the menu), image
+ *                  0x047A6 (results), image 0x04807, image 0x04993 (the code
+ *                  screen), image 0x04A2B (the input chooser), image 0x04AE5
+ *                  and image 0x04B38. Seven callers, one routine.
+ *   image 0x052F4  show slot 1, sixteen - image 0x00465, the level's set-up
+ *   image 0x05377  copy slot 5 into slot 6 - image 0x00486, also the level's
+ *   image 0x053CA  show slot AL's UPPER EIGHT, registers 8..15 - image
+ *                  0x0466E and image 0x046A8. This is the swap CLAUDE.md
+ *                  records: the play area keeps the terrain's colours and
+ *                  the panel gets its own.
+ *   image 0x053F6  show slot AL, eight   (image 0x053FC picks slot 2 for it)
+ *   image 0x053FE  show slot AL, sixteen - image 0x04600
+ *   image 0x05447  a variant nothing in a VGA run reaches
+ *   image 0x05473  image 0x017DD and image 0x0524C
+ *   image 0x05569  the two-slot selector a fade is given, si = table[bl] and
+ *                  di = table[bh] - image 0x05329 and image 0x0534B, the
+ *                  level's own fade in and out, both go through it
  *
  * And two writers, which are the CARD and belong in sdl_io.c by this port's
  * own rule - they replace something a card did:
  *
- *   0x05425  CX attribute registers from si, starting at register CH
- *   0x0548C  CX DAC entries from si, starting at CH, with ds:0x200C's blank
+ *   image 0x05425  CX attribute registers from si, starting at register CH
+ *   image 0x0548C  CX DAC entries from si, from CH, with ds:0x200C's blank
  *
  * THE EGA HALF IS A NON-GOAL. This port reconstructs vgalemmi.exe's VGA
  * path only - CLAUDE.md's first page says so - so image 0x05425 and the EGA
- * fade step at image 0x0563E (with its three component helpers at image
- * 0x0566C, image 0x05685 and image 0x05696) are named here and not written.
- * They are the other adapter, not a gap: ds:0x1F7C is 4 in every run this
- * repository makes.
+ * fade step at image 0x0563E, with its component helpers at image 0x0566C,
+ * image 0x05685, image 0x05696 and image 0x0569B, are named here and not
+ * written. They are the other adapter, not a gap: ds:0x1F7C is 4 in every
+ * run this repository makes.
+ *
+ * TWO MORE OF THE CARD'S, in the same range and the same category:
+ *
+ *   image 0x0587F  restore the sequencer and graphics-controller state from
+ *                  a saved block at 0x244E - map mask, read mode, function
+ *                  select, bit mask. Pure card state; the port has no card.
+ *   image 0x05726  the per-lemming blit ADDRESS, called from image 0x03654
+ *                  inside the lemming draw: it takes the record's x and hot
+ *                  spot, tests a per-column table at ds:0x0EA8 for 1, and
+ *                  builds a video offset from ds:0 - the scroll - and
+ *                  ds:0x26, the page. The port draws into a canvas at a
+ *                  known stride and needs no such address.
  *
  * WHAT THE PORT DOES INSTEAD. It has no card and no 64 KB segment, so a slot
  * is a `lem_rgb[16]` owned by whatever screen needs it, and the fade walks

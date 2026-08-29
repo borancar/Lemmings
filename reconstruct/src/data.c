@@ -1175,6 +1175,48 @@ const uint8_t MENU_XLAT[0x53] = {
 };
 
 /* ======================================================================
+ * THE SPRITE STORE - image 0x058D2, and why this port builds none of it.
+ *
+ * Image 0x000D5 calls image 0x058D2 once at start-up and it constructs the
+ * whole store:
+ *
+ *     image 0x058E0  clear the segment ds:0x1FE4
+ *     image 0x058E5  the lemming sprites, through image 0x059BB - the build
+ *                    table below
+ *     image 0x058E8  THE CURSOR, through image 0x05CC1: si = 0x52BC to
+ *                    ds:0x1FEA, sixteen rows of three planes, then si =
+ *                    0x531C to +0x480 - the second shape, the box it wears
+ *                    over a lemming, and the same 0x480 image 0x05854 adds
+ *                    when ds:0x1A is set
+ *     image 0x058FE  the panel and font groups, through image 0x05AC1
+ *
+ * and underneath those, the routines that do the work:
+ *
+ *     image 0x05B11  pre-shift a two-byte-wide sprite
+ *     image 0x05BB0  build a MASK by ORing the planes, and append it
+ *     image 0x05CDD  the two-byte core: read a word, shift right by dh with
+ *                    the carry falling into a third byte, store three
+ *     image 0x05C06  the same for four-byte-wide sprites, 32 of them, three
+ *                    planes
+ *     image 0x05D66  a two-byte shifter that stores words, not triples
+ *
+ * WHY THE PORT BUILDS NONE OF IT. Pre-shifting exists because the card blits
+ * on byte boundaries: to draw at an x that is not a multiple of eight the
+ * game needs a copy already shifted, so it makes several of each sprite at
+ * start-up and picks one. This port addresses PIXELS - a byte to a pixel -
+ * so it draws at any x directly, and the shifted copies would be several
+ * identical answers to a question it does not have.
+ *
+ * That makes them IO by game.c's own rule: they replace what the hardware
+ * required, not what the game decided. They are named here because what they
+ * build is game DATA, and the part of it that IS a fact about the game is the
+ * table below - which image 0x059BB states, and which settled the digger.
+ *
+ * The cursor is the other part worth having: tools/probe_cursor.py measured
+ * its two shapes off the store at 144 bytes a shift, and image 0x05CC1 is
+ * where they are put there.
+ * ======================================================================
+ *
  * THE SPRITE STORE'S BUILD TABLE - transcribed from image 0x059BB.
  *
  * Called once at start-up through image 0x058D2, which image 0x000D5
