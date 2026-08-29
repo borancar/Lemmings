@@ -14,15 +14,35 @@ writes what the original wrote, and what ymfm then makes of it is ymfm's
 business. `reconstruct/tests/opl.c` covers that separately, against the
 datasheet.
 
-    # the original, driven to a chosen tune rather than played to
-    LEM_HOOK=tools/probe_opl.py LEM_OPL_OUT=out/orig_tune1.txt \
-        LEM_OPL_TUNE=1 uv run python tools/play.py --auto -- --run-seconds 90
+    # the original: record BOTH what it wrote and what it was ASKED for.
+    # LEM_OPL_REQ is the second half and the whole reason this works - the
+    # driver plays what it is asked for, so a register stream on its own is
+    # an answer with the question missing.
+    LEM_HOOK=tools/probe_opl.py LEM_OPL_OUT=out/orig_opl.txt \
+        LEM_OPL_REQ=out/orig_req.txt \
+        uv run python tools/play.py --auto -- --run-seconds 90
 
-    # the port's own
-    ./reconstruct/lemdev --data lemming1.pc --adlib-tune 1 \
-        --adlib-ticks 600 --raw out/port_tune1.txt
+    # the port, replaying the original's own requests
+    ./reconstruct/lemdev --data lemming1.pc --adlib-script out/orig_req.txt \
+        --adlib-ticks 600 --raw out/port_opl.txt
 
-    uv run python tools/verify_adlib.py out/orig_tune1.txt out/port_tune1.txt
+    uv run python tools/verify_adlib.py out/orig_opl.txt out/port_opl.txt
+
+THE RECIPE ABOVE USED TO NAME `LEM_OPL_TUNE=1` AND `--adlib-tune 1`, and that
+is how the 10,333-of-10,333 result was NOT obtained. Nothing reads
+LEM_OPL_TUNE - grep finds it in this docstring and nowhere else - so it
+selected no tune at all: the original recorded whatever a 90-second --auto run
+happened to play and the port recorded tune 1, and comparing those two scores
+
+    original : 54 writes over 30 ticks
+    port     : 679 writes over 588 ticks
+    register and value agree : 0 of 54  (0.00%)
+
+which is a fact about the harness and reads exactly like a sound port that
+does not work. out/orig_tune1.txt and out/port_tune1.txt are that pair, left
+where they fell. The two sides have to be the same thing before a percentage
+between them means anything - this project's oldest rule, and the request log
+is what makes them the same thing here.
 """
 import argparse
 import sys
