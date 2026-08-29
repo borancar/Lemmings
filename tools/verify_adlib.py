@@ -22,9 +22,12 @@ datasheet.
         LEM_OPL_REQ=out/orig_req.txt \
         uv run python tools/play.py --auto -- --run-seconds 240
 
-    # the port, replaying the original's own requests
-    ./reconstruct/lemdev --data lemming1.pc --adlib-script out/orig_req.txt \
-        --adlib-ticks 600 --raw out/port_opl.txt
+    # the port, replaying the original's own requests. STRIP THE slot5
+    # LINES FIRST - see below; they are the driver's, not the game's.
+    grep -v slot5 out/orig_req.txt > out/orig_req.play.txt
+    ./reconstruct/lemdev --data lemming1.pc \
+        --adlib-script out/orig_req.play.txt \
+        --adlib-ticks 11000 --raw out/port_opl.txt
 
     uv run python tools/verify_adlib.py out/orig_opl.txt out/port_opl.txt
 
@@ -90,6 +93,21 @@ construction.
 `--adlib-ticks` cannot fix it either: image `adlib_script` rebases the script
 on its own first tick, so 600 and 11,000 produce the identical 106 writes and
 the budget is not what is short.
+
+AND THE `slot5` LINES ARE THE DRIVER'S OWN WRITE, NOT THE GAME'S. This is the
+one that actually explains the 106. Driver +0x047F stores the tune number in
+slot 5 itself when it starts one, so the probe records it beside the game's
+requests - and replaying it pre-sets the flag that `start_music` tests at
+driver +0x0457, `if (g_req_slot5 == 0)`, so the music request arriving in the
+same tick is REFUSED. Measured, on the same log:
+
+    with the slot5 line     4 requests ->    106 register writes
+    with it stripped        3 requests -> 12,263 register writes
+    --adlib-tune 6 direct                 12,346 register writes
+
+so the driver sequences the tune correctly and the script path was starving
+it. Commit 76be635 recorded this - "fed back, they make start_music refuse to
+start" - and this recipe did not, which is how it was walked into again.
 
 This tool EXITS 1 on a partial pair, which is right and has a consequence
 worth knowing: leaving one in out/ makes `verify_all.sh --units` fail, and
