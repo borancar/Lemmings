@@ -1342,6 +1342,35 @@ silently. `video_screen_set` is called by every screen that runs its own loop,
 and `menu_free` clears it so the flip can never be left aiming at memory that
 has gone.
 
+## A pipeline's exit status is the last command's, and that is usually `sed`
+
+`tools/verify_all.sh` printed a Python traceback and exited **0**. Four of its
+checks were written
+
+```sh
+if uv run python tools/verify_triggers.py --level 77 2>&1 | sed 's/^/  /'
+then :; else fail=1; fi
+```
+
+and the `if` tests **sed**, which succeeds whatever the program before it did.
+`tile_sprites`, `verify_rate`, `verify_objects` and `verify_triggers` could
+each crash outright and the sweep would still pass. Read `PIPESTATUS[0]`, and
+prove it with the negative case - a check that exits 3 must move the count.
+
+What it was hiding is the point. `verify_triggers.py` is the **only** thing
+that scores the trigger map, which no picture and no frame comparison can
+reach, and it had been dead since the tables split: it reads `LEVEL_ORDER` out
+of `game.c` to say which file and section an index is, the table moved to
+`data.c`, and it died on `NoneType has no attribute 'group'` every run.
+
+So this is the same lesson as the eight verifiers that stopped linking when
+`data.c` appeared, one level out. **A tool that reaches into a source file BY
+NAME breaks silently when that file stops being the one** - search the sources
+for what you need, and refuse outright when it is in none of them rather than
+guessing. And a check that has stopped running looks exactly like a check with
+nothing to report, so when one starts working again, **its number is about the
+whole gap and not about your change.**
+
 ## The page is not the canvas, and a probe sees every screen
 
 The miner's last pixel took six wrong answers, and the two that cost most were
