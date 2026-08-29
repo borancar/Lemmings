@@ -101,3 +101,54 @@ arrow keys merely move the highlight.
 Only option 1 (PC compatible) has actually been *executed* so far, from before
 this decision. Option 2 is now what every tool drives, but a run under it has
 not yet been recorded here.
+
+## What two of them actually change
+
+The table above says which option sets which flag. This is the start of the
+other half - what the flag *does* - read out of the image rather than guessed.
+
+### `ds:0x200C` blanks the display while the palette is written
+
+Image `0x0548D`, in the palette-writing routine:
+
+```
+0548d  cmp byte ptr [0x200c], 0xff
+05492  je   0x54a1                  ; 0xFF: skip the blanking entirely
+05494  mov  dx, 0x3c4               ; Sequencer index
+05497  mov  al, 1                   ; register 1, Clocking Mode
+05499  out  dx, al
+0549a  inc  dx                      ; 0x3c5, its data
+0549b  in   al, dx
+0549c  or   al, 0x20                ; bit 5 - SCREEN OFF
+0549e  out  dx, al
+```
+
+and image `0x054B6` is the other end of it, `and al, 0xdf` putting bit 5 back
+after the palette has gone in. Image `0x054C6` is the same pair around a
+second routine.
+
+`ds:0x200C` is set by **PC compatible only**, and the test is `je` - so a PC
+compatible is the one machine that does **not** blank, and the other three
+turn the display off across the palette load. That is the opposite way round
+from the guess anyone would make from the option's name, which is the reason
+to read it rather than assume it.
+
+### One of `ds:0x200E`'s twelve references is inert
+
+Image `0x053C2`, immediately after a `rep movsw`:
+
+```
+053c2  cmp byte ptr [0x200e], 0xff
+053c7  jne  0x53c9
+053c9  ret
+```
+
+The `jne` displacement is **zero**, so it jumps to the instruction after
+itself and both arms reach the same `ret`. The test's result is discarded.
+Confirmed as a real instruction boundary by disassembling from three
+different earlier addresses and watching the stream converge on it.
+
+This project has one of these already - image `0x02CB9` is a `jns` to the
+instruction after itself, in the miner's trigger handling - and both matter
+for the same reason: a site that appears in an xref list looks like a use, and
+this one gates nothing. Twelve direct references to `ds:0x200E` are eleven.

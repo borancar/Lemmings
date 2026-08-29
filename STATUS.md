@@ -5026,6 +5026,26 @@ has nothing to seed with here.
   outstanding work we intend to do — noted here so it is not mistaken for
   finished.
 
+  **Two of them are now read**, with `tools/xref.py`, which lists every
+  instruction naming a DGROUP offset directly (6, 7, 7 and 12 references
+  respectively):
+
+  - **`ds:0x200C` blanks the display across the palette write.** Image
+    `0x0548D` sets Sequencer register 1 bit 5 - screen off - and image
+    `0x054B6` clears it again once the palette is in; image `0x054C6` is the
+    same pair around a second routine. The flag is **PC compatible only** and
+    the test is `je`, so the PC compatible is the one machine that does NOT
+    blank and the other three do. That is the opposite of what the option's
+    name suggests, which is exactly why it was read rather than assumed.
+  - **One of `ds:0x200E`'s twelve references gates nothing.** Image `0x053C2`
+    tests it and image `0x053C7`'s `jne` has displacement **zero**, so both
+    arms reach the same `ret`. Boundary confirmed by disassembling from three
+    earlier addresses and watching the stream converge. This is the second
+    such site here - image `0x02CB9` is a `jns` to the instruction after
+    itself - and it matters because an xref entry looks like a use.
+
+  See [docs/machine-types.md](docs/machine-types.md) for the disassembly.
+
 ## Deferred
 
 - **CGA and Tandy builds** — non-goals, as above.
