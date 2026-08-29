@@ -79,7 +79,12 @@ def main():
     # 0x78, and then BOTH go back to the menu at image 0x04401. Sleeping two
     # seconds captured a screen the game had already left.
     cmd += ["--cmd", f"read i+{CELLS:#x} 10",          # what got typed
-            "--cmd", "key return 8", "--cmd", "sleep 0.4",
+            # ENTER IS HELD LONG, where the letters are not. A letter that
+            # repeats types itself twice; Enter that repeats just presses
+            # Enter again, so the two want opposite holds - and at 8 frames
+            # it was never sampled at all, which read as "Enter does not
+            # work" for two runs. The empty-field test that DID fire used 24.
+            "--cmd", "key return 24", "--cmd", "sleep 0.4",
             "--cmd", f"screen {out}",
             "--", "--run-seconds", str(a.seconds)]
 

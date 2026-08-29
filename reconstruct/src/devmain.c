@@ -1164,6 +1164,7 @@ int main(int argc, char **argv)
              * image 0x049EC draws. Same routine the loop calls. */
             if (built == 0 && which_screen == 1 && typed) {
                 level_code_type(typed);
+                code_cells_draw(&mm);          /* image 0x04CC9 */
                 menu_code_result_draw(&mm, level_code_apply(typed));
             }
         }

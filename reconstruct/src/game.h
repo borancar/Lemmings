@@ -1221,6 +1221,10 @@ menu_action menu_code_run(menu_screen *m);
  * harness that scores this screen against the original composes it exactly
  * the way the loop does. */
 void menu_code_result_draw(menu_screen *m, int accepted);
+/* The ten cells as they stand - image 0x04CC9's redraw. The harness needs it
+ * for the same reason the loop does: after Enter the field shows the code
+ * that was typed, not the dots menu_code_screen composed. */
+void code_cells_draw(menu_screen *m);
 /* THE PORT'S OWN - the ten cells, for a harness to fill before drawing. */
 void level_code_type(const char *cells);
 const char *level_code_cells(void);   /* ds:0x4DF2, for a test */

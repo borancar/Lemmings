@@ -8081,7 +8081,7 @@ void level_code_type(const char *cells)
 }
 
 /* One pass of the redraw image 0x04CC9 reaches through bp. */
-static void code_cells_draw(menu_screen *m)
+void code_cells_draw(menu_screen *m)
 {
     if (!m->gfx) return;
     for (uint16_t y = CODE_DOTS_Y; y < CODE_DOTS_Y + FONT_H; y++)
@@ -8209,6 +8209,30 @@ static void menu_code_entry(menu_screen *m)
  * 665 pixels: every glyph slightly wrong and the spaces exact, which is the
  * signature of the background showing through a glyph's own black rather
  * than of a wrong string or a wrong place. */
+/* IMAGE 0x04B68 - three digits, LEFT aligned, leading blanks suppressed.
+ *
+ * It fills three cells with spaces and then walks hundreds, tens, units,
+ * advancing `si` ONLY when it emits a digit - image 0x04B85 puts a space in
+ * ah and jumps PAST the `inc si` when the digit is zero. So 13 lands in the
+ * first two cells of the field and not the last two.
+ *
+ * This had been written as right-aligned, on the strength of the field being
+ * five spaces, and scored 718 pixels against the original's own screen: the
+ * digits three cells too far right and nothing else wrong. Right-aligned into
+ * a blank field is the obvious reading and it is not this one. */
+static void code_number_write(char *at, uint8_t n)
+{
+    uint8_t out = 0;
+    at[0] = at[1] = at[2] = ' ';                /* image 0x04B68 */
+    for (uint8_t div = 100; div; div /= 10) {
+        uint8_t d = (uint8_t)(n / div);
+        n = (uint8_t)(n % div);
+        if (d == 0 && out == 0 && div != 1)
+            continue;                           /* image 0x04B85: a space */
+        at[out++] = (char)('0' + d);            /* image 0x04B89 */
+    }
+}
+
 /* A SPACE IS NOT BLACKED, and that is measured. Clearing the whole strip left
  * 46 pixels differing in exactly one cell - the space between "Incorrect" and
  * "Code" - where the original has the background's own ink and this had put
@@ -8243,14 +8267,7 @@ void menu_code_result_draw(menu_screen *m, int accepted)
     /* image 0x0499E: the level it named, and the rating - both BELOW the
      * field, at the record's own cells. */
     memcpy(line, "Code for Level     ", 20);
-    {
-        /* Image 0x049A9 through image 0x04B68: right-aligned into the five
-         * spaces, which is why the field is spaces rather than a format. */
-        char num[8];
-        int len = snprintf(num, sizeof num, "%u", (unsigned)level_number());
-        if (len > 0 && len <= CODE_NUM_W)
-            memcpy(line + CODE_NUM_AT + (CODE_NUM_W - len), num, (size_t)len);
-    }
+    code_number_write(line + CODE_NUM_AT, level_number());  /* image 0x049A9 */
     code_line_clear(m, CODE_OK_X, CODE_OK_Y, line);
     draw_at(m->pix, m->gfx, m->gfx_len, line, CODE_OK_X, CODE_OK_Y);
     /* Image 0x049AD: six bytes of ds:0x4C01 indexed by the rating, copied

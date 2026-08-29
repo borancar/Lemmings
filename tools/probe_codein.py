@@ -80,6 +80,14 @@ def drive(m, out_path):
     codes = [generate(i) for i in range(120)]
     # and three the validator should REFUSE, plus the cheat
     codes += [b"BILLANDTED", b"AAAAAAAAAA", b".........."]
+    # lemmings.cod's Mayhem 2, which the PORT refuses: its characters 7 and 8
+    # say index 91 and its bits say 83, so it fails image 0x05292's agreement
+    # test. Its checksum is correct by the file's own formula, and its
+    # neighbours pass - so either the shipped list has one bad character or
+    # both readings of image 0x0523A share a mistake. The original settles it.
+    codes.append(b"KNOHGONMHS")
+    codes.append(b"NKMFLGCLHP")     # Mayhem 1, which the port accepts
+    codes.append(b"ONHGGKONHM")     # Mayhem 3, likewise
     bad = bytearray(codes[12]); bad[3] = bad[3] ^ 1
     codes.append(bytes(bad))
 

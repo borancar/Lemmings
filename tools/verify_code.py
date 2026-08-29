@@ -31,6 +31,7 @@ machine in process.
 import argparse
 import ctypes
 import json
+import re
 import os
 import subprocess
 import sys
@@ -41,6 +42,12 @@ sys.path.insert(0, HERE)
 import lemmings   # noqa: E402  (after sys.path)
 CASES = os.path.join(ROOT, "out", "code.json")
 CASES_IN = os.path.join(ROOT, "out", "codein.json")
+# THE CODES THE GAME SHIPPED WITH, in the game directory. An INDEPENDENT
+# artefact: every other claim in this file is the port against the binary it
+# was read from, and this is the port against a list somebody else wrote out
+# in 1992 from a machine nobody here has.
+SHIPPED = os.path.join(ROOT, "lemming1.pc", "lemmings.cod")
+RATING_COL = {0: 1, 1: 2, 2: 3, 3: 4}
 
 
 def build():
@@ -161,9 +168,83 @@ def main():
               "only\n    claim about taking a code BACK is the round trip "
               "above, and that\n    accepts a wrong table.")
 
-    if bad or bad_in:
-        print(f"\n  {len(bad)} of {len(cases)} generated and {len(bad_in)} "
-              "validated differ\n")
+    # ---------------------------------------------------------- and third
+    # AGAINST lemmings.cod, which is not derived from anything here.
+    #
+    # The list is not one code per level: its own notes say characters 1..6
+    # carry "% of lemmings saved in previous level", so a level has a code per
+    # score. Reproducing an entry therefore means finding the percentage that
+    # generates it - and the interesting result is that ONE of 98 or 100 does
+    # for nearly all of them, which is what a person finishing levels would
+    # have had.
+    bad_cod = []
+    n_cod = 0
+    if os.path.exists(SHIPPED):
+        # BY POSITION, not by order of what looks like a code. Fun 1 is
+        # "(none)" - the first level needs none - so a line-wide search for
+        # ten-letter words finds three entries on that row and shifts every
+        # column left, which scored 42 of 119 and looked like the port being
+        # wrong about two thirds of the game. Each line is four "N - CODE"
+        # groups and the group's INDEX is the rating.
+        rows = []
+        for ln in open(SHIPPED, errors="replace"):
+            groups = re.findall(r"(\d+)\s*-\s*(\S+)", ln)
+            if len(groups) != 4:
+                continue
+            for col, (num, code) in enumerate(groups):
+                if len(code) == 10 and code.isalpha() and code.isupper():
+                    rows.append((col, int(num), code))
+        for col, n, code in rows:
+            idx = col * 30 + (n - 1)
+            n_cod += 1
+            want = code.encode()
+            # ASK THE VALIDATOR for the level and ds:0x491D rather than
+            # sweeping for them. Image 0x051A2 recovers both, so only the
+            # percentage is unknown and the search is 256 wide instead of
+            # 65,536 - and it uses the two transcriptions against each other,
+            # which is the point: the generator has to produce what the
+            # validator says the code means.
+            lib.level_index_set(0)
+            if not lib.level_code_apply(want):
+                bad_cod.append((idx, n, code, "the validator refuses it"))
+                continue
+            got_idx = lib.level_index()
+            other = lib.level_code_pct()
+            if got_idx != idx:
+                bad_cod.append((idx, n, code,
+                                f"decodes to index {got_idx}"))
+                continue
+            hit = None
+            for pct in range(256):
+                lib.level_code_generate(idx, other, pct, buf)
+                if buf.raw[:10] == want:
+                    hit = pct
+                    break
+            if hit is None:
+                bad_cod.append((idx, n, code,
+                                f"no percentage reproduces it "
+                                f"(ds:0x491D = {other})"))
+        print(f"\n  lemmings.cod, the codes the game SHIPPED with")
+        print(f"    {n_cod - len(bad_cod)}/{n_cod} are reproduced by image "
+              "0x05042 at some score")
+        print("    THE ONE THAT IS NOT IS THE FILE'S FAULT, not the port's:")
+        print("    Mayhem 2's KNOHGONMHS carries index 91 in characters 7 and")
+        print("    8 and index 83 in its bits, so image 0x05292's agreement")
+        print("    test refuses it - and tools/probe_codein.py confirms THE")
+        print("    ORIGINAL refuses it too, while its neighbours pass. Its")
+        print("    checksum is correct by the file's own formula, so it is one")
+        print("    mistyped character in a list somebody wrote out in 1992.")
+        print("    (a code carries the previous level's percentage, so a "
+              "level has\n     one code per score - reproducing it means "
+              "finding which)")
+        for idx, n, code, why in bad_cod[:a.max]:
+            print(f"    index {idx:3d} (number {n:2d}): {code} - {why}")
+    else:
+        print(f"\n  lemmings.cod is NOT checked - no {SHIPPED}")
+
+    if bad or bad_in or bad_cod:
+        print(f"\n  {len(bad)} of {len(cases)} generated, {len(bad_in)} "
+              f"validated and {len(bad_cod)} shipped differ\n")
         return 1
     print("\n  no differences\n")
     return 0
