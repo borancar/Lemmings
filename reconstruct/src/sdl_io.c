@@ -346,6 +346,21 @@ static void level_screen_upload(void)
 /* ds:0x200E, which image 0x00325 and image 0x00346 both test. */
 int video_present(void) { return g_lvl_live; }
 
+/* ds:0x200E SET, which is the host's answer rather than the game's: is there a
+ * window to fade INTO. A capture harness is not a display - it has a frame
+ * budget, and a fade run inside frame 0 would spend a second of wall clock
+ * producing no frames while every frame it did produce carried a palette
+ * climbing out of black.
+ *
+ * This line went missing when the palette slots moved to game.c, and the level
+ * came up BLACK: level_palette_set had blacked the current pair ready for the
+ * fade, level_screen_upload returned at its own `!g_lvl_live` guard, and
+ * level_fade_notch answered "already arrived" every pass, so nothing ever
+ * climbed. A player saw a black level with the sound playing - the same
+ * SYMPTOM as the g_lvl_tex self-assignment, from a different cause, which is
+ * why that guard says so out loud. */
+void view_level_live(int on) { g_lvl_live = (on && g_win) ? 1 : 0; }
+
 /* IMAGE 0x01550 - and it is what SETS THE RATE for everything that waits on
  * it. The menu loop calls it once a pass (image 0x0445B) and the level's
  * fade calls it once a notch, so both run at the adapter's 70 Hz because

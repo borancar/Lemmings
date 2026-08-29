@@ -1851,6 +1851,56 @@ int main(int argc, char **argv)
     }
 
     /* ==================================================================
+     * THE LEVEL COMES UP BLACK IF ds:0x200E IS NEVER SET.
+     *
+     * level_palette_set blacks the current pair ready for image 0x0031E's
+     * fade, and level_fade_notch is what climbs out of it - but it answers
+     * "already arrived" when video_present() is false, and level_screen_upload
+     * returns at the same guard. Move the palette slots and forget the line
+     * that sets ds:0x200E and the level is BLACK with the sound playing.
+     *
+     * NO HEADLESS RUN CAN REACH THIS. A capture harness sets ds:0x200E to 0 on
+     * purpose, so every frame-by-frame check here takes the branch where the
+     * palette starts AT its target and no fade happens. A player found it.
+     * ================================================================== */
+    {
+        lem_rgb want[16], black[16];
+        int lit_at_start, climbed, n;
+        for (uint8_t i = 0; i < 16; i++) {
+            want[i].r = (uint8_t)(0x20 + i * 4); want[i].g = (uint8_t)(0x40 + i * 4);
+            want[i].b = (uint8_t)(0x80 + i * 4);
+        }
+        memset(black, 0, sizeof black);
+
+        if (view_open(LEVEL_SCREEN_W, LEVEL_SCREEN_H, "test", 1) == 0) {
+            /* The SAME call level_run makes - image 0x052F4 - which is what
+             * makes this a check on the wiring and not only on the fade. */
+            level_palette_set(want, want, 1);
+            ck("image 0x052F4 answers ds:0x200E for a window that exists",
+               video_present(), "no display - the level will be black");
+            lit_at_start = memcmp(g_lvl_pal_top, black, sizeof black) != 0;
+            ck("and the level's palette starts BLACK, for the fade to climb",
+               !lit_at_start, "it started lit - image 0x0031E has nothing to do");
+
+            /* image 0x0031E drives this a notch a pass until it stops. The
+             * comparison is in SIX bits, because that is what the DAC holds
+             * and what fade_component walks - it lands on widen6(tgt >> 2),
+             * not on an arbitrary byte. */
+            for (n = 0; n < 400 && level_fade_notch(0); n++) { }
+            climbed = 1;
+            for (uint8_t i = 0; i < 16; i++)
+                if ((g_lvl_pal_top[i].r >> 2) != (want[i].r >> 2)
+                 || (g_lvl_pal_top[i].g >> 2) != (want[i].g >> 2)
+                 || (g_lvl_pal_top[i].b >> 2) != (want[i].b >> 2)) climbed = 0;
+            ck("and the fade climbs all the way to the level's own palette",
+               climbed && n > 0,
+               "the level would be BLACK on screen with the sound playing");
+
+            view_level_live(0);
+        }
+    }
+
+    /* ==================================================================
      * IMAGE 0x016D4 KEEPS THREE THINGS, AND A RELEASE CLEARS ALL OF THEM.
      *
      * A player found the level ending the moment it started: Escape ends a

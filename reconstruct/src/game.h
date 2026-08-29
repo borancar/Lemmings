@@ -1205,6 +1205,7 @@ void view_level_present(void);
 void view_level_bind(uint8_t *screen);
 void view_level_unbind(void);
 void level_palette_set(const lem_rgb *top, const lem_rgb *bottom, int live);
+void view_level_live(int on);   /* ds:0x200E - is there a window */
 void view_level_period(uint16_t hz);
 void view_level_grab(int on);
 void view_level_pace(void);

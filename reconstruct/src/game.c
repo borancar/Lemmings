@@ -770,18 +770,26 @@ uint16_t terrain_bp(const level_terrain *t)
  *                           narrowed to the wrong answer:
  *                               m ? ink : d | (ink & 0x0E)
  *
- * WHAT DOES NOT CARRY OVER, and this is deliberate rather than an omission.
- * The original works in BYTES because video memory is planar and byte
- * addressed: image 0x08BA1 copies the row to scratch, image 0x08BBB shifts it
- * right by x & 7, and the write loop moves eight pixels at a time with the
- * card assembling the planes. This port's canvas is byte-per-pixel, so the
- * shift and the byte granularity are the LAYOUT's and not the rule's - see
- * "The original's arithmetic over the port's layout is a different picture".
- * What is transcribed is which pixels are written and what with.
+ * THE GRANULARITY IS THE ORIGINAL'S: plane, row, BYTE. This was written per
+ * pixel first, on the argument that the byte-at-a-time loop and the shift are
+ * artefacts of a planar layout the port does not have. That argument is
+ * plausible and it throws away the thing the passes are FOR: image 0x08B42
+ * makes four of them, one per plane, and recomputes its bit mask from the
+ * destination's plane 3 on every one - so a per-pixel rule gets the right
+ * answer only because plane 3 happens to be written last. It assumes what the
+ * pass order guarantees.
  *
- * It reads the planar source DIRECTLY, one pixel at a time, which is why there
- * is no longer a routine that decodes a piece into a tile first. The original
- * never materialises one either.
+ * So the row is copied to scratch and shifted right by x & 7 (image 0x08BA1,
+ * image 0x08BBB), the write loop runs w+1 bytes (image 0x08BCF's `inc cl`),
+ * and one `stosb` is one plane's bit across eight pixels. The only thing that
+ * cannot carry over is the STORE itself: the card spread a byte across a plane
+ * through the map mask and the latches, and here the eight pixels are separate
+ * bytes, so it is a read-modify-write of one bit in each. The latches were
+ * exactly that read.
+ *
+ * It reads the planar source where it lies, which is why there is no longer a
+ * routine that decodes a piece into a tile first. The original materialises no
+ * tile either.
  * ====================================================================== */
 
 /* THE PORT'S OWN, and it exists because of a difference in LAYOUT rather than
@@ -813,9 +821,76 @@ uint8_t blit_mask(const uint8_t *mask, uint32_t stride,
     return (uint8_t)((mask[(uint32_t)y * stride + (x >> 3)] >> sh) & 1u);
 }
 
-/* IMAGE 0x08822. `bp` is the flag word image 0x07C67 unpacked; `mask` may be
- * NULL, and then the shape is taken from the ink being non-zero - which is
- * what image 0x08D66's and image 0x0890E's callers with no mask pointer get. */
+/* THE ROW, COPIED TO SCRATCH AND SHIFTED - image 0x08BA1 and image 0x08BBB.
+ *
+ *     0x08BA1  rep movsb            the row into ds:0x6706
+ *     0x08BA3  a zero byte after it, so bits shifted off the end land
+ *                                   somewhere
+ *     0x08BBB  shr [si],1 / rcr [si+1],1 ...   the whole row right one bit,
+ *                                   repeated ds:0xA948 times - the destination
+ *                                   x's low three bits
+ *
+ * This is the part a byte-per-pixel port is tempted to skip, because it can
+ * address any x directly. It is kept because the ROW is what the original
+ * moves: a byte is eight pixels, the write loop runs w+1 of them (image
+ * 0x08BCF's `inc cl`), and the extra byte is where the shifted-out bits go. */
+static void blit_shift_row(uint8_t *scratch, const uint8_t *row,
+                           uint32_t bytes, uint8_t shift)
+{
+    uint32_t i;
+    uint8_t n;
+    for (i = 0; i < bytes; i++) scratch[i] = row[i];
+    scratch[bytes] = 0;                          /* image 0x08BA3 */
+    for (n = 0; n < shift; n++) {                /* image 0x08BB7's AL */
+        uint8_t carry = 0;
+        for (i = 0; i <= bytes; i++) {           /* image 0x08BBB, 0x08BC0 */
+            uint8_t next = (uint8_t)(scratch[i] & 1u);
+            scratch[i] = (uint8_t)((scratch[i] >> 1) | (carry ? 0x80u : 0u));
+            carry = next;
+        }
+    }
+}
+
+/* IMAGE 0x08BDF's `stosb` - ONE PLANE'S BIT ACROSS EIGHT PIXELS, with this
+ * plane selected by the sequencer's map mask and `gc_mask` in GC 8.
+ *
+ * The original stores one byte and the card spreads it over the plane the map
+ * mask selects, leaving the other three alone by way of the latches. Here the
+ * eight pixels are separate bytes, so the same thing is a read-modify-write of
+ * one bit in each - which is what the latches were. `or_in` is GC 3 = 0x10,
+ * the OR function, against 0 for replace. */
+static void blit_plane_byte(uint8_t *dst, int32_t dst_w, int32_t dst_h,
+                            int32_t bx, int32_t by, uint8_t plane,
+                            uint8_t bits, uint8_t gc_mask, uint8_t or_in)
+{
+    uint8_t k;
+    if (by < 0 || by >= dst_h) return;
+    for (k = 0; k < 8; k++) {
+        int32_t dx = bx + (int32_t)k;
+        uint8_t bit;
+        uint8_t *d;
+        if (dx < 0 || dx >= dst_w) continue;
+        if (!(gc_mask & (uint8_t)(0x80u >> k))) continue;     /* GC 8 */
+        bit = (uint8_t)((bits >> (7 - k)) & 1u);
+        d = &dst[(uint32_t)by * (uint32_t)dst_w + (uint32_t)dx];
+        if (or_in) *d = (uint8_t)(*d | (uint8_t)(bit << plane));
+        else       *d = (uint8_t)((*d & (uint8_t)~(1u << plane))
+                                  | (uint8_t)(bit << plane));
+    }
+}
+
+/* IMAGE 0x08822, AT THE ORIGINAL'S GRANULARITY: plane, row, BYTE.
+ *
+ * `bp` is the flag word image 0x07C67 unpacked; `mask` may be NULL, and then
+ * the shape is the ink being non-zero.
+ *
+ * The modes that program the sequencer's map mask to 0x0F touch all four
+ * planes in one pass. The two that walk it 0x01, 0x02, 0x04, 0x08 make FOUR,
+ * re-reading the destination each time - and that is not decoration. Image
+ * 0x08B42's no-overwrite computes its bit mask from the destination's plane 3
+ * on every pass, so once plane 3 has been written the mask would change for
+ * any plane after it. Plane 3 is last, so it does not; a per-pixel rule gets
+ * the same answer by assuming the thing the pass ORDER guarantees. */
 void blit_planar(uint8_t *dst, int32_t dst_w, int32_t dst_h,
                  int32_t at_x, int32_t at_y,
                  const uint8_t *src, const uint8_t *mask,
@@ -824,42 +899,102 @@ void blit_planar(uint8_t *dst, int32_t dst_w, int32_t dst_h,
     uint32_t stride = ((uint32_t)w + 7u) / 8u;
     uint32_t plane  = stride * (uint32_t)rows;
     blit_path path  = blit_path_of(bp);          /* image 0x088EA..0x0890E */
-    uint8_t sx, sy;
+    uint8_t shift   = (uint8_t)(at_x & 7);       /* ds:0xA948 */
+    int32_t base_x  = at_x - (int32_t)shift;     /* image 0x08868's bx */
+    /* image 0x08BA1's scratch at ds:0x6706, and image 0x090E4's at ds:0x6748.
+     * The widest piece in any shipped set is far inside this. */
+    uint8_t ink_row[64], mask_row[64];
+    uint32_t bytes = stride;
+    uint8_t sy, p, b;
+
+    if (bytes + 1u > sizeof ink_row) return;
 
     for (sy = 0; sy < rows; sy++) {
         int32_t dy = at_y + (int32_t)sy;
         uint8_t row = flip ? (uint8_t)(rows - 1u - sy) : sy;
         if (dy < 0 || dy >= dst_h) continue;
 
-        for (sx = 0; sx < w; sx++) {
-            int32_t dx = at_x + (int32_t)sx;
-            uint8_t ink, m, *d;
-            if (dx < 0 || dx >= dst_w) continue;
+        if (mask)
+            blit_shift_row(mask_row, mask + (uint32_t)row * stride,
+                           bytes, shift);
 
-            ink = blit_ink(src, plane, stride, sx, row);
-            m   = mask ? blit_mask(mask, stride, sx, row)
-                       : (uint8_t)(ink != 0);
-            d   = &dst[(uint32_t)dy * (uint32_t)dst_w + (uint32_t)dx];
-
-            switch (path) {
-            case BLIT_NO_OVERWRITE:                  /* image 0x08B42 */
-                if (!(*d & 0x08)) *d = (uint8_t)(*d | ink);
-                break;
-            case BLIT_ERASE:                         /* image 0x0909C */
-                if (m) *d = 0;
-                break;
-            case BLIT_SETRESET_ZERO:                 /* image 0x08D66 */
-                if (m) *d = (uint8_t)(ink & 1u);
-                break;
-            case BLIT_MODE_20:                       /* image 0x08FF7 */
-                if (m) *d = 0x0F;
-                break;
-            case BLIT_SPRITE:                        /* image 0x0890E */
-            default:
-                if (m) *d = ink;
-                else   *d = (uint8_t)(*d | (ink & 0x0E));
-                break;
+        switch (path) {
+        case BLIT_ERASE:          /* image 0x0909C - map mask 0x0F, ONE pass */
+        case BLIT_MODE_20:        /* image 0x08FF7 - the same, Set/Reset 0x0F */
+            /* image 0x090BF and image 0x09013: Enable Set/Reset is bp's 0x0F00
+             * nibble, so every plane comes from Set/Reset - zero for the
+             * erase, ones for the other - and GC 8 is the SHAPE. */
+            if (!mask) break;
+            for (b = 0; b <= bytes; b++) {
+                uint8_t v = (path == BLIT_ERASE) ? 0x00u : 0x0Fu;
+                for (p = 0; p < 4; p++)
+                    blit_plane_byte(dst, dst_w, dst_h,
+                                    base_x + (int32_t)b * 8, dy, p,
+                                    ((v >> p) & 1u) ? 0xFFu : 0x00u,
+                                    mask_row[b], 0);
             }
+            break;
+
+        case BLIT_SETRESET_ZERO:  /* image 0x08D66 - GC 1 = 0x0E, one pass */
+            /* Planes 1..3 come from Set/Reset, which is zero; only plane 0
+             * comes from the source. It can write nothing but 0 or 1, which is
+             * why an arrow drawn this way is not terrain afterwards. */
+            blit_shift_row(ink_row, src + (uint32_t)row * stride, bytes, shift);
+            for (b = 0; b <= bytes; b++) {
+                uint8_t m = mask ? mask_row[b] : ink_row[b];
+                blit_plane_byte(dst, dst_w, dst_h, base_x + (int32_t)b * 8,
+                                dy, 0, ink_row[b], m, 0);
+                for (p = 1; p < 4; p++)
+                    blit_plane_byte(dst, dst_w, dst_h,
+                                    base_x + (int32_t)b * 8, dy, p,
+                                    0x00, m, 0);
+            }
+            break;
+
+        case BLIT_NO_OVERWRITE:   /* image 0x08B42 - FOUR passes */
+        case BLIT_SPRITE:         /* image 0x0890E - four passes as well */
+        default:
+            for (p = 0; p < 4; p++) {          /* image 0x08BF9, image 0x08C07 */
+                blit_shift_row(ink_row,
+                               src + (uint32_t)p * plane
+                                   + (uint32_t)row * stride,
+                               bytes, shift);
+                for (b = 0; b <= bytes; b++) {
+                    int32_t bx = base_x + (int32_t)b * 8;
+                    uint8_t m = mask ? mask_row[b] : ink_row[b];
+                    if (path == BLIT_NO_OVERWRITE) {
+                        /* image 0x08BD2 reads the destination through read
+                         * mode 1 with compare 8 - "already solid" - and image
+                         * 0x08BD5 inverts it into GC 8. GC 3 = 0x10 is OR. It
+                         * never consults the source's shape: OR with a
+                         * transparent pixel's zero bits is a no-op. */
+                        uint8_t gc = 0, k;
+                        for (k = 0; k < 8; k++) {
+                            int32_t dx = bx + (int32_t)k;
+                            if (dx < 0 || dx >= dst_w) continue;
+                            if (!(dst[(uint32_t)dy * (uint32_t)dst_w
+                                      + (uint32_t)dx] & 0x08u))
+                                gc |= (uint8_t)(0x80u >> k);
+                        }
+                        blit_plane_byte(dst, dst_w, dst_h, bx, dy, p,
+                                        ink_row[b], gc, 1);
+                    } else if (p == 0) {
+                        /* image 0x0890E's FIRST pass: masked through GC 8, and
+                         * it clears planes 1..3 as it goes. */
+                        uint8_t q;
+                        blit_plane_byte(dst, dst_w, dst_h, bx, dy, 0,
+                                        ink_row[b], m, 0);
+                        for (q = 1; q < 4; q++)
+                            blit_plane_byte(dst, dst_w, dst_h, bx, dy, q,
+                                            0x00, m, 0);
+                    } else {
+                        /* and the other three OR their plane in UNMASKED. */
+                        blit_plane_byte(dst, dst_w, dst_h, bx, dy, p,
+                                        ink_row[b], 0xFF, 1);
+                    }
+                }
+            }
+            break;
         }
     }
 }
@@ -12541,17 +12676,23 @@ static uint16_t g_menu_split;          /* the row the second slot starts at */
 
 /* IMAGE 0x052F4 - THE LEVEL'S PALETTE LOADED, both slots.
  *
- * `live` is ds:0x200E. With a display the pair the screen is drawn through
- * starts at BLACK and image 0x0031E's fade climbs out of it; without one there
- * is nothing to fade, so it starts AT the target and image 0x0033D's single
- * step clears the bit on the first frame. A capture harness has a frame budget
- * and a fade inside frame 0 would spend a second of wall clock producing
- * nothing, every frame of it carrying a palette climbing out of black. */
+ * With a display - ds:0x200E, which view_level_live has just answered - the
+ * pair the screen is drawn through starts at BLACK and image 0x0031E's fade
+ * climbs out of it. Without one there is nothing to fade, so it starts AT the
+ * target and image 0x0033D's single step clears the bit on the first frame. */
 void level_palette_set(const lem_rgb *top, const lem_rgb *bottom, int live)
 {
+    /* ds:0x200E IS SET HERE AND NOWHERE ELSE, deliberately. It was a separate
+     * line in level_run, and when the palette slots moved to game.c that line
+     * was dropped: the current pair was blacked ready for the fade, nothing
+     * ever answered "there is a display", and the level came up BLACK with the
+     * sound playing. One call cannot be half-made. */
+    view_level_live(live);                       /* ds:0x200E */
     memcpy(g_lvl_pal_tgt_top, top, sizeof g_lvl_pal_tgt_top);
     memcpy(g_lvl_pal_tgt_bottom, bottom, sizeof g_lvl_pal_tgt_bottom);
-    if (live) {
+    /* Asked rather than trusted: view_level_live answers 0 with no window
+     * whatever it was passed, and level_fade_notch asks the same byte. */
+    if (video_present()) {
         memset(g_lvl_pal_top, 0, sizeof g_lvl_pal_top);
         memset(g_lvl_pal_bottom, 0, sizeof g_lvl_pal_bottom);
     } else {
