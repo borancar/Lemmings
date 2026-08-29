@@ -5026,7 +5026,7 @@ has nothing to seed with here.
   outstanding work we intend to do — noted here so it is not mistaken for
   finished.
 
-  **Three of them are now read**, with `tools/xref.py`, which lists every
+  **All four are now read**, with `tools/xref.py`, which lists every
   instruction naming a DGROUP offset directly (6, 7, 7 and 12 references
   respectively):
 
@@ -5048,6 +5048,13 @@ has nothing to seed with here.
     the test is `je`, so the PC compatible is the one machine that does NOT
     blank and the other three do. That is the opposite of what the option's
     name suggests, which is exactly why it was read rather than assumed.
+  - **`ds:0x200E` makes the palette fade a BLOCKING loop.** Image `0x00346`
+    guards the fade-out: when set, image `0x03D7`'s step is followed by image
+    `0x01550`'s retrace wait and the whole thing loops until the fade is
+    done; when clear, image `0x035E` takes one step and falls through. The
+    fade-in at image `0x0032A` is the same shape. **PC compatible AND
+    Amstrad** - the two slow options - so the stepped fade the port has is
+    the High Performance behaviour it targets, not an omission.
   - **One of `ds:0x200E`'s twelve references gates nothing.** Image `0x053C2`
     tests it and image `0x053C7`'s `jne` has displacement **zero**, so both
     arms reach the same `ret`. Boundary confirmed by disassembling from three

@@ -191,6 +191,41 @@ turn the display off across the palette load. That is the opposite way round
 from the guess anyone would make from the option's name, which is the reason
 to read it rather than assume it.
 
+### `ds:0x200E` makes the palette fade a BLOCKING loop
+
+This is the flag the two "slow/quirky" options share, and it changes how the
+fade is driven. Image `0x0031E`'s phase machine reaches both fade steps -
+image `0x03C1` in and image `0x03D7` out - and each is guarded:
+
+```
+00346  cmp byte ptr [0x200e], 0xff
+0034b  jne 0x35e                  ; NOT this machine: one step and fall through
+0034d  call 0x3d7                 ; the fade-out step
+00350  push ax
+00351  call 0x1550                ; WAIT A RETRACE
+00354  call 0x553d
+00357  pop ax
+00358  test al, 2
+0035a  jne 0x34d                  ; and go round until the fade is done
+ ...
+0035e  call 0x3d7                 ; the other arm: a single step
+00361  (falls through)
+```
+
+The fade-in arm at image `0x0032A` is the same shape, with image `0x033D` as
+its single-step side. And image `0x00119` is the third piece: it reads the
+status register at `ds:0x1FDA + 6` and tests bit 3 - the vertical retrace -
+behind the same flag.
+
+So on **PC compatible and Amstrad** the fade runs to completion inside the
+call, one palette step per retrace; on **High Performance and PS/2** it is one
+step per pass of the phase machine, which is what makes it the frame loop's
+business rather than a blocking wait.
+
+That is worth knowing for the port even though these machines are non-goals:
+`palette_fade_retraces()` is 3 and the port's fade is stepped, which is the
+High Performance behaviour - the one the port targets - and not an omission.
+
 ### One of `ds:0x200E`'s twelve references is inert
 
 Image `0x053C2`, immediately after a `rep movsw`:
