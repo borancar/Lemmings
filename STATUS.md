@@ -4837,14 +4837,21 @@ has nothing to seed with here.
   at **`ds:0x1F6B` index 49, Tricky 20**, an even entry so no ODDTABLE
   substitution complicates the record.
 
-  **Attempted and reverted, and the attempt is the useful part.** Adding a
-  `--level` that pokes `ds:0x1F6B` at image `0x04401` - the menu, the same
-  moment `record_level.py` uses - made `verify_objects.py` fail with
-  `NEVER REACHED image 0x07EB2` **even with no `--level` given**, where the
-  committed tools pass. Measured four ways: modified + `--level` fails,
-  modified without it fails, pristine passes, modified without it on a QUIET
-  machine fails again - so it is the edit and not contention, and the guard
-  that looked inert is not.
+  **Attempted, reverted, and then the attribution was WRONG - which is the
+  useful part.** Adding a `--level` that pokes `ds:0x1F6B` at image `0x04401`
+  (the menu, the moment `record_level.py` uses) came with three runs reporting
+  `NEVER REACHED image 0x07EB2`, against three passes from the committed
+  tools. Three-nil looked decisive and it was a coincidence.
+
+  Settled by isolating the change instead of counting runs: a scratchpad copy
+  of `probe_pvsrc.py` carrying the same guarded block, driven through
+  `play.py` directly with `LEM_PVSRC_LEVEL` unset, **installs and captures its
+  hit normally**. The guard is inert, as it reads.
+
+  So `verify_objects.py` is FLAKY, and this file already says why - `play.py`
+  presses F1 with `--start-tries 3` and a script tuned on one run misses on
+  the next. Six runs is not enough to tell a flaky check from a broken one,
+  and the honest reading of 3-and-3 was "no signal", not "the edit did it".
 
   Why it is not the option-add it appears to be: image `0x07EB2` is reached
   BEFORE the title screen (`probe_pvsrc.py`'s header says so, and says why
