@@ -5019,7 +5019,16 @@ has nothing to seed with here.
   behaviour - so under load it would be intermittent rather than quiet, and
   the two are worth telling apart before changing anything.
 
-  **Half of that is already settled: the discard is transcribed.**
+  **And the DOSBox half is blocked for a reason worth naming.** DOSBox
+  Staging 0.82.2 is installed and has `autotype`, so keystrokes CAN be
+  scripted - but a skill is chosen by POINTER only: image `0x03F07` takes the
+  button from `(mouse_x - 8) >> 4` and there is no keyboard path to it, and
+  assigning then needs a second positioned click on a lemming. `autotype`
+  sends keys, not mouse events. So the comparison needs mouse scripting that
+  DOSBox does not offer, which is a different piece of work from the capture
+  `tools/reference_dosbox_audio.sh` already does well.
+
+  **Half of it is already settled: the discard is transcribed.**
   `adlib.c`'s `start_effect` walks backwards from channel 8 for four
   channels and returns at driver `+0x053C` when none is free, dropping the
   effect exactly as the original drops it - it does not queue, and neither
