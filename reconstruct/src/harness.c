@@ -142,18 +142,16 @@ int level_header_fields(const uint8_t *buf, uint32_t len,
  * page and the pacing - is sdl_io.c's, and those are the same four the
  * transcribed loops in game.c use.
  */
-int32_t dev_dismiss(uint8_t scancode)
-{
-    return menu_key_code(scancode) == 0x1B ? 1 : -1;
-}
-
 void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
                      const lem_rgb *palette, const char *title, uint8_t scale)
 {
     if (scale < 1) scale = 1;
     if (view_open(w, h, title, scale) != 0) return;
     for (;;) {
-        if (view_screen_pump(dev_dismiss, 1) != VIEW_CLOSED) return;
+        /* The same two the transcribed screens poll - see mouse_buttons and
+         * key_held. There is one queue and one handler behind both. */
+        if (mouse_buttons() & 7) return;
+        if (key_held(KEY_ESCAPE)) return;
         view_screen_present(pix, w, h, palette);
         view_screen_pace();
     }

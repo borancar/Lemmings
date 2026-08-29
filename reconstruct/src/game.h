@@ -1155,7 +1155,7 @@ void view_show_hook(view_tick tick, void *ctx, uint8_t *pix);
  * The menu needs this and nothing else does: its banner scrolls. */
 /* image 0x04660 - a screen that waits; see game.c's menu_screen_wait. The
  * three below are the hardware's share of it. */
-int32_t view_screen_pump(view_input input, int32_t click_id);
+uint16_t mouse_buttons(void);   /* ds:0x14, and there is one of it */
 void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
                          const lem_rgb *palette);
 void view_screen_pace(void);
@@ -1219,8 +1219,7 @@ int  harness_script_step(struct level_frame *A, int32_t *scroll_x);
 void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
                 int32_t *scroll_x, int32_t max_x, long budget);
 int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
-                         const lem_rgb *palette, view_input input,
-                         int32_t click_id, view_tick tick, void *ctx,
+                         const lem_rgb *palette, view_tick tick, void *ctx,
                          long budget);
 
 
@@ -1332,10 +1331,10 @@ void menu_wait_release(void);
 /* WHAT THE LOOP NEEDS FROM THE HARDWARE, and nothing else of it.
  *
  * video_page_flip is image 0x04C20 - it points the CRTC at the page just
- * composed and swaps ds:0x1F76 with ds:0x1F78. menu_key_read is image
- * 0x04D1A, which the original polls once a pass; the port drains SDL's
- * events into a queue behind it, so a press between two polls is held
- * rather than lost. menu_buttons is ds:0x14.
+ * composed and swaps ds:0x1F76 with ds:0x1F78. That is all of it: the KEY and
+ * the BUTTONS are not the hardware's here, because image 0x016D4 and image
+ * 0x04269 leave state behind and game.c keeps it - key_scan is image 0x04D1A
+ * over ds:0x0F78 and mouse_buttons is ds:0x14.
  *
  * The retrace wait is video_retrace_wait, declared with the level's - it is
  * the same image 0x01550 - and it is what caps this loop at the adapter's
@@ -1350,8 +1349,7 @@ void    view_quit_now(void);
  * would have produced. Exported so a test can check every letter arrives. */
 uint8_t view_scancode_of(int32_t keycode);
 int     video_screen_is(const uint8_t *pix);
-uint8_t menu_key_read(void);
-uint16_t menu_buttons(void);
+uint8_t key_scan(void);         /* image 0x04D1A, in game.c */
 
 /* Compose the menu from `dir`/main.dat. Returns 0 on success. */
 int  menu_build(const char *dir, menu_screen *m, const char **err);
@@ -1420,7 +1418,6 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * sdl_io.c's. */
 int32_t menu_screen_show(const menu_screen *m, const char *title,
                          uint8_t scale);
-int32_t menu_dismiss_input(uint8_t scancode);
 int     menu_fade_tick(void *ctx, uint8_t *pix);
 
 /* THE MENU SCREEN'S TWO PALETTE SLOTS - what the DAC used to hold. The loops
@@ -1439,7 +1436,6 @@ const lem_rgb *menu_fade_palette(void);
  */
 uint8_t widen6(uint8_t v);
 int  view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale);
-uint16_t view_buttons(void);
 void view_present_indexed(const uint8_t *pix, uint16_t w, uint16_t h,
                           const lem_rgb *pal);
 int32_t level_results_wait(const uint8_t *pix, const lem_rgb *pal,

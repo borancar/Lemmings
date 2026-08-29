@@ -8956,7 +8956,7 @@ static void menu_code_entry(menu_screen *m)
         code_cells_draw(m);                     /* image 0x04CC9 */
         video_page_flip();                      /* image 0x04CCB */
 
-        uint8_t al = menu_key_code(menu_key_read());   /* image 0x04CCE */
+        uint8_t al = key_scan();                      /* image 0x04CCE */
         if (al == 0xFF) continue;               /* image 0x04CD6 */
         if (al == 0x7F) {                       /* image 0x04CE0 */
             g_code_cells[di] = '.';             /* image 0x04D02 */
@@ -9156,8 +9156,8 @@ menu_action menu_code_run(menu_screen *m)
     /* image 0x049CC: 0x78 retraces, cut short by a button or a key. */
     for (uint16_t n = 0; n < CODE_HOLD_OK; n++) {
         video_retrace_wait();
-        if (menu_buttons() & 7) break;          /* image 0x049D2 */
-        if (menu_key_read() != 0xFF) break;     /* image 0x049DA */
+        if (mouse_buttons() & 7) break;         /* image 0x049D2 */
+        if (key_scan() != 0xFF) break;          /* image 0x049DA */
     }
     return MENU_EXIT;                           /* image 0x049E9: the menu */
 }
@@ -10853,7 +10853,7 @@ int menu_build_rating(const char *dir, uint8_t rating, menu_screen *m,
  * the original's own answer to the same problem. */
 void menu_wait_release(void)
 {
-    while (menu_buttons() & 7)                       /* image 0x04453 */
+    while (mouse_buttons() & 7)                       /* image 0x04453 */
         video_retrace_wait();
 }
 
@@ -10982,15 +10982,14 @@ menu_action menu_loop(menu_screen *m, long budget)
         /* Image 0x0446D: ANY button, and it does not once look at where the
          * pointer is - image 0x04473 jumps straight to image 0x0454C, which
          * is key 0x80's own target. A click on this screen is F1. */
-        if (menu_buttons() & 7)
+        if (mouse_buttons() & 7)
             return MENU_PLAY;
 
-        /* Image 0x04478's call returns the SCANCODE INDEX and image 0x04D45
-         * translates it through ds:0x202E - the two are one routine in the
-         * original, and only the first half of it is the hardware's. */
-        uint8_t sc = menu_key_read();           /* image 0x04478: call 0x4D1A */
-        if (sc == 0xFF) continue;               /* image 0x04D2B: nothing down */
-        int32_t r = menu_dispatch(menu_key_code(sc));   /* image 0x0447B */
+        /* Image 0x04478's call, which scans ds:0x0F78 and translates through
+         * ds:0x202E - one routine in the original, and one here. */
+        uint8_t ch = key_scan();                /* image 0x04478: call 0x4D1A */
+        if (ch == 0xFF) continue;               /* image 0x04D2B: nothing down */
+        int32_t r = menu_dispatch(ch);          /* image 0x0447B */
 
         /* THREE OF THE SEVEN DO NOT LEAVE, and that is what the plates'
          * dirty bytes are for. Image 0x044B3, image 0x044EC and image
@@ -11235,9 +11234,9 @@ int32_t level_results_wait(const uint8_t *pix, const lem_rgb *pal,
         return RESULTS_MENU;
     view_present_indexed(pix, MENU_W, MENU_H, pal);
 
-    while (view_buttons() & 7) { }          /* image 0x047A9 */
+    while (mouse_buttons() & 7) { }          /* image 0x047A9 */
     for (;;) {
-        uint16_t b = view_buttons();        /* image 0x047B1 */
+        uint16_t b = mouse_buttons();        /* image 0x047B1 */
         if (b & 1) return RESULTS_NEXT;     /* image 0x047B4 */
         if (b & 2) return RESULTS_MENU;     /* image 0x047B9 */
     }                                       /* image 0x047C9 */
@@ -11316,7 +11315,7 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
      * dismissed the level being read again by this screen.
      */
     /* IMAGE 0x047A9's WAIT. The decision is here; the polling is
-     * view_buttons's, because ds:0x14 was a byte the mouse driver kept up to
+     * mouse_buttons's, because ds:0x14 was a byte the mouse driver kept up to
      * date and its counterpart is an SDL event queue.
      *
      *     0x047A9  ax = ds:0x14 / test ax,7 / jne 0x047A9   wait for RELEASE
@@ -11612,7 +11611,7 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
     if (rc == 0) {
 
         /* The level gets its own screen - 320x200, play area over panel -
-         * rather than view_run_anim's window of the play area alone. */
+         * rather than the harness viewer's window of the play area alone. */
         view_show_hook(level_frame_tick, &A, c.pix);
         level_run(&A, &c, g.palette, "PC Lemmings", scale);
         view_show_hook(NULL, NULL, NULL);
@@ -11958,30 +11957,29 @@ void level_panel_click(struct level_frame *A, int32_t *scroll_x)
  * always is: it was a byte a driver kept current.
  */
 int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
-                         const lem_rgb *palette, view_input input,
-                         int32_t click_id, view_tick tick, void *ctx,
+                         const lem_rgb *palette, view_tick tick, void *ctx,
                          long budget)
 {
-    int dirty = 1;
+    /* IMAGE 0x04660's own first line: wait for every button to be UP, so the
+     * click that opened this screen is not read again as the one that leaves
+     * it. */
+    while (mouse_buttons() & 7) { }              /* image 0x04660 */
+
     for (;;) {
-        int32_t hit = view_screen_pump(input, click_id);   /* image 0x04683 */
-        if (hit != VIEW_CLOSED) return hit;
+        /* Image 0x04683 tests ds:0x14's low three bits and jumps without once
+         * looking at where the pointer was; image 0x0468E and image 0x04693
+         * test ds:0x1FC7's Escape and Enter. All three are polled state, not
+         * events - which is why the port needed one handler before it could
+         * have one loop. */
+        if (mouse_buttons() & 7) return BRIEF_PLAY;      /* image 0x04683 */
+        if (key_held(KEY_ESCAPE))  return BRIEF_MENU;    /* image 0x0468E */
+        if (key_held(KEY_ENTER))   return BRIEF_PLAY;    /* image 0x04693 */
 
-        if (tick && tick(ctx, pix)) dirty = 1;   /* the fade, image 0x0031E */
-        if (dirty) { view_screen_present(pix, w, h, palette); dirty = 0; }
-        else       view_screen_present(pix, w, h, palette);
-
+        if (tick) tick(ctx, pix);                /* the fade, image 0x0031E */
+        view_screen_present(pix, w, h, palette);
         view_screen_pace();                      /* image 0x04680's retrace */
         if (budget && --budget == 0) return VIEW_CLOSED;
     }
-}
-
-/* Image 0x0468E's `test ax, 0x20 / jne 0x0469B` - the one key that answers a
- * waiting screen with "back to the menu" rather than "on with it". Anything
- * else the screen does not know about, which is what -1 says. */
-int32_t menu_dismiss_input(uint8_t scancode)
-{
-    return menu_key_code(scancode) == 0x1B ? BRIEF_MENU : -1;
 }
 
 /* A NOTCH EVERY THIRD PASS, not every pass. Image 0x055B7 waits three retraces
@@ -12126,6 +12124,52 @@ int     key_held(uint16_t mask) { view_input_drain();
                                   return (g_key_held & mask) != 0; }
 int     key_is_down(uint8_t sc) { view_input_drain();
                                   return sc < 0x53 && g_key_down[sc] != 0; }
+
+/* IMAGE 0x04D1A - THE MENU'S KEY, AND IT IS A SCAN OF ds:0x0F78 WITH THE
+ * GAME'S OWN AUTO-REPEAT IN IT.
+ *
+ *     0x04D20  cx = 0x53                     every scancode
+ *     0x04D23  test [bx+si], 0x80            this one is down
+ *     0x04D2B  al = 0xFF                     none of them is
+ *     0x04D30  al = [bx+si] & 0x7F, minus 1  the COUNTDOWN in the low seven
+ *     0x04D34  je 0x04D42                    it ran out: reload with 0x86
+ *     0x04D3C  cmp al, 0x93 / je             the FIRST decrement: report
+ *     0x04D40  jmp 0x04D28                   otherwise keep scanning
+ *     0x04D47  xlatb through ds:0x202E       the scancode as a CHARACTER
+ *
+ * So a key reports the instant it goes down (0x94 - 1 is 0x93), then not
+ * again until twenty polls have passed, then every six. That is an initial
+ * delay and a repeat rate in the game's own units, and it is why holding F3
+ * on the original cycles at a pace rather than as fast as the loop runs.
+ *
+ * The port had the first half of this as a QUEUE in sdl_io.c - a press per
+ * pass, repeating at SDL's rate rather than the game's - and said so. The
+ * table it needs is ds:0x0F78, which the port did not keep until image
+ * 0x016D4 was transcribed; with the array there this is a transcription
+ * rather than a substitution.
+ *
+ * It returns the CHARACTER, because image 0x04D45 and image 0x04D47 are the
+ * same routine's tail. menu_key_code is that xlat on its own, for the one
+ * caller that already has a scancode.
+ */
+uint8_t key_scan(void)
+{
+    view_input_drain();          /* the handler has already run - see above */
+    for (uint8_t bx = 0; bx < 0x53; bx++) {          /* image 0x04D20 */
+        uint8_t al;
+        if (!(g_key_down[bx] & 0x80)) continue;      /* image 0x04D23 */
+        al = (uint8_t)((g_key_down[bx] & 0x7F) - 1); /* image 0x04D30 */
+        if (al == 0) {                               /* image 0x04D34 */
+            g_key_down[bx] = 0x86;                   /* image 0x04D42 */
+        } else {
+            al = (uint8_t)(al | 0x80);               /* image 0x04D38 */
+            g_key_down[bx] = al;
+            if (al != 0x93) continue;                /* image 0x04D3C */
+        }
+        return MENU_XLAT[bx];                        /* image 0x04D47 */
+    }
+    return 0xFF;                                     /* image 0x04D2B */
+}
 
 /* IMAGE 0x04085 - THE LEVEL'S INPUT, called at image 0x001A0 from the frame
  * loop. It is one routine and it does three things:
@@ -12392,7 +12436,7 @@ static void menu_screen_fade_in(const uint8_t *pix, uint16_t w, uint16_t h)
         /* The frame put up again, which is the DAC write the original does
          * not need - see sdl_io.c. */
         view_screen_present(pix, w, h, menu_fade_palette());
-        view_screen_pump(NULL, VIEW_CLOSED);     /* the close box only */
+        view_input_drain();                      /* the close box only */
         view_screen_pace();
         if (!moved) break;                       /* image 0x045FB */
     }
@@ -12427,7 +12471,7 @@ static void menu_screen_fade_out(const uint8_t *pix, uint16_t w, uint16_t h)
         video_retrace_wait();                    /* image 0x046A2: call 0x46B9 */
         int moved = menu_fade_notch();           /* image 0x046B1: call 0x5329 */
         view_screen_present(pix, w, h, menu_fade_palette());
-        view_screen_pump(NULL, VIEW_CLOSED);
+        view_input_drain();
         if (!moved) break;                       /* image 0x046B4 */
     }
     /* image 0x046B6's `jmp 0x04DEF` - the page cleared behind the fade. The
@@ -12467,7 +12511,6 @@ int32_t menu_screen_show(const menu_screen *m, const char *title, uint8_t scale)
     {
         const char *cap = getenv("LEM_FRAMES");
         how = menu_screen_wait(m->pix, MENU_W, MENU_H, menu_fade_palette(),
-                               menu_dismiss_input, BRIEF_PLAY,
                                menu_fade_tick, NULL,
                                cap ? (long)atoi(cap) : 0);
     }

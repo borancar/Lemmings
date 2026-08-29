@@ -1851,6 +1851,39 @@ int main(int argc, char **argv)
     }
 
     /* ==================================================================
+     * IMAGE 0x016D4 KEEPS THREE THINGS, AND A RELEASE CLEARS ALL OF THEM.
+     *
+     * A player found the level ending the moment it started: Escape ends a
+     * level at image 0x002AB and the fade that follows is exactly where its
+     * key-up lands, and the fade had a queue poller of its own that threw
+     * releases away. ds:0x1FC7's bit stayed set for ever.
+     *
+     * The handler is what that rests on, so it is checked directly.
+     * ================================================================== */
+    {
+        keyboard_isr(0x01);                     /* Escape down */
+        int held  = key_held(KEY_ESCAPE);
+        int downa = key_is_down(0x01);
+        int last  = (key_last() == 0x01);
+        keyboard_isr(0x81);                     /* and up */
+        ck("Escape down sets ds:0x1FC7 bit 5, ds:0x0F78 and ds:0x1FD0",
+           held && downa && last, "the handler did not record the press");
+        ck("and the release clears all three (image 0x01776, 0x01780)",
+           !key_held(KEY_ESCAPE) && !key_is_down(0x01) && key_last() == 0,
+           "a release left state behind - this is the stuck-Escape bug");
+
+        /* image 0x04D1A reports on the FIRST poll and then not again until the
+         * countdown runs out - the game's own auto-repeat, in its own units. */
+        keyboard_isr(0x1C);                     /* Enter down */
+        int first = (key_scan() == menu_key_code(0x1C));
+        int quiet = 1;
+        for (int n = 0; n < 18; n++) if (key_scan() != 0xFF) quiet = 0;
+        keyboard_isr(0x9C);
+        ck("image 0x04D1A reports a key once, then holds it off",
+           first && quiet, "the repeat is not the game's");
+    }
+
+    /* ==================================================================
      * EVERY KEY IMAGE 0x03E6F NAMES MUST REACH IT.
      *
      * The level's keys travel as ds:0x1FD0 scancodes now, and the port's table

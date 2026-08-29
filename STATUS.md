@@ -4826,6 +4826,36 @@ has nothing to seed with here.
 
 ## Next
 
+- **The original has ONE loop and every screen JUMPS into it - the port has
+  four.** Image `0x000FB` is the loop; image `0x0454C` ends `jmp 0x000FB`
+  rather than calling it, and image `0x0469F` leaves a briefing with `pop ax /
+  jmp 0x4401` - discarding the return address to get to the menu. That is not
+  an unusual way to write it for the period: a screen is a place the program
+  GOES, and the machine has one stack and one owner.
+
+  The port has `level_loop` (image `0x000FB`), `menu_screen_wait` (image
+  `0x04660`), `menu_loop` (image `0x0445B`) and `level_results_wait` (image
+  `0x047A9`) as four separate C functions that return to their callers. Each
+  is a faithful transcription of the loop it names, so nothing here is WRONG -
+  but the relation between them is the port's arrangement, not the original's,
+  and this file already records what that costs: a sequence written out twice
+  is a sequence that will differ, and the frame order lived in two places until
+  `level_frame_compose` collected it.
+
+  Worth measuring before doing anything: how much of the four is actually
+  common. They now all poll the same two words - `ds:0x14` through
+  `mouse_buttons` and `ds:0x1FC7` through `key_held` - and all present and pace
+  the same way, so what differs may be only the tick and the exit test. If it
+  is, one loop taking those two is closer to the original AND smaller.
+
+  What would settle whether it is worth it is reading how image `0x000FB`'s
+  head serves the menu, which nobody here has done: the loop's first lines
+  swap pages and wait five ticks, and the menu waits ONE retrace a pass (image
+  `0x0445B` calls image `0x01550`). Two rates out of one loop is either a
+  branch this port has not found or evidence that the menu really is a
+  different loop - and this file's own rule says to go and read the routine
+  rather than fit an arrangement that looks tidy.
+
 - **The screen is never blanked across a DAC write, and it shows.** Image
   `0x054C6` and image `0x054B6` set and clear Sequencer register 1 bit 5 -
   the screen-off bit - around the palette write, gated on `ds:0x200C`, which

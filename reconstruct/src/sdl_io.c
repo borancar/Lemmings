@@ -170,9 +170,6 @@ int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
 static view_tick g_show_tick;
 static void     *g_show_ctx;
 static uint8_t  *g_show_pix;
-/* A key press is an EVENT; ds:0x1FC7 was a state. Latched here so
- * view_buttons can report it the way the byte would have. */
-static uint16_t g_key_button;
 
 /* WHAT THE HARDWARE USED TO DO. The composed buffer the window shows, and the
  * routine that fills it each pass. game.c's level_show aims these at its own
@@ -276,29 +273,21 @@ static uint8_t scancode_of(SDL_Keycode k)
  * which pops the stack and jumps to image 0x04401 - the MENU. This used to
  * return 1 for Esc and take 1 as the click id too, so the caller could not
  * tell them apart and every briefing played. */
-/* WHAT THE HARDWARE USED TO DO for a screen that waits: the page, and the
- * event queue behind ds:0x14 and ds:0x1FC7.
+/* ds:0x14 - THE BUTTON WORD, and there is one of it.
  *
- * `hit` comes back as whatever `input` answered for a key, or `click_id` for
- * a button - image 0x04473 tests ds:0x14's low three bits and jumps without
- * once looking at where the pointer was. VIEW_CLOSED means nothing happened.
+ * The port had FOUR readers of this: view_buttons with its own state,
+ * menu_buttons with g_menu_buttons and its own pump, view_screen_pump with a
+ * callback, and lem_buttons. Four pumps on one queue, and only one of them
+ * fed the keyboard handler - so a key-up swallowed by any of the other three
+ * left ds:0x1FC7's bit SET, and Escape stayed pressed for ever. A player
+ * found that as a level ending the moment it started.
  *
- * The split palette is the briefing's: two pictures stacked, and the DAC is
- * reprogrammed part-way down. That is the card's, so it is here. */
-int32_t view_screen_pump(view_input input, int32_t click_id)
+ * The original has one byte, kept by image 0x04269 from INT 33h AX=3, and
+ * every screen polls it. So does this. */
+uint16_t mouse_buttons(void)
 {
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-        int32_t hit = VIEW_CLOSED;
-        if (e.type == SDL_EVENT_QUIT) view_quit_now();
-        else if (e.type == SDL_EVENT_KEY_DOWN) {
-            if (input) hit = input(scancode_of(e.key.key));
-        } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            hit = click_id;
-        }
-        if (hit != VIEW_CLOSED) return hit;
-    }
-    return VIEW_CLOSED;
+    view_input_drain();
+    return lem_buttons;
 }
 
 void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
@@ -460,17 +449,21 @@ void video_retrace_wait(void)
  * the fade visible. The screen itself has not changed. */
 void video_palette_upload(void)
 {
-    SDL_Event e;
     if (!g_lvl_live || !g_lvl_ren) return;
     level_screen_upload();
     SDL_RenderClear(g_lvl_ren);
     SDL_RenderTexture(g_lvl_ren, g_lvl_tex, NULL, NULL);
     SDL_RenderPresent(g_lvl_ren);
-    /* A fade holds the play loop for the best part of a second, and a
-     * window that answers nothing for that long is one the desktop reports
-     * as hung. Only the close box is acted on. */
-    while (SDL_PollEvent(&e))
-        if (e.type == SDL_EVENT_QUIT) view_quit_now();
+    /* A fade holds the play loop for the best part of a second, and a window
+     * that answers nothing for that long is one the desktop reports as hung.
+     *
+     * IT MUST GO THROUGH THE HANDLER. This polled the queue itself and acted
+     * only on the close box, so every key RELEASE that arrived during a fade
+     * was thrown away - and ds:0x1FC7's bit stayed set. Escape ends a level at
+     * image 0x002AB and the fade that follows is exactly where its key-up
+     * lands, so the next level saw Escape still held and ended the moment it
+     * began. A player found it. There is one queue and one handler now. */
+    view_input_drain();
 }
 
 /* THE WINDOW'S OWN STATE FOR A LEVEL. level_run is game.c's now - it is image
@@ -1213,65 +1206,6 @@ void video_screen_set(uint8_t *pix, lem_rgb *pal)
 }
 
 int video_screen_is(const uint8_t *pix) { return g_menu_pix == pix; }
-static uint8_t   g_key_ring[32];
-static uint8_t   g_key_head, g_key_tail;
-static uint16_t  g_menu_buttons;      /* ds:0x14 */
-
-static void menu_pump_events(void)
-{
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_EVENT_QUIT) {
-            view_quit_now();
-        } else if (e.type == SDL_EVENT_KEY_DOWN) {
-            uint8_t next = (uint8_t)((g_key_tail + 1) % sizeof g_key_ring);
-            if (next != g_key_head) {         /* full: drop, do not wrap */
-                g_key_ring[g_key_tail] = scancode_of(e.key.key);
-                g_key_tail = next;
-            }
-        } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            g_menu_buttons |= 1;
-        } else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-            g_menu_buttons = 0;
-        }
-    }
-}
-
-/* IMAGE 0x04D1A's FIRST HALF - one scancode that is down, or 0xFF.
- *
- * NOT TRANSCRIBED, and here is what is missing rather than a claim that it
- * is only a keyboard read. Image 0x04D1A walks a table of 83 bytes at
- * ds:0x0F78, one per scancode, kept by the game's own INT 9 handler: bit 7
- * says the key is down and the low seven are a COUNTDOWN. Each poll
- * decrements the first key it finds down; reaching 0 fires it and reloads
- * with 0x86, and image 0x04D3C fires again at 0x93. That is an initial delay
- * and a repeat rate, in the game's own units, and it is why holding F3 on
- * the original cycles at a pace rather than as fast as the loop runs.
- *
- * This gives the poll a press per pass out of a queue instead. Holding a key
- * still repeats, because SDL sends repeat events - but at SDL's rate, not
- * the game's, and that difference is real and is not measured. Reading the
- * INT 9 handler and the table is what would settle it.
- *
- * 0xFF for nothing is image 0x04D2B's own answer, not a convention invented
- * here - and it matters, because 0 is a valid scancode index. */
-uint8_t menu_key_read(void)
-{
-    uint8_t k;
-    menu_pump_events();
-    if (g_key_head == g_key_tail) return 0xFF;   /* image 0x04D2B */
-    k = g_key_ring[g_key_head];
-    g_key_head = (uint8_t)((g_key_head + 1) % sizeof g_key_ring);
-    return k;
-}
-
-/* ds:0x14 - the button word image 0x0446D and image 0x04453 both test. */
-uint16_t menu_buttons(void)
-{
-    menu_pump_events();
-    return g_menu_buttons;
-}
-
 /* Image 0x04C20: point the CRTC at the page just composed and swap
  * ds:0x1F76 with ds:0x1F78. One page here, so this is the present. */
 void video_page_flip(void)
@@ -1309,8 +1243,6 @@ menu_action menu_run(menu_screen *m, uint8_t scale)
     if (scale < 1) scale = 1;
     if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0) return MENU_EXIT;
     video_screen_set(m->pix, m->palette);
-    g_key_head = g_key_tail = 0;
-    g_menu_buttons = 0;
     menu_wait_release();                 /* image 0x04453 */
     cap = SDL_getenv("LEM_FRAMES");
     /* -1 is unbounded. The cap goes INTO the loop rather than into a copy of
@@ -1359,41 +1291,6 @@ uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
 
 
-/* WHAT THE HARDWARE USED TO DO: ds:0x14, the byte the mouse driver kept
- * current, and the page the picture sits on.
- *
- * The routine that reads them is game.c's level_results_wait - image 0x047A9.
- * Bit 0 is the left button and bit 1 the right, which is what image 0x047B4
- * and image 0x047B9 test. Escape reports bit 1 because that is the answer
- * every other screen here gives it, and image 0x047BE does read ds:0x1FC7 as
- * well so a key does end the screen.
- *
- * READING IT PUMPS THE QUEUE, because a byte a driver maintained has no
- * counterpart that can be read without one, and the delay is here for the
- * same reason: the original owns the machine and may spin, this does not.
- * Closing the window leaves through view_quit_now like everywhere else. */
-uint16_t view_buttons(void)
-{
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_EVENT_QUIT) view_quit_now();
-        else if (e.type == SDL_EVENT_KEY_DOWN) {
-            if (e.key.key == SDLK_ESCAPE) g_key_button = 2;
-            else                          g_key_button = 1;
-        }
-        /* ds:0x1FC7 IS A STATE, so a released key stops reading. Latching the
-         * press and never clearing it made view_buttons answer for ever, and
-         * image 0x047A9's release wait - `while (buttons & 7)` - would then
-         * never come out: the screen would hang on the first key it saw. */
-        else if (e.type == SDL_EVENT_KEY_UP) g_key_button = 0;
-    }
-    SDL_Delay(10);
-    uint32_t held = SDL_GetMouseState(NULL, NULL);
-    uint16_t b = g_key_button;
-    if (held & SDL_BUTTON_LMASK) b |= 1;
-    if (held & SDL_BUTTON_RMASK) b |= 2;
-    return b;
-}
 
 /* The picture, uploaded and shown. Nothing on this screen animates - image
  * 0x047A9 polls and draws nothing - so a caller shows it once. */
