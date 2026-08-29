@@ -4826,6 +4826,26 @@ has nothing to seed with here.
 
 ## Next
 
+- **`verify_objects.py` says nothing about image `0x09709`, and there is a
+  level that would fix it.** Its own output reports the gap honestly -
+  `only-on-terrain NOT PRESENT - this run says nothing about image 0x09709` -
+  because it always drives Fun 1, and "Just dig!" carries no object with the
+  only-on-terrain bit.
+
+  **66 objects across the game do carry it** (`e[6] & 0x40`), and
+  `level000.dat` section 3 has six, all object id 3. `LEVEL_ORDER` reaches it
+  at **`ds:0x1F6B` index 49, Tricky 20**, an even entry so no ODDTABLE
+  substitution complicates the record.
+
+  What makes this more than an option-add: image `0x07EB2` is reached BEFORE
+  the title screen - `probe_pvsrc.py` says so, and says why breaking there
+  with the control socket does not work - so the packer captures whichever
+  level `ds:0x1F6B` names on the way IN. A `--level` for this verifier has to
+  poke the index earlier than the menus, not merely before the level loads.
+  `record_level.py` pokes the same byte and its comment block is the place to
+  start.
+
+
 - **Eight verifiers exist that `tools/verify_all.sh` never runs**, and the
   headline table above quotes five numbers that come from them:
   `verify_data.py` (179,618 bytes across 7 sections), `verify_dat.py` (7
