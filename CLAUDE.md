@@ -618,9 +618,18 @@ have caught it. So:
   samples the emulator's palette every 512 instructions between two of the
   game's own end-of-frame points at image 0x018F. Every settled frame holds
   exactly two, DAC 16..23 alternating and ending on the terrain's.
-- The panel's eight are image `0x0C080`, and `--pc high|compat` selects
-  whether the swap happens at all - image 0x055B7 branches on `ds:0x1F7C`,
-  which the adapter letter sets.
+- The panel's eight are image `0x0C080`. **The swap is the ADAPTER's, not the
+  machine type's** - image `0x055B7` and image `0x053CA` branch on `ds:0x1F7C`,
+  which image `0x0130A`..`0x01322` set to 2, 4, 8 or 0 from the command-line
+  letter (`lemvga.com /v`, `/e`), and 4 is what they test for. The machine
+  type is a different pair of bytes: image `0x01200` sets `ds:0x200C` and
+  `ds:0x200E` for "PC compatibles" and neither is read there.
+
+  This file used to say `--pc high|compat` selected it, and the port
+  implemented that - so `--pc compat` left the panel on the level's palette
+  and a player reported the status text and skill buttons coming out orange.
+  This port is VGA only, so `ds:0x1F7C` is 4 always and the swap always
+  happens.
 
 **The original DOES take a command line.** This file and `main.c` both said it
 does not. `LEMMINGS.BAT` never runs `VGALEMMI.EXE` directly - it runs

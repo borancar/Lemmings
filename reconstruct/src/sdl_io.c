@@ -811,13 +811,23 @@ int level_run(struct level_frame *A, const canvas *c,
      *
      * The game swaps attributes 8..15 part-way down the screen - see
      * level_panel_palette - so the play area keeps the terrain's browns and
-     * the panel below gets greens and greys. On a plain PC it does not, and
-     * the panel makes do with the level's palette; that is what lem_machine
-     * selects. The lower eight entries are the same either way. */
+     * the panel below gets greens and greys. The lower eight never change.
+     *
+     * IT IS THE ADAPTER THAT DECIDES, NOT THE MACHINE TYPE, and this used to
+     * be `if (lem_machine == LEM_PC_HIGH)`. Image 0x055B7 and image 0x053CA
+     * both branch on ds:0x1F7C, which image 0x0130A..0x01322 set to 2, 4, 8
+     * or 0 from the COMMAND LINE LETTER - LEMMINGS.BAT runs `lemvga.com /v`
+     * for VGA and `/e` for EGA - and 4 is the one they test for. The machine
+     * type is a different pair of bytes entirely: image 0x01200 sets ds:0x200C
+     * and ds:0x200E for "PC compatibles" and neither is read here.
+     *
+     * This port reconstructs the VGA adapter and nothing else, so ds:0x1F7C
+     * is 4 always and the swap always happens. Tying it to --pc meant that
+     * `--pc compat` left the panel on the LEVEL's palette: a player reported
+     * the status text and the skill buttons coming out orange. */
     lem_rgb bottom[16];
     for (uint8_t i = 0; i < 16; i++) g_lv_top[i] = bottom[i] = palette[i];
-    if (lem_machine == LEM_PC_HIGH)
-        level_panel_palette(&bottom[8]);
+    level_panel_palette(&bottom[8]);
     /* And the fade's copy of them: `g_lv_top` and `bottom` stay the level's own
      * colours - the capture below writes them, and a capture must never
      * hold a mid-fade palette - while the pair the screen is drawn through
