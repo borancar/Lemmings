@@ -4757,7 +4757,14 @@ has nothing to seed with here.
 
   3s where the original has 2s and gaps, drifting further apart towards the
   bottom of the sprite. Not a plane swap (that would exchange 1 and 2 and
-  leave 3), and not a shift. **Cause undetermined** - recorded at this level
+  leave 3), and not a shift.
+
+  **The MASK is ruled out too, by reading image 0x05B11.** Its second half at
+  image 0x05B63 walks down the sprite's planes at a stride of `rows * 3`, ORs
+  them together and appends the result - so the mask is "any plane set",
+  which is exactly the port's `v != 0`. The transparency rule is confirmed
+  from the original, not assumed, and it is not where the extra ink comes
+  from. **Cause undetermined** - recorded at this level
   of detail rather than guessed at, because the last four attributions of
   these forty pixels were wrong.
 

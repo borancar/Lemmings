@@ -1192,7 +1192,21 @@ const uint8_t MENU_XLAT[0x53] = {
  *
  * and underneath those, the routines that do the work:
  *
- *     image 0x05B11  pre-shift a two-byte-wide sprite
+ *     image 0x05B11  pre-shift a two-byte-wide sprite, AND BUILD ITS MASK.
+ *                    Two halves: image 0x05B1C reads two bytes a row, shifts
+ *                    right by the shift index and stores THREE - the
+ *                    widening that lets a copy be drawn off a byte boundary
+ *                    - for each of dh planes and dl rows; then image 0x05B63
+ *                    walks down those planes at a stride of rows * 3, ORs
+ *                    them together, and appends the result. Image 0x05B8D
+ *                    repeats the lot for shifts 0..7.
+ *
+ *                    SO THE MASK IS "ANY PLANE SET", which is exactly the
+ *                    port's `v != 0` transparency test - confirmed from the
+ *                    original rather than assumed. The walker's store being
+ *                    (2 planes + 1 mask) x 10 rows x 3 bytes = 90, measured
+ *                    off the record long ago, is this routine's output
+ *                    described from the other end.
  *     image 0x05BB0  build a MASK by ORing the planes, and append it
  *     image 0x05CDD  the two-byte core: read a word, shift right by dh with
  *                    the carry falling into a third byte, store three
