@@ -69,7 +69,6 @@ static void usage(void)
           "  --level N     section inside --file, 1-based\n"
           "  --show        show it as well, when --raw asked for a file\n"
           "  --scale N     window magnification (default 3)\n"
-          "  --terrain M   how terrain pixels combine: replace|or|keep\n"
           "  --planebits O which bit each stored plane feeds, e.g. 0123\n"
           "  --bitorder B  leftmost pixel is the byte's msb or lsb\n"
           "  --reverse     draw the terrain list back to front\n"
@@ -1004,17 +1003,6 @@ int main(int argc, char **argv)
             if (strlen(o) != 4) { usage(); return 2; }
             for (uint8_t k = 0; k < 4; k++)
                 g_plane_bits[k] = (uint8_t)(o[k] - '0');
-        }
-        else if (!strcmp(argv[i], "--terrain") && i + 1 < argc) {
-            const char *m = argv[++i];
-            if (!strcmp(m, "replace"))   g_terrain_mode = TERRAIN_REPLACE;
-            else if (!strcmp(m, "or"))   g_terrain_mode = TERRAIN_OR;
-            else if (!strcmp(m, "keep")) g_terrain_mode = TERRAIN_KEEP;
-            else if (!strcmp(m, "nov-ignore")) g_terrain_mode = TERRAIN_NOV_IGNORE;
-            else if (!strcmp(m, "nov-invert")) g_terrain_mode = TERRAIN_NOV_INVERT;
-            else if (!strcmp(m, "or-all")) g_terrain_mode = TERRAIN_OR_ALL;
-            else if (!strcmp(m, "hw")) g_terrain_mode = TERRAIN_HW;
-            else { usage(); return 2; }
         }
         else if (!strcmp(argv[i], "--adlib-live") && i + 1 < argc)
             adlib_live_s = atoi(argv[++i]);

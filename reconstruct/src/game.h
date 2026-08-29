@@ -324,21 +324,23 @@ typedef struct {
     uint16_t w, h;
 } canvas;
 
-/* How a terrain pixel combines with what is already on the canvas. The
- * original is not simply "replace": which of these it is, is being settled
- * against its video memory rather than assumed, so they are selectable.
- * See STATUS.md in the development repository. */
-typedef enum {
-    TERRAIN_REPLACE = 0,   /* the newer pixel wins */
-    TERRAIN_OR,            /* colour bits are OR'd together */
-    TERRAIN_KEEP,          /* the older pixel wins wherever there is one */
-    TERRAIN_NOV_IGNORE,    /* replace, ignoring the no-overwrite flag */
-    TERRAIN_NOV_INVERT,    /* no-overwrite means "only where terrain is" */
-    TERRAIN_OR_ALL,        /* every piece ORs, no-overwrite included */
-    TERRAIN_HW             /* what the original's blitter actually does */
-} terrain_mode;
-
-extern terrain_mode g_terrain_mode;
+/* THE SEVEN CANDIDATE RULES ARE GONE, and what they were is worth keeping.
+ *
+ * How a terrain pixel combines with what is already on the canvas was not
+ * read, so seven candidates were made selectable and measured: replace, or,
+ * keep, nov-ignore, nov-invert, or-all, and hw. `replace` won at 100.00% on
+ * the level tools/prove.sh drives and became the default.
+ *
+ * It was still a fitted rule. image 0x08822 has FIVE modes and picks one PER
+ * PIECE off the flag word; `hw` was the only candidate read off the blitter
+ * and it scored 95.04%, not because the reading was wrong but because it
+ * applied one mode to every piece. blit_planar transcribes all five and the
+ * dispatch between them, and renders this level byte-identically to the fitted
+ * winner - and 120 frames of a driven run byte-identically too.
+ *
+ * They are deleted rather than left selectable, because a knob that models a
+ * mechanism the code no longer has is worse than no knob: it keeps agreeing.
+ */
 
 /* Draw the terrain list back to front. The list order is the drawing order in
  * every description of the format; selectable so that can be checked rather
@@ -1074,20 +1076,29 @@ int render_objects(canvas *c, const level *lv, const ground *g,
  * tested against the original rather than believed. Default {0,1,2,3}. */
 extern uint8_t g_plane_bits[4];
 
-/* Which end of a byte the leftmost pixel is. 1 = the high bit, which is what
- * every published description says; selectable because inside a solid area it
- * makes no difference at all, so believing it is cheap and checking it is
- * cheaper than the bug it hides. */
+/* IMAGE 0x08822 - THE BLITTER, and the two reads it is built on: one pixel
+ * out of four planes, and its mask bit. They are exported because the OBJECT
+ * blit at image 0x0956B is a different routine with its own paths and reads
+ * the same way.
+ *
+ * There used to be vgagr_decode here, decoding a whole piece into a
+ * byte-per-pixel tile before anything was drawn. The original materialises no
+ * tile - image 0x07CB5 hands the blitter the planar bytes where they lie - so
+ * the tile was a step the port invented and every caller now reads the source
+ * directly. */
+uint8_t blit_ink(const uint8_t *src, uint32_t plane, uint32_t stride,
+                 uint8_t x, uint8_t y);
+uint8_t blit_mask(const uint8_t *mask, uint32_t stride, uint8_t x, uint8_t y);
+
+/* MEASURED, NOT READ, and the flags are where that is admitted: which bit of a
+ * byte is the leftmost pixel, and which plane carries which bit of the value.
+ * lemdev can sweep both. */
+extern uint8_t g_plane_bits[4];
 extern uint8_t g_msb_first;
-
-int vgagr_decode(const uint8_t *sec, uint32_t len, uint32_t loc,
-                 uint8_t w, uint8_t h, uint8_t *out);
-
-/* Decode a single monochrome plane - an object's transparency mask, which is
- * stored separately because objects use all sixteen colours and so cannot
- * borrow the fourth bitplane as terrain does. 1 means "draw this pixel". */
-int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
-                      uint8_t w, uint8_t h, uint8_t *out);
+void blit_planar(uint8_t *dst, int32_t dst_w, int32_t dst_h,
+                 int32_t at_x, int32_t at_y,
+                 const uint8_t *src, const uint8_t *mask,
+                 uint8_t w, uint8_t rows, uint8_t flip, uint16_t bp);
 
 /* ====================================================================
  * The window and input. Implemented by sdl_io.c, which is OURS.

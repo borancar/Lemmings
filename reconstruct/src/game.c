@@ -542,7 +542,6 @@ uint8_t g_msb_first = 1;
  * evidence of equivalence and is not the same claim as transcription.
  * ====================================================================== */
 
-terrain_mode g_terrain_mode = TERRAIN_REPLACE;
 uint8_t g_terrain_reverse = 0;
 
 /* ======================================================================
@@ -707,6 +706,164 @@ uint16_t terrain_bp(const level_terrain *t)
     return bp;
 }
 
+/* ======================================================================
+ * IMAGE 0x08822 - THE BLITTER, AND ALL FIVE OF ITS MODES.
+ *
+ * Every picture in the program that is not the level's panel goes through this
+ * far call. Image 0x07CB5 hands it a graphic, a MASK, a width in bytes, a row
+ * count and four planes; image 0x088EA..0x0890E then picks one of five paths
+ * off the flag word in bp, in that order:
+ *
+ *     0x088EA  bp & 0x4000 -> 0x08D66   BLIT_SETRESET_ZERO
+ *     0x088F3  bp & 0x8000 -> 0x08B42   BLIT_NO_OVERWRITE
+ *     0x088FC  bp & 0x0020 -> 0x08FF7   BLIT_MODE_20
+ *     0x08905  bp & 0x0040 -> 0x0909C   BLIT_ERASE
+ *     0x0890E  otherwise                BLIT_SPRITE
+ *
+ * blit_path_of has named these for a long time and none of the five was
+ * written out. What stood in their place was a family of SEVEN candidate rules
+ * chosen by a flag - replace, or, keep, nov-ignore, nov-invert, or-all, hw -
+ * of which `replace` was the fitted winner and the default. It scores 100.00%
+ * on the level tools/prove.sh drives.
+ *
+ * That is the trap this repository has a section about. The fitted winner was
+ * right about that level and the rule was not read; `hw`, which WAS read off
+ * image 0x08B42, scored 95.04% - not because the reading was wrong but because
+ * it applied ONE mode to every piece where the blitter picks per piece.
+ *
+ * WHAT EACH MODE DOES, from the registers each one programs. `ink` is the
+ * source pixel assembled from its four planes, `m` its mask bit, `d` the
+ * destination pixel:
+ *
+ *   0x08B42  NO_OVERWRITE   map mask 0x0F, GC 5 = 8 (read mode 1), GC 2 = 8
+ *                           and GC 7 = 8, so reading video memory answers
+ *                           "is plane 3 set here" - already solid terrain.
+ *                           Image 0x08BD5 inverts that into GC 8, the bit
+ *                           mask, and GC 3 = 0x10 selects OR. So:
+ *                               d & 8 ? d : d | ink
+ *                           It never tests the source for transparency: OR
+ *                           with a transparent pixel's zero bits is a no-op,
+ *                           which is why it does not have to.
+ *
+ *   0x0909C  ERASE          map mask 0x0F, GC 0 = 0 and GC 1 = bp's 0x0F00
+ *                           nibble (image 0x090BF), so all four planes come
+ *                           from Set/Reset and Set/Reset is ZERO. GC 8 is the
+ *                           source byte, so the shape decides where:
+ *                               m ? 0 : d
+ *
+ *   0x08D66  SETRESET_ZERO  GC 0 = 0 and GC 1 = 0x0E (image 0x08D90), so
+ *                           planes 1..3 are forced to zero and only plane 0
+ *                           comes from the source. It can write nothing but 0
+ *                           or 1, which is why an arrow drawn this way is not
+ *                           terrain afterwards:
+ *                               m ? (ink & 1) : d
+ *
+ *   0x08FF7  MODE_20        GC 0 = 0x0F (image 0x09013) with GC 1 = bp's
+ *                           nibble - Set/Reset ONES rather than zeros, so it
+ *                           writes solid white through the shape:
+ *                               m ? 0x0F : d
+ *
+ *   0x0890E  SPRITE         four passes: the first masked through GC 8 and
+ *                           clearing planes 1..3, the other three OR-ing their
+ *                           plane in unmasked. CLAUDE.md records this one
+ *                           being read after four fitted candidates had
+ *                           narrowed to the wrong answer:
+ *                               m ? ink : d | (ink & 0x0E)
+ *
+ * WHAT DOES NOT CARRY OVER, and this is deliberate rather than an omission.
+ * The original works in BYTES because video memory is planar and byte
+ * addressed: image 0x08BA1 copies the row to scratch, image 0x08BBB shifts it
+ * right by x & 7, and the write loop moves eight pixels at a time with the
+ * card assembling the planes. This port's canvas is byte-per-pixel, so the
+ * shift and the byte granularity are the LAYOUT's and not the rule's - see
+ * "The original's arithmetic over the port's layout is a different picture".
+ * What is transcribed is which pixels are written and what with.
+ *
+ * It reads the planar source DIRECTLY, one pixel at a time, which is why there
+ * is no longer a routine that decodes a piece into a tile first. The original
+ * never materialises one either.
+ * ====================================================================== */
+
+/* THE PORT'S OWN, and it exists because of a difference in LAYOUT rather than
+ * in behaviour. The original never assembles a pixel: image 0x08BDE moves a
+ * whole byte and the card's four planes and latches do the rest. This canvas
+ * is byte-per-pixel, so the four plane bits have to be gathered here.
+ *
+ * The plane order and the bit order are g_plane_bits and g_msb_first, which
+ * lemdev can still sweep - they were MEASURED, not read, and those flags are
+ * where that is admitted. */
+uint8_t blit_ink(const uint8_t *src, uint32_t plane, uint32_t stride,
+                 uint8_t x, uint8_t y)
+{
+    uint8_t v = 0, p;
+    uint8_t sh = g_msb_first ? (uint8_t)(7 - (x & 7)) : (uint8_t)(x & 7);
+    for (p = 0; p < 4; p++) {
+        const uint8_t *row = src + (uint32_t)p * plane + (uint32_t)y * stride;
+        v |= (uint8_t)(((row[x >> 3] >> sh) & 1u) << g_plane_bits[p]);
+    }
+    return v;
+}
+
+/* THE PORT'S OWN, as blit_ink above: the mask is one plane and the original
+ * reads it a byte at a time into GC 8. Image 0x07CAE is the pointer. */
+uint8_t blit_mask(const uint8_t *mask, uint32_t stride,
+                  uint8_t x, uint8_t y)
+{
+    uint8_t sh = g_msb_first ? (uint8_t)(7 - (x & 7)) : (uint8_t)(x & 7);
+    return (uint8_t)((mask[(uint32_t)y * stride + (x >> 3)] >> sh) & 1u);
+}
+
+/* IMAGE 0x08822. `bp` is the flag word image 0x07C67 unpacked; `mask` may be
+ * NULL, and then the shape is taken from the ink being non-zero - which is
+ * what image 0x08D66's and image 0x0890E's callers with no mask pointer get. */
+void blit_planar(uint8_t *dst, int32_t dst_w, int32_t dst_h,
+                 int32_t at_x, int32_t at_y,
+                 const uint8_t *src, const uint8_t *mask,
+                 uint8_t w, uint8_t rows, uint8_t flip, uint16_t bp)
+{
+    uint32_t stride = ((uint32_t)w + 7u) / 8u;
+    uint32_t plane  = stride * (uint32_t)rows;
+    blit_path path  = blit_path_of(bp);          /* image 0x088EA..0x0890E */
+    uint8_t sx, sy;
+
+    for (sy = 0; sy < rows; sy++) {
+        int32_t dy = at_y + (int32_t)sy;
+        uint8_t row = flip ? (uint8_t)(rows - 1u - sy) : sy;
+        if (dy < 0 || dy >= dst_h) continue;
+
+        for (sx = 0; sx < w; sx++) {
+            int32_t dx = at_x + (int32_t)sx;
+            uint8_t ink, m, *d;
+            if (dx < 0 || dx >= dst_w) continue;
+
+            ink = blit_ink(src, plane, stride, sx, row);
+            m   = mask ? blit_mask(mask, stride, sx, row)
+                       : (uint8_t)(ink != 0);
+            d   = &dst[(uint32_t)dy * (uint32_t)dst_w + (uint32_t)dx];
+
+            switch (path) {
+            case BLIT_NO_OVERWRITE:                  /* image 0x08B42 */
+                if (!(*d & 0x08)) *d = (uint8_t)(*d | ink);
+                break;
+            case BLIT_ERASE:                         /* image 0x0909C */
+                if (m) *d = 0;
+                break;
+            case BLIT_SETRESET_ZERO:                 /* image 0x08D66 */
+                if (m) *d = (uint8_t)(ink & 1u);
+                break;
+            case BLIT_MODE_20:                       /* image 0x08FF7 */
+                if (m) *d = 0x0F;
+                break;
+            case BLIT_SPRITE:                        /* image 0x0890E */
+            default:
+                if (m) *d = ink;
+                else   *d = (uint8_t)(*d | (ink & 0x0E));
+                break;
+            }
+        }
+    }
+}
+
 /* TRANSCRIBED from image 0x03752's loop and image 0x07C67's blit set-up, and
  * what remains owed is named at the end - the same one thing draw_preview and
  * menu_briefing_screen owe.
@@ -742,141 +899,57 @@ uint16_t terrain_bp(const level_terrain *t)
  * of a prepared table; where that table is built is not read, and it is the
  * same shape as image 0x03981's parallel array for objects.
  *
- * WHAT REMAINS OWED is the ROUTE: image 0x07CB5 goes through 1010:8822 into
- * video memory a byte at a time with the card programmed, and this walks
- * pixels on a byte-per-pixel canvas. Reading it properly means reading image
- * 0x08822's five modes - blit_path_of names them and picks between them, but
- * none of the five is written out. tools/prove.sh compares what the original
- * COMPOSES against what this composes: 49,741 pixels, zero differing. */
+ * THE ROUTE IS NO LONGER OWED. Image 0x07CB5's far call is blit_planar above:
+ * all five of image 0x08822's modes are written out and the dispatch between
+ * them is image 0x088EA's, so this routine now does what image 0x03752's loop
+ * does - unpack an entry and hand it to the blitter - and decides nothing
+ * about how a pixel combines.
+ *
+ * What it cost to leave owed is worth recording. In its place stood seven
+ * candidate rules chosen by a flag, of which the fitted winner was the
+ * default; it scored 100.00% here and was still a guess, and the one candidate
+ * actually READ off the blitter scored 95.04% because it applied a single mode
+ * where the original picks one per piece. The transcription renders this level
+ * byte-identically to the fitted winner, and 120 frames of a driven run
+ * byte-identically too - which is what makes it a replacement rather than a
+ * change.
+ *
+ * The MASK is used now as well. Image 0x07CAE loads a pointer of its own and
+ * the port had been testing bit 3 of the assembled pixel instead - an
+ * equivalence that held on every level scored here and was never read.
+ *
+ * tools/prove.sh compares what the original COMPOSES against what this
+ * composes: 49,741 pixels, zero differing. */
 int render_terrain(canvas *c, const level *lv, const ground *g,
                    const uint8_t *sec, uint32_t sec_len, const char **err)
 {
-    /* The largest terrain bitmap in any shipped set comfortably fits this. */
-    uint8_t *tile = malloc(256u * 256u);
-    if (!tile) { if (err) *err = "out of memory"; return -1; }
-
     for (uint16_t k = 0; k < lv->num_terrain; k++) {
         uint16_t i = g_terrain_reverse
                    ? (uint16_t)(lv->num_terrain - 1u - k) : k;
         const level_terrain *t = &lv->terrain[i];
         const ground_terrain *gt = &g->terrain[t->id];
+        uint32_t stride, plane;
 
         if (!gt->width || !gt->height)
             continue;               /* a set need not define all 64 ids */
 
-        if (vgagr_decode(sec, sec_len, gt->image_loc,
-                         gt->width, gt->height, tile) != 0) {
-            free(tile);
+        stride = ((uint32_t)gt->width + 7u) / 8u;
+        plane  = stride * (uint32_t)gt->height;
+        if (gt->image_loc + plane * 4u > sec_len
+                || gt->mask_loc + plane > sec_len) {
             if (err) *err = "terrain bitmap runs past the end of the section";
             return -1;
         }
 
-        for (uint8_t sy = 0; sy < gt->height; sy++) {
-            int32_t dy = t->y + sy;
-            if (dy < 0 || dy >= c->h)
-                continue;
-            uint8_t src_y = t->upside_down
-                          ? (uint8_t)(gt->height - 1u - sy) : sy;
-
-            for (uint8_t sx = 0; sx < gt->width; sx++) {
-                int32_t dx = t->x + sx;
-                if (dx < 0 || dx >= c->w)
-                    continue;
-
-                uint8_t v = tile[(uint32_t)src_y * gt->width + sx];
-
-                if (g_terrain_mode == TERRAIN_HW) {
-                    /* What the original's blitter does, read from its own
-                     * code at image 0x08B42-0x08BE2:
-                     *
-                     *   - the Graphics Controller is put in read mode 1 with
-                     *     colour compare 0x08 and don't-care 0x08, so reading
-                     *     video memory answers "is this pixel already solid
-                     *     terrain?" one bit per pixel;
-                     *   - NOT of that becomes the bit mask, so a write cannot
-                     *     land on existing terrain - that is what "do not
-                     *     overwrite" is, done in hardware;
-                     *   - GC index 3 is set to 0x10, which selects the OR
-                     *     function, so what is written is source OR latch;
-                     *   - and the inner loop is a plain `lodsb / stosb` over
-                     *     the whole row. It NEVER tests whether the source
-                     *     pixel is transparent.
-                     *
-                     * That last point is the one a per-pixel renderer gets
-                     * wrong by being sensible: the transparent parts of a
-                     * piece still deposit their colour bits, and a later
-                     * piece ORs on top of them. The result is pixels whose
-                     * value is a superset of any single piece's - which is
-                     * exactly what the original's screen shows and a
-                     * skip-if-transparent renderer cannot produce.
-                     */
-                    uint8_t *d = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
-                    if (!(*d & 0x08))
-                        *d = (uint8_t)(*d | v);
-                    continue;
-                }
-
-                if (!(v & 0x08))
-                    continue;       /* transparent */
-
-                uint8_t *dst = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
-                if (g_terrain_mode == TERRAIN_OR_ALL)
-                    *dst = (uint8_t)(*dst | v);
-                /* NO-OVERWRITE IS TESTED BEFORE ERASE, and a piece can carry
-                 * both. Image 0x07C67 unpacks the LVL's first word into the
-                 * blitter's flag word, and the erase bit - e[0] & 0x20, which
-                 * is word bit 13 - sets TWO things there: `and dx, 0xc0` puts
-                 * it in bp bit 6, and image 0x07C7B ORs in 0x0F00 beside it.
-                 * Image 0x08905 then tests bp bit 6 and jumps to image
-                 * 0x0909C, where image 0x090B8 sets Set/Reset to 0 and image
-                 * 0x090BF sets Enable Set/Reset to bp bits 11..8 - the 0x0F -
-                 * so all four planes are written as zero. That is the erase.
-                 *
-                 * But image 0x088F3 tests bp bit 15 first and jumps to image
-                 * 0x08B42, an ordinary masked draw that never looks at the
-                 * erase nibble. So a piece with BOTH flags is drawn and not
-                 * erased, and the order of these two branches is that
-                 * dispatch order rather than a preference.
-                 *
-                 * level006 section 3 has three such pieces and the port
-                 * erased all of them: 814 pixels of terrain missing from the
-                 * bottom of the play area, on every one of 1,100 frames. Two
-                 * of the three carry erase alone and DO erase; the third
-                 * carries both. Suppressing erase for all three left 459
-                 * pixels wrong the other way, which is how the difference
-                 * between the two pieces was found - by measuring a wrong
-                 * rule, then going back and reading the unpack. */
-                /* THE DISPATCH IS blit_path_of's now, not written out
-                 * here: image 0x088EA tests the same bits in the same order
-                 * for every caller in the program, and this was the only
-                 * place that knew it. The reading above is unchanged - it is
-                 * where the reading is recorded - but the ORDER now comes
-                 * from the one routine that owns it. */
-                else if (blit_path_of(terrain_bp(t)) == BLIT_NO_OVERWRITE
-                         && g_terrain_mode != TERRAIN_NOV_IGNORE) {
-                    if (g_terrain_mode == TERRAIN_NOV_INVERT) {
-                        if (*dst != 0)
-                            *dst = v;
-                    } else if (*dst == 0)
-                        *dst = v;
-                } else if (blit_path_of(terrain_bp(t)) == BLIT_ERASE)
-                    *dst = 0;              /* image 0x08905, image 0x090BF */
-                else switch (g_terrain_mode) {
-                case TERRAIN_OR:
-                    *dst = (uint8_t)(*dst | v);
-                    break;
-                case TERRAIN_KEEP:
-                    if (*dst == 0)
-                        *dst = v;
-                    break;
-                default:
-                    *dst = v;
-                    break;
-                }
-            }
-        }
+        /* image 0x07CAB is the graphic and image 0x07CAE the MASK - a pointer
+         * of its own, which the port used to ignore in favour of testing bit 3
+         * of the assembled pixel. That equivalence held on every level scored
+         * here and it was still a guess. */
+        blit_planar(c->pix, c->w, c->h, t->x, t->y,
+                    sec + gt->image_loc, sec + gt->mask_loc,
+                    gt->width, gt->height, t->upside_down,
+                    terrain_bp(t));                  /* image 0x07CB5 */
     }
-    free(tile);
     return 0;
 }
 
@@ -8088,13 +8161,6 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                    const uint8_t *sec, uint32_t sec_len,
                    uint8_t frame, const char **err)
 {
-    uint8_t *pix  = malloc(256u * 256u);
-    uint8_t *mask = malloc(256u * 256u);
-    if (!pix || !mask) {
-        free(pix); free(mask);
-        if (err) *err = "out of memory";
-        return -1;
-    }
 
     /* Image 0x03985: thirty-two, however many the level filled in. */
     for (uint16_t i = 0; i < lv->num_objects && i < LEVEL_MAX_OBJECTS; i++) {
@@ -8129,13 +8195,18 @@ int render_objects(canvas *c, const level *lv, const ground *g,
         uint32_t at = (uint32_t)go->frames_base_loc
                     + (uint32_t)f * go->frame_data_size;
 
-        if (vgagr_decode(sec, sec_len, at, go->width, go->height, pix) != 0 ||
-            vgagr_decode_mask(sec, sec_len, at + go->mask_offset,
-                              go->width, go->height, mask) != 0) {
-            free(pix); free(mask);
+        /* Image 0x039B3's graphic and the mask beside it at mask_offset, read
+         * where they lie rather than decoded into a tile first - the original
+         * materialises no tile either. */
+        uint32_t stride = ((uint32_t)go->width + 7u) / 8u;
+        uint32_t plane  = stride * (uint32_t)go->height;
+        if (at + plane * 4u > sec_len
+                || at + go->mask_offset + plane > sec_len) {
             if (err) *err = "object bitmap runs past the end of the section";
             return -1;
         }
+        const uint8_t *src  = sec + at;
+        const uint8_t *mask = sec + at + go->mask_offset;
 
         for (uint8_t sy = 0; sy < go->height; sy++) {
             int32_t dy = o->y + sy;
@@ -8148,7 +8219,7 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                 int32_t dx = o->x + sx;
                 if (dx < 0 || dx >= c->w)
                     continue;
-                uint32_t si = (uint32_t)src_y * go->width + (uint32_t)sx;
+                uint8_t m = blit_mask(mask, stride, sx, src_y);
                 /* THE MASK IS NOT CONSULTED FOR A NO-OVERWRITE BLIT, and the
                  * two paths differ in exactly that. Image 0x09709, the
                  * only-on-terrain one, does `and ah, [bx]` - the destination's
@@ -8161,7 +8232,7 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                  * consult the mask. See object_pixel_allowed for the
                  * dispatch. Without this the five both-flag objects in
                  * level003 section 7 go down as whole rectangles. */
-                if (!(o->no_overwrite && !o->only_on_terrain) && !mask[si])
+                if (!(o->no_overwrite && !o->only_on_terrain) && !m)
                     continue;
 
                 uint8_t *dst = &c->pix[(uint32_t)dy * c->w + (uint32_t)dx];
@@ -8171,12 +8242,11 @@ int render_objects(canvas *c, const level *lv, const ground *g,
                 if (!object_pixel_allowed(*dst, o))
                     continue;
                 /* AND THE SAME VALUE RULE - see object_pixel_combine. */
-                *dst = object_pixel_combine(*dst, pix[si], o);
+                *dst = object_pixel_combine(
+                           *dst, blit_ink(src, plane, stride, sx, src_y), o);
             }
         }
     }
-    free(pix);
-    free(mask);
     return 0;
 }
 
