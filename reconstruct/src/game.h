@@ -1245,7 +1245,7 @@ typedef enum {
  * input taken off SDL's event queue rather than polled. Same picture; a
  * different mechanism, which is how F3 came to need pressing twice.
  * ====================================================================== */
-menu_action menu_loop(menu_screen *m);
+menu_action menu_loop(menu_screen *m, long budget);
 
 /* Image 0x04416 and image 0x0441B put 0xFF in both plates' dirty bytes, so
  * the first pass of the loop draws them however the guards read.

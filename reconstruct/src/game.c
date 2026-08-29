@@ -10204,6 +10204,48 @@ uint32_t menu_scroll;
 uint8_t  menu_lem_frame;
 
 
+/* ======================================================================
+ * THE MENU'S STATE, and the port's handles on it.
+ *
+ * These sat in sdl_io.c while the variables they touch were declared here -
+ * a getter and a setter over another file's globals, on the wrong side of
+ * the boundary. ds:0x21 is the banner's scroll and the animation counters
+ * are the game's; none of it is anything the hardware did.
+ * ====================================================================== */
+/*
+ * The port's own accessors. The original keeps this in ds:0x21 and has no
+ * function around it.
+ */
+void menu_set_scroll(uint32_t pixels) { menu_scroll = pixels; }
+
+/* The port's own: the original never sets its animation counters from
+ * outside, it only steps them. This is here so a verifier can put the port at
+ * the phase a capture was taken at - the same job --scroll does for the
+ * banner, and needed for the same reason. */
+void menu_set_anim(const int16_t *ctr, uint8_t n)
+{
+    anim_started = 1;
+    for (uint8_t i = 0; i < n && i < MENU_ANIM_N; i++)
+        anim_ctr[i] = ctr[i];
+}
+
+/* The port's own, all three: the original reads ds:0x21 and its lemming frame
+ * where it needs them and has no function around either. */
+uint32_t menu_get_scroll(void)        { return menu_scroll; }
+void menu_set_lem_frame(uint8_t f)    { menu_lem_frame = f; }
+uint8_t menu_get_lem_frame(void)      { return menu_lem_frame; }
+
+/* The menu with the rating it starts on.
+ *
+ * The port's own.
+ */
+int menu_build(const char *dir, menu_screen *m, const char **err)
+{
+    return menu_build_rating(dir, 0, m, err);
+}
+
+
+
 /* How many 16-pixel columns the strip holds. Image 0x07CBC stamps 0x23 of
  * them at start-up and image 0x07D54 shifts 0x46 bytes a row, which is the
  * same 35 columns counted the other way. */
@@ -10740,9 +10782,15 @@ static void menu_fx_plate(uint8_t *pix, const uint8_t *sec)
  * shared window loop paced itself the same 70 Hz by a constant of its own;
  * here it is image 0x01550's retrace, which is where the number comes from.
  * ====================================================================== */
-menu_action menu_loop(menu_screen *m)
+menu_action menu_loop(menu_screen *m, long budget)
 {
-    for (;;) {
+    /* `budget` is the port's: a loop that only ends on a keypress cannot be
+     * driven by a test, and LEM_FRAMES bounds a run. It is HERE rather than
+     * in a copy of the loop, which is what sdl_io.c used to hold - four of
+     * this loop's seven calls, so a capped run rendered a menu with no
+     * animation, no rating plate and no FX plate, and every measurement taken
+     * through it was of a screen the game never shows. */
+    for (; budget != 0; budget--) {
         video_retrace_wait();                   /* image 0x0445B: call 0x1550 */
 
         if (m->gfx) {
@@ -10799,6 +10847,7 @@ menu_action menu_loop(menu_screen *m)
          * and image 0x004D0 for Esc. */
         if (r >= 0) return (menu_action)r;
     }
+    return MENU_EXIT;              /* the budget, not the game */
 }
 
 /*

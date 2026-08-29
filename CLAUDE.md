@@ -850,11 +850,28 @@ program will never look at.
 - **The port shows a screen by default.** `./lemmings` with no arguments opens
   the game; `--out` or `--raw` is what asks for a file instead. A
   reconstruction whose default output is a bitmap is a converter.
-- **`game.c` holds the game and nothing else.** A function marked "the port's
-  own" inside it is a smell: either it is **IO** - it replaces something a
-  card, the BIOS or DOS did, and belongs in `sdl_io.c` - or it is **game logic
-  written instead of transcribed**, which is the thing this method exists to
-  avoid. `sdl_io.c` therefore holds more than SDL: the DAC's 6-to-8-bit
+- **A ROUTINE LIVES WHERE THE BINARY PUTS IT.** If the original has a routine
+  for it, the port's version goes in `game.c` carrying that address - even
+  when the original's own routine also set a video mode or read a byte the
+  mouse driver kept. Split the *hardware's share* out into `sdl_io.c` as a
+  primitive the transcription calls, and leave the SEQUENCE with the game:
+  `level_show` is image 0x00455's set-up over `view_open`, and
+  `level_results_wait` is image 0x047A9's five instructions over
+  `view_buttons`. The check that the split was honest rather than a
+  relocation is that **`game.c` contains no `SDL_` at all**; grep for it after
+  moving anything.
+
+  This overrides what this file used to say - that a function marked "the
+  port's own" in `game.c` was a smell and belonged in `sdl_io.c` if it touched
+  the hardware. That rule sent whole transcribed routines across the boundary
+  because they ended in a window, and it stranded three one-line accessors in
+  `sdl_io.c` over variables declared in `game.c`. "The port's own" inside
+  `game.c` is fine when the original has no such routine; what is not fine is
+  a routine the original DOES have sitting in the IO file.
+
+- **`game.c` holds the game.** A function marked "the port's own" inside it is
+  still worth a second look: it may be **game logic written instead of
+  transcribed**, which is the thing this method exists to avoid. `sdl_io.c` therefore holds more than SDL: the DAC's 6-to-8-bit
   widening, the assembly of a pixel out of four bit-planes, the frees DOS used
   to do, the window loop, and the flat header view `verify_level.py` needs.
   See "WHAT THE HARDWARE USED TO DO" there.

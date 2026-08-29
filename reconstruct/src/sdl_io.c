@@ -1950,62 +1950,9 @@ menu_action menu_run(menu_screen *m, uint8_t scale)
     g_menu_buttons = 0;
     menu_wait_release();                 /* image 0x04453 */
     cap = SDL_getenv("LEM_FRAMES");
-    if (cap) {
-        long budget = SDL_atoi(cap);
-        while (budget-- > 0) {
-            video_retrace_wait();
-            menu_frame_step(m, m->pix);
-            menu_anim_step();
-            video_page_flip();
-        }
-        return MENU_EXIT;
-    }
-    return menu_loop(m);                 /* image 0x0445B */
-}
-
-/* ======================================================================
- * SCAFFOLDING THE ORIGINAL HAS NO COUNTERPART FOR.
- *
- * game.c holds the game. Anything in it marked "the port's own" was a
- * contradiction, so these came here: a convenience wrapper, accessors over
- * state the original keeps in ds:0x21 with no function around it, a query for
- * where plate i is that only exists because this port needs clickable boxes,
- * and a count exposed purely so a test can see the walk-on lemmings without a
- * window.
- * ====================================================================== */
-
-
-
-/*
- * The port's own accessors. The original keeps this in ds:0x21 and has no
- * function around it.
- */
-void menu_set_scroll(uint32_t pixels) { menu_scroll = pixels; }
-
-/* The port's own: the original never sets its animation counters from
- * outside, it only steps them. This is here so a verifier can put the port at
- * the phase a capture was taken at - the same job --scroll does for the
- * banner, and needed for the same reason. */
-void menu_set_anim(const int16_t *ctr, uint8_t n)
-{
-    anim_started = 1;
-    for (uint8_t i = 0; i < n && i < MENU_ANIM_N; i++)
-        anim_ctr[i] = ctr[i];
-}
-
-uint32_t menu_get_scroll(void)        { return menu_scroll; }
-
-void menu_set_lem_frame(uint8_t f)    { menu_lem_frame = f; }
-
-uint8_t menu_get_lem_frame(void)      { return menu_lem_frame; }
-
-/* The menu with the rating it starts on.
- *
- * The port's own.
- */
-int menu_build(const char *dir, menu_screen *m, const char **err)
-{
-    return menu_build_rating(dir, 0, m, err);
+    /* -1 is unbounded. The cap goes INTO the loop rather than into a copy of
+     * it here - see menu_loop, and the four-of-seven calls this used to be. */
+    return menu_loop(m, cap ? SDL_atoi(cap) : -1);   /* image 0x0445B */
 }
 
 /* ======================================================================
@@ -2013,10 +1960,8 @@ int menu_build(const char *dir, menu_screen *m, const char **err)
  *
  * be16 and le16 are the file formats' byte order, not the game's: the
  * original reads these words inline where it needs them and has no routine
- * to transcribe. ground_load is the port's struct over GROUNDxO.DAT, and the
- * original does not parse that file at all - image 0x01A0B names it, 0x01A18
- * loads all 4,096 bytes raw to ds:0x1B4B, and image 0x037D1 indexes the
- * bytes where they lie with `mul 0x1C` and `lea si,[0x1b4b]`.
+ * to transcribe. ground_load used to be here too and is now in game.c, where
+ * its LAYOUT carries the address of the instruction that reads each field.
  * ====================================================================== */
 /*
  * Not transcribed: a big-endian word, an idiom rather than a routine.
