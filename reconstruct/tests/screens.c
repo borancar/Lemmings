@@ -1313,6 +1313,35 @@ int main(int argc, char **argv)
         }
     }
 
+    /* THE CLICK IS SILENT UNLESS A SKILL WAS GIVEN - image 0x03150's two
+     * exits, image 0x031E5 with the sound and image 0x0320C without.
+     *
+     * The port played it from the click handler on any click where the count
+     * was non-zero, so empty sky and an already-digging lemming both
+     * clicked. A player found it. Nothing here could: every check compares a
+     * recorded run whose click lands on a lemming that takes the skill. */
+    {
+        lemming one;
+        memset(&one, 0, sizeof one);
+        one.alive = 0; one.dir = 1; one.state = 9;
+        {   /* stock two diggers the way a level header would */
+            level lv;
+            memset(&lv, 0, sizeof lv);
+            lv.skills[SKILL_DIGGER - 2] = 2;
+            level_skills_reset(&lv);
+        }
+        ck("a fresh lemming takes a digger (image 0x0320D)",
+           level_assign(&one, SKILL_DIGGER) == 1, NULL);
+        ck("and the count went down",
+           level_skill_left(SKILL_DIGGER) == 1, NULL);
+        /* Image 0x0321D refuses a lemming already in one of 0xF57F's
+         * states, and 0x10 - the digger - is one of them. */
+        ck("the same lemming refuses a second digger (image 0x0321D)",
+           level_assign(&one, SKILL_DIGGER) == 0, NULL);
+        ck("and the count did NOT go down again",
+           level_skill_left(SKILL_DIGGER) == 1, NULL);
+    }
+
     ck("a scancode past the table's 83 entries is refused",
        menu_key_code(0x53) == 0xFF && menu_dispatch(menu_key_code(0x53)) == -1,
        "it indexed past ds:0x202E");

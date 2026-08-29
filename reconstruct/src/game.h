@@ -190,6 +190,23 @@ typedef enum {
     BLIT_SPRITE           /*               image 0x0890E  */
 } blit_path;
 blit_path blit_path_of(uint16_t bp);
+
+/* ONE ENTRY OF THE SPRITE STORE'S BUILD TABLE - image 0x059BB.
+ *
+ * The builder walks the lemming artwork in fifteen groups, each a count, a
+ * geometry word in dx as (planes << 8) | rows, and a stride it adds to si.
+ * Every group is sixteen pixels wide: stride / (planes * rows) is 2 bytes
+ * throughout. See LEM_SPRITE in data.c. */
+typedef struct {
+    uint32_t base;      /* running offset, si at the group's first frame */
+    uint8_t  count;     /* cx */
+    uint8_t  planes;    /* dh */
+    uint8_t  rows;      /* dl */
+    uint8_t  stride;    /* what image 0x059D3 and its fellows add to si */
+    uint8_t  preshift;  /* 1 = image 0x05B11, 0 = image 0x05BB0 */
+} lem_sprite;
+#define LEM_SPRITE_N 15
+extern const lem_sprite LEM_SPRITE[LEM_SPRITE_N];
 uint16_t  terrain_bp(const level_terrain *t);
 
 typedef struct {
@@ -687,6 +704,9 @@ uint8_t level_trigger_cell(int32_t col, int32_t row);
 void    level_trigger_put(int32_t col, int32_t row, uint8_t v);
 int level_at_exit(lemming *a, const level *lv, const ground *g);
 void lem_exit_start(lemming *a);
+/* Image 0x03150's dispatch and the tail every handler jumps into: the skill
+ * is spent and the click is heard ONLY when one was actually given. */
+int  level_assign(lemming *a, uint8_t skill);
 
 /* Win or lose, and which of the nine things the game says about it -
  * image 0x048F6's ladder. */
@@ -897,6 +917,11 @@ int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n);
 /* How many retraces image 0x055B7 waits between notches - THREE, where the
  * level's own fade at image 0x0031E waits one. */
 uint8_t palette_fade_retraces(void);
+/* Image 0x053CA's split - eight entries from register 8, which is the swap
+ * the level makes part-way down the screen. See the palette block in game.c
+ * for the table of eight slots the whole program's palettes live in. */
+uint8_t palette_split_first(void);
+uint8_t palette_split_count(void);
 
 extern uint16_t lem_mouse_x, lem_mouse_y;
 /* Is the pointer over a lemming - the original's ds:0x1A, which is what

@@ -581,32 +581,15 @@ static void level_click(struct level_frame *A, int32_t *scroll_x)
          * level header's instead, which never moves. */
         /* Image 0x03180 dispatches the selected button to its handler, and
          * each opens by testing its own count - see level_skill_left. */
-        /* AND AN ASSIGNMENT DOES TOO - image 0x03202 tests the same bits and
-         * image 0x03205 asks for sound 0x04, inside image 0x03150. */
-        if (level_skill_left(level_skill()) && sound_enabled(3))
-            sound_request(0x61, 4, 0x04);       /* image 0x03205 */
+        /* THE DISPATCH AND THE SOUND ARE game.c's - image 0x03150's, and
+         * every handler's own two exits. This used to play sound 0x04 here,
+         * on any click where the count was non-zero, so an empty patch of
+         * sky and a lemming that already had the skill both clicked. A
+         * player found it; see level_assign. */
         if (level_skill_left(level_skill())) {
             int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
-            if (k >= 0) {
-                int took = 0;
-                if (level_skill() == SKILL_DIGGER)
-                    took = lem_dig_start(&A->lem[k]);      /* image 0x0320D */
-                else if (level_skill() == SKILL_BUILDER)
-                    took = lem_build_start(&A->lem[k]);    /* image 0x032BD */
-                else if (level_skill() == SKILL_BASHER)
-                    took = lem_bash_start(&A->lem[k]);     /* image 0x034CE */
-                else if (level_skill() == SKILL_MINER)
-                    took = lem_mine_start(&A->lem[k]);     /* image 0x03598 */
-                else if (level_skill() == SKILL_BLOCKER)
-                    took = lem_block_start(&A->lem[k]);    /* image 0x03336 */
-                else if (level_skill() == SKILL_BOMBER)
-                    took = lem_bomb_start(&A->lem[k]);     /* image 0x031C4 */
-                else if (level_skill() == SKILL_CLIMBER)
-                    took = lem_climb_start(&A->lem[k]);    /* image 0x0329B */
-                else if (level_skill() == SKILL_FLOATER)
-                    took = lem_float_start(&A->lem[k]);    /* image 0x03557 */
-                if (took) level_skill_spend(level_skill());
-            }
+            if (k >= 0)
+                level_assign(&A->lem[k], level_skill());   /* image 0x03150 */
         }
     }
     else if (h.what == LEVEL_HIT_BUTTON) {

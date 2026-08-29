@@ -3582,6 +3582,54 @@ static int lem_solid(const uint8_t *lvl, uint16_t cw, uint16_t chh,
     return (lvl[(size_t)cy * cw + cx] & 8) != 0;
 }
 
+/* ======================================================================
+ * IMAGE 0x03150's ASSIGNMENT, AND ITS SHARED TAIL.
+ *
+ * Every skill handler ends in one of exactly two jumps:
+ *
+ *     success -> image 0x031E5      refusal -> image 0x0320C
+ *     0x0326E  0x032B7  0x0331C     0x032BA  0x0331F  0x03345
+ *     0x034C8  0x0353D  0x03578     0x034CB  0x03540  0x0357B
+ *     0x03619                       0x0361C  0x03285
+ *
+ * Image 0x0320C is a bare `ret`. Image 0x031E5 is the SOUND - the fallback
+ * beep at image 0x031F3 and effect 0x04 at image 0x03206 - and then image
+ * 0x0320B's `ret`. It is the only site in the whole image that asks for
+ * effect 0x04, and the bomber's own routine at image 0x031C4 falls into it
+ * the same way, having set the fuse at image 0x031E1.
+ *
+ * SO THE CLICK IS SILENT UNLESS A SKILL WAS ACTUALLY GIVEN. A player
+ * reported the port clicking at empty sky and at a lemming that already had
+ * the skill: it played the sound from the click handler in sdl_io.c, gated
+ * only on "a skill is left in the count". That is a decision the game makes,
+ * made in the IO layer - the same shape CLAUDE.md records for main.c, one
+ * file over - and no test here could reach it, because every check compares
+ * a recorded run in which the click lands on a lemming that takes it.
+ * ====================================================================== */
+int level_assign(lemming *a, uint8_t skill)
+{
+    int took = 0;
+    switch (skill) {                                   /* image 0x03180 */
+    case SKILL_DIGGER:  took = lem_dig_start(a);   break;  /* image 0x0320D */
+    case SKILL_BUILDER: took = lem_build_start(a); break;  /* image 0x032BD */
+    case SKILL_BASHER:  took = lem_bash_start(a);  break;  /* image 0x034CE */
+    case SKILL_MINER:   took = lem_mine_start(a);  break;  /* image 0x03598 */
+    case SKILL_BLOCKER: took = lem_block_start(a); break;  /* image 0x03336 */
+    case SKILL_BOMBER:  took = lem_bomb_start(a);  break;  /* image 0x031C4 */
+    case SKILL_CLIMBER: took = lem_climb_start(a); break;  /* image 0x0329B */
+    case SKILL_FLOATER: took = lem_float_start(a); break;  /* image 0x03557 */
+    default: break;
+    }
+    if (!took) return 0;                               /* image 0x0320C */
+
+    level_skill_spend(skill);                          /* image 0x03224 */
+    /* Image 0x031E5's tail. The fallback at image 0x031F3 is INT 60h's and
+     * this port has no such device - see sound_request. */
+    if (sound_driver_answered() && sound_enabled(3))   /* image 0x031F8 */
+        sound_request(0x61, 4, 0x04);                  /* image 0x03206 */
+    return 1;                                          /* image 0x0320B */
+}
+
 /* Image 0x2148, and image 0x214E which turns it round at the ceiling. */
 static void lem_settle(lemming *a, int16_t bp)
 {
@@ -6115,6 +6163,23 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
         else if (a->flags & 0x0001) { sb = SPLAT_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x8000) { sb = BLAST_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x0004) { sb = FALL_SPR_BASE; sh = 10; sp = 2; sf = 4; }
+        /* THE DIGGER, at last, and from the original's own build table
+         * rather than from a shape that looked plausible.
+         *
+         * LEM_SPRITE[1] is image 0x059D8's group: sixteen frames from 720,
+         * three planes of fourteen rows, 84 bytes apiece. CLAUDE.md records
+         * why this was left undrawn - the record says 112 with the mask at
+         * 84, 112 is not divisible by three, and two different geometries
+         * produce it - and image 0x059BB settles it without fitting: the
+         * source frame is 3 x 14 x 2 = 84, and 112 is what image 0x05BB0
+         * makes of it by appending the mask as a fourth plane.
+         *
+         * A digging lemming was invisible until now, which is wrong in a way
+         * that is obvious rather than wrong in a way that looks fine. */
+        else if (a->flags & DIG_BIT) {                 /* image 0x059D8 */
+            sb = LEM_SPRITE[1].base; sh = LEM_SPRITE[1].rows;
+            sp = LEM_SPRITE[1].planes; sf = LEM_SPRITE[1].count;
+        }
         if (sb) {
             if (a->anim >= sf) return;
             uint32_t plane = 2u * sh;
@@ -6766,6 +6831,74 @@ static int fade_component(uint8_t *cur8, uint8_t tgt8)
  * return while anything is still moving - the original's `bl` flag, which
  * image 0x0562F tests to decide whether to go round again. */
 /* ======================================================================
+ * THE PALETTE SERVICE - image 0x052F4..0x0570C, and it is a TABLE OF EIGHT.
+ *
+ * Every palette in the program is a slot in a table of eight pointers at
+ * CS:0x52D4, and a second table at CS:0x52E4 that the adapter word ds:0x1F7C
+ * selects between: 4 means the DAC, anything else the EGA's attribute
+ * registers. The EGA table's entries are one byte to a colour and the DAC's
+ * are three, which is why image 0x053CA adds 8 to one and 0x18 to the other
+ * to reach the same eighth entry.
+ *
+ *   slot  EGA       DAC       what it is
+ *   ----  --------  --------  -----------------------------------------
+ *    0    ds:0x2638 ds:0x2638 the palette being SHOWN - what a fade walks
+ *    1    ds:0x2608 ds:0x2608 a second working buffer
+ *    2    ds:0x4920 ds:0x4930 THE MENU'S, and its bytes are MENU_PAL6 here
+ *    3    ds:0x1F13 ds:0x1F3B
+ *    4    ds:0x25E8 ds:0x25F0 THE PANEL'S - image 0x0C080, which CLAUDE.md
+ *                             already names as the eight the level swaps in
+ *    5    ds:0x1F0B ds:0x1F23
+ *    6    ds:0x25A8 ds:0x25B8 THE LEVEL'S
+ *    7    ds:0x2668 ds:0x2668
+ *
+ * The selectors over it, and who calls each:
+ *
+ *   0x0536C  fade slot 0 to slot 2, sixteen entries - THE FADE IN, and every
+ *            screen runs it: image 0x04450 (the menu), 0x047A6 (results),
+ *            0x04807, 0x04993 (the code screen), 0x04A2B (the input
+ *            chooser), 0x04AE5 and 0x04B38. Seven callers, one routine.
+ *   0x052F4  show slot 1, sixteen - image 0x00465, the level's set-up
+ *   0x05377  copy slot 5 into slot 6 - image 0x00486, also the level's
+ *   0x053CA  show slot AL's UPPER EIGHT, registers 8..15 - image 0x0466E
+ *            and image 0x046A8. This is the swap CLAUDE.md records: the play
+ *            area keeps the terrain's colours and the panel gets its own.
+ *   0x053F6  show slot AL, eight
+ *   0x053FE  show slot AL, sixteen - image 0x04600
+ *   0x05473  image 0x017DD and image 0x0524C
+ *
+ * And two writers, which are the CARD and belong in sdl_io.c by this port's
+ * own rule - they replace something a card did:
+ *
+ *   0x05425  CX attribute registers from si, starting at register CH
+ *   0x0548C  CX DAC entries from si, starting at CH, with ds:0x200C's blank
+ *
+ * THE EGA HALF IS A NON-GOAL. This port reconstructs vgalemmi.exe's VGA
+ * path only - CLAUDE.md's first page says so - so image 0x05425 and the EGA
+ * fade step at image 0x0563E (with its three component helpers at image
+ * 0x0566C, image 0x05685 and image 0x05696) are named here and not written.
+ * They are the other adapter, not a gap: ds:0x1F7C is 4 in every run this
+ * repository makes.
+ *
+ * WHAT THE PORT DOES INSTEAD. It has no card and no 64 KB segment, so a slot
+ * is a `lem_rgb[16]` owned by whatever screen needs it, and the fade walks
+ * that. The SELECTION is what transcribes - which slot, how many entries,
+ * and from where - and the numbers above are why level_panel_palette exists
+ * and why it is eight and not sixteen.
+ * ====================================================================== */
+#define PAL_SLOTS       8        /* CS:0x52D4 and CS:0x52E4 */
+#define PAL_SLOT_SHOWN  0        /* what a fade walks */
+#define PAL_SLOT_MENU   2        /* MENU_PAL6's bytes */
+#define PAL_SLOT_PANEL  4        /* image 0x0C080 */
+#define PAL_SLOT_LEVEL  6
+/* Image 0x053CA: the split writes EIGHT entries starting at register 8. */
+#define PAL_SPLIT_FIRST 8
+#define PAL_SPLIT_COUNT 8
+
+uint8_t palette_split_first(void) { return PAL_SPLIT_FIRST; }
+uint8_t palette_split_count(void) { return PAL_SPLIT_COUNT; }
+
+/* ======================================================================
  * IMAGE 0x055B7 - THE FADE LOOP, and it does not run at the display's rate.
  *
  *     si = table[bl]      the palette buffer being shown
@@ -6977,7 +7110,16 @@ static const uint8_t PANEL_PAL6[8 * 3] = {
     0x2A, 0x00, 0x2A,   /* 15 dark magenta */
 };
 
-/* Fill `out` with those eight, widened - the table at image 0x0C080 above.
+/* Fill `out` with those eight, widened - the table at image 0x0C080 above,
+ * which is SLOT 4 of the palette table (see the block at image 0x052F4).
+ *
+ * EIGHT because image 0x053CA writes eight: `cx = 0x808` is a count of 8
+ * starting at register 8, and the slot pointer is stepped by 8 for the EGA's
+ * one byte a colour or 0x18 for the DAC's three. That is the whole of the
+ * swap - the upper half of the palette is replaced and the lower half is
+ * left alone - and it is why this routine takes eight entries rather than
+ * sixteen. The count was right before it was read; now it has the address
+ * that fixes it.
  *
  * They are attributes 8..15: the
  * attribute controller maps those onto DAC 16..23 - read off the hardware as
@@ -6985,7 +7127,7 @@ static const uint8_t PANEL_PAL6[8 * 3] = {
  * `v < 8 ? v : v + 8` that tools/compare_frame.py has always used. */
 void level_panel_palette(lem_rgb *out)
 {
-    for (uint8_t i = 0; i < 8; i++) {
+    for (uint8_t i = 0; i < palette_split_count(); i++) {
         out[i].r = widen6(PANEL_PAL6[i * 3 + 0]);
         out[i].g = widen6(PANEL_PAL6[i * 3 + 1]);
         out[i].b = widen6(PANEL_PAL6[i * 3 + 2]);

@@ -1173,3 +1173,59 @@ const uint8_t MENU_XLAT[0x53] = {
     0x8A, 0x39, 0x2D, 0x8C, 0x35, 0x8D, 0x2B, 0x31,   /* 0x48 */
     0x8B, 0x32, 0x33,   /* 0x50 */
 };
+
+/* ======================================================================
+ * THE SPRITE STORE'S BUILD TABLE - transcribed from image 0x059BB.
+ *
+ * Called once at start-up through image 0x058D2, which image 0x000D5
+ * reaches. It walks the lemming artwork in fifteen groups; each sets cx to a
+ * frame count and dx to (planes << 8) | rows, calls the pre-shifter at image
+ * 0x05B11 or the mask builder at image 0x05BB0, and adds a stride to si.
+ * The bases below are that running total, not a table in the original.
+ *
+ * WHY THIS MATTERS. Every base and geometry in the port was MEASURED, one
+ * sprite at a time, by finding the offset whose pixels matched a captured
+ * frame - the method CLAUDE.md describes under "Finding a sprite". Three of
+ * those measurements land exactly on this table:
+ *
+ *     group  1  base     0   the walker, 18 frames of 40
+ *     group  2  base   720   "the digger starts at 720 and its 16 frames of
+ *                             84 end at 2064" - CLAUDE.md, measured
+ *     group  9  base 14320   FALL_SPR_BASE, "10 rows, 2 planes"
+ *
+ * AND IT SETTLES THE DIGGER, which this port does not draw. CLAUDE.md
+ * records the reasoning: its record says 0x70 = 112 bytes a frame with the
+ * mask at 0x54 = 84, "112 is NOT divisible by three, so its store is not
+ * that shape", and three planes over 14 rows at 2 bytes or three over 7 at 4
+ * both give 112 - "so it is not drawn", rather than pick one and see if it
+ * looked plausible.
+ *
+ * The table answers it without fitting: group 2 is dx = 0x30E, THREE planes
+ * and FOURTEEN rows, stride 84 = 3 * 14 * 2. The frame is 16 pixels wide.
+ * The 112 is what the frame becomes once image 0x05BB0 has appended the
+ * mask - four planes of 14 rows - and 84 is where that mask starts, which is
+ * exactly the pair the port measured off the record.
+ *
+ * The walker checks the same way: source 40 = 2 * 10 * 2, and its record
+ * reads 90 with the mask at 60, which is (2 planes + mask) * 10 rows * THREE
+ * bytes - image 0x05B11 widens two bytes to three so a copy can be shifted,
+ * where image 0x05BB0 does not.
+ * ====================================================================== */
+const lem_sprite LEM_SPRITE[LEM_SPRITE_N] = {
+    /*  base  count planes rows stride preshift */
+    {      0,  18,  2, 10,  40, 1 },   /* image 0x059C8: the walker */
+    {    720,  16,  3, 14,  84, 0 },   /* image 0x059D8: the DIGGER */
+    {   2064,  16,  2, 12,  48, 0 },   /* image 0x059E8 */
+    {   2832,  16,  2, 10,  40, 1 },   /* image 0x059F8 */
+    {   3472,  16,  2, 12,  48, 0 },   /* image 0x05A08 */
+    {   4240,  32,  3, 13,  78, 0 },   /* image 0x05A18 */
+    {   6736,  64,  3, 10,  60, 0 },   /* image 0x05A28 */
+    {  10576,  48,  3, 13,  78, 0 },   /* image 0x05A38 */
+    {  14320,   8,  2, 10,  40, 1 },   /* image 0x05A48: the faller */
+    {  14640,  16,  3, 16,  96, 0 },   /* image 0x05A58 */
+    {  16176,  16,  2, 10,  40, 1 },   /* image 0x05A68 */
+    {  16816,   8,  2, 13,  52, 0 },   /* image 0x05A78 */
+    {  17232,  14,  4, 14, 112, 0 },   /* image 0x05A88 */
+    {  18800,  16,  2, 10,  40, 1 },   /* image 0x05A98 */
+    {  19440,  32,  2, 10,  40, 1 },   /* image 0x05AA8 */
+};
