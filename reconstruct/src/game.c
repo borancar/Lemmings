@@ -2105,11 +2105,6 @@ int timer_frame_due(void)
     return 1;
 }
 
-/* THE PORT'S OWN. The original's ds:0x1FCD is cleared by the wipe at image
- * 0x0044F along with everything else at a level start; this is that, on its
- * own, so a test can start a level's timing from a known tick. */
-void timer_reset(void) { g_tick_pending = 0; }
-
 /* ds:0x2010, which image 0x005A4 sets when the detect answers. THE PORT'S
  * OWN only in how it learns the answer - sdl_io.c asks the driver whether it
  * loaded, where the original asked the card. */

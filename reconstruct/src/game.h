@@ -1013,7 +1013,6 @@ extern lem_pc lem_machine;
 void timer_isr(void);
 /* image 0x00186 and image 0x0018F - has a frame's worth of ticks arrived? */
 int  timer_frame_due(void);
-void timer_reset(void);
 
 void level_play_step(level_anim *st, const level *lv, lemming *lem,
                      uint8_t *released, uint8_t *terrain,
