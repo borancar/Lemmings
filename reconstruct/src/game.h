@@ -1161,6 +1161,13 @@ int32_t view_screen_pump(view_input input, int32_t click_id);
 void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
                          const lem_rgb *palette);
 void view_screen_pace(void);
+/* image 0x000FB's two hardware shares - see game.c's level_loop. */
+int  view_level_input(struct level_frame *A, int32_t *scroll_x_p,
+                      int32_t max_x);
+void view_level_show(const uint8_t *screen, struct level_frame *A);
+/* image 0x000FB - the level's loop. */
+void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
+                int32_t *scroll_x, int32_t max_x, long budget);
 int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
                          const lem_rgb *palette, view_input input,
                          int32_t click_id, view_tick tick, void *ctx,

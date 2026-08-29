@@ -11750,6 +11750,45 @@ static void level_scroll_step(int32_t *sx, int32_t max_x)
     }
 }
 
+/* IMAGE 0x000FB - THE LEVEL'S LOOP.
+ *
+ * The original has ONE loop and every screen jumps into it; image 0x0454C
+ * ends `jmp 0x000FB`. Its head flips the page - image 0x00105 swaps ds:0x1F76
+ * with ds:0x1F78 and image 0x00142 hands the CRTC registers 0x0C and 0x0D the
+ * new start - and image 0x00164 spins until the retrace ISR's ds:0x1FCD
+ * reaches five, which is the seventeen frames a second. Then image 0x0018F
+ * runs the frame, and image 0x001C8 asks whether it was the last.
+ *
+ *     view_level_input    ds:0x10, ds:0x12, ds:0x14 and ds:0x1FD0, which a
+ *                         driver kept current and an event queue stands in for
+ *     level_frame_compose IMAGE 0x0018F's frame, written out above it
+ *     view_level_show     image 0x00105's flip and image 0x00164's wait
+ *     level_end_done      IMAGE 0x001C8 and IMAGE 0x002C6, two different
+ *                         tests: the first is "has the level ended" and the
+ *                         second "has the fade finished". Only the second
+ *                         lets the loop out, and between them it keeps
+ *                         composing and drawing - which is what the fade is
+ *                         a fade OF.
+ *     level_end_finish    IMAGE 0x002CD, once it has fallen out
+ *
+ * `budget` is the port's: a loop that ends only when the level does cannot be
+ * driven by a test. So is the -1 from view_level_input, which is the window
+ * being closed - the original has no way to abandon a level without a result.
+ */
+void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
+                int32_t *scroll_x, int32_t max_x, long budget)
+{
+    for (;;) {
+        int seen = view_level_input(A, scroll_x, max_x);
+        if (seen < 0) break;
+        level_frame_compose(A, c, screen, scroll_x, max_x, seen);
+        view_level_show(screen, A);              /* image 0x00105 */
+        if (budget && --budget == 0) break;
+        if (level_end_done()) break;             /* image 0x001C8, 0x002C6 */
+    }
+    level_end_finish();                          /* image 0x002CD */
+}
+
 /* IMAGE 0x0018F - ONE FRAME OF A LEVEL, COMPOSED.
  *
  * The loop's own order, written out above level_play_step, ends with a page

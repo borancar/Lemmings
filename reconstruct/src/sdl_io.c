@@ -695,14 +695,254 @@ void video_palette_upload(void)
         if (e.type == SDL_EVENT_QUIT) view_quit_now();
 }
 
+/* LEVEL_RUN'S OWN STATE. These were its locals; the loop that used them is
+ * the game's and has moved to game.c, and threading a dozen of them through
+ * two calls would have put the window's bookkeeping into the game's
+ * signature. They sit with the code that is genuinely theirs. */
+static const char *g_lv_sink;
+static FILE       *g_lv_statef;
+static long        g_lv_frame_no;
+static lem_rgb     g_lv_top[16];
+static Uint64      g_lv_due, g_lv_period;
+static int         g_lv_seen_motion, g_lv_grabbed, g_lv_held;
+static uint32_t    g_lv_script_at;
+
+/* WHAT THE HARDWARE USED TO DO for a level's frame: ds:0x10, ds:0x12 and
+ * ds:0x14, which the mouse driver kept current, and ds:0x1FD0, where the
+ * keyboard handler left a scancode. Here they come from an event queue and
+ * from a recorded script.
+ *
+ * The ROUTINES that read them are game.c's - image 0x03EF9 for the panel,
+ * image 0x03150 for the play area, image 0x04085 for the keys and the edge.
+ *
+ * Returns 1 once the pointer has really moved, 0 before that, and -1 when the
+ * window asks to stop. That last is the PORT'S OWN exit: the original has no
+ * way to abandon a level without a result, and a window does.
+ */
+int view_level_input(struct level_frame *A, int32_t *scroll_x_p,
+                     int32_t max_x)
+{
+    int32_t scroll_x = *scroll_x_p;
+    /* The script speaks first, so a scripted frame behaves the same
+     * whether or not the host had an event waiting. */
+    while (g_lv_script_at < g_script_n && g_script[g_lv_script_at].frame <= g_lv_frame_no) {
+        const script_act *act = &g_script[g_lv_script_at++];
+        if (act->what == SCRIPT_MOVE) {
+            /* The script is in SCREEN pixels; the game's own pointer sits
+             * eight further on, which is where image 0x0426D clamps. */
+            lem_mouse_move(act->x + 8, act->y + 8);
+            g_lv_seen_motion = 1;
+        } else if (act->what == SCRIPT_DOWN) {
+            g_lv_held = 1;
+            level_panel_click(A, &scroll_x);
+        } else if (act->what == SCRIPT_UP) {
+            g_lv_held = 0;
+        }
+    }
+
+    /* A HELD RATE BUTTON REPEATS. The original polls the button from the
+     * panel's own per-frame update (image 0x03B3F) and divides with
+     * ds:0x69, so holding the minus or plus walks the rate one frame in
+     * three. The port takes the press as an edge, which is right for the
+     * skills - image 0x03170's latch gives them one assignment however
+     * long the button is down - but it left the rate buttons doing a
+     * single step per click.
+     *
+     * So only these two repeat, which is also what the original's own
+     * split says: buttons from 2 up go through the latch at image
+     * 0x03F2E and 0 and 1 never touch it. */
+    if (g_lv_held) {
+        level_hit rh = level_pointer_hit();
+        if (rh.what == LEVEL_HIT_BUTTON && rh.button < 2)
+            level_rate_click(rh.button);    /* image 0x04032 */
+    }
+
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_EVENT_QUIT) view_quit_now();
+        else if (e.type == SDL_EVENT_MOUSE_MOTION) {
+            g_lv_seen_motion = 1;
+            if (g_lv_grabbed) {
+                /* RELATIVE motion while the pointer is g_lv_held, which is
+                 * what the original works in: it asks the driver for
+                 * mickeys and sets the mickey-to-pixel ratio itself at
+                 * image 0x00F20. An absolute position would also stop at
+                 * the edge of the desktop rather than at the edge of the
+                 * game's own range. */
+                lem_mouse_move((int32_t)lem_mouse_x + (int32_t)e.motion.xrel,
+                               (int32_t)lem_mouse_y + (int32_t)e.motion.yrel);
+            } else {
+                int ow = 0, oh = 0;
+                SDL_GetRenderOutputSize(g_lvl_ren, &ow, &oh);
+                if (ow > 0 && oh > 0)
+                    lem_mouse_move(
+                        (int32_t)(e.motion.x * LEVEL_SCREEN_W / (float)ow) + 8,
+                        (int32_t)(e.motion.y * LEVEL_SCREEN_H / (float)oh) + 8);
+            }
+        }
+        else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            if (!g_lv_grabbed) {
+                /* Click to take it back, the way every DOS front end
+                 * does. That click is for the window, not the game. */
+                g_lv_grabbed = 1;
+                SDL_SetWindowRelativeMouseMode(g_win, true);
+            } else {
+                /* THE TWO BUTTONS DO DIFFERENT THINGS, and the port
+                 * treated any of them as a click. Image 0x04269 stores
+                 * INT 33h AX=3's BX in ds:0x14, so bit 0 is the left
+                 * button and bit 1 the right, and the game asks for them
+                 * separately: image 0x03168 does `and ax, 1` before it
+                 * will assign anything, while image 0x03DB7 tests bit 1
+                 * and makes the under-pointer scan pick the PLAIN
+                 * lemming over the busy one.
+                 *
+                 * So the right button is how the original lets you point
+                 * past a builder at the walker behind it. Here it did
+                 * nothing at all - lem_buttons was never written - and
+                 * it also assigned, which the original will not do. */
+                if (e.button.button == SDL_BUTTON_LEFT)
+                    lem_buttons |= 1;
+                else if (e.button.button == SDL_BUTTON_RIGHT)
+                    lem_buttons |= 2;
+                if (e.button.button == SDL_BUTTON_LEFT) {
+                    g_lv_held = 1;
+                    level_panel_click(A, &scroll_x);      /* image 0x03168 */
+                }
+            }
+        }
+        else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            if (e.button.button == SDL_BUTTON_LEFT) {
+                lem_buttons &= (uint8_t)~1u;
+                g_lv_held = 0;
+            } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                lem_buttons &= (uint8_t)~2u;
+            }
+        }
+        else if (e.type == SDL_EVENT_KEY_DOWN) {
+            /* Ctrl+Alt gives the pointer back, which is the gesture
+             * DOSBox trained everyone to reach for. Without a release
+             * the window owns the mouse and the only way out is to kill
+             * the process - so a grab without one is a bug, not a
+             * feature. */
+            if ((e.key.mod & SDL_KMOD_CTRL) && (e.key.mod & SDL_KMOD_ALT)) {
+                g_lv_grabbed = 0;
+                SDL_SetWindowRelativeMouseMode(g_win, false);
+                break;
+            }
+            /* image 0x03E6F reads the scancode the keyboard handler
+             * left behind, in the same routine that handles a click. */
+            level_key_button(e.key.key);
+            switch (e.key.key) {
+            /* ESCAPE ENDS THE LEVEL; it does not leave it.
+             *
+             * Image 0x002AB tests bit 0x20 of the key word ds:0x1FC7 and
+             * jumps to image 0x002B3, which sets ds:0x4F to 0xFF - the
+             * same byte image 0x001C8 tests when everyone is out or the
+             * clock has run down. So the play loop ends exactly as it
+             * would have on its own, image 0x002FB fades, and image
+             * 0x00311 goes to the results screen with whatever was
+             * rescued.
+             *
+             * The port took Escape as "close the level", so a player got
+             * the menu and no result at all. Bit 0x20 is the same key the
+             * results screen tests at image 0x047C1, which is the
+             * corroboration: one key, two screens, both sending it on. */
+            /* Escape ends the level rather than closing the window,
+             * and it ends it the way anything else does - image
+             * 0x002B3, so it fades out and reaches the results. */
+            case SDLK_ESCAPE: level_end_begin();                     break;
+            /* THE PORT'S OWN. The original has no way to abandon a level
+             * without a result; a window does. */
+            case SDLK_Q:      return -1;                            break;
+            case SDLK_LEFT:  scroll_x -= LEVEL_SCROLL * 2;            break;
+            case SDLK_RIGHT: scroll_x += LEVEL_SCROLL * 2;            break;
+            case SDLK_HOME:  scroll_x = 0;                            break;
+            case SDLK_END:   scroll_x = max_x;                        break;
+            default: break;
+            }
+        }
+    }
+    *scroll_x_p = scroll_x;
+    sound_pump();          /* the audio device, not the frame */
+    return g_lv_seen_motion;
+}
+
+/* WHAT THE HARDWARE USED TO DO once a frame is composed: image 0x00105 hands
+ * the CRTC the other page and image 0x00164 spins until the retrace ISR has
+ * counted five. Here that is a texture upload and an absolute deadline - a
+ * sleep per frame would make the game's speed a property of the machine.
+ *
+ * The frame g_lv_sink and the state file are the port's, and env-gated: the game
+ * has no command line and writes no files.
+ */
+void view_level_show(const uint8_t *screen, struct level_frame *A)
+{
+    level_screen_upload();
+    if (g_lv_sink) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/f%05ld.raw", g_lv_sink, g_lv_frame_no);
+        FILE *f = fopen(path, "wb");
+        if (f) {
+            uint16_t wh[2] = { LEVEL_SCREEN_W, LEVEL_SCREEN_H };
+            fwrite("LEMRW2", 1, 6, f);
+            fwrite(wh, sizeof(uint16_t), 2, f);
+            /* The TOP palette: the container holds one, and the play
+             * area is what gets scored against the original's own
+             * frames. The split is in the comment above, not in here. */
+            for (uint8_t i = 0; i < 16; i++) {
+                fputc(g_lv_top[i].r, f);
+                fputc(g_lv_top[i].g, f);
+                fputc(g_lv_top[i].b, f);
+            }
+            fwrite(screen, 1, LEVEL_SCREEN_W * LEVEL_SCREEN_H, f);
+            fclose(f);
+        }
+    }
+    if (g_lv_statef) {
+        fprintf(g_lv_statef, "{\"frame\":%ld,\"released\":%u,\"live\":%u,"
+                "\"saved\":%u,\"over\":%u,\"tick\":%u,\"view_x\":%d,\"lem\":[", g_lv_frame_no,
+                (unsigned)A->released,
+                (unsigned)lemmings_live(A->lem, A->released),
+                (unsigned)level_saved, (unsigned)g_level_over,
+                (unsigned)level_tick_now(), (int)A->view_x);
+        for (uint8_t k = 0; k < A->released && k < LEMMING_MAX; k++) {
+            const lemming *a = &A->lem[k];
+            /* The FUSE and the direction are in here because the nuke
+             * is a thing that happens to the fuse and to nothing else
+             * for seventy-nine frames: a comparison of position and
+             * flags alone agrees all the way from the double click to
+             * the first explosion, and would have said the cascade was
+             * right whatever order it lit them in. */
+            fprintf(g_lv_statef,
+                    "%s{\"x\":%d,\"y\":%d,\"hot_x\":%d,\"hot_y\":%d,"
+                    "\"flags\":%u,\"anim\":%u,\"alive\":%u,"
+                    "\"fuse\":%u,\"dir\":%d,\"state\":%u}",
+                    k ? "," : "", a->x, a->y, a->hot_x, a->hot_y,
+                    (unsigned)a->flags, (unsigned)a->anim,
+                    (unsigned)a->alive, (unsigned)a->fuse,
+                    (int)a->dir, (unsigned)a->state);
+        }
+        fprintf(g_lv_statef, "]}\n");
+    }
+    g_lv_frame_no++;
+
+    SDL_RenderClear(g_lvl_ren);
+    SDL_RenderTexture(g_lvl_ren, g_lvl_tex, NULL, NULL);
+    SDL_RenderPresent(g_lvl_ren);
+    if (!g_lv_sink) {
+        g_lv_due += g_lv_period;
+        Uint64 now = SDL_GetTicksNS();
+        if (now < g_lv_due) SDL_DelayNS(g_lv_due - now);
+        else g_lv_due = now;          /* behind: start again from here */
+    }
+}
+
 int level_run(struct level_frame *A, const canvas *c,
                      const lem_rgb *palette, const char *title, uint8_t scale)
 {
     if (scale < 1) scale = 1;
     if (view_open(LEVEL_SCREEN_W, LEVEL_SCREEN_H, title, scale) != 0)
         return -1;
-    SDL_Renderer *ren = g_ren;
-    SDL_Texture  *tex = g_tex;
 
     /* THE ORIGINAL'S OWN CEILING, not the canvas width: image 0x040E8 stops
      * at 0x500 and this port's view_x is sixteen less. Deriving it from
@@ -723,8 +963,8 @@ int level_run(struct level_frame *A, const canvas *c,
     uint8_t *screen = calloc(LEVEL_SCREEN_W * LEVEL_SCREEN_H, 1);
     if (!screen) return -1;
     g_lvl_screen = screen;
-    g_lvl_tex = tex;
-    g_lvl_ren = ren;
+    g_lvl_tex = g_lvl_tex;
+    g_lvl_ren = g_lvl_ren;
 
     /* Two palettes, and which one a row gets depends on where it is.
      *
@@ -733,18 +973,18 @@ int level_run(struct level_frame *A, const canvas *c,
      * the panel below gets greens and greys. On a plain PC it does not, and
      * the panel makes do with the level's palette; that is what lem_machine
      * selects. The lower eight entries are the same either way. */
-    lem_rgb top[16], bottom[16];
-    for (uint8_t i = 0; i < 16; i++) top[i] = bottom[i] = palette[i];
+    lem_rgb bottom[16];
+    for (uint8_t i = 0; i < 16; i++) g_lv_top[i] = bottom[i] = palette[i];
     if (lem_machine == LEM_PC_HIGH)
         level_panel_palette(&bottom[8]);
-    /* And the fade's copy of them: `top` and `bottom` stay the level's own
+    /* And the fade's copy of them: `g_lv_top` and `bottom` stay the level's own
      * colours - the capture below writes them, and a capture must never
      * hold a mid-fade palette - while the pair the screen is drawn through
      * starts at black and climbs. */
-    memcpy(g_lvl_tgt_top, top, sizeof top);
+    memcpy(g_lvl_tgt_top, g_lv_top, sizeof g_lv_top);
     memcpy(g_lvl_tgt_bottom, bottom, sizeof bottom);
 
-    /* A frame sink, for checking THIS path rather than a second arrangement
+    /* A frame g_lv_sink, for checking THIS path rather than a second arrangement
      * of the same calls. Every measurement of the level goes through lemdev,
      * which composes the canvas and the panel separately; this writes the
      * screen the game actually puts on the display, in the same 'LEMRW2'
@@ -754,12 +994,12 @@ int level_run(struct level_frame *A, const canvas *c,
      * Env-gated and in the IO file on purpose: the game has no command line
      * and writes no files. Setting LEM_SCREEN_DIR is a developer asking for
      * one, the way LEM_FRAMES already asks for a frame budget. */
-    const char *sink = SDL_getenv("LEM_SCREEN_DIR");
+    g_lv_sink = SDL_getenv("LEM_SCREEN_DIR");
     /* ds:0x200E. A capture harness is not a display: it has a frame budget,
-     * and a fade held inside frame 0 would spend a second of wall clock
+     * and a fade g_lv_held inside frame 0 would spend a second of wall clock
      * producing no frames while every frame it did produce carried a
      * palette climbing out of black. */
-    g_lvl_live = (!sink && g_win) ? 1 : 0;
+    g_lvl_live = (!g_lv_sink && g_win) ? 1 : 0;
     if (g_lvl_live) {
         memset(g_lvl_top, 0, sizeof g_lvl_top);
         memset(g_lvl_bottom, 0, sizeof g_lvl_bottom);
@@ -778,19 +1018,19 @@ int level_run(struct level_frame *A, const canvas *c,
      * reason as LEM_SCREEN_DIR: the game has no command line and writes no
      * files, and a developer asking for one is not the game doing it. */
     const char *state = SDL_getenv("LEM_STATE_FILE");
-    FILE *statef = state ? fopen(state, "w") : NULL;
+    g_lv_statef = state ? fopen(state, "w") : NULL;
     /* A recorded input, so a comparison can cover the parts of the game that
      * need a player - see script_load. */
     const char *script = SDL_getenv("LEM_INPUT_SCRIPT");
     if (script) script_load(script);
-    uint16_t script_at = 0;
-    long frame_no = 0;
+    g_lv_script_at = 0;
+    g_lv_frame_no = 0;
     /* Edge scrolling waits for a pointer that has actually MOVED. A polled
      * position cannot tell "at the left edge" from "no pointer here": under
      * the dummy video driver it reads (0,0) and reports this window as
      * focused, so the view walked off the left of the level at 8 pixels a
      * frame and every headless frame after 78 was black. */
-    int seen_motion = 0;
+    g_lv_seen_motion = 0;
 
     /* The pointer is HELD by the window, and Ctrl+Alt gives it back.
      *
@@ -799,7 +1039,7 @@ int level_run(struct level_frame *A, const canvas *c,
      * draws its own cross-hair - and a window that lets the host pointer walk
      * out of it while the game still thinks it is moving does not reproduce
      * that. Held, the two agree; released, the game keeps the last position. */
-    int grabbed = 1;
+    int g_lv_grabbed = 1;
     SDL_SetWindowRelativeMouseMode(g_win, true);
 
     /* PACE ON THE GAME'S RATE, and on an absolute clock.
@@ -820,235 +1060,12 @@ int level_run(struct level_frame *A, const canvas *c,
      * compose, which would make the game's speed a property of the machine
      * rather than of the game. Falling behind resets the deadline instead of
      * building a debt the loop would then sprint to repay. */
-    const Uint64 period =
-        (Uint64)(SDL_NS_PER_SECOND / LEVEL_FRAME_HZ);
-    Uint64 due = SDL_GetTicksNS();
+    g_lv_period = (Uint64)(SDL_NS_PER_SECOND / LEVEL_FRAME_HZ);
+    g_lv_due = SDL_GetTicksNS();
 
-    int held = 0;          /* the button is down - a rate button repeats */
+    g_lv_held = 0;          /* the button is down - a rate button repeats */
     int running = 1;
-    while (running) {
-        /* The script speaks first, so a scripted frame behaves the same
-         * whether or not the host had an event waiting. */
-        while (script_at < g_script_n && g_script[script_at].frame <= frame_no) {
-            const script_act *act = &g_script[script_at++];
-            if (act->what == SCRIPT_MOVE) {
-                /* The script is in SCREEN pixels; the game's own pointer sits
-                 * eight further on, which is where image 0x0426D clamps. */
-                lem_mouse_move(act->x + 8, act->y + 8);
-                seen_motion = 1;
-            } else if (act->what == SCRIPT_DOWN) {
-                held = 1;
-                level_panel_click(A, &scroll_x);
-            } else if (act->what == SCRIPT_UP) {
-                held = 0;
-            }
-        }
-
-        /* A HELD RATE BUTTON REPEATS. The original polls the button from the
-         * panel's own per-frame update (image 0x03B3F) and divides with
-         * ds:0x69, so holding the minus or plus walks the rate one frame in
-         * three. The port takes the press as an edge, which is right for the
-         * skills - image 0x03170's latch gives them one assignment however
-         * long the button is down - but it left the rate buttons doing a
-         * single step per click.
-         *
-         * So only these two repeat, which is also what the original's own
-         * split says: buttons from 2 up go through the latch at image
-         * 0x03F2E and 0 and 1 never touch it. */
-        if (held) {
-            level_hit rh = level_pointer_hit();
-            if (rh.what == LEVEL_HIT_BUTTON && rh.button < 2)
-                level_rate_click(rh.button);    /* image 0x04032 */
-        }
-
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) view_quit_now();
-            else if (e.type == SDL_EVENT_MOUSE_MOTION) {
-                seen_motion = 1;
-                if (grabbed) {
-                    /* RELATIVE motion while the pointer is held, which is
-                     * what the original works in: it asks the driver for
-                     * mickeys and sets the mickey-to-pixel ratio itself at
-                     * image 0x00F20. An absolute position would also stop at
-                     * the edge of the desktop rather than at the edge of the
-                     * game's own range. */
-                    lem_mouse_move((int32_t)lem_mouse_x + (int32_t)e.motion.xrel,
-                                   (int32_t)lem_mouse_y + (int32_t)e.motion.yrel);
-                } else {
-                    int ow = 0, oh = 0;
-                    SDL_GetRenderOutputSize(ren, &ow, &oh);
-                    if (ow > 0 && oh > 0)
-                        lem_mouse_move(
-                            (int32_t)(e.motion.x * LEVEL_SCREEN_W / (float)ow) + 8,
-                            (int32_t)(e.motion.y * LEVEL_SCREEN_H / (float)oh) + 8);
-                }
-            }
-            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                if (!grabbed) {
-                    /* Click to take it back, the way every DOS front end
-                     * does. That click is for the window, not the game. */
-                    grabbed = 1;
-                    SDL_SetWindowRelativeMouseMode(g_win, true);
-                } else {
-                    /* THE TWO BUTTONS DO DIFFERENT THINGS, and the port
-                     * treated any of them as a click. Image 0x04269 stores
-                     * INT 33h AX=3's BX in ds:0x14, so bit 0 is the left
-                     * button and bit 1 the right, and the game asks for them
-                     * separately: image 0x03168 does `and ax, 1` before it
-                     * will assign anything, while image 0x03DB7 tests bit 1
-                     * and makes the under-pointer scan pick the PLAIN
-                     * lemming over the busy one.
-                     *
-                     * So the right button is how the original lets you point
-                     * past a builder at the walker behind it. Here it did
-                     * nothing at all - lem_buttons was never written - and
-                     * it also assigned, which the original will not do. */
-                    if (e.button.button == SDL_BUTTON_LEFT)
-                        lem_buttons |= 1;
-                    else if (e.button.button == SDL_BUTTON_RIGHT)
-                        lem_buttons |= 2;
-                    if (e.button.button == SDL_BUTTON_LEFT) {
-                        held = 1;
-                        level_panel_click(A, &scroll_x);      /* image 0x03168 */
-                    }
-                }
-            }
-            else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                if (e.button.button == SDL_BUTTON_LEFT) {
-                    lem_buttons &= (uint8_t)~1u;
-                    held = 0;
-                } else if (e.button.button == SDL_BUTTON_RIGHT) {
-                    lem_buttons &= (uint8_t)~2u;
-                }
-            }
-            else if (e.type == SDL_EVENT_KEY_DOWN) {
-                /* Ctrl+Alt gives the pointer back, which is the gesture
-                 * DOSBox trained everyone to reach for. Without a release
-                 * the window owns the mouse and the only way out is to kill
-                 * the process - so a grab without one is a bug, not a
-                 * feature. */
-                if ((e.key.mod & SDL_KMOD_CTRL) && (e.key.mod & SDL_KMOD_ALT)) {
-                    grabbed = 0;
-                    SDL_SetWindowRelativeMouseMode(g_win, false);
-                    break;
-                }
-                /* image 0x03E6F reads the scancode the keyboard handler
-                 * left behind, in the same routine that handles a click. */
-                level_key_button(e.key.key);
-                switch (e.key.key) {
-                /* ESCAPE ENDS THE LEVEL; it does not leave it.
-                 *
-                 * Image 0x002AB tests bit 0x20 of the key word ds:0x1FC7 and
-                 * jumps to image 0x002B3, which sets ds:0x4F to 0xFF - the
-                 * same byte image 0x001C8 tests when everyone is out or the
-                 * clock has run down. So the play loop ends exactly as it
-                 * would have on its own, image 0x002FB fades, and image
-                 * 0x00311 goes to the results screen with whatever was
-                 * rescued.
-                 *
-                 * The port took Escape as "close the level", so a player got
-                 * the menu and no result at all. Bit 0x20 is the same key the
-                 * results screen tests at image 0x047C1, which is the
-                 * corroboration: one key, two screens, both sending it on. */
-                /* Escape ends the level rather than closing the window,
-                 * and it ends it the way anything else does - image
-                 * 0x002B3, so it fades out and reaches the results. */
-                case SDLK_ESCAPE: level_end_begin();                     break;
-                /* THE PORT'S OWN. The original has no way to abandon a level
-                 * without a result; a window does. */
-                case SDLK_Q:      running = 0;                            break;
-                case SDLK_LEFT:  scroll_x -= LEVEL_SCROLL * 2;            break;
-                case SDLK_RIGHT: scroll_x += LEVEL_SCROLL * 2;            break;
-                case SDLK_HOME:  scroll_x = 0;                            break;
-                case SDLK_END:   scroll_x = max_x;                        break;
-                default: break;
-                }
-            }
-        }
-        /* The GAME's cursor at either edge scrolls - not the host pointer.
-         *
-         * This used to read SDL's pointer position, which cannot work once
-         * the window holds the mouse: the host pointer then never moves, so
-         * the edge test could not fire and scrolling by mouse simply did
-         * nothing. The game's own cursor is the thing that is at an edge,
-         * and its coordinates are the screen's plus eight - see
-         * level_pointer_hit.
-         *
-         * The RATE is still the port's own; the original's has not been
-         * read. */
-        sound_pump();          /* the audio device, not the frame */
-        level_frame_compose(A, c, screen, &scroll_x, max_x, seen_motion);
-
-        level_screen_upload();
-        if (sink) {
-            char path[1024];
-            snprintf(path, sizeof(path), "%s/f%05ld.raw", sink, frame_no);
-            FILE *f = fopen(path, "wb");
-            if (f) {
-                uint16_t wh[2] = { LEVEL_SCREEN_W, LEVEL_SCREEN_H };
-                fwrite("LEMRW2", 1, 6, f);
-                fwrite(wh, sizeof(uint16_t), 2, f);
-                /* The TOP palette: the container holds one, and the play
-                 * area is what gets scored against the original's own
-                 * frames. The split is in the comment above, not in here. */
-                for (uint8_t i = 0; i < 16; i++) {
-                    fputc(top[i].r, f);
-                    fputc(top[i].g, f);
-                    fputc(top[i].b, f);
-                }
-                fwrite(screen, 1, LEVEL_SCREEN_W * LEVEL_SCREEN_H, f);
-                fclose(f);
-            }
-        }
-        if (statef) {
-            fprintf(statef, "{\"frame\":%ld,\"released\":%u,\"live\":%u,"
-                    "\"saved\":%u,\"over\":%u,\"tick\":%u,\"view_x\":%d,\"lem\":[", frame_no,
-                    (unsigned)A->released,
-                    (unsigned)lemmings_live(A->lem, A->released),
-                    (unsigned)level_saved, (unsigned)g_level_over,
-                    (unsigned)level_tick_now(), (int)A->view_x);
-            for (uint8_t k = 0; k < A->released && k < LEMMING_MAX; k++) {
-                const lemming *a = &A->lem[k];
-                /* The FUSE and the direction are in here because the nuke
-                 * is a thing that happens to the fuse and to nothing else
-                 * for seventy-nine frames: a comparison of position and
-                 * flags alone agrees all the way from the double click to
-                 * the first explosion, and would have said the cascade was
-                 * right whatever order it lit them in. */
-                fprintf(statef,
-                        "%s{\"x\":%d,\"y\":%d,\"hot_x\":%d,\"hot_y\":%d,"
-                        "\"flags\":%u,\"anim\":%u,\"alive\":%u,"
-                        "\"fuse\":%u,\"dir\":%d,\"state\":%u}",
-                        k ? "," : "", a->x, a->y, a->hot_x, a->hot_y,
-                        (unsigned)a->flags, (unsigned)a->anim,
-                        (unsigned)a->alive, (unsigned)a->fuse,
-                        (int)a->dir, (unsigned)a->state);
-            }
-            fprintf(statef, "]}\n");
-        }
-        frame_no++;
-
-        SDL_RenderClear(ren);
-        SDL_RenderTexture(ren, tex, NULL, NULL);
-        SDL_RenderPresent(ren);
-        if (!sink) {
-            due += period;
-            Uint64 now = SDL_GetTicksNS();
-            if (now < due) SDL_DelayNS(due - now);
-            else due = now;          /* behind: start again from here */
-        }
-        if (budget && --budget == 0) running = 0;
-        /* IMAGE 0x001C8 AND IMAGE 0x002C6, which are two different tests.
-         * The first is "has the level ended" and sends the loop to image
-         * 0x002C3; the second is "has the fade finished", and only that one
-         * lets it out. Between them the loop keeps composing and drawing,
-         * which is what the fade is a fade OF. */
-        if (level_end_done()) running = 0;
-    }
-    /* Image 0x002CD, which the loop above has just fallen out of at image
-     * 0x002C6: stop the driver before the results screen. */
-    level_end_finish();
+    level_loop(A, c, screen, &scroll_x, max_x, budget);
 
 
     /* No fade here. It is image 0x0031E's, it runs INSIDE the loop above,
@@ -1059,7 +1076,7 @@ int level_run(struct level_frame *A, const canvas *c,
 
     /* Never leave the pointer captured by a window that is going away. */
     SDL_SetWindowRelativeMouseMode(g_win, false);
-    if (statef) fclose(statef);
+    if (g_lv_statef) fclose(g_lv_statef);
     free(screen);
     return 0;
 }
