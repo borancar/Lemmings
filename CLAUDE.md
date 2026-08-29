@@ -1243,6 +1243,14 @@ click sounds were found. But **cross-check anything it reports against the
 code map before writing it down**, and prefer "reached from" to "called by"
 unless the instruction boundary is confirmed.
 
+It produced a second false caller in the same session, after the rule above
+was written: image 0x05473 was recorded as having callers at image 0x017DD
+**and** image 0x0524C, and the second is `and al, 2` inside image 0x051A2's
+bit decode. What caught it was comparing every caller COUNT in a block
+against `image/codemap.json` - seven of the eight matched and the eighth did
+not. **The count is the cheap check**: the map carries one for every routine
+head, and a disagreement points straight at the claim to re-read.
+
 This is the same rule this file already states about instruments generally,
 one level down: when a scan disagrees with the map, suspect the scan.
 

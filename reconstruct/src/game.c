@@ -7082,7 +7082,11 @@ static int fade_component(uint8_t *cur8, uint8_t tgt8)
  *   image 0x053F6  show slot AL, eight   (image 0x053FC picks slot 2 for it)
  *   image 0x053FE  show slot AL, sixteen - image 0x04600
  *   image 0x05447  a variant nothing in a VGA run reaches
- *   image 0x05473  image 0x017DD and image 0x0524C
+ *   image 0x05473  image 0x017DD, and that is its ONLY caller. A second at
+ *                  image 0x0524C was written here and is a false positive
+ *                  from the byte-scan CLAUDE.md warns about: those bytes are
+ *                  `and al, 2` inside image 0x051A2's bit decode. The code
+ *                  map says one caller and it is right.
  *   image 0x05569  the two-slot selector a fade is given, si = table[bl] and
  *                  di = table[bh] - image 0x05329 and image 0x0534B, the
  *                  level's own fade in and out, both go through it
