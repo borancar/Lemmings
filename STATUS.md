@@ -4956,10 +4956,15 @@ has nothing to seed with here.
   immediately.
   The fix is IO and one line - clear the queued stream on the AH=2 stop in
   `sound_request`, which is the moment the game says *silence* and the only
-  moment the port's buffer contradicts it. NOT DONE, and worth a measurement
-  rather than a guess: 200 ms at 17 frames a second is about three frames of
-  level, which matches "a couple of sounds" and should be confirmed by timing
-  the tail rather than by ear.
+  moment the port's buffer contradicts it. **DONE**, and the magnitude is
+  measured rather than guessed: `reconstruct/tests/screens.c` divides
+  `sound_target_bytes()` by a level frame's 2,924 samples and gets **over
+  three frames**, which is what "a couple of sounds" sounded like. The test
+  fails when `SND_TARGET_MS` is cut to 20, so it is measuring the constant
+  rather than passing by construction.
+  Only AH=2 clears. That is the one request meaning silence; doing it on an
+  effect or a tune change would cut whatever is still sounding, and the
+  original does not.
 
 - **Is the builder's warning the right LOUDNESS against the original?** Effect
   0x12, image 0x026D0, fires on animation frame 10 when `[si+0x21]` is three

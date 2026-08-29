@@ -1384,7 +1384,23 @@ void sound_request(uint8_t vec, uint8_t ah, uint8_t id)
      * at all - so the request that arrives twenty frames into the next
      * level (image 0x003B4) reached a driver already playing something. */
     switch (ah) {
-    case 2: adlib_stop();      break;       /* driver +0x003A */
+    case 2:
+        adlib_stop();                       /* driver +0x003A */
+        /* AND THROW AWAY WHAT IS ALREADY QUEUED. This is the port's own,
+         * and it is IO: the original's OPL is real time, so keying it off
+         * is silent in the same instant. This port generates audio ahead of
+         * the game and keeps SND_TARGET_MS of it in SDL - a fifth of a
+         * second, which at a level's 17 frames a second is over three frames
+         * - so without this the driver falls silent and the BUFFER plays on.
+         * A player reported it as a level's music running into the next one,
+         * and image 0x002FE is the stop that was already being made
+         * correctly: the fault was entirely downstream of the driver.
+         *
+         * Only on AH=2. That is the one request that means SILENCE; doing it
+         * on an effect or a tune change would cut whatever is still sounding
+         * and the original does not. */
+        if (g_snd_stream) SDL_ClearAudioStream(g_snd_stream);
+        break;
     case 3: adlib_music(id);   break;       /* driver +0x0022 */
     case 4: adlib_effect(id);  break;       /* driver +0x002A */
     case 5: adlib_slot5(id);   break;       /* driver +0x0032 */

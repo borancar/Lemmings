@@ -1692,6 +1692,25 @@ int main(int argc, char **argv)
             ck(rates[k].what, dry == 0, NULL);
         }
 
+        /* HOW LONG THE TAIL IS, which is why the AH=2 stop clears the
+         * stream. The driver keying off is silent on the original in the
+         * same instant, because its OPL is real time; this port has already
+         * generated up to SND_TARGET_MS and handed it to SDL, so without a
+         * clear the buffer plays on after the game has said silence. A
+         * player reported that as one level's music running into the next.
+         *
+         * Measured rather than guessed at: the queue at a stop is up to
+         * sound_target_bytes(), a level frame is OPL_SAMPLE_RATE / 17
+         * samples of two bytes, and the ratio is how many frames of level
+         * would keep sounding. Three or more is "a couple of sounds", which
+         * is what was reported. */
+        {
+            int lvl_frame = (int)((double)OPL_SAMPLE_RATE / 17.0) * 2;
+            int tail = sound_target_bytes() / lvl_frame;
+            ck("the queued tail is over three level frames, so the stop "
+               "must clear it", tail >= 3, NULL);
+        }
+
         /* And the check must be able to FAIL. A target smaller than one
          * frame cannot keep up by construction, and if this passes the two
          * above prove nothing. */
