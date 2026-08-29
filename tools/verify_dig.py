@@ -39,6 +39,12 @@ discrimination in it - 1,056 pixels, where the three faults found here differ
 by 34, 14 and 2 - and a run whose trace carries no shaft says so rather than
 scoring the state alone and looking complete.
 
+Both committed traces pass on the current build: out/digtrace.json scores
+138 of 138 frames and 1,056 of 1,056 shaft pixels, and out/digtrace2.json
+328 of 328 and the same 1,056, stopping itself at frame 432 where the
+original's lemming reached the exit. That is the number the note above used
+to say could not be trusted.
+
 The first version of this file also filled the patch with 8s and passed with
 both bugs in place, for the same reason in a simpler form. A control is the
 only thing that showed either.
