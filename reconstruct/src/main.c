@@ -156,17 +156,21 @@ int main(int argc, char **argv)
                 /* Image 0x019C9: this plate may play its level under
                  * another name with other skills. Set once for the
                  * briefing and once for the level, because each parses. */
-                int odd = level_odd_entry();
+                /* ONE PARSE, which is what image 0x0197D does. The odd
+                 * entry is handed over once because there is one load; it
+                 * used to be set twice, once per parse. */
                 level lv;
-                level_odd_pending(odd);
-                if (level_show_briefing(data, picked, which,
+                level_odd_pending(level_odd_entry());
+                if (level_load(data, picked, which, &lv, &err) < 0) {
+                    fprintf(stderr, "  %s\n", err);
+                    break;
+                }
+                if (level_show_briefing(data, &lv,
                                         DEFAULT_SCALE, &err) != 0) {
                     fprintf(stderr, "  %s\n", err);
                     break;
                 }
-                level_odd_pending(odd);
-                if (level_show(data, picked, which, &lv,
-                               DEFAULT_SCALE, &err) != 0) {
+                if (level_show(data, &lv, DEFAULT_SCALE, &err) != 0) {
                     fprintf(stderr, "  %s\n", err);
                     break;
                 }

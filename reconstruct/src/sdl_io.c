@@ -2151,30 +2151,49 @@ int ground_load(const char *path, ground *g, const char **err)
 /* The briefing's I/O. Its TEXT is image 0x04566's, which derives the number
  * from ds:0x1F6B and writes the requirement into ds:0x41 - so neither comes
  * from a caller any more. */
-int level_show_briefing(const char *dir, const char *file, uint32_t which,
-                        uint8_t scale, const char **err)
+/* IMAGE 0x0197D - THE LEVEL'S FILES, LOADED ONCE.
+ *
+ * The original loads here and nowhere else: image 0x0455D calls this before
+ * the briefing at image 0x04560, and the level record it writes to ds:0x0FCB
+ * is what BOTH the briefing and the play loop then read. Nothing parses a
+ * level twice.
+ *
+ * The port used to, and its own main.c said so - "Set once for the briefing
+ * and once for the level, because each parses". Two parses is two chances to
+ * disagree, and it made the ODDTABLE entry something the caller had to
+ * remember to hand over twice.
+ *
+ * Returns 0, or 1 for one of the four VGASPEC levels - see
+ * level_graphics_names - or -1 with *err set. */
+int level_load(const char *dir, const char *file, uint32_t which,
+               level *lv, const char **err)
 {
     char path[1024];
     dat_file levels;
-    level lv;
     snprintf(path, sizeof(path), "%s/%s", dir, file);
-    if (dat_load(path, &levels, err) != 0) return -1;
+    if (dat_load(path, &levels, err) != 0) return -1;     /* image 0x019B3 */
     if (which < 1 || which > levels.count) {
         dat_free(&levels);
         if (err) *err = "no such level in that container";
         return -1;
     }
     int rc = level_parse(levels.sections[which - 1].data,
-                         levels.sections[which - 1].size, &lv, err);
+                         levels.sections[which - 1].size, lv, err);
     dat_free(&levels);
     if (rc != 0) return -1;
     /* ODDTABLE.DAT, image 0x019F5 - half the plates play their level under
      * another name with other skills. */
-    if (level_apply_odd(dir, &lv, level_odd_taken(), err) != 0) return -1;
-    lv.level_number = level_number();       /* image 0x04566 */
+    if (level_apply_odd(dir, lv, level_odd_taken(), err) != 0) return -1;
+    lv->level_number = level_number();       /* image 0x04566 */
+    char gn[16], xn[16];
+    return level_graphics_names(lv, gn, sizeof gn, xn, sizeof xn) == 1;
+}
 
+int level_show_briefing(const char *dir, const level *lv,
+                        uint8_t scale, const char **err)
+{
     menu_screen br;
-    if (menu_briefing_screen(dir, &lv, level_rating(), &br, err) != 0)
+    if (menu_briefing_screen(dir, lv, level_rating(), &br, err) != 0)
         return -1;
     menu_show_until_dismissed(&br, "PC Lemmings", scale);
     menu_free(&br);
@@ -2362,24 +2381,17 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
     return out;
 }
 
-int level_show(const char *dir, const char *file, uint32_t which,
-               level *lv, uint8_t scale, const char **err)
+/* THE LEVEL ITSELF - image 0x0454C's `jmp 0x000FB`, the loop whose frame is
+ * written out above level_play_step. It takes the level ALREADY LOADED,
+ * because image 0x0197D ran before the briefing and its record is what both
+ * of them read. */
+int level_show(const char *dir, const level *lv, uint8_t scale,
+               const char **err)
 {
     char path[1024];
-    dat_file levels, gfx;
+    dat_file gfx;
     ground g;
-    snprintf(path, sizeof(path), "%s/%s", dir, file);
-    if (dat_load(path, &levels, err) != 0) return -1;
-    if (which < 1 || which > levels.count) {
-        dat_free(&levels);
-        if (err) *err = "no such level in that container";
-        return -1;
-    }
-    int rc = level_parse(levels.sections[which - 1].data,
-                         levels.sections[which - 1].size, lv, err);
-    dat_free(&levels);
-    if (rc != 0) return -1;
-    if (level_apply_odd(dir, lv, level_odd_taken(), err) != 0) return -1;
+    int rc = 0;
 
     /* image 0x0197D's tail names both files and says which kind this is. */
     char gname[16], xname[16];

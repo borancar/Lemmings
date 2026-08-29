@@ -474,7 +474,8 @@ static int render_level(const char *data, const char *file, uint32_t which,
     if (show || !raw) {
         level lv2;
         const char *e3 = "unknown error";
-        if (level_show(data, file, which, &lv2, scale, &e3) != 0)
+        if (level_load(data, file, which, &lv2, &e3) < 0
+                || level_show(data, &lv2, scale, &e3) != 0)
             fprintf(stderr, "level_show: %s\n", e3);
     }
     free(terrain);
