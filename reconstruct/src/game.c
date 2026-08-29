@@ -1015,26 +1015,37 @@ static uint8_t g_skill_div;      /* ds:0x84 */
 
 uint8_t level_skill_div(void) { return g_skill_div; }
 
-/* image 0x03B3F, from the panel's own per-frame update. */
+/* image 0x03B3F, from the panel's own per-frame update.
+ *
+ * IT DOES NOT MOVE THE HIGHLIGHT, and a version of this that did was shipped
+ * and felt like a lag on every skill click. Read the four instructions before
+ * it: image 0x03B33 loads ds:0x82 and draws the box at image 0x0780D, then
+ * image 0x03B39 loads ds:0x83 and ERASES at image 0x0789E. ds:0x83 is the
+ * PREVIOUSLY DRAWN button, kept so the old box can be rubbed out; the new one
+ * goes down from ds:0x82 at once. All image 0x03B46 does is let ds:0x83 catch
+ * up afterwards, one frame in three.
+ *
+ * This port has no counterpart for it: it recomposes the whole panel every
+ * frame, so there is no old box to erase and nothing to remember. The counter
+ * itself is kept because image 0x03F15 and image 0x040B5 gate on it. */
 void level_skill_div_step(void)
 {
-    if (g_skill_div == 2) {                        /* image 0x03B3F */
-        g_selected = (uint8_t)(g_skill + 1);       /* image 0x03B46: ds:0x83 */
+    if (g_skill_div == 2)                          /* image 0x03B3F */
         g_skill_div = 0xFF;                        /* image 0x03B4E */
-    }
     g_skill_div++;                                 /* image 0x03B53 */
 }
 
 /* image 0x03F66, reached by a click at image 0x03F27 and by a function key
  * at image 0x03EA0 - the same store either way.
  *
- * It stores ds:0x82 ONLY. ds:0x83, the box the panel draws, is image
- * 0x03B46's and follows one frame in three - see level_skill_div_step. The
- * `+ 1` is the port's: PANEL_SEL_X0 is 16 where the numbers start at
- * PANEL_ART_X, 32, so the box for button k is drawn at k + 1. */
+ * The box moves with it, IMMEDIATELY: image 0x03B33 draws from ds:0x82 on
+ * the very next panel pass. The `+ 1` is the port's - PANEL_SEL_X0 is 16
+ * where the numbers start at PANEL_ART_X, 32, so the box for button k is
+ * drawn at k + 1. */
 void level_skill_select(uint8_t button)
 {
     g_skill = button;                              /* image 0x03F66 */
+    g_selected = (uint8_t)(button + 1);            /* image 0x03B33's draw */
 }
 
 /* IMAGE 0x040B5 AND IMAGE 0x040CD - Z AND X, AND THEY ARE UNREACHABLE.

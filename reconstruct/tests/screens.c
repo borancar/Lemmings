@@ -1871,6 +1871,31 @@ int main(int argc, char **argv)
            level_skill() == 2, NULL);
     }
 
+    /* ==================================================================
+     * THE HIGHLIGHT MOVES ON THE CLICK, not one frame in three.
+     *
+     * A player felt a lag on every skill click. ds:0x83 had been read as the
+     * highlight and made to follow image 0x03B46's divider; it is the
+     * PREVIOUSLY DRAWN button, kept so image 0x0789E can erase the old box,
+     * while image 0x03B33 draws the new one from ds:0x82 at once.
+     * ================================================================== */
+    {
+        level_start_reset();
+        level_skill_select(4);
+        ck("the box follows the click at once (image 0x03B33)",
+           level_selected() == 5, NULL);
+
+        /* And it must not need the divider to come round. Turn it to every
+         * phase and the answer cannot change. */
+        int drifted = 0;
+        for (int i = 0; i < 6; i++) {
+            level_skill_div_step();
+            if (level_selected() != 5) drifted = 1;
+        }
+        ck("and no phase of the divider moves it (image 0x03B3F)",
+           !drifted, "the highlight followed the counter");
+    }
+
     printf(fails ? "\n  %d FAILED\n" : "\n  all passed\n", fails);
     return fails ? 1 : 0;
 }

@@ -4826,13 +4826,6 @@ has nothing to seed with here.
 
 ## Next
 
-- **The panel's HIGHLIGHT now lags the selection, and no check here can see
-  it.** Image `0x03B46` copies `ds:0x82` into `ds:0x83` only when the divider
-  fires, so the box moves up to two frames after the click that chose the
-  skill. The port set both at once. It is transcribed now, but the only thing
-  that would score it is a click-driven comparison - `compare_play.py` - run
-  on frames 0..2 after an assignment, and that has not been done.
-
 - **SETTLED: the F-keys work, Z and X do not, and it is WHERE THEY ARE CALLED
   FROM.** Both read `ds:0x1FD0`, which image `0x01707` sets to the scancode on
   a press and image `0x01705` clears on the release.
