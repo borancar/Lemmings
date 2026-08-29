@@ -283,11 +283,25 @@ if [ $UNITS = 1 ]; then
     # is listed here with its inputs rather than run blind: a run that scores
     # 0 of 54 is the two sides being different tunes, not a broken driver.
     for u in verify_dat verify_level verify_digits verify_code \
-             verify_shift verify_preshift verify_data; do
+             verify_shift verify_preshift; do
         uv run python "tools/$u.py" 2>&1 \
             | grep -vE "^pygame|^ *\[vga\]" | sed "s/^/  /"
         check_pipe "tools/$u.py"
     done
+    # verify_data.py takes a MEMORY DUMP, not nothing: it compares the bytes
+    # the original has in RAM after loading against what the port makes of the
+    # same file. Run bare it exits 2 on a missing argument, and check_pipe
+    # would report that as a failed sweep - a false alarm of my own making,
+    # caught by running it. Its input comes from
+    #   play.py --auto --start --dump-mem "0x10000 0xA0000 out/mem.bin"
+    if [ -s out/mem.bin ]; then
+        uv run python tools/verify_data.py out/mem.bin 2>&1 \
+            | grep -vE "^pygame|^ *\[vga\]" | sed "s/^/  /"
+        check_pipe "tools/verify_data.py"
+    else
+        line "tools/verify_data.py" "SKIPPED - no out/mem.bin"
+        say "    record one with play.py --dump-mem; see that file's header"
+    fi
     if [ -s out/orig_opl.txt ] && [ -s out/port_opl.txt ]; then
         uv run python tools/verify_adlib.py out/orig_opl.txt out/port_opl.txt \
             2>&1 | sed "s/^/  /"
