@@ -20,7 +20,7 @@ datasheet.
     # an answer with the question missing.
     LEM_HOOK=tools/probe_opl.py LEM_OPL_OUT=out/orig_opl.txt \
         LEM_OPL_REQ=out/orig_req.txt \
-        uv run python tools/play.py --auto -- --run-seconds 90
+        uv run python tools/play.py --auto -- --run-seconds 240
 
     # the port, replaying the original's own requests
     ./reconstruct/lemdev --data lemming1.pc --adlib-script out/orig_req.txt \
@@ -43,6 +43,23 @@ does not work. out/orig_tune1.txt and out/port_tune1.txt are that pair, left
 where they fell. The two sides have to be the same thing before a percentage
 between them means anything - this project's oldest rule, and the request log
 is what makes them the same thing here.
+
+AND THE RUN HAS TO BE LONG ENOUGH TO REACH THE MUSIC. 240 seconds, not 90:
+an earlier version of this recipe said 90 and a 90-second run captures SIX
+register writes - the card detect at driver +0x00A3 and nothing else. The
+reference this file's 10,333 figure came from is 10,109 writes over 10,478
+PIT ticks with all nine channels addressed.
+
+probe_opl.py prints exactly what distinguishes the two, so read its summary
+before using a capture:
+
+    [opl] register writes captured      : 6
+    [opl] channels ever addressed       : none
+    [opl] PIT ticks spanned             : 0
+
+is a run that never played anything, and comparing it against the port would
+score the detect. A capture is a reference only when the channels line lists
+channels.
 """
 import argparse
 import sys
