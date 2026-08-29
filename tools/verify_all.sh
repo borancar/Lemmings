@@ -332,8 +332,12 @@ if [ $UNITS = 1 ]; then
         check_pipe "tools/verify_adlib.py"
     else
         line "tools/verify_adlib.py" "SKIPPED - no out/orig_opl.txt pair"
-        say "    record one with the recipe in that file's header; the OLD"
-        say "    recipe named an LEM_OPL_TUNE that nothing reads and scores 0"
+        say "    record one with the recipe in that file's header. It has six"
+        say "    traps and every one scores a number rather than erroring:"
+        say "    LEM_OPL_TUNE reads as nothing, --start is what reaches the"
+        say "    music, the tick budget must match the capture, the log must"
+        say "    begin before the music, and the slot5 lines are the DRIVER's"
+        say "    own write - fed back they make start_music refuse to start."
     fi
 fi
 
