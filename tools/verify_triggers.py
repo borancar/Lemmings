@@ -100,8 +100,28 @@ def main():
     # WHICH FILE AND SECTION that index is, printed rather than assumed - the
     # order table is a genuine permutation and getting it wrong is silent.
     import re
-    src = open(os.path.join(ROOT, "reconstruct", "src", "game.c")).read()
-    mm = re.search(r'LEVEL_ORDER\s*\[[^\]]*\]\s*=\s*\{(.*?)\};', src, re.S)
+    # LOOK IN EVERY SOURCE, not in the one that held it when this was written.
+    # LEVEL_ORDER moved from game.c to data.c in the tables split and this
+    # tool went on naming game.c, so it died on `NoneType has no group` -
+    # and tools/verify_all.sh reported rc=0 around it for as long as that
+    # lasted. Same shape as the eight verifiers that stopped linking when
+    # data.c appeared, one level out: a tool that reaches into a source file
+    # BY NAME breaks silently when the file it names stops being the one.
+    src_dir = os.path.join(ROOT, "reconstruct", "src")
+    mm = None
+    for fn in sorted(os.listdir(src_dir)):
+        if not fn.endswith((".c", ".h")):
+            continue
+        src = open(os.path.join(src_dir, fn)).read()
+        mm = re.search(r'LEVEL_ORDER\s*\[[^\]]*\]\s*=\s*\{(.*?)\};',
+                       src, re.S)
+        if mm:
+            break
+    if mm is None:
+        raise SystemExit(
+            "  LEVEL_ORDER is in none of reconstruct/src/*.c - this tool "
+            "cannot\n  say which file and section an index is, and a guess "
+            "would be silent.\n  That is a failure, not a pass.")
     body = re.sub(r'/\*.*?\*/', '', mm.group(1), flags=re.S)
     body = re.sub(r'//[^\n]*', '', body)
     order = [int(x) for x in re.findall(r'\d+', body)]

@@ -20,6 +20,24 @@ REF=out/ref_verify
 [ $FULL = 1 ] && FRAMES=5100 && REF=out/ref5100
 
 fail=0
+
+# A PIPELINE'S STATUS IS THE LAST COMMAND'S, WHICH HERE IS ALWAYS `sed`.
+#
+# Four checks were written `if python ... | sed 's/^/  /'; then :; else
+# fail=1; fi`, and that tests SED - which succeeds whatever the python did.
+# tools/verify_triggers.py died on an AttributeError for as long as it took
+# anyone to look, because LEVEL_ORDER had moved from game.c to data.c and it
+# still named game.c, and this script printed the traceback and exited 0
+# around it. A check that crashed looks exactly like a check with nothing to
+# report; that is this repository's oldest lesson and the shell had a way to
+# hide it that nobody had checked.
+check_pipe () {
+    local rc=${PIPESTATUS[0]}
+    if [ "$rc" -ne 0 ]; then
+        line "$1" "FAILED (exit $rc)"
+        fail=1
+    fi
+}
 say() { printf '%s\n' "$*"; }
 line() { printf '  %-46s %s\n' "$1" "$2"; }
 
@@ -202,15 +220,18 @@ uv run python tools/coverage.py 2>&1 | tail -6 | sed 's/^/  /'
 
 say ""
 say "=== the sprite regions tile the file ==="
-if uv run python tools/tile_sprites.py 2>&1 | tail -2 | sed 's/^/  /'; then :; else fail=1; fi
+uv run python tools/tile_sprites.py 2>&1 | tail -2 | sed 's/^/  /'
+check_pipe "tools/tile_sprites.py"
 
 say ""
 say "=== the release rate, against image 0x04032 ==="
-if uv run python tools/verify_rate.py 2>&1 | grep -vE "^pygame|^ *\[vga\]" | sed 's/^/  /'; then :; else fail=1; fi
+uv run python tools/verify_rate.py 2>&1 | grep -vE "^pygame|^ *\[vga\]" | sed 's/^/  /'
+check_pipe "tools/verify_rate.py"
 
 say ""
 say "=== the composed level WITH objects (the gap prove.sh leaves) ==="
-if uv run python tools/verify_objects.py 2>&1 | sed 's/^/  /'; then :; else fail=1; fi
+uv run python tools/verify_objects.py 2>&1 | sed 's/^/  /'
+check_pipe "tools/verify_objects.py"
 
 say ""
 say "=== the TRIGGER MAP, which no picture can show ==="
@@ -228,7 +249,8 @@ say "=== the TRIGGER MAP, which no picture can show ==="
 # level: it is what exercises the INDEX nibble, since level004/3 has only two
 # cells that are neither steel nor one-way wall. Both scored 16,040 of 16,040
 # on the whole byte when this was written.
-if uv run python tools/verify_triggers.py --level 77 2>&1 | sed 's/^/  /'; then :; else fail=1; fi
+uv run python tools/verify_triggers.py --level 77 2>&1 | sed 's/^/  /'
+check_pipe "tools/verify_triggers.py --level 77"
 
 say ""
 say "=== three further levels, frame by frame ==="
