@@ -543,6 +543,51 @@ uint8_t g_msb_first = 1;
 terrain_mode g_terrain_mode = TERRAIN_REPLACE;
 uint8_t g_terrain_reverse = 0;
 
+/* ======================================================================
+ * IMAGE 0x088EA - WHICH OF THE BLITTER'S FIVE PATHS A `bp` TAKES.
+ *
+ * The original has ONE blitter, reached by a far call to 1010:8822, and its
+ * mode word picks the path:
+ *
+ *     0x088EA  test bp, 0x4000 / jne -> 0x08D66   planes 1..3 forced to zero
+ *     0x088F3  test bp, 0x8000 / jne -> 0x08B42   masked, no overwrite
+ *     0x088FC  test bp, 0x0020 / jne -> 0x08FF7
+ *     0x08905  test bp, 0x0040 / jne -> 0x0909C   ERASE, all four planes 0
+ *     0x0890E                                     the four-pass sprite draw
+ *
+ * THE ORDER IS THE DISPATCH'S, not a preference, and this port has already
+ * paid for reading it as one: no-overwrite is tested BEFORE erase, so a
+ * terrain piece carrying both is drawn rather than erased. That cost 814
+ * pixels on level006/3 and a wrong rule that improved the number to 459
+ * before the unpack was read properly.
+ *
+ * The rule lived inline at the one call site that needed it. It is a
+ * dispatch the whole program shares, so it is a routine - the same reason
+ * level_play_step exists, and the reason CLAUDE.md gives for reading the
+ * eighteen Set/Reset loads rather than following flags to one of them.
+ * ====================================================================== */
+blit_path blit_path_of(uint16_t bp)
+{
+    if (bp & 0x4000) return BLIT_SETRESET_ZERO;   /* image 0x088EA */
+    if (bp & 0x8000) return BLIT_NO_OVERWRITE;    /* image 0x088F3 */
+    if (bp & 0x0020) return BLIT_MODE_20;         /* image 0x088FC */
+    if (bp & 0x0040) return BLIT_ERASE;           /* image 0x08905 */
+    return BLIT_SPRITE;                           /* image 0x0890E */
+}
+
+/* The flag word image 0x07C67 unpacks for a terrain piece, rebuilt from the
+ * fields level_parse kept. Image 0x07C7F puts the no-overwrite bit at 15 and
+ * image 0x07C75 puts erase at 6 - and ORs 0x0F00 beside it, which is what
+ * image 0x090BF turns into "all four planes", so the nibble travels with the
+ * bit and is carried here for the same reason. */
+uint16_t terrain_bp(const level_terrain *t)
+{
+    uint16_t bp = 0;
+    if (t->no_overwrite) bp |= 0x8000;            /* image 0x07C7F */
+    if (t->erase)        bp |= 0x0040 | 0x0F00;   /* image 0x07C75, 0x07C7B */
+    return bp;
+}
+
 /* NOT TRANSCRIBED, but PROVEN equivalent - and the boundary is now narrower
  * than it was. The original's loop is at image 0x03752..0x03768: four bytes
  * at a time from a table at ds:0x10EB, stopping on the first WORD being
@@ -652,15 +697,21 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
                  * pixels wrong the other way, which is how the difference
                  * between the two pieces was found - by measuring a wrong
                  * rule, then going back and reading the unpack. */
-                else if (t->no_overwrite
+                /* THE DISPATCH IS blit_path_of's now, not written out
+                 * here: image 0x088EA tests the same bits in the same order
+                 * for every caller in the program, and this was the only
+                 * place that knew it. The reading above is unchanged - it is
+                 * where the reading is recorded - but the ORDER now comes
+                 * from the one routine that owns it. */
+                else if (blit_path_of(terrain_bp(t)) == BLIT_NO_OVERWRITE
                          && g_terrain_mode != TERRAIN_NOV_IGNORE) {
                     if (g_terrain_mode == TERRAIN_NOV_INVERT) {
                         if (*dst != 0)
                             *dst = v;
                     } else if (*dst == 0)
                         *dst = v;
-                } else if (t->erase)       /* image 0x08905, image 0x090BF */
-                    *dst = 0;
+                } else if (blit_path_of(terrain_bp(t)) == BLIT_ERASE)
+                    *dst = 0;              /* image 0x08905, image 0x090BF */
                 else switch (g_terrain_mode) {
                 case TERRAIN_OR:
                     *dst = (uint8_t)(*dst | v);
@@ -3509,7 +3560,18 @@ void level_status_in(uint8_t percent)
 
 /* Image 0x5DC6: the row is `y - 0x10` and the byte `x >> 3`, and the plane it
  * reads is the one terrain lives in - which is why GROUNDxO.DAT's fourth
- * bitplane doubles as its mask, so the test is bit 3. */
+ * bitplane doubles as its mask, so the test is bit 3.
+ *
+ * AND IMAGE 0x05D94 IS WHAT MAKES BIT 3 THE ANSWER. It runs once before the
+ * lemming loop - image 0x01F23 calls it - and programs the card so that a
+ * read returns that plane and nothing else: sequencer map mask 0x0F, then
+ * graphics controller 5 = 0x08, 7 = 0x08 and 2 = 0x08, which is colour
+ * don't care with only plane 3 left in. It also sets ds:4 to 0xD0, the row
+ * stride image 0x05DC6 adds - 208 bytes, 1,664 pixels.
+ *
+ * So `& 8` here is not a convention this port chose; it is the register the
+ * original loads. The port keeps the four planes as one byte per pixel, so
+ * what the card does with a mask this does with a mask. */
 static int lem_solid(const uint8_t *lvl, uint16_t cw, uint16_t chh,
                      int16_t x, int16_t y)
 {
@@ -9659,7 +9721,27 @@ static void draw_rating(uint8_t *dst, const uint8_t *font, uint8_t rating)
 static void draw_fx_label(uint8_t *dst, const uint8_t *sec)
 {
     const int lab = menu_label_sprite();             /* image 0x04E5A */
-    if (lab == LABEL_NONE) return;                   /* image 0x04E84 */
+    if (lab == LABEL_NONE) {
+        /* IMAGE 0x04E84 REDRAWS THE BARE PLATE, and the port has to as well
+         * now. It returns here rather than drawing, on the argument - true
+         * when it was written - that composing the screen ONCE makes "no
+         * label" and "the plate underneath" the same picture.
+         *
+         * Transcribing image 0x0445B's loop ended that. The FX plate is now
+         * redrawn live whenever image 0x04E37's guard fires, over a screen
+         * that already has a label on it, so not drawing leaves the PREVIOUS
+         * one there - and the third setting showed the second's word. A
+         * player found it: "you're missing the third option displayed".
+         *
+         * The original never had the choice. It draws the label over the
+         * plate, so erasing it means putting the plate back, which is what
+         * image 0x04E84's blit is: si = 0xB120 masked at si + 0xAB9 to
+         * (324,120), 120 wide and 61 high - plate 2 at plate 2's place. */
+        draw_plate_row(dst, sec, 2, 1,
+                       (uint16_t)(SIGN_ROW[0].x + 2 * SIGN_STRIDE_X),
+                       SIGN_ROW[0].y);               /* image 0x04E84 */
+        return;
+    }
     for (uint16_t sy = 0; sy < LABEL_H; sy++) {
         uint16_t y = (uint16_t)(LABEL_Y + sy);
         if (y >= MENU_H) break;
@@ -9888,6 +9970,16 @@ static void menu_rating_plate(uint8_t *pix, const uint8_t *font)
 /* Image 0x04E37, the same shape on ds:0x1F72 against ds:0x1F70 - and its
  * sentinel is 2 rather than 4, because the FX plate has three states where
  * the rating has four. `sec` is MAIN.DAT section 0. */
+static void menu_fx_plate(uint8_t *pix, const uint8_t *sec);
+
+/* THE PORT'S OWN, for tests/screens.c: the guarded redraw the loop performs,
+ * reachable without a window. See the FX-plate case there for why a test
+ * built on fresh composes cannot see the fault this catches. */
+void menu_fx_plate_for_test(menu_screen *m)
+{
+    if (m->menu_sec) menu_fx_plate(m->pix, m->menu_sec);
+}
+
 static void menu_fx_plate(uint8_t *pix, const uint8_t *sec)
 {
     uint8_t al = g_fx_drawn;                    /* image 0x04E37 */

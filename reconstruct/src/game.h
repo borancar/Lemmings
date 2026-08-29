@@ -181,6 +181,17 @@ typedef struct {
     uint8_t erase;           /* subtract this shape instead of adding it */
 } level_terrain;
 
+/* Image 0x088EA's five paths, in the order it tests them - see game.c. */
+typedef enum {
+    BLIT_SETRESET_ZERO,   /* bp & 0x4000 -> image 0x08D66 */
+    BLIT_NO_OVERWRITE,    /* bp & 0x8000 -> image 0x08B42 */
+    BLIT_MODE_20,         /* bp & 0x0020 -> image 0x08FF7 */
+    BLIT_ERASE,           /* bp & 0x0040 -> image 0x0909C */
+    BLIT_SPRITE           /*               image 0x0890E  */
+} blit_path;
+blit_path blit_path_of(uint16_t bp);
+uint16_t  terrain_bp(const level_terrain *t);
+
 typedef struct {
     int16_t x, y;
     uint8_t w, h;            /* already in pixels */
@@ -1228,6 +1239,7 @@ void menu_code_result_draw(menu_screen *m, int accepted);
  * for the same reason the loop does: after Enter the field shows the code
  * that was typed, not the dots menu_code_screen composed. */
 void code_cells_draw(menu_screen *m);
+void menu_fx_plate_for_test(menu_screen *m);   /* THE PORT'S OWN - see game.c */
 /* THE PORT'S OWN - the ten cells, for a harness to fill before drawing. */
 void level_code_type(const char *cells);
 const char *level_code_cells(void);   /* ds:0x4DF2, for a test */

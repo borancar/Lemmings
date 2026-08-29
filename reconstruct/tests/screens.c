@@ -1250,6 +1250,69 @@ int main(int argc, char **argv)
            menu_key_code(view_scancode_of(0x0D)) == 0x0D, NULL);
     }
 
+    /* THE FX PLATE HAS THREE STATES AND THEY MUST BE THREE PICTURES.
+     *
+     * Image 0x04E5A picks a label from ds:0x25A7, and its third arm - both
+     * bits clear - goes to image 0x04E84, which REDRAWS THE BARE PLATE. The
+     * port returned "no label" and drew nothing, which was the same picture
+     * only while the screen was composed once; with image 0x0445B's loop
+     * transcribed the plate is redrawn live, so drawing nothing left the
+     * PREVIOUS label up and the silent setting showed the fx-only word.
+     *
+     * A player found it. This is what would have: render the plate in each
+     * of the three states and require all three to differ. */
+    {
+        static uint8_t a[3][MENU_W * MENU_H];
+        static const uint8_t BITS[3] = { 0x03, 0x01, 0x00 };
+        int built_all = 1;
+        for (int i = 0; i < 3; i++) {
+            menu_screen m;
+            const char *e = NULL;
+            sound_state_set(BITS[i], 1);
+            if (menu_build_rating(dir, 0, &m, &e) != 0) { built_all = 0; break; }
+            memcpy(a[i], m.pix, sizeof a[i]);
+            menu_free(&m);
+        }
+        sound_state_set(0x03, 1);
+        ck("all three FX settings compose", built_all, NULL);
+
+        /* AND THE LIVE REDRAW HAS TO MATCH THE FRESH COMPOSE.
+         *
+         * Composing each state from scratch gives three different pictures
+         * whether or not image 0x04E84's redraw is there - the plate is laid
+         * down again every time, so "no label" and "the plate" coincide.
+         * That is exactly the argument the port used to skip the redraw, and
+         * a test built on fresh composes AGREES WITH THE BUG: with the
+         * redraw removed as a control, all three still differed.
+         *
+         * The loop does not compose afresh. It draws the label over a screen
+         * that already carries one, so the check has to do that too: take
+         * the music+fx screen, switch the setting, redraw the plate the way
+         * image 0x04E37's guard does, and require the result to equal the
+         * screen composed in that setting from the start. */
+        if (built_all) {
+            menu_screen live;
+            const char *e = NULL;
+            sound_state_set(0x03, 1);
+            if (menu_build_rating(dir, 0, &live, &e) == 0) {
+                for (int i = 1; i < 3; i++) {
+                    sound_state_set(BITS[i], 1);
+                    menu_plates_arm();
+                    /* two passes: the guard draws on both, image 0x04E3A */
+                    menu_fx_plate_for_test(&live);
+                    menu_fx_plate_for_test(&live);
+                    char what[64];
+                    snprintf(what, sizeof what,
+                             "redrawing into setting %d matches a fresh "
+                             "compose", (int)BITS[i]);
+                    ck(what, memcmp(live.pix, a[i], sizeof a[i]) == 0, NULL);
+                }
+                menu_free(&live);
+            }
+            sound_state_set(0x03, 1);
+        }
+    }
+
     ck("a scancode past the table's 83 entries is refused",
        menu_key_code(0x53) == 0xFF && menu_dispatch(menu_key_code(0x53)) == -1,
        "it indexed past ds:0x202E");
