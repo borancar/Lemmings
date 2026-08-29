@@ -90,6 +90,14 @@ construction.
 `--adlib-ticks` cannot fix it either: image `adlib_script` rebases the script
 on its own first tick, so 600 and 11,000 produce the identical 106 writes and
 the budget is not what is short.
+
+This tool EXITS 1 on a partial pair, which is right and has a consequence
+worth knowing: leaving one in out/ makes `verify_all.sh --units` fail, and
+the failure reads as a broken sound port rather than as an incomplete
+reference. That is the same misreading the LEM_OPL_TUNE recipe produced, one
+step further along. The partial capture recorded here is kept as
+out/*_opl.partial.txt for exactly that reason - it is evidence, not a
+reference, and --units skips with its reason rather than failing on it.
 """
 import argparse
 import sys
