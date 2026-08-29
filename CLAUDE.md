@@ -1342,6 +1342,46 @@ silently. `video_screen_set` is called by every screen that runs its own loop,
 and `menu_free` clears it so the flip can never be left aiming at memory that
 has gone.
 
+## The page is not the canvas, and a probe sees every screen
+
+The miner's last pixel took six wrong answers, and the two that cost most were
+both about WHERE a probe was looking rather than what it found.
+
+**A byte offset means a different pixel on every screen.** `probe_writes.py`
+was pointed at "canvas row 81, column 799" - which is really base `0x4A40`
+plus row times `0xD0` plus a byte - and it named twelve writing instructions,
+four of them inside the shared blitter. Ten were the title, the menu and the
+briefing drawing themselves: `record_level.py` records the whole run, those
+screens are mode `0x10` at 80 bytes a row, and the same linear offset lands
+somewhere else entirely on each of them. Gated to the level, exactly two
+instructions write that byte. The first answer was written up as a finding and
+committed before the gate existed. **Count the game's own end-of-frame at
+image `0x018F` - it runs only inside a level - and record nothing before it.**
+
+**And the level has three buffers, not one.** The master terrain sits at
+`0x4A40` with `0xD0`-byte rows and is far wider than the screen; the display
+pages are at `0x02C2` and `0x27E2`, 9,504 bytes apart, which is 44 x 216 -
+mode `0x0D`'s 44-byte rows. The game composes into the master and windows it
+onto whichever page is hidden, then draws the lemmings **on the page**. So
+nothing that draws a lemming ever touches `0x4A40`, and a probe watching the
+master can only ever find the composition and the terrain-cutting skills. Ask
+which buffer a routine writes before choosing a base.
+
+**A lemming is drawn 24 columns wide, not 16**, for the same reason the
+miner's masks have eight shifts: sixteen pixels at an arbitrary bit offset
+span three bytes. The blit at image `0x07440` masks out the sixteen that are
+really the sprite, but the background save and restore at image `0x07178` is
+an unmasked 24 x 16 block - so the original's page carries three columns of
+history either side of every lemming, and a pixel there can be neither terrain
+nor any current sprite. That is what the residue was, and the port, which
+composes from the master each frame, was right the whole time.
+
+**Reading one plane cannot tell you a colour.** Plane 3 is the solidity bit,
+so "plane 3 is clear" is true of cleared ground AND of anything drawn in 1..7.
+The first solidity read here said "cleared" on frames where the screen plainly
+showed attribute 2, and both were true; only reading all four planes
+distinguished "the master holds nothing" from "the master holds a 2".
+
 ## The emulator is shared, not ours
 
 `dos_emulator` is used by other games' reconstructions, and their verification
