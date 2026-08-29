@@ -102,7 +102,65 @@ Only option 1 (PC compatible) has actually been *executed* so far, from before
 this decision. Option 2 is now what every tool drives, but a run under it has
 not yet been recorded here.
 
-## What two of them actually change
+## What three of them actually change
+
+### `ds:0x200A` disables the keyboard controller around the scan-code read
+
+Image `0x016DD`, at the top of the keyboard ISR, and image `0x017A3` at its
+exit:
+
+```
+016dd  mov  al, [0x200a]
+016e0  and  al, al
+016e2  je   0x16e9          ; zero: do none of this
+016e4  mov  al, 0xad        ; 8042 command: DISABLE the keyboard interface
+016e6  call 0x17b4
+016e9  in   al, 0x60        ; then read the scan code
+ ...
+017a3  mov  al, [0x200a]
+017a8  je   0x17af
+017aa  mov  al, 0xae        ; 8042 command: ENABLE it again
+017ac  call 0x17b4
+017af  pop / iret
+```
+
+Image `0x17B4` is a textbook 8042 command send - image `0x17BE` spins on
+`in al, 0x64 / test al, 2` until the input buffer is clear, then `out 0x64,
+al` writes the command to the controller's COMMAND port. `0xAD` and `0xAE`
+are its standard disable/enable keyboard-interface pair.
+
+The flag is **PS/2 only**, which is exactly the machine where a second scan
+code arriving inside the handler is a problem.
+
+### `ds:0x200B` takes the mouse buttons off the KEYBOARD
+
+Two sites that only make sense together. In the keyboard ISR, image
+`0x0170B`:
+
+```
+0170b  cmp byte ptr [0x200b], 0xff
+01710  jne 0x175a               ; not this machine: nothing special
+01712  cmp ah, 0x7d  ->  or word ptr [0x14], 2
+01723  cmp ah, 0x7e  ->  or word ptr [0x14], 1
+```
+
+with image `0x0173B` doing the same on the release path to clear them. And in
+the mouse poll, image `0x04262`, straight after `int 0x33` with `ax = 3`
+returns the button word in `bx`:
+
+```
+04262  cmp byte ptr [0x200b], 0xff
+04267  je  0x426d               ; this machine: do NOT take bx
+04269  mov word ptr [0x14], bx
+```
+
+So on this machine the buttons arrive as keyboard scan codes `0x7D` and
+`0x7E` and the ISR writes them into `ds:0x14`, and the INT 33h button word is
+deliberately not copied over the top of them. The flag is **Amstrad only**,
+and the Amstrad PC1512/1640 is precisely the machine whose mouse hangs off
+the keyboard controller.
+
+### `ds:0x200C` blanks the display while the palette is written
 
 The table above says which option sets which flag. This is the start of the
 other half - what the flag *does* - read out of the image rather than guessed.

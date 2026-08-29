@@ -5026,10 +5026,21 @@ has nothing to seed with here.
   outstanding work we intend to do — noted here so it is not mistaken for
   finished.
 
-  **Two of them are now read**, with `tools/xref.py`, which lists every
+  **Three of them are now read**, with `tools/xref.py`, which lists every
   instruction naming a DGROUP offset directly (6, 7, 7 and 12 references
   respectively):
 
+  - **`ds:0x200A` disables the keyboard controller around the scan-code
+    read.** Image `0x016DD` sends 8042 command `0xAD` before `in al, 0x60`
+    and image `0x017A3` sends `0xAE` at the ISR's exit; image `0x17B4` is the
+    command send, spinning on `in al, 0x64 / test al, 2` before `out 0x64`.
+    **PS/2 only** - the machine where a second scan code arriving inside the
+    handler is a problem.
+  - **`ds:0x200B` takes the mouse BUTTONS off the keyboard.** Image `0x0170B`
+    turns scan codes `0x7D` and `0x7E` into bits 1 and 0 of `ds:0x14`, image
+    `0x0173B` clears them on release, and image `0x04262` then refuses to
+    copy INT 33h's own button word over the top. **Amstrad only**, and the
+    PC1512/1640 is the machine whose mouse hangs off the keyboard controller.
   - **`ds:0x200C` blanks the display across the palette write.** Image
     `0x0548D` sets Sequencer register 1 bit 5 - screen off - and image
     `0x054B6` clears it again once the palette is in; image `0x054C6` is the
