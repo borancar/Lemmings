@@ -1753,43 +1753,6 @@ uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 /* The briefing's I/O. Its TEXT is image 0x04566's, which derives the number
  * from ds:0x1F6B and writes the requirement into ds:0x41 - so neither comes
  * from a caller any more. */
-/* IMAGE 0x0197D - THE LEVEL'S FILES, LOADED ONCE.
- *
- * The original loads here and nowhere else: image 0x0455D calls this before
- * the briefing at image 0x04560, and the level record it writes to ds:0x0FCB
- * is what BOTH the briefing and the play loop then read. Nothing parses a
- * level twice.
- *
- * The port used to, and its own main.c said so - "Set once for the briefing
- * and once for the level, because each parses". Two parses is two chances to
- * disagree, and it made the ODDTABLE entry something the caller had to
- * remember to hand over twice.
- *
- * Returns 0, or 1 for one of the four VGASPEC levels - see
- * level_graphics_names - or -1 with *err set. */
-int level_load(const char *dir, const char *file, uint32_t which,
-               level *lv, const char **err)
-{
-    char path[1024];
-    dat_file levels;
-    snprintf(path, sizeof(path), "%s/%s", dir, file);
-    if (dat_load(path, &levels, err) != 0) return -1;     /* image 0x019B3 */
-    if (which < 1 || which > levels.count) {
-        dat_free(&levels);
-        if (err) *err = "no such level in that container";
-        return -1;
-    }
-    int rc = level_parse(levels.sections[which - 1].data,
-                         levels.sections[which - 1].size, lv, err);
-    dat_free(&levels);
-    if (rc != 0) return -1;
-    /* ODDTABLE.DAT, image 0x019F5 - half the plates play their level under
-     * another name with other skills. */
-    if (level_apply_odd(dir, lv, level_odd_taken(), err) != 0) return -1;
-    lv->level_number = level_number();       /* image 0x04566 */
-    char gn[16], xn[16];
-    return level_graphics_names(lv, gn, sizeof gn, xn, sizeof xn) == 1;
-}
 
 
 

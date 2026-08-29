@@ -4826,6 +4826,29 @@ has nothing to seed with here.
 
 ## Next
 
+- **`level_key_button` dispatches on an SDL keycode, not the scancode the
+  original reads.** Image `0x03E6F` reads the byte the keyboard handler left
+  at `ds:0x1FD0` - image `0x016D4` stores it and clears it on the key-up - and
+  the table is known:
+
+  | scan | | |
+  | --- | --- | --- |
+  | 0x3B | F1 | image `0x04068`, the release rate down |
+  | 0x3C | F2 | image `0x0403D`, the release rate up |
+  | 0x3D..0x44 | F3..F10 | image `0x03F5C`, buttons 2..9 |
+  | 0x4E | keypad + | image `0x04018`, pause |
+  | 0x57 | F11 | image `0x04018` |
+  | 0x53 | Del | image `0x03FEF`, the nuke |
+
+  The port switches on `SDLK_*` instead, so the mapping is written twice - once
+  in `scancode_of` and once here - and the two can disagree without anything
+  saying so. Keying it on the scancode needs `scancode_of` extended with
+  F5..F12, Delete and keypad +, which it does not carry: it has F1..F4 and the
+  menu's eleven, and derives the letters by inverting the game's own
+  `MENU_XLAT`. That inversion is the pattern to follow, and a wrong entry
+  shows up as a key that does nothing rather than one that means something
+  else - so this is worth doing carefully rather than quickly.
+
 - **THE LEVEL'S Z AND X KEYS SELECT NOTHING.** Reading image `0x000FB`, the
   main loop, turned up a per-frame call the port has no counterpart for:
   image `0x04085` reads the pending scan code at `ds:0x1FD0` and steps the
