@@ -137,7 +137,7 @@ static void on_signal(int sig)
 }
 
 /* Returns 0 on success. Reuses what is already open when it fits. */
-static int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
+int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
 {
     static int registered;
     static int signals_up;
@@ -189,6 +189,9 @@ static int view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale)
 static view_tick g_show_tick;
 static void     *g_show_ctx;
 static uint8_t  *g_show_pix;
+/* A key press is an EVENT; ds:0x1FC7 was a state. Latched here so
+ * view_buttons can report it the way the byte would have. */
+static uint16_t g_key_button;
 
 /* WHAT THE HARDWARE USED TO DO. The composed buffer the window shows, and the
  * routine that fills it each pass. game.c's level_show aims these at its own
@@ -2193,77 +2196,61 @@ int level_load(const char *dir, const char *file, uint32_t which,
 
 
 
-/* WHAT THE HARDWARE USED TO DO for image 0x047A9's wait. ds:0x14 was a byte
- * the mouse driver kept current; reading it is an event queue here, and the
- * release-before-press that image 0x047A9 gets from testing a STATE has to be
- * done explicitly. The routine this serves - which button means what - is
- * game.c's level_show_results.
+/* WHAT THE HARDWARE USED TO DO: ds:0x14, the byte the mouse driver kept
+ * current, and the page the picture sits on.
  *
- * `pix` is composed and `pal` chosen already; this shows them and reports
- * which of image 0x047B4's and image 0x047B9's answers came back. */
-int32_t view_results_wait(const uint8_t *pix, const lem_rgb *pal, uint8_t scale)
+ * The routine that reads them is game.c's level_results_wait - image 0x047A9.
+ * Bit 0 is the left button and bit 1 the right, which is what image 0x047B4
+ * and image 0x047B9 test. Escape reports bit 1 because that is the answer
+ * every other screen here gives it, and image 0x047BE does read ds:0x1FC7 as
+ * well so a key does end the screen.
+ *
+ * READING IT PUMPS THE QUEUE, because a byte a driver maintained has no
+ * counterpart that can be read without one, and the delay is here for the
+ * same reason: the original owns the machine and may spin, this does not.
+ * Closing the window leaves through view_quit_now like everywhere else. */
+uint16_t view_buttons(void)
 {
-    if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0)
-        return RESULTS_MENU;
-
-    int32_t out = RESULTS_MENU;
-    int released = 0;                     /* image 0x047AF's wait */
-    int running = 1, dirty = 1;
-    while (running) {
-        /* image 0x047A9 reads ds:0x14 and tests it - the button STATE, not
-         * an edge - so a screen entered with nothing held passes this at
-         * once. Waiting for an UP EVENT instead meant a player had to click
-         * once for nothing, to manufacture the release, before any click
-         * counted. There is no event to wait for when the button is already
-         * up. */
-        if (!released) {
-            Uint32 held = SDL_GetMouseState(NULL, NULL);
-            if (!(held & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)))
-                released = 1;
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_EVENT_QUIT) view_quit_now();
+        else if (e.type == SDL_EVENT_KEY_DOWN) {
+            if (e.key.key == SDLK_ESCAPE) g_key_button = 2;
+            else                          g_key_button = 1;
         }
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) view_quit_now();
-            else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) released = 1;
-            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && released) {
-                if (e.button.button == SDL_BUTTON_LEFT) {
-                    out = RESULTS_NEXT;   /* image 0x047B4 */
-                    running = 0;
-                } else if (e.button.button == SDL_BUTTON_RIGHT) {
-                    out = RESULTS_MENU;   /* image 0x047B9 */
-                    running = 0;
-                }
-            }
-            else if (e.type == SDL_EVENT_KEY_DOWN) {
-                /* Image 0x047BE reads ds:0x1FC7 as well, so a key does end
-                 * this screen; which keys is not read, and Escape is the one
-                 * every other screen here takes. */
-                if (e.key.key == SDLK_ESCAPE) { out = RESULTS_MENU; running = 0; }
-                else if (released) { out = RESULTS_NEXT; running = 0; }
-            }
-        }
-        /* Nothing on this screen animates - image 0x047A9 polls and draws
-         * nothing - so it is uploaded once. */
-        if (dirty) {
-            void *px = NULL; int pitch = 0;
-            if (SDL_LockTexture(g_tex, NULL, &px, &pitch)) {
-                for (uint16_t y = 0; y < MENU_H; y++) {
-                    uint32_t *row = (uint32_t *)((uint8_t *)px + y * pitch);
-                    const uint8_t *src = pix + (size_t)y * MENU_W;
-                    for (uint16_t x = 0; x < MENU_W; x++) {
-                        lem_rgb q = pal[src[x] & 15];
-                        row[x] = ((uint32_t)q.r << 16)
-                               | ((uint32_t)q.g << 8) | q.b;
-                    }
-                }
-                SDL_UnlockTexture(g_tex);
-            }
-            dirty = 0;
-        }
-        SDL_RenderClear(g_ren);
-        SDL_RenderTexture(g_ren, g_tex, NULL, NULL);
-        SDL_RenderPresent(g_ren);
-        SDL_Delay(10);
+        /* ds:0x1FC7 IS A STATE, so a released key stops reading. Latching the
+         * press and never clearing it made view_buttons answer for ever, and
+         * image 0x047A9's release wait - `while (buttons & 7)` - would then
+         * never come out: the screen would hang on the first key it saw. */
+        else if (e.type == SDL_EVENT_KEY_UP) g_key_button = 0;
     }
-    return out;
+    SDL_Delay(10);
+    uint32_t held = SDL_GetMouseState(NULL, NULL);
+    uint16_t b = g_key_button;
+    if (held & SDL_BUTTON_LMASK) b |= 1;
+    if (held & SDL_BUTTON_RMASK) b |= 2;
+    return b;
+}
+
+/* The picture, uploaded and shown. Nothing on this screen animates - image
+ * 0x047A9 polls and draws nothing - so a caller shows it once. */
+void view_present_indexed(const uint8_t *pix, uint16_t w, uint16_t h,
+                          const lem_rgb *pal)
+{
+    void *px = NULL; int pitch = 0;
+    if (SDL_LockTexture(g_tex, NULL, &px, &pitch)) {
+        for (uint16_t y = 0; y < h; y++) {
+            uint32_t *row = (uint32_t *)((uint8_t *)px + y * pitch);
+            const uint8_t *src = pix + (size_t)y * w;
+            for (uint16_t x = 0; x < w; x++) {
+                lem_rgb q = pal[src[x] & 15];
+                row[x] = ((uint32_t)q.r << 16) | ((uint32_t)q.g << 8)
+                       | (uint32_t)q.b;
+            }
+        }
+        SDL_UnlockTexture(g_tex);
+    }
+    SDL_RenderClear(g_ren);
+    SDL_RenderTexture(g_ren, g_tex, NULL, NULL);
+    SDL_RenderPresent(g_ren);
 }

@@ -1348,9 +1348,16 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
 #define BRIEF_MENU  2
 int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
                                   uint8_t scale);
-/* image 0x047A9's wait, shown and polled - see game.c's level_show_results. */
-int32_t view_results_wait(const uint8_t *pix, const lem_rgb *pal,
-                          uint8_t scale);
+/* ds:0x14 and the page, for game.c's level_results_wait - image 0x047A9.
+ * Reading the buttons pumps the event queue and costs ~10ms; see sdl_io.c. */
+/* The window, which is this port's `int 10h` - image 0x00462 set mode 0x0D
+ * for a level and image 0x04DC2's callers the mode 0x10 screens. */
+int  view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale);
+uint16_t view_buttons(void);
+void view_present_indexed(const uint8_t *pix, uint16_t w, uint16_t h,
+                          const lem_rgb *pal);
+int32_t level_results_wait(const uint8_t *pix, const lem_rgb *pal,
+                           uint8_t scale);
 
 /* The menu's own key handling, transcribed: image 0x04D4B's translation
  * through ds:0x202E, then image 0x0447B's compare chain. Exposed so the

@@ -10984,6 +10984,44 @@ int level_show_briefing(const char *dir, const level *lv,
 }
 
 
+/* IMAGE 0x047A9 - THE RESULTS SCREEN'S OWN WAIT.
+ *
+ *     0x047A9  ax = ds:0x14 / test ax,7 / jne 0x047A9   wait for RELEASE
+ *     0x047B1  ax = ds:0x14
+ *     0x047B4  test ax,1 / jne 0x047D7    left  -> the next level
+ *     0x047B9  test ax,2 / jne 0x047CB    right -> the menu
+ *     0x047C9  je 0x047B1                 otherwise keep waiting
+ *
+ * NOT the menu's hotspot matcher, which is what this used to be. That matcher
+ * reports WHERE a click landed and not WHICH button made it, so it gave the
+ * same answer for both and a right click advanced instead of going back; and
+ * it takes a press at once, where image 0x047A9 waits for every button to be
+ * UP first - which is what stops the click that dismissed the level from
+ * being read again here.
+ *
+ * The release wait works because ds:0x14 is a STATE, so a screen entered with
+ * nothing held passes it immediately. Waiting for an up EVENT instead made a
+ * player click once for nothing, to manufacture the release, before any click
+ * counted: there is no event to wait for when the button is already up.
+ *
+ * ds:0x14 is view_buttons here - see sdl_io.c, which also explains why
+ * reading it pumps a queue and costs ten milliseconds. */
+int32_t level_results_wait(const uint8_t *pix, const lem_rgb *pal,
+                           uint8_t scale)
+{
+    if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0)
+        return RESULTS_MENU;
+    view_present_indexed(pix, MENU_W, MENU_H, pal);
+
+    while (view_buttons() & 7) { }          /* image 0x047A9 */
+    for (;;) {
+        uint16_t b = view_buttons();        /* image 0x047B1 */
+        if (b & 1) return RESULTS_NEXT;     /* image 0x047B4 */
+        if (b & 2) return RESULTS_MENU;     /* image 0x047B9 */
+    }                                       /* image 0x047C9 */
+}
+
+
 /* THE RESULTS SCREEN, image 0x046EB.
  *
  * The composition is level_results_draw's; the window and its palette are
@@ -11072,7 +11110,7 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
      * that dismissed the level being read again here. */
     lem_rgb pal[16];
     level_results_palette(pal);
-    int32_t out = view_results_wait(pix, pal, scale);
+    int32_t out = level_results_wait(pix, pal, scale);
 
     free(pix);
     dat_free(&mainf);
