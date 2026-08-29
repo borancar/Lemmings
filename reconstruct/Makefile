@@ -31,7 +31,7 @@ LDFLAGS += $(SDL_LIBS)
 # mirrors the original, which has no command line. `lemdev` is the developer
 # harness - one screen to a file, a forced rating or scroll - and none of it
 # corresponds to anything in vgalemmi.exe.
-CORE := src/game.c src/data.c src/sdl_io.c src/adlib.c
+CORE := src/game.c src/data.c src/sdl_io.c src/adlib.c src/harness.c
 BIN     := lemmings
 DEV_BIN := lemdev
 
@@ -90,7 +90,8 @@ $(LIB): $(PIC_OBJ)
 # SDL events and asserts what menu_run returns. SDL's dummy video driver means
 # it needs no display.
 TEST_BIN := tests/menu_input
-TEST_OBJ := src/game.o src/data.o src/sdl_io.o src/adlib.o $(OPL_OBJ)
+TEST_OBJ := src/game.o src/data.o src/sdl_io.o src/adlib.o \
+            src/harness.o $(OPL_OBJ)
 
 $(TEST_BIN): tests/menu_input.c $(TEST_OBJ)
 	$(CC) $(CFLAGS) -Isrc -o $@ $< $(TEST_OBJ) $(LDFLAGS)

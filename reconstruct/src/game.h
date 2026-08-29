@@ -1451,4 +1451,19 @@ menu_action menu_run(menu_screen *m, uint8_t scale);
 
 void menu_free(menu_screen *m);
 
+/* ======================================================================
+ * THE HARNESS - src/harness.c. Nothing in the original, and no part of the
+ * game: these exist so the port can be driven and measured.
+ * ====================================================================== */
+#define SCRIPT_MAX 256
+typedef struct { long frame; uint8_t what; int32_t x, y; } script_act;
+enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2 };
+extern script_act harness_script[SCRIPT_MAX];
+extern uint16_t   harness_script_n;
+void harness_script_load(const char *path);
+
+/* lemdev putting a composed screen up for a person to look at. */
+void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
+              const lem_rgb *palette, const char *title, uint8_t scale);
+
 #endif /* GAME_H */

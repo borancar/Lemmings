@@ -850,6 +850,27 @@ program will never look at.
 - **The port shows a screen by default.** `./lemmings` with no arguments opens
   the game; `--out` or `--raw` is what asks for a file instead. A
   reconstruction whose default output is a bitmap is a converter.
+- **THREE FILES, AND THE THIRD IS THE ONE THAT KEEPS DRIFTING.** `game.c` is
+  what the original does, `sdl_io.c` is what the hardware used to do, and
+  **`harness.c` is what neither does** - the things that exist only so the port
+  can be DRIVEN and MEASURED: the recorded input script, the flat view of a
+  struct for a Python tool, the frame sink, `lemdev`'s viewer. Every function
+  answers "where did this come from" with one of three things: an image
+  address, "what the card did", or "nothing in the original - it is here to
+  check the game".
+
+  `harness.c` is linked into the CORE, not into `lemdev`, and that is
+  deliberate: `reconstruct/tests` links `game.o data.o sdl_io.o adlib.o
+  harness.o` and **not** `devmain.o`, and `tools/` reach `libgame.so`, which is
+  the same set. So "move the harness code to the harness binary" is wrong and
+  breaks both - `lemming_record_size` is only ever called by
+  `tools/lemmings.py` through ctypes, and `level_header_fields` only by
+  `verify_level.py`. `devmain.c` is the harness's COMMAND LINE; `harness.c` is
+  its machinery.
+
+  Before moving anything on the grounds that it is harness code, check which
+  binaries link it. The link sets decide, not the name.
+
 - **A ROUTINE LIVES WHERE THE BINARY PUTS IT.** If the original has a routine
   for it, the port's version goes in `game.c` carrying that address - even
   when the original's own routine also set a video mode or read a byte the
@@ -903,6 +924,9 @@ program will never look at.
   `main.c`, `adlib.c` and `data.c` are boundaries **the port chose**, and
   their headers say so. `adlib.c` is the one with a claim to being a real
   translation unit: it is `adlib.dat`, which WAS a separate program.
+  `harness.c` makes no such claim and is not meant to: the original has no
+  harness, which is exactly why its contents must not be spread through the
+  two files that are transcriptions of something.
   `data.c` holds the transcribed tables and nothing else - a thousand lines
   of bytes between two routines makes the routines harder to find and says
   nothing while you scroll past them. Every table there carries its address

@@ -899,36 +899,6 @@ static int adlib_dump(const char *data, uint8_t id, uint32_t ticks,
 }
 
 
-/* THE HARNESS'S VIEWER, and it has no counterpart in the original: lemdev
- * putting a composed screen up so a person can look at it.
- *
- * It lived in sdl_io.c and was a scrollable canvas viewer - arrow keys, a
- * start_x it centred on, clamps at both edges - none of which was reachable,
- * because the only caller is the one below and it passes the source size as
- * the view size. Two wrappers that existed to scroll around a level,
- * view_run and view_run_anim, had no callers at all.
- *
- * It is here rather than there because it is the HARNESS's, and devmain.c is
- * where the harness lives. What it is built from - the window, the queue, the
- * page and the pacing - is sdl_io.c's, and those are the same four the
- * transcribed loops in game.c use.
- */
-static int32_t dev_dismiss(uint8_t scancode)
-{
-    return menu_key_code(scancode) == 0x1B ? 1 : -1;
-}
-
-static void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
-                     const lem_rgb *palette, const char *title, uint8_t scale)
-{
-    if (scale < 1) scale = 1;
-    if (view_open(w, h, title, scale) != 0) return;
-    for (;;) {
-        if (view_screen_pump(dev_dismiss, 1) != VIEW_CLOSED) return;
-        view_screen_present(pix, w, h, palette);
-        view_screen_pace();
-    }
-}
 
 int main(int argc, char **argv)
 {

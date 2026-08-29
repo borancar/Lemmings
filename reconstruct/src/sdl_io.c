@@ -217,6 +217,7 @@ void view_show_hook(view_tick tick, void *ctx, uint8_t *pix)
  */
 static uint8_t scancode_of(SDL_Keycode k);
 
+
 /* Exported for the test in tests/screens.c: every letter a player can type
  * has to reach the entry loop as the character the game's own table names,
  * and for a long time none of them did. */
@@ -349,61 +350,6 @@ void view_screen_pace(void)
 
 
 
-/* WHAT THE PLAYER USED TO DO - a recorded input script.
- *
- * This belongs here with the rest of the hardware's work, and it is the same
- * kind of thing: the level's loop asks SDL where the mouse is and whether a
- * button is down, exactly as the original asks INT 33h, and this answers
- * those two questions from a file instead of from a person.
- *
- * It exists because a frame-by-frame comparison of a level nobody touches
- * compares only the parts of the game that need no player. Every skill, the
- * whole of the panel's behaviour and the level's ending are behind an input,
- * and the way to score them against the original is to give BOTH sides the
- * same one at the same frame. tools/record_level.py --script feeds the same
- * file to the guest through the emulator's own mouse.
- *
- * The format is one action a line, frame first:
- *
- *     12 move 160 100      put the pointer at this SCREEN position
- *     14 down              press the left button
- *     20 up                release it
- *
- * Frames are this loop's own count, which is the index the frame sink uses,
- * so a script and a captured sequence line up by construction. */
-#define SCRIPT_MAX 256
-typedef struct { long frame; uint8_t what; int32_t x, y; } script_act;
-enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2 };
-
-static script_act g_script[SCRIPT_MAX];
-static uint16_t g_script_n;
-
-static void script_load(const char *path)
-{
-    FILE *f = fopen(path, "r");
-    if (!f) {
-        fprintf(stderr, "input script %s: cannot open it\n", path);
-        return;
-    }
-    char line[128];
-    while (g_script_n < SCRIPT_MAX && fgets(line, sizeof line, f)) {
-        char verb[16];
-        long fr;
-        int32_t x = 0, y = 0;
-        if (line[0] == '#' || line[0] == '\n') continue;
-        int got = sscanf(line, "%ld %15s %d %d", &fr, verb, &x, &y);
-        if (got < 2) continue;
-        script_act *a = &g_script[g_script_n];
-        a->frame = fr; a->x = x; a->y = y;
-        if (!strcmp(verb, "move") && got == 4) a->what = SCRIPT_MOVE;
-        else if (!strcmp(verb, "down")) a->what = SCRIPT_DOWN;
-        else if (!strcmp(verb, "up")) a->what = SCRIPT_UP;
-        else continue;
-        g_script_n++;
-    }
-    fclose(f);
-    fprintf(stderr, "  [script] %u actions from %s\n", g_script_n, path);
-}
 
 /* One press of the left button, wherever the pointer is. A scripted click
  * and a real one go through this same function - written out twice, the two
@@ -604,8 +550,8 @@ int view_level_input(struct level_frame *A, int32_t *scroll_x_p,
     int32_t scroll_x = *scroll_x_p;
     /* The script speaks first, so a scripted frame behaves the same
      * whether or not the host had an event waiting. */
-    while (g_lv_script_at < g_script_n && g_script[g_lv_script_at].frame <= g_lv_frame_no) {
-        const script_act *act = &g_script[g_lv_script_at++];
+    while (g_lv_script_at < harness_script_n && harness_script[g_lv_script_at].frame <= g_lv_frame_no) {
+        const script_act *act = &harness_script[g_lv_script_at++];
         if (act->what == SCRIPT_MOVE) {
             /* The script is in SCREEN pixels; the game's own pointer sits
              * eight further on, which is where image 0x0426D clamps. */
@@ -901,7 +847,7 @@ int level_run(struct level_frame *A, const canvas *c,
     /* A recorded input, so a comparison can cover the parts of the game that
      * need a player - see script_load. */
     const char *script = SDL_getenv("LEM_INPUT_SCRIPT");
-    if (script) script_load(script);
+    if (script) harness_script_load(script);
     g_lv_script_at = 0;
     g_lv_frame_no = 0;
     /* Edge scrolling waits for a pointer that has actually MOVED. A polled
@@ -961,20 +907,6 @@ int level_run(struct level_frame *A, const canvas *c,
 }
 
 
-/* THE PORT'S OWN, and it is a CONTROL rather than a convenience.
- *
- * tools/ reaches the lemming array through ctypes, which means a Python
- * declaration of `lemming` sitting beside the C one. Two declarations of one
- * struct is two declarations that will differ, and they did: verify_hit.py's
- * stopped at `state` - sixteen bytes where this is thirty-four - so the C
- * read every lemming after the first at the wrong stride and the tool
- * reported 47 of 256 hits differing. It read exactly like a port bug, in the
- * one routine CLAUDE.md already records as having been sixteen pixels wrong.
- *
- * So the size is exported and lemmings.lem_struct() asserts on it. A tool
- * whose struct has drifted now fails on the assert instead of producing a
- * number about itself. */
-uint32_t lemming_record_size(void) { return (uint32_t)sizeof(lemming); }
 
 /* ======================================================================
  * WHAT THE HARDWARE USED TO DO.
@@ -1478,34 +1410,6 @@ int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
     return how;
 }
 
-/* A flat view of the parsed header, so tools/verify_level.py can compare
- * against the original without mirroring `level`'s layout in Python.
- * The order is the order the original stores them in.
- *
- * The port's own: a flat view for tools/verify_level.py, with no counterpart
- * in the original.
- */
-int level_header_fields(const uint8_t *buf, uint32_t len,
-                        uint16_t *out, uint32_t n_out, const char **err)
-{
-    static level lv;
-    if (n_out < 15) {
-        if (err) *err = "need room for 15 fields";
-        return -1;
-    }
-    if (level_parse(buf, len, &lv, err) != 0)
-        return -1;
-    out[0] = lv.release_rate;
-    out[1] = lv.num_lemmings;
-    out[2] = lv.num_to_rescue;
-    out[3] = lv.time_limit;
-    for (uint32_t i = 0; i < 8; i++)
-        out[4 + i] = lv.skills[i];
-    out[12] = lv.start_x;
-    out[13] = lv.graphics_set;
-    out[14] = lv.extended_graphics_set;
-    return 0;
-}
 
 /* vgagr_decode and vgagr_decode_mask are the same class as `planar` above and
  * were moved here with it: the original NEVER unpacks these bitmaps. It hands
