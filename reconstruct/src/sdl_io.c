@@ -444,7 +444,20 @@ static void level_screen_upload(void)
 {
     void *pixels = NULL;
     int pitch = 0;
-    if (!g_lvl_tex || !g_lvl_screen) return;
+    /* A MISSING WINDOW IS NOT A QUIET FRAME. This returned silently when the
+     * handles were NULL, so a bug that left them unset showed as a game that
+     * drew nothing and said nothing - found by playing, not by any check
+     * here, because the frame sink writes the composed buffer and never comes
+     * through this function at all. Now it says so, once. */
+    if (!g_lvl_tex || !g_lvl_screen) {
+        static int said;
+        if (!said) {
+            said = 1;
+            fprintf(stderr, "  [video] the level has no window to draw into "
+                            "- nothing will be shown\n");
+        }
+        return;
+    }
     if (!SDL_LockTexture(g_lvl_tex, NULL, &pixels, &pitch)) return;
     for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
         uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
@@ -792,9 +805,14 @@ int level_run(struct level_frame *A, const canvas *c,
 
     uint8_t *screen = calloc(LEVEL_SCREEN_W * LEVEL_SCREEN_H, 1);
     if (!screen) return -1;
+    /* THE WINDOW'S HANDLES, from the ones view_open just made. These read
+     * `g_lvl_tex = g_lvl_tex;` for a while: a scoped rename turned the two
+     * locals into these globals and deleted the lines that had initialised
+     * them, so both stayed NULL, level_screen_upload returned at its own
+     * guard and the game showed nothing while the sound played on. */
     g_lvl_screen = screen;
-    g_lvl_tex = g_lvl_tex;
-    g_lvl_ren = g_lvl_ren;
+    g_lvl_tex = g_tex;
+    g_lvl_ren = g_ren;
 
     /* Two palettes, and which one a row gets depends on where it is.
      *
