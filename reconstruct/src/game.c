@@ -11330,3 +11330,144 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
     dat_free(&gfx);
     return rc;
 }
+/* GROUNDxO.DAT - IMAGE 0x01A0B NAMES IT, IMAGE 0x01A18 LOADS IT.
+ *
+ * THE ORIGINAL NEVER PARSES THIS FILE. Image 0x01A11 hands the loader at
+ * image 0x01916 a destination of ds:0x1B4B and a length of 0x1000, and every
+ * reader indexes those bytes where they lie. This struct is the port's, and
+ * what is transcribed is the LAYOUT - so each field below carries the
+ * instruction in the original that reads it, not a line from a file format
+ * description.
+ *
+ * OBJECTS, 28 bytes each from offset 0. Image 0x037D1 is `mov dx, 0x1c / mul
+ * dx` on the object id and image 0x037D6 is `lea si, [0x1b4b]`, so the stride
+ * and the base are both the original's:
+ *
+ *     +0x0E  trigger_left     image 0x037E9  add ax, [si + 0x0e]
+ *     +0x10  trigger_top      image 0x037F6  add bx, [si + 0x10]
+ *     +0x12  trigger_width    image 0x03815  mov dh, [si + 0x12]
+ *     +0x13  trigger_height   image 0x03818  mov dl, [si + 0x13]
+ *     +0x14  trigger_effect   image 0x03812  or  al, [si + 0x14]
+ *
+ * TERRAIN, 8 bytes each from offset 0x1C0. Image 0x07C9A is `mov ax, 8 / mul
+ * dx` and image 0x07C9F is `add ax, 0x1d0b` - which is 0x1B4B + 0x1C0, so the
+ * table's offset within the file is the original's arithmetic and not an
+ * assumption:
+ *
+ *     +0x00  width            image 0x07CA4  mov dl, [bx]
+ *     +0x01  height           image 0x07CA8  mov cl, [bx + 1]
+ *     +0x02  image_loc        image 0x07CAB  mov si, [bx + 2]
+ *     +0x04  mask_loc         image 0x07CAE  mov di, [bx + 4]
+ *
+ * PALETTES from 0x3C0: image 0x01AB5 is `lea di, [0x1f0b]`, which is
+ * 0x1B4B + 0x3C0, and image 0x01AB2 copies 8 bytes.
+ *
+ * WHAT IS STILL THE PUBLISHED DESCRIPTION, said plainly because the point of
+ * the addresses above is that these do not have one: the object fields at
+ * +0x00, +0x02, +0x03, +0x04, +0x05, +0x06, +0x08, +0x15, +0x17 and +0x1B.
+ * No reader of ds:0x1B4B touches them - the only two sites that index the
+ * file are image 0x037D6 and the terrain one, and between them they account
+ * for every field above and none of these. They are read from the PREPARED
+ * array at ds:0x17CB instead, which image 0x0378A builds and image 0x02FBA
+ * indexes with the same 28-byte stride, so the layouts are related and that
+ * relation has not been read. Until it is, those ten are inherited knowledge
+ * sitting next to measured knowledge, and the difference matters.
+ *
+ * The file is 1,056 bytes and the original asks for 4,096; DOS returns what
+ * is there. */
+int ground_load(const char *path, ground *g, const char **err)
+{
+    uint8_t buf[GROUND_SIZE];
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { if (err) *err = "cannot open ground file"; return -1; }
+    size_t got = fread(buf, 1, sizeof(buf), f);
+    fclose(f);
+    if (got != sizeof(buf)) {
+        if (err) *err = "ground file is not 1056 bytes";
+        return -1;
+    }
+    memset(g, 0, sizeof(*g));
+
+    /* 16 object entries of 28 bytes, from 0x000. */
+    for (uint8_t i = 0; i < GROUND_OBJECTS; i++) {
+        const uint8_t *e = buf + i * 28;
+        ground_object *o = &g->objects[i];
+        o->animation_flags = le16(e + 0x00);
+        o->start_frame     = e[0x02];
+        o->end_frame       = e[0x03];
+        o->width           = e[0x04];
+        o->height          = e[0x05];
+        o->frame_data_size = le16(e + 0x06);
+        o->mask_offset     = le16(e + 0x08);
+        o->trigger_left    = le16(e + 0x0E);
+        o->trigger_top     = le16(e + 0x10);
+        o->trigger_width   = e[0x12];
+        o->trigger_height  = e[0x13];
+        o->trigger_effect  = e[0x14];
+        o->frames_base_loc = le16(e + 0x15);
+        o->preview_frame   = e[0x17];
+        o->trigger_sound   = e[0x1B];
+    }
+
+    /* 64 terrain entries of 8 bytes, from 0x1C0. */
+    for (uint8_t i = 0; i < GROUND_TERRAIN; i++) {
+        const uint8_t *e = buf + 0x1C0 + i * 8;
+        ground_terrain *t = &g->terrain[i];
+        t->width     = e[0x00];
+        t->height    = e[0x01];
+        t->image_loc = le16(e + 0x02);
+        t->mask_loc  = le16(e + 0x04);
+    }
+
+    /* Palettes from 0x3C0: three EGA sets of 8 bytes, then three VGA sets of
+     * 8 entries x 3 bytes. Terrain only ever uses the upper eight colours,
+     * which is why its fourth bitplane doubles as the mask.
+     *
+     * The upper eight come from this set's `custom` array. The LOWER eight do
+     * NOT come from the file's `standard` array, whatever the published
+     * description implies - the game carries them itself. Measured against the
+     * original running under an emulator, fourteen of sixteen entries agreed
+     * and the two that did not were both here:
+     *
+     *   entry 4  the file holds 3C 3C 00; the game uses 2C 2C 00 - a darker
+     *            yellow. Six of the other seven file entries match the game
+     *            exactly, which is what makes this easy to miss.
+     *   entry 7  is not fixed at all. It is a copy of custom[0], so it equals
+     *            entry 8. The published note does say "entry 7 is variable";
+     *            it does not say the rest are unreliable.
+     *
+     * So the fixed eight are transcribed here as 6-bit DAC values, taken from
+     * what the original actually programs. */
+    static const uint8_t FIXED[7][3] = {
+        { 0x00, 0x00, 0x00 },   /* 0 transparent / background */
+        { 0x10, 0x10, 0x38 },   /* 1 blue    - lemming bodies */
+        { 0x00, 0x2C, 0x00 },   /* 2 green   - lemming hair   */
+        { 0x3C, 0x34, 0x34 },   /* 3 white   - skin           */
+        { 0x2C, 0x2C, 0x00 },   /* 4 dark yellow              */
+        { 0x3C, 0x08, 0x08 },   /* 5 red                      */
+        { 0x20, 0x20, 0x20 },   /* 6 grey                     */
+    };
+    const uint8_t *vga_custom  = buf + 0x3D8;
+    /* 0x3D8 custom, 0x3F0 standard, 0x408 preview - eight triples each. */
+    const uint8_t *vga_preview = buf + 0x408;
+    for (uint8_t i = 0; i < 8; i++) {
+        g->preview[i].r = widen6(vga_preview[i * 3 + 0]);
+        g->preview[i].g = widen6(vga_preview[i * 3 + 1]);
+        g->preview[i].b = widen6(vga_preview[i * 3 + 2]);
+    }
+
+    for (uint8_t i = 0; i < 7; i++) {
+        g->palette[i].r = widen6(FIXED[i][0]);
+        g->palette[i].g = widen6(FIXED[i][1]);
+        g->palette[i].b = widen6(FIXED[i][2]);
+    }
+    for (uint8_t i = 0; i < 8; i++) {
+        lem_rgb c = { widen6(vga_custom[i * 3 + 0]),
+                      widen6(vga_custom[i * 3 + 1]),
+                      widen6(vga_custom[i * 3 + 2]) };
+        g->palette[8 + i] = c;
+    }
+    g->palette[7] = g->palette[8];      /* entry 7 tracks custom[0] */
+    return 0;
+}

@@ -1545,7 +1545,6 @@ static void sound_close(void)
     adlib_free();
 }
 
-#define GROUND_SIZE 1056
 
 /* A 6-bit DAC value as 8 bits, the way the hardware does it: the top two bits
  * repeated into the bottom, not a proportional scale. The two agree at 0 and
@@ -2034,113 +2033,6 @@ uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
  */
 uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
-/* NOT TRANSCRIBED - GROUNDxO.DAT, from the published description, checked
- * against the files. Where the original parses it is not established.
- *
- * The port's own, and there is nothing to transcribe: THE ORIGINAL NEVER
- * PARSES THIS FILE. It loads all 4,096 bytes raw to ds:0x1B4B (image 0x01A0B
- * names it, 0x01A18 calls the loader at image 0x01916) and then indexes the
- * bytes in place - image 0x037D1 does `mul 0x1C` on the object id and
- * `lea si,[0x1b4b]`, reading the trigger box straight out of [si+0x0E] and
- * [si+0x10]. This struct is a convenience the port chose; the file layout it
- * fills in is the transcription, and that is in the field comments.
- */
-int ground_load(const char *path, ground *g, const char **err)
-{
-    uint8_t buf[GROUND_SIZE];
-
-    FILE *f = fopen(path, "rb");
-    if (!f) { if (err) *err = "cannot open ground file"; return -1; }
-    size_t got = fread(buf, 1, sizeof(buf), f);
-    fclose(f);
-    if (got != sizeof(buf)) {
-        if (err) *err = "ground file is not 1056 bytes";
-        return -1;
-    }
-    memset(g, 0, sizeof(*g));
-
-    /* 16 object entries of 28 bytes, from 0x000. */
-    for (uint8_t i = 0; i < GROUND_OBJECTS; i++) {
-        const uint8_t *e = buf + i * 28;
-        ground_object *o = &g->objects[i];
-        o->animation_flags = le16(e + 0x00);
-        o->start_frame     = e[0x02];
-        o->end_frame       = e[0x03];
-        o->width           = e[0x04];
-        o->height          = e[0x05];
-        o->frame_data_size = le16(e + 0x06);
-        o->mask_offset     = le16(e + 0x08);
-        o->trigger_left    = le16(e + 0x0E);
-        o->trigger_top     = le16(e + 0x10);
-        o->trigger_width   = e[0x12];
-        o->trigger_height  = e[0x13];
-        o->trigger_effect  = e[0x14];
-        o->frames_base_loc = le16(e + 0x15);
-        o->preview_frame   = e[0x17];
-        o->trigger_sound   = e[0x1B];
-    }
-
-    /* 64 terrain entries of 8 bytes, from 0x1C0. */
-    for (uint8_t i = 0; i < GROUND_TERRAIN; i++) {
-        const uint8_t *e = buf + 0x1C0 + i * 8;
-        ground_terrain *t = &g->terrain[i];
-        t->width     = e[0x00];
-        t->height    = e[0x01];
-        t->image_loc = le16(e + 0x02);
-        t->mask_loc  = le16(e + 0x04);
-    }
-
-    /* Palettes from 0x3C0: three EGA sets of 8 bytes, then three VGA sets of
-     * 8 entries x 3 bytes. Terrain only ever uses the upper eight colours,
-     * which is why its fourth bitplane doubles as the mask.
-     *
-     * The upper eight come from this set's `custom` array. The LOWER eight do
-     * NOT come from the file's `standard` array, whatever the published
-     * description implies - the game carries them itself. Measured against the
-     * original running under an emulator, fourteen of sixteen entries agreed
-     * and the two that did not were both here:
-     *
-     *   entry 4  the file holds 3C 3C 00; the game uses 2C 2C 00 - a darker
-     *            yellow. Six of the other seven file entries match the game
-     *            exactly, which is what makes this easy to miss.
-     *   entry 7  is not fixed at all. It is a copy of custom[0], so it equals
-     *            entry 8. The published note does say "entry 7 is variable";
-     *            it does not say the rest are unreliable.
-     *
-     * So the fixed eight are transcribed here as 6-bit DAC values, taken from
-     * what the original actually programs. */
-    static const uint8_t FIXED[7][3] = {
-        { 0x00, 0x00, 0x00 },   /* 0 transparent / background */
-        { 0x10, 0x10, 0x38 },   /* 1 blue    - lemming bodies */
-        { 0x00, 0x2C, 0x00 },   /* 2 green   - lemming hair   */
-        { 0x3C, 0x34, 0x34 },   /* 3 white   - skin           */
-        { 0x2C, 0x2C, 0x00 },   /* 4 dark yellow              */
-        { 0x3C, 0x08, 0x08 },   /* 5 red                      */
-        { 0x20, 0x20, 0x20 },   /* 6 grey                     */
-    };
-    const uint8_t *vga_custom  = buf + 0x3D8;
-    /* 0x3D8 custom, 0x3F0 standard, 0x408 preview - eight triples each. */
-    const uint8_t *vga_preview = buf + 0x408;
-    for (uint8_t i = 0; i < 8; i++) {
-        g->preview[i].r = widen6(vga_preview[i * 3 + 0]);
-        g->preview[i].g = widen6(vga_preview[i * 3 + 1]);
-        g->preview[i].b = widen6(vga_preview[i * 3 + 2]);
-    }
-
-    for (uint8_t i = 0; i < 7; i++) {
-        g->palette[i].r = widen6(FIXED[i][0]);
-        g->palette[i].g = widen6(FIXED[i][1]);
-        g->palette[i].b = widen6(FIXED[i][2]);
-    }
-    for (uint8_t i = 0; i < 8; i++) {
-        lem_rgb c = { widen6(vga_custom[i * 3 + 0]),
-                      widen6(vga_custom[i * 3 + 1]),
-                      widen6(vga_custom[i * 3 + 2]) };
-        g->palette[8 + i] = c;
-    }
-    g->palette[7] = g->palette[8];      /* entry 7 tracks custom[0] */
-    return 0;
-}
 
 /* ======================================================================
  * SHOWING A LEVEL.

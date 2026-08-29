@@ -94,6 +94,9 @@ void dat_free(dat_file *d);
  * GROUNDxO.DAT - the per-set bitmap index and palette.
  * ==================================================================== */
 
+/* The file on disk. The original asks image 0x01916 for 0x1000 bytes at
+ * image 0x01A15 and DOS returns what is there. */
+#define GROUND_SIZE 1056
 #define GROUND_OBJECTS 16
 #define GROUND_TERRAIN 64
 
@@ -1352,6 +1355,10 @@ int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
  * Reading the buttons pumps the event queue and costs ~10ms; see sdl_io.c. */
 /* The window, which is this port's `int 10h` - image 0x00462 set mode 0x0D
  * for a level and image 0x04DC2's callers the mode 0x10 screens. */
+/* The DAC's six bits widened to eight - what the card did on the way out.
+ * ground_load needs it because GROUNDxO.DAT stores the palette in those units.
+ */
+uint8_t widen6(uint8_t v);
 int  view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale);
 uint16_t view_buttons(void);
 void view_present_indexed(const uint8_t *pix, uint16_t w, uint16_t h,
