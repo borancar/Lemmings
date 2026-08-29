@@ -1342,8 +1342,15 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
  * screen, the input chooser - and wait for the viewer to dismiss it. The
  * briefing says "Press mouse button to continue" and means it, so a click
  * dismisses as well as Esc. Returns when it is dismissed. */
-void menu_show_until_dismissed(const menu_screen *m, const char *title,
-                               uint8_t scale);
+/* image 0x04683: which way the briefing was left. A mouse button or ds:0x1FC7
+ * bit 0x40 plays; bit 0x20 - Esc here - goes back to the menu. */
+#define BRIEF_PLAY  1
+#define BRIEF_MENU  2
+int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
+                                  uint8_t scale);
+/* image 0x047A9's wait, shown and polled - see game.c's level_show_results. */
+int32_t view_results_wait(const uint8_t *pix, const lem_rgb *pal,
+                          uint8_t scale);
 
 /* The menu's own key handling, transcribed: image 0x04D4B's translation
  * through ds:0x202E, then image 0x0447B's compare chain. Exposed so the

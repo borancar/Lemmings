@@ -359,9 +359,14 @@ static uint8_t scancode_of(SDL_Keycode k)
 }
 
 /* A screen with nothing on it to choose takes Esc, and a click. */
+/* IMAGE 0x04683's THREE ANSWERS, kept apart. A mouse button and ds:0x1FC7's
+ * 0x40 both go to image 0x046A2 and play; its 0x20 goes to image 0x0469B,
+ * which pops the stack and jumps to image 0x04401 - the MENU. This used to
+ * return 1 for Esc and take 1 as the click id too, so the caller could not
+ * tell them apart and every briefing played. */
 static int32_t dismiss_input(uint8_t scancode)
 {
-    return menu_key_code(scancode) == 0x1B ? 1 : -1;
+    return menu_key_code(scancode) == 0x1B ? BRIEF_MENU : -1;
 }
 
 int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
@@ -1673,9 +1678,10 @@ static void view_fade_out(const uint8_t *pix, uint16_t w, uint16_t h,
     }
 }
 
-void menu_show_until_dismissed(const menu_screen *m, const char *title,
-                               uint8_t scale)
+int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
+                                  uint8_t scale)
 {
+    int32_t how;
 
     /* The briefing is two pictures stacked with different palettes - see
      * menu_screen.split. Every other screen leaves split at zero. */
@@ -1690,8 +1696,8 @@ void menu_show_until_dismissed(const menu_screen *m, const char *title,
     }
     g_split_pal = m->split ? g_fade_low_cur : NULL;
     /* Esc or a click; the briefing says "Press mouse button to continue". */
-    view_interact_anim(m->pix, MENU_W, MENU_H, g_fade_cur, title, scale,
-                       dismiss_input, 1, fade_tick, NULL);
+    how = view_interact_anim(m->pix, MENU_W, MENU_H, g_fade_cur, title, scale,
+                             dismiss_input, BRIEF_PLAY, fade_tick, NULL);
 
     /* And back down to black on the way out. The original fades the screen
      * away before it draws the next one; cutting straight to the level is
@@ -1704,6 +1710,9 @@ void menu_show_until_dismissed(const menu_screen *m, const char *title,
 
     g_split = 0;
     g_split_pal = NULL;
+    /* image 0x046A2 fades out on BOTH answers - the one that plays and the
+     * one that goes back - so the fade is here and the answer is returned. */
+    return how;
 }
 
 /* A flat view of the parsed header, so tools/verify_level.py can compare
@@ -2181,90 +2190,21 @@ int level_load(const char *dir, const char *file, uint32_t which,
     return level_graphics_names(lv, gn, sizeof gn, xn, sizeof xn) == 1;
 }
 
-int level_show_briefing(const char *dir, const level *lv,
-                        uint8_t scale, const char **err)
+
+
+
+/* WHAT THE HARDWARE USED TO DO for image 0x047A9's wait. ds:0x14 was a byte
+ * the mouse driver kept current; reading it is an event queue here, and the
+ * release-before-press that image 0x047A9 gets from testing a STATE has to be
+ * done explicitly. The routine this serves - which button means what - is
+ * game.c's level_show_results.
+ *
+ * `pix` is composed and `pal` chosen already; this shows them and reports
+ * which of image 0x047B4's and image 0x047B9's answers came back. */
+int32_t view_results_wait(const uint8_t *pix, const lem_rgb *pal, uint8_t scale)
 {
-    menu_screen br;
-    if (menu_briefing_screen(dir, lv, level_rating(), &br, err) != 0)
-        return -1;
-    menu_show_until_dismissed(&br, "PC Lemmings", scale);
-    menu_free(&br);
-    return 0;
-}
-
-
-/* THE RESULTS SCREEN, image 0x046EB - the port's window for it.
- *
- * The composition is game.c's; this is the part the hardware used to do:
- * a 640x350 mode 0x10 picture, the palette it is shown through, and a loop
- * that waits for a button. That loop is image 0x047A9's, and it polls -
- * there is no retrace wait in it at all, which is the sort of thing worth
- * knowing before writing a probe for the screen.
- *
- * The BACKGROUND is not drawn. Image 0x046EB's set-up calls have not been
- * read, so this puts the text on a cleared screen and the difference is
- * whatever those calls draw - which is the honest state of it, and visible
- * rather than hidden.
- *
- * Returns 1 for the left button (image 0x047B4: on to the next level) and
- * 0 for anything else.
- */
-/* THE SCREEN'S I/O, and only that: load the file it draws from, hand the
- * composing to game.c, put it on the display, and read a button. What it
- * SHOWS - the verdict line, the percentages, whether the clock ran out - is
- * image 0x046EB's and lives in game.c; this used to be given all of it as
- * arguments by main.c. */
-int level_show_results(const char *dir, uint8_t level_no, const char *code,
-                       uint8_t scale, const char **err)
-{
-    char path[1024];
-    dat_file mainf;
-    snprintf(path, sizeof(path), "%s/main.dat", dir);
-    if (dat_load(path, &mainf, err) != 0) return 0;
-    if (mainf.count <= RESULTS_FONT_SECTION) {
-        dat_free(&mainf);
-        if (err) *err = "main.dat has no section 4 - no results font";
-        return 0;
-    }
-
-    uint8_t *pix = calloc((size_t)MENU_W * MENU_H, 1);
-    if (!pix) { dat_free(&mainf); return 0; }
-
-    const uint8_t *bg = NULL; uint32_t bg_len = 0;
-    if (mainf.count > RESULTS_BG_SECTION) {
-        bg = mainf.sections[RESULTS_BG_SECTION].data;
-        bg_len = mainf.sections[RESULTS_BG_SECTION].size;
-    }
-    /* image 0x04710 asks the CLOCK for itself, and image 0x0471D and image
-     * 0x04720 read ds:0x40 and ds:0x41 - none of it comes from a caller. */
-    level_results_draw(pix, MENU_W, MENU_H,
-                       mainf.sections[RESULTS_FONT_SECTION].data,
-                       mainf.sections[RESULTS_FONT_SECTION].size,
-                       bg, bg_len,
-                       level_saved_pct(), level_needed_pct(),
-                       level_out_of_time(), lem_input_kind,
-                       level_no, code);
-
-    /* THE SCREEN'S OWN WAIT, transcribed from image 0x047A9 - not the menu's
-     * hotspot matcher, which cannot tell one button from another:
-     *
-     *     0x047A9  ax = ds:0x14 / test ax,7 / jne 0x47A9   wait for RELEASE
-     *     0x047B1  ax = ds:0x14
-     *     0x047B4  test ax,1 / jne 0x47D7    left  -> the next level
-     *     0x047B9  test ax,2 / jne 0x47CB    right -> the menu
-     *     0x047C9  je 0x47B1                 otherwise keep waiting
-     *
-     * Two things the matcher got wrong. It returned the same answer for
-     * either button, so a right click advanced instead of going back to the
-     * menu; and it takes a press immediately, where the original waits for
-     * every button to be UP first - which is what stops the click that
-     * dismissed the level being read again by this screen.
-     */
-    lem_rgb pal[16];
-    level_results_palette(pal);
-    if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0) {
-        free(pix); dat_free(&mainf); return RESULTS_MENU;
-    }
+    if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0)
+        return RESULTS_MENU;
 
     int32_t out = RESULTS_MENU;
     int released = 0;                     /* image 0x047AF's wait */
@@ -2325,8 +2265,5 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
         SDL_RenderPresent(g_ren);
         SDL_Delay(10);
     }
-    free(pix);
-    dat_free(&mainf);
     return out;
 }
-

@@ -165,11 +165,15 @@ int main(int argc, char **argv)
                     fprintf(stderr, "  %s\n", err);
                     break;
                 }
-                if (level_show_briefing(data, &lv,
-                                        DEFAULT_SCALE, &err) != 0) {
+                /* image 0x0469B: the briefing's other exit pops the level
+                 * off and jumps to image 0x04401, the menu. It is not an
+                 * error, and the port used to have no way to reach it. */
+                int brc = level_show_briefing(data, &lv, DEFAULT_SCALE, &err);
+                if (brc < 0) {
                     fprintf(stderr, "  %s\n", err);
                     break;
                 }
+                if (brc == BRIEF_MENU) break;
                 if (level_show(data, &lv, DEFAULT_SCALE, &err) != 0) {
                     fprintf(stderr, "  %s\n", err);
                     break;
