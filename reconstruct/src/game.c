@@ -5969,6 +5969,9 @@ uint8_t lemmings_live(const lemming *lem, uint8_t n)
  * 624: level 2 starts at 528, and hard-coding the first level's put every
  * candidate in the wrong place and returned nothing at any geometry. */
 #define FALL_SPR_BASE   14320   /* 10 rows, 2 planes - ink 222, 0 differ */
+/* Image 0x059BB's group 9 is EIGHT frames of 40, not four: four facing each
+ * way, the same split the climber has at CLIMB_SPR_LEFT. */
+#define FALL_SPR_LEFT   (FALL_SPR_BASE + 4 * 40)
 #define SPLAT_SPR_BASE  16176   /* 10 rows, 2 planes - ink 147, 0 differ */
 #define FLOAT_SPR_BASE  14640   /* 16 rows, 3 planes - ink 356, 0 differ */
 #define BLAST_SPR_BASE  20080   /* 10 rows, 2 planes - ink 256, 0 differ */
@@ -6377,7 +6380,20 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
         else if (a->flags & 0x0400) { sb = FLOAT_SPR_BASE; sh = 16; sp = 3; sf = 8; }
         else if (a->flags & 0x0001) { sb = SPLAT_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x8000) { sb = BLAST_SPR_BASE; sh = 10; sp = 2; sf = 16; }
-        else if (a->flags & 0x0004) { sb = FALL_SPR_BASE; sh = 10; sp = 2; sf = 4; }
+        else if (a->flags & 0x0004) {
+            /* THE FALLER HAS TWO DIRECTIONS, like the climber. Group 9 of
+             * image 0x059BB's table is EIGHT frames of 40 from 14320 where
+             * this drew four, and the climber - group 3, confirmed - splits
+             * its sixteen as eight right then eight left with
+             * CLIMB_SPR_LEFT at exactly half. The same split here puts the
+             * left-facing set at 14320 + 4 * 40.
+             *
+             * That is what image 0x070AB reaches by adding the state; this
+             * port picks a base instead, which is how it already handles the
+             * climber. */
+            sb = (a->dir == 1) ? FALL_SPR_BASE : FALL_SPR_LEFT;
+            sh = 10; sp = 2; sf = 4;
+        }
         if (sb) {
             if (a->anim >= sf) return;
             uint32_t plane = 2u * sh;
