@@ -10944,6 +10944,52 @@ int level_frame_tick(void *ctx, uint8_t *pix)
 }
 
 
+/* IMAGE 0x036B6 - THE LEVEL RECORD INTO THE RUNNING STATE, THEN THE TERRAIN.
+ *
+ *     0x036B6  call 0x0368E       the master at 0x4A40 cleared, 0x8880 bytes,
+ *                                 and declared as the blitter's surface
+ *     0x036BC  [di+0x00] -> ds:0x64 AND ds:0x67   the release rate: the
+ *                                 level's own is both the floor and the
+ *                                 starting value
+ *     0x036C7  [di+0x02] -> ds:0x47   how many lemmings there are
+ *     0x036D0  [di+0x04] -> ds:0x44   how many must be saved
+ *     0x036D9  [di+0x06] + 0x30 -> ds:0x20A7   the minutes, already the DIGIT
+ *                                 the status line prints
+ *     0x036E5  [di+0x08] -> ds:0x6A   and seven more three bytes apart, up to
+ *      ..0x0372A                  ds:0x7F - the eight skills in header order
+ *     0x0372D  [di+0x18] + 0x10 -> ds:0x00   THE SCROLL. The sixteen in it is
+ *                                 the offset this port carries as the
+ *                                 difference between a record x and a canvas
+ *                                 x, which is why view_x is start_x and not
+ *                                 start_x + 16
+ *     0x03739  ds:0x00 >> 3 -> ds:0x02   its byte column
+ *     0x03742  ds:0x0FE8 non-zero -> image 0x01A7B, the VGASPEC picture
+ *     0x0374F  otherwise si = ds:0x10EB, four bytes an entry, image 0x07C67
+ *                                 for each, ending on 0xFFFF
+ *     0x0376A  done - the instruction tools/prove.sh stops at
+ *
+ * THE UNPACK COMES BEFORE THE COMPOSITION. The port had those the other way
+ * round: it composed the terrain and then reset the state from the header.
+ * Nothing read that state in between, so it could not show - but the order is
+ * the routine's, and the next thing put between them would have inherited
+ * whichever one happened to be there.
+ *
+ * The port's level_status_reset carries image 0x036C7, image 0x036D0 and the
+ * skills at image 0x036E5, because it calls level_skills_reset itself. */
+static int level_begin(canvas *terrain, struct level_frame *A,
+                       const ground *g, const uint8_t *sec, uint32_t len,
+                       const char **err)
+{
+    level_release_reset(&A->lv);      /* image 0x036BC: ds:0x64 and ds:0x67 */
+    level_status_reset(&A->lv);       /* image 0x036C7 .. image 0x0372A */
+    A->view_x = A->lv.start_x;        /* image 0x0372D, less the sixteen */
+    /* image 0x0374F, and image 0x0368E's clear is render_terrain's own first
+     * act. A VGASPEC level (image 0x03742) is refused before this is reached
+     * - see level_graphics_names. */
+    return render_terrain(terrain, &A->lv, g, sec, len, err);
+}
+
+
 /* THE LEVEL ITSELF - IMAGE 0x00455, the level's set-up, and then image
  * 0x0454C's `jmp 0x000FB`, the loop whose frame is written out above
  * level_play_step.
@@ -11011,43 +11057,75 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
     if (canvas_init(&c) != 0 || canvas_init(&terrain) != 0) {
         dat_free(&gfx); if (err) *err = "out of memory"; return -1;
     }
-    /* Terrain into a pristine copy. The original never bakes the objects in -
-     * it animates them at display time, images 0x07BB8 and 0x07C0A - which is
-     * why tools/prove.sh composes terrain alone and matches to the pixel. So
-     * the terrain is composed once and each frame starts from it. */
-    rc = render_terrain(&terrain, lv, &g, gfx.sections[0].data,
-                        gfx.sections[0].size, err);
-    if (rc == 0 && gfx.count >= 2) {
-        static struct level_frame A;
-        static dat_file mainf;
-        int have_main = 0;
-        A.lv = *lv; A.sec = gfx.sections[1].data; A.len = gfx.sections[1].size;
-        A.from = &terrain;
-        A.lem_sec = NULL; A.lem_len = 0; A.released = 0;
-        A.pan_sec = NULL; A.pan_len = 0;
-        A.view_x = lv->start_x;
-        A.stepped = 0;
-        level_saved_reset();
-        level_triggers_set(&A.lv, &g);
-        A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
+    if (gfx.count < 2) {
+        canvas_free(&c);
+        canvas_free(&terrain);
+        dat_free(&gfx);
+        if (err) *err = "no sprite section";
+        return -1;
+    }
 
-        /* The lemming sprites live in main.dat, not in the level's own
-         * graphics - so the level path has to open it too. */
-        snprintf(path, sizeof(path), "%s/main.dat", dir);
-        {
-            const char *e2 = "unknown error";
-            if (dat_load(path, &mainf, &e2) == 0
-                    && mainf.count > LEM_SPRITE_SECTION) {
-                A.lem_sec = mainf.sections[LEM_SPRITE_SECTION].data;
-                A.lem_len = mainf.sections[LEM_SPRITE_SECTION].size;
-                have_main = 1;
-                if (mainf.count > PANEL_FONT_SECTION) {
-                    A.pan_sec = mainf.sections[PANEL_FONT_SECTION].data;
-                    A.pan_len = mainf.sections[PANEL_FONT_SECTION].size;
-                }
+    static struct level_frame A;
+    static dat_file mainf;
+    int have_main = 0;
+    A.lv = *lv; A.sec = gfx.sections[1].data; A.len = gfx.sections[1].size;
+    A.from = &terrain;
+    A.lem_sec = NULL; A.lem_len = 0; A.released = 0;
+    A.pan_sec = NULL; A.pan_len = 0;
+    A.stepped = 0;
+    A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
+
+    /* IMAGE 0x00458 - the trigger map, ss:0x42B2 for 0x642 bytes. It is
+     * cleared before anything else and image 0x037C2 and image 0x03839 fill
+     * it in; level_triggers_set is both. */
+    level_triggers_set(&A.lv, &g);
+
+    /* IMAGE 0x00462 through IMAGE 0x00468 are the machine, not the game:
+     * `int 10h ax=0x8D` for mode 0x0D, the palette at image 0x052F4 chosen on
+     * ds:0x1F7C, and the PIT divisor into ds:0x1FC9. This port sets the mode
+     * and the palette when it opens the window and paces on LEVEL_FRAME_HZ,
+     * which is that divisor's answer. */
+
+    /* THE WIPE'S SHARE, image 0x04551. The original has already zeroed these
+     * by the time it gets here - the lemming array at ds:0x88, the saved
+     * count at ds:0x46 - because they sit inside the 0xFCA bytes it erases at
+     * image 0x0455B. The port's arrays are per-level rather than a fixed run
+     * of DGROUP, so it clears them where they are declared instead. */
+    level_saved_reset();
+    level_start_reset();
+    lemmings_reset(A.lem);
+
+    /* The lemming sprites live in main.dat, not in the level's own
+     * graphics - so the level path has to open it too. */
+    snprintf(path, sizeof(path), "%s/main.dat", dir);
+    {
+        const char *e2 = "unknown error";
+        if (dat_load(path, &mainf, &e2) == 0
+                && mainf.count > LEM_SPRITE_SECTION) {
+            A.lem_sec = mainf.sections[LEM_SPRITE_SECTION].data;
+            A.lem_len = mainf.sections[LEM_SPRITE_SECTION].size;
+            have_main = 1;
+            if (mainf.count > PANEL_FONT_SECTION) {
+                A.pan_sec = mainf.sections[PANEL_FONT_SECTION].data;
+                A.pan_len = mainf.sections[PANEL_FONT_SECTION].size;
             }
         }
+    }
 
+    /* IMAGE 0x0046B - the record into the state, and then the terrain. */
+    rc = level_begin(&terrain, &A, &g, gfx.sections[0].data,
+                     gfx.sections[0].size, err);
+
+    /* IMAGE 0x0046E puts the pointer at (0x96, 0x64) through INT 33h AX=4,
+     * and only when ds:0x1F73 is not 0xFF - which is to say only when the
+     * input device is NOT the mouse. This port is always the mouse, so the
+     * original does not do it here either.
+     *
+     * IMAGE 0x00480 clears ds:0x0EA8, the on-screen byte-column table. The
+     * port rebuilds that per frame where image 0x07070 reads it, so there is
+     * nothing to clear once here. */
+
+    if (rc == 0) {
         level_anim_init(A.st, &A.lv, &g);
         /* One step before the first frame. Measured: without it the exit's
          * flames are one animation frame behind the original's at every
@@ -11055,10 +11133,8 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
         level_anim_step(A.st, &A.lv);
         /* image 0x04836 reads the level's extended graphics set. */
         music_set_level(&A.lv);
-        level_start_reset();
-        level_release_reset(&A.lv);
-        level_status_reset(&A.lv);
-        lemmings_reset(A.lem);
+    }
+    if (rc == 0) {
 
         /* The level gets its own screen - 320x200, play area over panel -
          * rather than view_run_anim's window of the play area alone. */
@@ -11074,8 +11150,6 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
         level_status_in(level_saved_percent(&A.lv));
         free(A.panel); A.panel = NULL;
         if (have_main) dat_free(&mainf);
-    } else if (rc == 0) {
-        view_run(&terrain, g.palette, "PC Lemmings", lv->start_x, scale);
     }
     canvas_free(&c);
     canvas_free(&terrain);
