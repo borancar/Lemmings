@@ -4837,8 +4837,42 @@ has nothing to seed with here.
   per-frame swap, and the briefing is the screen that reprograms it mid-life.
   Cosmetic, but it is a thing the original does and this port does not.
 
-- **THE PANEL IS DRAWN WITH DIFFERENT ATTRIBUTES PER MACHINE, and this is
-  MEASURED.** Two recordings of the original on the same level, Fun 1, frame
+- **COMPAT USES A DIFFERENT PANEL GRAPHIC - MAIN.DAT SECTION 6 - and the port
+  has never loaded it.** Found by probing what writes the panel's rows and
+  following the source segment back, which is what settled six rounds of
+  guessing at palettes.
+
+  `tools/probe_writes.py --play --rows 176 199` names the same four
+  instructions in both machines - image `0x077B9`, `0x077DD`, `0x077F5` and
+  image `0x07804`, a plane-by-plane blit - so the drawing code is identical.
+  Image `0x077AC` takes its source from the segment in `ds:0x1FEC`, and that
+  buffer is what differs.
+
+  Image `0x058D2` opens `main.dat` (`ds:0x252B`) and reads its sections in
+  order. Image `0x05976` then does this, and ONLY when `ds:0x200E` is set:
+
+  ```
+  0x0597E  es = ds = [0x1FE4]        a scratch segment
+  0x0598A  call 0x01BA9              decompress ANOTHER section into it
+  0x0599A  bx=0x428, cx=0x28, ax=0x2C, di=0xF91F
+  0x059A1  call 0x057D1              convert it
+  0x059A6  di = 0xA0, si = 0x1900
+  0x059AC  es = [0x1FEC]             the panel source
+  0x059B4  cx = 0x720 / rep movsb    1824 bytes over the panel artwork
+  ```
+
+  **The arithmetic pins the section.** `main.dat` has seven; the port uses 0,
+  2, 3 and 4. Section 6 is 8,224 bytes, and the copy takes 1,824 from offset
+  6,400 - which is 8,224 exactly. Section 6 is the compat panel.
+
+  So the port draws the HIGH panel art in compat, whose attributes 8..15 land
+  on the terrain's colours, which is the orange a player reported. The fix is
+  to load section 6 when the machine is a PC compatible and copy its last
+  1,824 bytes over the panel artwork at offset 0xA0 - and to read what image
+  `0x057D1` does to it first, because the copy is of the CONVERTED bytes.
+
+- ~~**THE PANEL IS DRAWN WITH DIFFERENT ATTRIBUTES PER MACHINE**~~ - true, and
+  this is why. Two recordings of the original on the same level, Fun 1, frame
   39 - `out/panel_ref` at machine 2 and `out/panel_ref_compat` at machine 1 -
   counted over the panel's rows 176..199:
 
