@@ -7516,8 +7516,14 @@ void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x)
  * frame, so the reference holds whichever palette was current - and the port
  * was rendering the whole 320x200 from it, which is why the status line came
  * out with the terrain's oranges through it while every INDEX matched.
- */
-static const uint8_t PANEL_PAL6[8 * 3] = {
+ *
+ * AND IT IS IN THE IMAGE, so the measurement was never the source. These
+ * twenty-four bytes are ds:0x25F0, image 0x0C080, byte for byte - the eight
+ * the swap puts into DAC 16..23. Measuring them off a running DAC and writing
+ * the answer down as a literal is how a transcription turns into a
+ * reimplementation that happens to agree: the numbers were right and nothing
+ * said where they came from. */
+static const uint8_t PANEL_PAL6[8 * 3] = {   /* ds:0x25F0, image 0x0C080 */
     0x00, 0x2A, 0x00,   /* 8  green      */
     0x15, 0x3F, 0x15,   /* 9  bright green */
     0x15, 0x15, 0x15,   /* 10 dark grey  */
@@ -11646,7 +11652,18 @@ int ground_load(const char *path, ground *g, const char **err)
      *
      * So the fixed eight are transcribed here as 6-bit DAC values, taken from
      * what the original actually programs. */
-    static const uint8_t FIXED[7][3] = {
+    /* THE SCREEN PALETTE AS THE PROGRAM SHIPS IT - ds:0x25B8, image 0x0C048,
+     * sixteen 6-bit triples. Entries 0..6 are these; 7 ships as 38 20 08 and
+     * 8..15 ship as zero because image 0x053A1 fills them in from the level's
+     * own colours at run time - see below.
+     *
+     * TRANSCRIBED, NOT MEASURED. This was seven literals with a note saying
+     * they had been read off a running emulator, and two of them disagreed
+     * with the published file description - entry 4 is 2C 2C 00 where the file
+     * says 3C 3C 00, and entry 7 is not fixed at all. Both are explained by
+     * the buffer being the program's own: the game does not take those from
+     * GROUNDxO.DAT, it carries them, and image 0x053AF then overwrites 7. */
+    static const uint8_t FIXED[7][3] = {   /* image 0x0C048 */
         { 0x00, 0x00, 0x00 },   /* 0 transparent / background */
         { 0x10, 0x10, 0x38 },   /* 1 blue    - lemming bodies */
         { 0x00, 0x2C, 0x00 },   /* 2 green   - lemming hair   */
@@ -11664,6 +11681,21 @@ int ground_load(const char *path, ground *g, const char **err)
         g->preview[i].b = widen6(vga_preview[i * 3 + 2]);
     }
 
+    /* IMAGE 0x053A1 - the level's colours into the screen palette.
+     *
+     *     0x053A3  si = cs:[0x52E4]         the adapter's pointer table
+     *     0x053A7  di = cs:[si + 0x0C]      ds:0x25B8, the screen palette
+     *     0x053AB  si = cs:[si + 0x0A]      ds:0x1F23, where image 0x01AB2
+     *                                       copied the ground file's custom
+     *                                       eight
+     *     0x053AF  ax = [si] / [di+0x15] = ax
+     *     0x053B4  al = [si+2] / [di+0x17] = al   ENTRY 7 = custom[0]
+     *     0x053BA  di += 0x18                     ... which is entry 8
+     *     0x053BD  cx = 0x0C / rep movsw           entries 8..15, 24 bytes
+     *
+     * So entry 7 is not a fixed colour and not the file's seventh: it is a
+     * copy of the level's first custom one, which is why it always equals
+     * entry 8. The loop below is that routine. */
     for (uint8_t i = 0; i < 7; i++) {
         g->palette[i].r = widen6(FIXED[i][0]);
         g->palette[i].g = widen6(FIXED[i][1]);
