@@ -4702,6 +4702,16 @@ has nothing to seed with here.
 
 ## Next
 
+- **Image 0x08FF7 is the one blitter mode with no counterpart in the port.**
+  It is image 0x0909C's exact complement: image 0x09013 sets the graphics
+  controller's set/reset to 0x0F where the erase path sets it to 0, and both
+  then set enable-set/reset to `bp` bits 11..8 - so one writes ONE to the
+  selected planes and the other writes ZERO. The two routines are identical
+  but for that constant. Reached by the dispatch at image 0x08902 and called
+  directly from image 0x068FA, which is unread. Nothing in the port's own
+  composition fills planes with ones, so what it is FOR is the question -
+  not how it works.
+
 - **The digger is drawn now, and 40 pixels short.** Image 0x059BB's build
   table settles its geometry - three planes of fourteen rows, 84 bytes a
   frame from base 720, with image 0x05BB0 appending the mask to make the 112

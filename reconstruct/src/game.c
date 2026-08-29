@@ -607,7 +607,50 @@ uint8_t g_terrain_reverse = 0;
 /* Does this bp ask for clipping - image 0x08846's `test bp, 0xc`. */
 int blit_clips(uint16_t bp) { return (bp & (BLIT_CLIP_X | BLIT_CLIP_Y)) != 0; }
 
-/* Image 0x088EA's five-way dispatch - see the block above blit_clips. */
+/* ======================================================================
+ * THE FIVE MODES, and what each does to the card.
+ *
+ * Every one of them programs the graphics controller and then moves bytes.
+ * The port has no card, so what transcribes from each is its RULE, and each
+ * rule already lives at the call site that needs it - the port's shape, not
+ * a gap:
+ *
+ *   image 0x0890E  BLIT_SPRITE. Sequencer map mask 0x0F, GC 0 = 0, GC 1 =
+ *                  0x0E, GC 5 = 0, GC 3 = 0, then four passes - the first
+ *                  masked through GC 8 clearing planes 1..3, the other three
+ *                  OR-ing their plane in unmasked.
+ *                  -> blit_sprite carries it, with those addresses.
+ *   image 0x08B42  BLIT_NO_OVERWRITE, reached from image 0x088F3 BEFORE
+ *                  erase is ever tested - which is why a terrain piece
+ *                  carrying both flags is drawn.
+ *                  -> render_terrain's no-overwrite arm.
+ *   image 0x0909C  BLIT_ERASE. Image 0x090B8 sets GC 0 (set/reset) to ZERO
+ *                  and image 0x090BF sets GC 1 (enable set/reset) to bp bits
+ *                  11..8, so those planes are written as 0.
+ *                  -> render_terrain's erase arm.
+ *   image 0x08FF7  AND ITS EXACT COMPLEMENT, which nothing in this port has
+ *                  had a name for. Image 0x09013 sets GC 0 to 0x0F and image
+ *                  0x0901B sets GC 1 to the same bp nibble - so it writes
+ *                  ONE to the selected planes where erase writes zero. The
+ *                  two routines are identical but for that constant. It is
+ *                  reached by the dispatch at image 0x08902 and called
+ *                  directly from image 0x068FA.
+ *                  -> NOT TRANSCRIBED, and it is the one mode with no
+ *                  counterpart here. Nothing in the port's own composition
+ *                  fills planes with ones; what image 0x068FA wants it for
+ *                  is unread.
+ *   image 0x08D66  BLIT_SETRESET_ZERO, which forces planes 1..3 to zero so
+ *                  the blit can only write 0 or 1.
+ *                  -> the one-way arrows; CLAUDE.md records the reading.
+ *
+ * So the "route through 1010:8822" that render_terrain, render_objects and
+ * draw_preview each name is narrower than it sounded: four of the five rules
+ * are transcribed at their call sites and what is shared is the byte-moving,
+ * which a byte-per-pixel canvas does differently by construction. The fifth,
+ * image 0x08FF7, is a real gap and is now stated as one.
+ * ======================================================================
+ *
+ * Image 0x088EA's five-way dispatch. */
 blit_path blit_path_of(uint16_t bp)
 {
     if (bp & 0x4000) return BLIT_SETRESET_ZERO;   /* image 0x088EA */
