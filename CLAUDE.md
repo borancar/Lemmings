@@ -1145,6 +1145,23 @@ it is not the routine. The tell is the comment admitting it. When the port
 holds a value "because otherwise X does not happen", X has a routine and
 nobody has read it yet.
 
+## Inserting anything above a function detaches its provenance
+
+`provenance.py` reads the comment block **immediately** above a definition -
+deliberately, because a window would inherit the address of whatever came
+before. The cost is that adding a forward declaration, a helper, or a `#define`
+between a function and its comment silently orphans it, and `make test` starts
+failing for a reason that has nothing to do with the change.
+
+It happened three times in one session and twice went unnoticed long enough to
+be committed over - the second time `make test` was already at rc=2 while a
+commit message claimed it passed. Grepping the tail of `make test` for FAIL
+does not catch it either: the failure is a count printed by a Python script,
+not a line saying "FAIL".
+
+**Check `make test`'s exit status, not its output**, and after moving anything
+in `game.c` re-run `provenance.py` before believing the build is clean.
+
 ## A cited address is not a transcribed routine
 
 `provenance.py` asks whether every function in the port says where it came

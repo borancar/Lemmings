@@ -6914,6 +6914,8 @@ static int fade_component(uint8_t *cur8, uint8_t tgt8)
 #define PAL_SPLIT_FIRST 8
 #define PAL_SPLIT_COUNT 8
 
+/* Image 0x053CA's two numbers: `cx = 0x808` is eight entries from register
+ * eight. See the palette block above. */
 uint8_t palette_split_first(void) { return PAL_SPLIT_FIRST; }
 uint8_t palette_split_count(void) { return PAL_SPLIT_COUNT; }
 
@@ -6944,8 +6946,11 @@ uint8_t palette_split_count(void) { return PAL_SPLIT_COUNT; }
  * ====================================================================== */
 #define FADE_RETRACES 3          /* image 0x055EE..0x055F4 */
 
+/* Image 0x055EE, image 0x055F1 and image 0x055F4 - three waits to a notch. */
 uint8_t palette_fade_retraces(void) { return FADE_RETRACES; }
 
+/* Image 0x056E2 - one notch of a component, two at a time. (The EGA's own
+ * step is image 0x0563E and is the other adapter; see the palette block.) */
 int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n)
 {
     int moved = 0;
@@ -10141,6 +10146,9 @@ void menu_fx_plate_for_test(menu_screen *m)
     if (m->menu_sec) menu_fx_plate(m->pix, m->menu_sec);
 }
 
+/* Image 0x04E37, the same shape on ds:0x1F72 against ds:0x1F70 - and its
+ * sentinel is 2 rather than 4, because the FX plate has three states where
+ * the rating has four. `sec` is MAIN.DAT section 0. */
 static void menu_fx_plate(uint8_t *pix, const uint8_t *sec)
 {
     uint8_t al = g_fx_drawn;                    /* image 0x04E37 */
