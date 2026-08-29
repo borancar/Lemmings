@@ -4833,6 +4833,23 @@ has nothing to seed with here.
   that would score it is a click-driven comparison - `compare_play.py` - run
   on frames 0..2 after an assignment, and that has not been done.
 
+- **DOES THE ORIGINAL HAVE ANY KEYBOARD SHORTCUT IN A LEVEL AT ALL?** The Z
+  and X keys turned out to be unreachable - image `0x04085` selects them on
+  `ds:0x1FD0` and every one of the eight writes to that byte stores 0, while
+  the ISR keeps key state in the table at `ds:0x0F78` instead. A player
+  confirmed it in DOSBox.
+
+  **The same argument applies to the F-KEYS.** Image `0x03E6F` reads the same
+  `ds:0x1FD0`, so `level_key_button`'s F1..F12, Delete and keypad + rest on
+  the same premise and may be equally dead. The port binds them and they work
+  BECAUSE the port reads SDL keycodes directly, which is not what the original
+  does.
+
+  This is one question to a player and one minute in DOSBox: **do F3..F10
+  select skills there?** If they do not, the port has a set of keys the game
+  never had and they should go the way Z and X did - transcribed, cited and
+  unwired.
+
 - **`level_key_button` dispatches on an SDL keycode, not the scancode the
   original reads.** Image `0x03E6F` reads the byte the keyboard handler left
   at `ds:0x1FD0` - image `0x016D4` stores it and clears it on the key-up - and

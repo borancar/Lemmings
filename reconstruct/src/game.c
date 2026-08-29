@@ -1037,7 +1037,31 @@ void level_skill_select(uint8_t button)
     g_skill = button;                              /* image 0x03F66 */
 }
 
-/* IMAGE 0x040B5 AND IMAGE 0x040CD - Z AND X, which step the selected skill.
+/* IMAGE 0x040B5 AND IMAGE 0x040CD - Z AND X, AND THEY ARE UNREACHABLE.
+ *
+ * NOT WIRED TO A KEY, deliberately. The instructions are there and they do
+ * what the comment below says, but image 0x04085 selects them on ds:0x1FD0
+ * and NOTHING IN THE IMAGE EVER WRITES A SCANCODE THERE. All eight writes -
+ * image 0x00194, 0x01717, 0x01728, 0x01736, 0x0177A, 0x03FF6, 0x04AE8 and
+ * 0x04B3B - store the immediate 0, and `mov [0x1FD0], al` does not appear
+ * anywhere. The keyboard ISR keeps its state in the 83-entry table at
+ * ds:0x0F78 instead: image 0x0178E does `add bx, ax` on the scancode and
+ * image 0x0179E stores there.
+ *
+ * So `cmp al, 0x2C` can never match and these two branches are dead code in
+ * the shipped build. A player checked it in DOSBox and Z and X do nothing,
+ * which is what sent me back to the bytes.
+ *
+ * IT IS KEPT, transcribed and unreachable, because that is what the original
+ * contains and the next reader will find image 0x04085 and have the same
+ * idea. Wiring it up adds a feature the game does not have.
+ *
+ * THE LESSON IS MINE. I read the dispatch, transcribed it, wrote a test that
+ * exercised my own function and passed, and shipped a key the game never had.
+ * Nothing in a transcription tells you the code RUNS - the tests drove
+ * level_skill_key directly, which is a check of the arithmetic and not of the
+ * reachability. This repository already says a negative result is only
+ * evidence if the positive control fired; the same holds for a positive one.
  *
  *     0x040B5  cmp ds:0x84, 0 / jne     the divider, so a held key repeats
  *     0x040BC  dec ds:0x82              one back

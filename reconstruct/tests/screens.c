@@ -1821,11 +1821,18 @@ int main(int argc, char **argv)
     }
 
     /* ==================================================================
-     * IMAGE 0x040B5 AND IMAGE 0x040CD - Z AND X.
+     * IMAGE 0x040B5 AND IMAGE 0x040CD - Z AND X, WHICH NOTHING REACHES.
      *
-     * The port selected a skill from the panel click alone, so the keyboard
-     * did nothing. Both keys are gated on ds:0x84, image 0x03B3F's divider,
-     * which is 0 on one frame in three.
+     * These check the ARITHMETIC of a routine the original never runs: image
+     * 0x04085 selects it on ds:0x1FD0 and every write to that byte in the
+     * image stores 0. The transcription is kept because the instructions are
+     * there; the key is not wired, because wiring it adds a feature the game
+     * does not have.
+     *
+     * So this block proves the transcription right and says nothing about
+     * whether it runs - which is exactly the gap that let a made-up key
+     * ship. The divider it leans on, image 0x03B3F, IS reached, and the
+     * highlight lag that comes with it is real.
      * ================================================================== */
     {
         level_start_reset();
