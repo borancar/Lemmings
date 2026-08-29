@@ -9236,9 +9236,9 @@ static const uint8_t BRIEF_LOWER6[8 * 3] = {
 
 
 /*
- * NOT TRANSCRIBED - but image 0x0454C HAS now been read, and this says what
- * it found so the next pass starts from the disassembly rather than from
- * nothing.
+ * TRANSCRIBED from image 0x0454C's chain, and every step below carries its
+ * address. What is left owed is named at the end - it is one thing, and the
+ * same one draw_preview names.
  *
  * Image 0x0454C zeroes ds:0..0xFCA, calls image 0x0197D, and calls image
  * 0x04566, which is the text assembly. That routine is transcribed rule by
@@ -9273,9 +9273,21 @@ static const uint8_t BRIEF_LOWER6[8 * 3] = {
  *                  last line names the mouse, the joystick or the keyboard.
  *                  Image 0x04660 then polls ds:0x14 for the button.
  *
- * So the port's measured order is now the original's read order, and they
- * agree. What is still owed is the transcription: this routine does the same
- * things and its steps carry no addresses.
+ * So the port's measured order is now the original's read order, they agree,
+ * and the steps below say which is which.
+ *
+ * WHAT REMAINS OWED, and it is not this routine's shape:
+ *
+ *   - the ROUTE of image 0x0394F and image 0x07EB2. Both go through
+ *     1010:8822 into video memory, and reading them properly means reading
+ *     image 0x08822's five modes. The port composes on a canvas and samples;
+ *     see draw_preview, which owes the same thing and says so.
+ *   - WHERE IN MAIN.DAT SECTION 3 the background comes from. The blits are
+ *     logged - image 0x089C4's three pairs at y = 78, 182 and 286, srcseg
+ *     0x587E offset 0 - and the tile at that offset scores 1.65%, so it is
+ *     that file and not that offset. Recorded in STATUS.md.
+ *
+ * The screen itself is exact: 0 of 224,000 against the original's own.
  */
 int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
                          menu_screen *m, const char **err)
@@ -9331,6 +9343,10 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
      * preview art over them, about 3,000 pixels in colours 8..15, and that
      * preview is not reconstructed. So the tile starts at 78 and above it the
      * screen stays black, which is what the original has minus the preview. */
+    /* Image 0x04DEF: clear the page - di = 0, cx = 0x6D60, which is 28,000
+     * bytes, the whole 640 x 350 at eight pixels to the byte. The tiling
+     * from BR_BG_Y is this port's, and the blits it stands on are image
+     * 0x089C4's three pairs at y = 78, 182 and 286. */
     if (screen_start(dir, m, &d, &sec, &font, &fontlen, BR_BG_Y + 1, err) != 0)
         return -1;
 
@@ -9363,12 +9379,19 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
         if (ground_load(gpath, &g, &gerr) == 0) {
             for (uint8_t i = 8; i < 16; i++)
                 m->palette[i] = g.preview[i - 8];
-            draw_preview(dir, lv, &g, m->pix);
+            /* Image 0x0394F then image 0x07EB2: the second composition
+             * path lays the level down WITH its objects - which is image
+             * 0x03981, render_objects - and the packer takes it 4:1 into
+             * the visible page. draw_preview carries both. */
+            draw_preview(dir, lv, &g, m->pix);   /* image 0x07EB2 */
         }
     }
 
     /* And its lower seven are its own, not the menu's - see BRIEF_PAL6. */
     {
+        /* Image 0x05329: the palette, sixteen entries from slot 0x107
+         * through image 0x05569 - which is the two-slot selector the palette
+         * block above names, with 0x100 read first. */
         for (uint8_t i = 1; i < 8; i++) {
             m->palette[i].r = widen6(BRIEF_PAL6[(i - 1) * 3 + 0]);
             m->palette[i].g = widen6(BRIEF_PAL6[(i - 1) * 3 + 1]);
@@ -9401,7 +9424,13 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
      * of the template gives "Level  1", which is what this drew until the
      * original's own briefing was read back glyph by glyph and did not
      * match. */
-    snprintf(line, sizeof(line), "%s", T_LEVEL);
+    /* Image 0x0463C onward: the text. A descriptor at ds:0x4B0A through
+     * image 0x04D4D - the same record walker the code screen uses, format
+     * [x+1][y][flag] then characters to a 0x0D - and then one of three more
+     * at ds:0x4BA0, ds:0x4BC3 or ds:0x4BE5 chosen by ds:0x25A6, the input
+     * device, so the last line names the mouse, the joystick or the
+     * keyboard. Image 0x04660 polls ds:0x14 for the button afterwards. */
+    snprintf(line, sizeof(line), "%s", T_LEVEL);   /* image 0x0463C */
     {
         char num[8];
         snprintf(num, sizeof(num), "%u", lv->level_number);
