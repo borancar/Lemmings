@@ -1375,6 +1375,13 @@ Tightened that way it reported two, and both were real. A scorer needs
 checking before its output is a finding - which is the same rule this file
 already states for `find_sprite.py`, one level out.
 
+`tools/check_recipes.py` runs this in `verify_all.sh` by default, and
+`--self-test` is its control. Worth one more warning, learned by doing it: the
+`PIPESTATUS` trap above catches you in the CONTROL as easily as in the sweep.
+`tool | grep -v pygame; echo $?` reports GREP's status, so a planted fault
+comes back as exit 0 and reads as a checker that cannot detect anything.
+Measure a control's exit code without a pipe in front of it.
+
 ## A pipeline's exit status is the last command's, and that is usually `sed`
 
 `tools/verify_all.sh` printed a Python traceback and exited **0**. Four of its
