@@ -4857,13 +4857,26 @@ has nothing to seed with here.
   BEFORE the title screen (`probe_pvsrc.py`'s header says so, and says why
   breaking there with the control socket fails), so the packer captures
   whichever level `ds:0x1F6B` names on the way IN, and a hook installed for a
-  later address is already in the wrong place. Whoever picks this up should
-  find out what an extra `hook_add` in that `install()` costs before assuming
-  a guarded one is free.
+  later address is already in the wrong place.
 
-  The level is worth having: 66 objects across the game carry `e[6] & 0x40`,
-  `level000.dat` section 3 has six, and `LEVEL_ORDER` reaches it at
-  `ds:0x1F6B` index **49**, Tricky 20 - an even entry, so no ODDTABLE.
+  **Retried properly, and the poke does not take.** Re-applied with the
+  flakiness understood, the run reported `only-on-terrain NOT PRESENT` - still
+  Fun 1 - with no `[pvsrc] level index poked` line, while the whole bitmap
+  fell to **194,498 of 253,792, 76.64%**. That pair is the diagnosis: the PORT
+  side moved level and the original side did not, so the comparison was of two
+  DIFFERENT LEVELS - the mix-up this file already records as scoring 0 of 535
+  and reading as a comprehensively broken port.
+
+  Image `0x04401` is the right moment for `record_level.py` and the wrong one
+  here: the packer at image `0x07EB2` runs on the way IN, and by the time the
+  menu is reached the record it packs is already chosen. Reverted - a verifier
+  that can report 76% on a port passing at 100% must not sit in the tree.
+
+  Still untested rather than refuted. The target: 66 objects across the game
+  carry `e[6] & 0x40`, `level000.dat` section 3 has six, and `LEVEL_ORDER`
+  reaches it at `ds:0x1F6B` index **49**, Tricky 20 - an even entry, so no
+  ODDTABLE. What it needs is a poke landing before the packer, and a check
+  that BOTH sides took it.
 
 
 - **Eight verifiers exist that `tools/verify_all.sh` never runs**, and the
