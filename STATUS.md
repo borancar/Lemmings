@@ -4869,6 +4869,12 @@ has nothing to seed with here.
   differing pixels of 12,800, in BOTH machine types, across 35 frames of Fun 1
   and 25 of Taxing 2 (a different graphics set).**
 
+  **And the machine type affects ONLY the level's panel.** Driven in compat,
+  the menu is 0 of 224,000 and the briefing 0 of 174,080 - they draw their
+  text from FONT_SECTION and need nothing. `prove.sh` is 100.00% with 0
+  differing, and the play area's 56 is the two cross-hairs this file already
+  records.
+
 - ~~**THE PANEL IS DRAWN WITH DIFFERENT ATTRIBUTES PER MACHINE**~~ - true, and
   this is why. Two recordings of the original on the same level, Fun 1, frame
   39 - `out/panel_ref` at machine 2 and `out/panel_ref_compat` at machine 1 -
