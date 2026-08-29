@@ -6183,6 +6183,26 @@ static void lem_draw_fuse(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * the port has been transcribing as "the sprite base" without a name for
  * what ds:0x2E holds. It holds the WALKER's draw routine.
  *
+ * AND THE POINTERS COME FROM A TABLE AT ds:0x2E. There are 32 writes to
+ * [si+0x14] in the image and they load from nine different words, two bytes
+ * apart, which is the dispatch table this port replaces with its flag chain:
+ *
+ *     ds:0x2E   most conversions          the ordinary walk
+ *     ds:0x30   image 0x021A2
+ *     ds:0x32   image 0x02F70             beside the cloud, image 0x02F51
+ *     ds:0x34   image 0x03536             the BASHER, image 0x034CE
+ *     ds:0x36   image 0x0360B             the MINER, image 0x03598
+ *     ds:0x38   image 0x0325F             the DIGGER, image 0x0320D
+ *     ds:0x3A   image 0x021F4
+ *     ds:0x3C   image 0x02D48, image 0x02E90
+ *     ds:0x3E   image 0x03087
+ *
+ * Four are identified by the routine that assigns them; the rest are not,
+ * and are listed by address rather than guessed at. What matters here is
+ * that "the sprite base" was never one thing - a state does not carry where
+ * its artwork is, it carries WHO DRAWS IT, and the artwork is that routine's
+ * own business.
+ *
  * So the original dispatches by pointer and this dispatches on the flag
  * word. Both reach the same drawing for the same state; the port's is an
  * arrangement, and this says so rather than leaving the reader to wonder why
