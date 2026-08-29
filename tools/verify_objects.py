@@ -17,6 +17,19 @@ compared against the port's canvas rendered WITH objects.
 
 A run that never reaches the packer reports that rather than a score: no hit
 is a failed capture, not a pass.
+
+AND IT IS FLAKY, SO RETRY BEFORE DIAGNOSING. `play.py` presses F1 with
+`--start-tries 3` and CLAUDE.md says a script tuned on one run misses on the
+next; this check drives it and inherits that. Three failures and three passes
+were once read here as evidence that a change to `probe_pvsrc.py` had broken
+it, and the change was innocent - a copy of it carrying the same block
+installed and captured normally when driven directly. Counting runs cannot
+separate a flaky check from a broken one.
+
+When it reports NEVER REACHED, look at whether the HOOK installed before
+anything else. `lemmings.py` prints `[hook] installed <path>` and this file's
+own output filter drops that line, so a probe that never loaded and a probe
+that loaded and found nothing look identical here. They are not.
 """
 import os
 import subprocess
