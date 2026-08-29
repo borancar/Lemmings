@@ -4861,28 +4861,29 @@ has nothing to seed with here.
   exercises it" is not "it is wrong" - but recorded so nobody spends time on
   a rule nothing can reach.
 
-- **The 40-pixel residue on the digger's run belongs to the FALLERS.** It was
-  attributed to the digger for several passes on proximity alone. At frame 298
-  the digger is at screen (162, 91) and the differing pixels are rows 102..111
-  columns 150..159 - ten rows from y = 102, and five fallers sit at
-  (158..164, 102) with ten rows being a faller's height. Scoring all sixteen
-  digger frames against the original in the digger's own rectangle gives a
-  flat 27-of-224 across four tied frames, which is what "the difference is
-  not here" looks like; a wrong frame index gives one near zero.
-  What is open is five fallers stacked at nearly one position (x 158..164,
-  all y 102). **Draw order is not it**: image 0x03645 walks `di` forward with
-  `add di, 0x2D` and the port walks `k` forward, both skipping
-  `[+0x26] == 0xFF`. Nor is the count - the panel's OUT agrees on 667 frames.
+- **The 40-pixel residue on the digger's run was the FALLERS, and it is
+  fixed.** It was attributed to the digger for several passes on proximity
+  alone; the pixels were five fallers stacked at nearly one position, drawn
+  with more ink in the lower rows - 3s where the original had 2s, drifting
+  further apart towards the bottom of the sprite, which is neither a plane
+  swap nor a shift.
 
-  The pixels say the port draws MORE INK in the lower rows:
+  It was the DIRECTION. Image `0x059BB`'s group 9 is eight frames of 40, not
+  four: four facing each way, the same split the climber has at
+  `CLIMB_SPR_LEFT`. The port had one base and drew right-facing artwork for
+  fallers going both ways. `FALL_SPR_LEFT` is `FALL_SPR_BASE + 4 * 40`
+  (commit `ada79f7` - a hash, not an image offset), and the digger's
+  recorded run went **exact 659 -> 674 of
+  709, worst 40 -> 1**.
 
-      row 104  orig  ...1233332322     port  ...122333333
-      row 107  orig  .333.311113133    port  .333331113333
-      row 110  orig  ....313113133     port  ....331111
+  The four states that looked like the same bug are NOT: the builder, the
+  floater, the hoist and the shrug each use half their group's frames with no
+  left-facing base, and the pattern predicted they were broken too. Measured
+  first, they are not - the builder scores 399 of 401 and the floater 401,
+  both with a worst frame of 28, which is the cursor. Changing them would have
+  moved no number and there would have been nothing to say so. Only the
+  climber and the faller need a second base.
 
-  3s where the original has 2s and gaps, drifting further apart towards the
-  bottom of the sprite. Not a plane swap (that would exchange 1 and 2 and
-  leave 3), and not a shift.
 
   **The MASK is ruled out too, by reading image 0x05B11.** Its second half at
   image 0x05B63 walks down the sprite's planes at a stride of `rows * 3`, ORs
