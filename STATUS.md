@@ -5026,6 +5026,16 @@ has nothing to seed with here.
   outstanding work we intend to do — noted here so it is not mistaken for
   finished.
 
+  **`ds:0x1FC6` is not a retrace path: it is the mouse's IRQ VECTOR NUMBER**,
+  and that guess is withdrawn. Image `0x0006A` does `mov ah, 0x35` - DOS Get
+  Interrupt Vector - then `mov al, [0x1FC6]` and `int 0x21`, saving the old
+  handler at `ds:0x1FC2`/`ds:0x1FC4`. Image `0x00040` sets it to **`0x0C`**,
+  which is INT 0Ch, **IRQ 4** - the serial port, so a serial mouse. Images
+  `0x011E7` and `0x0133F` set it to **`0x74`**, INT 74h, **IRQ 12** - the
+  PS/2 auxiliary device - and both sit in the same block that sets
+  `ds:0x200A`, the PS/2 flag. So the PS/2 option hooks a different mouse
+  interrupt, which is the whole of what it does here.
+
   **All four are now read**, with `tools/xref.py`, which lists every
   instruction naming a DGROUP offset directly (6, 7, 7 and 12 references
   respectively):

@@ -245,3 +245,24 @@ This project has one of these already - image `0x02CB9` is a `jns` to the
 instruction after itself, in the miner's trigger handling - and both matter
 for the same reason: a site that appears in an xref list looks like a use, and
 this one gates nothing. Twelve direct references to `ds:0x200E` are eleven.
+
+### `ds:0x1FC6` is the mouse's IRQ vector number, not a retrace path
+
+Worth stating because it was written down as a suspicion and reads as fact
+later. Image `0x0006A`:
+
+```
+0006a  mov ah, 0x35           ; DOS Get Interrupt Vector
+0006c  mov al, [0x1fc6]       ; ...of the vector NUMBER held here
+0006f  int 0x21
+00071  mov [0x1fc2], bx       ; keep the old handler
+00075  mov [0x1fc4], es
+```
+
+Image `0x00040` sets `ds:0x1FC6` to `0x0C` - INT 0Ch, **IRQ 4**, the serial
+port, so a serial mouse. Images `0x011E7` and `0x0133F` set it to `0x74` -
+INT 74h, **IRQ 12**, the PS/2 auxiliary device - and each sits in the same
+block that sets `ds:0x200A`, the PS/2 flag.
+
+So the PS/2 option hooks a different mouse interrupt. Nothing about a
+retrace.
