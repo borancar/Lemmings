@@ -1115,11 +1115,6 @@ int vgagr_decode_mask(const uint8_t *sec, uint32_t len, uint32_t loc,
  * menu_key_code and menu_dispatch, both transcribed. Return -1 to ignore it. */
 typedef int32_t (*view_input)(uint8_t scancode);
 
-/* Show a picture and wait. A key goes to `input`; a CLICK always yields
- * `click_id`, because image 0x04473 never asks where it was. */
-int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
-                      const lem_rgb *palette, const char *title, uint8_t scale,
-                      view_input input, int32_t click_id);
 
 /* Called once per displayed frame to redraw `pix` in place; return non-zero if
  * anything changed, so the texture is only re-uploaded when it has to be. */
@@ -1160,10 +1155,16 @@ void view_show_hook(view_tick tick, void *ctx, uint8_t *pix);
 
 /* The same, but animated. `pix` is written by `tick` rather than being fixed.
  * The menu needs this and nothing else does: its banner scrolls. */
-int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
-                           const lem_rgb *palette, const char *title,
-                           uint8_t scale, view_input input, int32_t click_id,
-                           view_tick tick, void *ctx);
+/* image 0x04660 - a screen that waits; see game.c's menu_screen_wait. The
+ * three below are the hardware's share of it. */
+int32_t view_screen_pump(view_input input, int32_t click_id);
+void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
+                         const lem_rgb *palette);
+void view_screen_pace(void);
+int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
+                         const lem_rgb *palette, view_input input,
+                         int32_t click_id, view_tick tick, void *ctx,
+                         long budget);
 
 /* Open a window on an 8-bit indexed buffer and let the viewer scroll it.
  * `view_w`/`view_h` is the viewport onto a `src_w`x`src_h` picture; pass the

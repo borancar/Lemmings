@@ -372,96 +372,68 @@ static int32_t dismiss_input(uint8_t scancode)
     return menu_key_code(scancode) == 0x1B ? BRIEF_MENU : -1;
 }
 
-int32_t view_interact(const uint8_t *pix, uint16_t w, uint16_t h,
-                      const lem_rgb *palette, const char *title, uint8_t scale,
-                      view_input input, int32_t click_id)
+/* WHAT THE HARDWARE USED TO DO for a screen that waits: the page, and the
+ * event queue behind ds:0x14 and ds:0x1FC7.
+ *
+ * `hit` comes back as whatever `input` answered for a key, or `click_id` for
+ * a button - image 0x04473 tests ds:0x14's low three bits and jumps without
+ * once looking at where the pointer was. VIEW_CLOSED means nothing happened.
+ *
+ * The split palette is the briefing's: two pictures stacked, and the DAC is
+ * reprogrammed part-way down. That is the card's, so it is here. */
+int32_t view_screen_pump(view_input input, int32_t click_id)
 {
-    /* No tick: the picture is fixed, and the cast is safe because nothing
-     * writes through it when `tick` is NULL. */
-    return view_interact_anim((uint8_t *)pix, w, h, palette, title, scale,
-                              input, click_id, NULL, NULL);
-}
-
-int32_t view_interact_anim(uint8_t *pix, uint16_t w, uint16_t h,
-                           const lem_rgb *palette, const char *title,
-                           uint8_t scale, view_input input, int32_t click_id,
-                           view_tick tick, void *ctx)
-{
-    if (scale < 1) scale = 1;
-    if (view_open(w, h, title, scale) != 0) return VIEW_CLOSED;
-    SDL_Renderer *ren = g_ren;
-    SDL_Texture  *tex = g_tex;
-    const Uint64 period = SDL_NS_PER_SECOND / VIEW_REFRESH_HZ;
-    Uint64 due = SDL_GetTicksNS();
-
-    /* A frame budget, for tests: the animation has to be observable without a
-     * person watching it, and a loop that only ends on a keypress is not. */
-    const char *cap = SDL_getenv("LEM_FRAMES");
-    long budget = cap ? SDL_atoi(cap) : 0;
-
-    /* Uploaded once when nothing animates, and again whenever `tick` says the
-     * picture changed. */
-    int dirty = 1;
-
-    int32_t chosen = VIEW_CLOSED;
-    int running = 1;
-    while (running) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            int32_t hit = VIEW_CLOSED;
-            if (e.type == SDL_EVENT_QUIT) {
-                view_quit_now();
-            } else if (e.type == SDL_EVENT_KEY_DOWN) {
-                if (input) hit = input(scancode_of(e.key.key));
-            } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                /* WHEREVER IT LANDED. Image 0x04473 tests ds:0x14's low three
-                 * bits and jumps to image 0x0454C - key 0x80's own target -
-                 * without once looking at the position. */
-                hit = click_id;
-            }
-            if (hit != VIEW_CLOSED) {
-                chosen = hit;
-                running = 0;
-            }
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        int32_t hit = VIEW_CLOSED;
+        if (e.type == SDL_EVENT_QUIT) view_quit_now();
+        else if (e.type == SDL_EVENT_KEY_DOWN) {
+            if (input) hit = input(scancode_of(e.key.key));
+        } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            hit = click_id;
         }
-        if (tick && tick(ctx, pix))
-            dirty = 1;
-        if (dirty) {
-            void *pixels = NULL;
-            int pitch = 0;
-            if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
-                for (uint16_t y = 0; y < h; y++) {
-                    uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-                    const uint8_t *src = pix + (size_t)y * w;
-                    const lem_rgb *pl =
-                        (g_split && y >= g_split && g_split_pal)
-                            ? g_split_pal : palette;
-                    for (uint16_t x = 0; x < w; x++) {
-                        lem_rgb c = pl[src[x]];
-                        row[x] = ((uint32_t)c.r << 16)
-                               | ((uint32_t)c.g << 8) | c.b;
-                    }
-                }
-                SDL_UnlockTexture(tex);
-            }
-            dirty = 0;
-        }
-        SDL_RenderClear(ren);
-        SDL_RenderTexture(ren, tex, NULL, NULL);
-        SDL_RenderPresent(ren);
-        /* One pass per retrace - see VIEW_REFRESH_HZ. An absolute
-         * deadline, for the reason level_run gives. */
-        due += period;
-        {
-            Uint64 now = SDL_GetTicksNS();
-            if (now < due) SDL_DelayNS(due - now);
-            else due = now;
-        }
-        if (budget && --budget == 0) running = 0;
+        if (hit != VIEW_CLOSED) return hit;
     }
-    /* The window stays open. It is torn down at exit, not here. */
-    return chosen;
+    return VIEW_CLOSED;
 }
+
+void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
+                         const lem_rgb *palette)
+{
+    void *pixels = NULL;
+    int pitch = 0;
+    if (SDL_LockTexture(g_tex, NULL, &pixels, &pitch)) {
+        for (uint16_t y = 0; y < h; y++) {
+            uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+            const uint8_t *src = pix + (size_t)y * w;
+            const lem_rgb *pl = (g_split && y >= g_split && g_split_pal)
+                                    ? g_split_pal : palette;
+            for (uint16_t x = 0; x < w; x++) {
+                lem_rgb c = pl[src[x]];
+                row[x] = ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
+            }
+        }
+        SDL_UnlockTexture(g_tex);
+    }
+    SDL_RenderClear(g_ren);
+    SDL_RenderTexture(g_ren, g_tex, NULL, NULL);
+    SDL_RenderPresent(g_ren);
+}
+
+/* One pass per retrace, on an ABSOLUTE deadline - a sleep per frame is at the
+ * mercy of the host scheduler, and falling behind must reset the deadline
+ * rather than build a debt the loop then sprints to repay. */
+void view_screen_pace(void)
+{
+    static Uint64 due;
+    Uint64 period = 1000000000ull / VIEW_REFRESH_HZ;
+    Uint64 now = SDL_GetTicksNS();
+    if (due == 0 || now > due + period * 8) due = now;
+    due += period;
+    if (now < due) SDL_DelayNS(due - now);
+    else due = now;
+}
+
 
 /* The level viewport: the original shows 320x160 of the 1584-wide level, with
  * the control panel below it. The panel is not reconstructed yet, so this is
@@ -1582,9 +1554,17 @@ int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
         g_fade_low_cur[i].r = g_fade_low_cur[i].g = g_fade_low_cur[i].b = 0;
     }
     g_split_pal = m->split ? g_fade_low_cur : NULL;
-    /* Esc or a click; the briefing says "Press mouse button to continue". */
-    how = view_interact_anim(m->pix, MENU_W, MENU_H, g_fade_cur, title, scale,
-                             dismiss_input, BRIEF_PLAY, fade_tick, NULL);
+    /* Esc or a click; the briefing says "Press mouse button to continue".
+     * The LOOP is image 0x04660's and lives in game.c - see menu_screen_wait;
+     * what is left here is opening the window it draws into. */
+    if (scale < 1) scale = 1;
+    if (view_open(MENU_W, MENU_H, title, scale) != 0) return VIEW_CLOSED;
+    {
+        const char *cap = SDL_getenv("LEM_FRAMES");
+        how = menu_screen_wait(m->pix, MENU_W, MENU_H, g_fade_cur,
+                               dismiss_input, BRIEF_PLAY, fade_tick, NULL,
+                               cap ? SDL_atoi(cap) : 0);
+    }
 
     /* AND BACK DOWN - IMAGE 0x046A2, the same shape inverted:
      *

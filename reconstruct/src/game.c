@@ -11074,7 +11074,7 @@ int32_t level_results_wait(const uint8_t *pix, const lem_rgb *pal,
 /* THE RESULTS SCREEN, image 0x046EB.
  *
  * The composition is level_results_draw's; the window and its palette are
- * sdl_io.c's, reached through view_open and view_interact. What is here is
+ * sdl_io.c's, reached through view_open and view_buttons. What is here is
  * the ROUTINE: which bytes it reads, and image 0x047A9's wait.
  *
  * The part the hardware used to do:
@@ -11656,6 +11656,47 @@ void level_panel_click(struct level_frame *A, int32_t *scroll_x)
         level_skill_select(h.button);     /* image 0x03F66: ds:0x82 */
     }
 }
+/* IMAGE 0x04660 - A SCREEN THAT WAITS, and the briefing is the one that does.
+ *
+ *     0x04660  ax = ds:0x14 / test ax,7 / jne 0x04660   wait for RELEASE, so
+ *                              the click that opened the screen is not read
+ *                              again as the one that leaves it
+ *     0x04668  call 0x046B9                             a retrace
+ *     0x04680  call 0x046B9                             and one a pass
+ *     0x04683  ax = ds:0x14 / test ax,7 / jne 0x046A2   a button: leave
+ *     0x0468B  ax = ds:0x1FC7
+ *     0x0468E  test ax,0x20 / jne 0x0469B               that key: the MENU
+ *     0x04693  test ax,0x40 / je 0x04680                otherwise keep waiting
+ *
+ * This was view_interact_anim in sdl_io.c - a generic "show a picture until
+ * something happens", which is a shape the original does not have. What it
+ * does have is this loop, and the fade running inside it: image 0x0031E's
+ * cues are armed by the fade at image 0x003C1 and the picture keeps being
+ * drawn while the palette moves, which is what a fade IS. `tick` is that
+ * fade, and it is game.c's - palette_fade_step carries image 0x0534B.
+ *
+ * The pump, the page and the pacing are sdl_io.c's, for the reason ds:0x14
+ * always is: it was a byte a driver kept current.
+ */
+int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
+                         const lem_rgb *palette, view_input input,
+                         int32_t click_id, view_tick tick, void *ctx,
+                         long budget)
+{
+    int dirty = 1;
+    for (;;) {
+        int32_t hit = view_screen_pump(input, click_id);   /* image 0x04683 */
+        if (hit != VIEW_CLOSED) return hit;
+
+        if (tick && tick(ctx, pix)) dirty = 1;   /* the fade, image 0x0031E */
+        if (dirty) { view_screen_present(pix, w, h, palette); dirty = 0; }
+        else       view_screen_present(pix, w, h, palette);
+
+        view_screen_pace();                      /* image 0x04680's retrace */
+        if (budget && --budget == 0) return VIEW_CLOSED;
+    }
+}
+
 /* IMAGE 0x04096 - THE EDGE SCROLL, and the two routines it reaches.
  *
  *     0x04096  ds:0x12 + 8 >= 0xC0 -> ret      only in the PLAY AREA
