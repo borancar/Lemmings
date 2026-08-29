@@ -994,21 +994,27 @@ What it is **not**, each ruled out by measurement rather than by reading:
 The pointer is parked, which is why a world that moves leaves the difference
 at a fixed screen spot.
 
-**It is drawn, not carved**, and that is now measured. `tools/probe_writes.py`
-gained `LEM_WRITES_BASE` and `LEM_WRITES_COLS` - the level's canvas starts at
-image `0x05DEA`'s `0x4A40` with `0xD0`-byte rows, so without a base every row
-buckets wrongly, and both default to the old behaviour. Filtered to canvas row
-81 and the byte holding column 799, twelve instructions write it: four inside
-the shared blitter (`0x089C4`, `0x08A52`, `0x08AC0`, `0x08B2B` - the range
-`game.c` already calls the ordinary blitter), four more of its paths, the
-miner's own mask clear at `0x06117`/`0x06126`, and image **`0x04DEB`**.
+**Inside the level, only the miner's own clear writes that canvas byte** -
+image `0x06117` and image `0x06126`, and nothing else at all.
+`tools/probe_writes.py` gained `LEM_WRITES_BASE` and `LEM_WRITES_COLS` for
+this - the level's canvas starts at image `0x05DEA`'s `0x4A40` with `0xD0`-byte
+rows, so without a base every row buckets wrongly - and then a third,
+`LEM_WRITES_AFTER_FRAME`, which is the one that mattered.
 
-`tools/probe_blits.py` then named the callers into rows 74..90: image
-`0x07CBA` 54 times - the terrain composition, whose flag unpack at `0x07C67`
-is already read here - image `0x04DC0` 14 times, and two from the preview's
-`0x07E95`/`0x07EAA`.
+Without that gate the same probe reported TWELVE writing instructions: four
+inside the shared blitter, four more of its paths, and image `0x04DEB`. All
+ten of the extra ones were the title, menu and briefing drawing themselves.
+`record_level.py` records the whole run, those screens are mode `0x10` at 80
+bytes a row, and a filter expressed as "canvas row 81, column 799" is really a
+LINEAR OFFSET that addresses a different pixel on every screen before the
+level. It was written up here as "the pixel is drawn, not carved" and that was
+wrong. The gate counts the game's own end-of-frame at image `0x018F`, which
+runs only inside a level, and the hook now prints how many level frames it
+saw so a run that reached none says so instead of scoring the briefing.
 
-**And image `0x04DC2` is a page copy nobody here had read.** It sets the
+**Image `0x04DC2` is still a page copy nobody here had read**, though it is
+not what draws this pixel - it was found by chasing it, and the reading below
+is from the disassembly rather than from that mis-scoped run. It sets the
 Sequencer's map mask to `0x0F` and the graphics controller to mode `0x105` -
 write mode 1, the latched copy - and `rep movsb`s `0x6D60` (28,000) bytes from
 `ds:[0x1F76]` to `ds:[0x1F78]` inside A000, moving all four planes at once.
@@ -1016,11 +1022,19 @@ So the original holds a composed buffer and copies a window of it to the
 display page each frame, drawing the lemmings onto the PAGE; image `0x04DEF`
 is the same loop clearing instead.
 
-That is why the canvas filter caught only the composition and the miner's
-clear: the per-frame sprite drawing never touches `0x4A40`. The next step is
-the same probe pointed at the display page - the two pages are `0x4A40` apart,
-which is exactly the gap between the run's two `crtc_start` values `0x02C2`
-and `0x27E2` doubled - and that will name the sprite rather than the buffer.
+`0x6D60` is 28,000 bytes, which is 640 x 350 / 8 - a MENU page, not a level
+one - so this routine belongs to the menu's mode `0x10` and the port already
+reads its sibling image `0x04DEF`, the clear.
+
+So the level's own picture is a third buffer, not this pair. The run's
+`crtc_start` alternates `0x02C2` and `0x27E2`, 9,504 bytes apart, and 9,504 is
+44 x 216 - mode `0x0D`'s 44-byte rows. The master terrain at `0x4A40` has
+`0xD0`-byte rows and is far wider; the game composes there and puts a window
+of it on whichever page is hidden. **The per-frame sprite drawing therefore
+goes to a page at `0x02C2` or `0x27E2`, and nothing that draws a lemming
+touches `0x4A40` at all** - which is why the canvas filter found only the
+composition and the miner's clear, and why it can never answer this question.
+The next step is the same probe with `--stride 44` based on those pages.
 
 Two instrument faults were found on the way and both produced confident
 numbers: a scorer looking for `%05d.raw` where the port writes `f%05d.raw`

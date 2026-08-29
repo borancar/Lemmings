@@ -46,13 +46,32 @@ def install(m):
     # every row across the wrong bucket (0x4A40 / 0xD0 is not an integer).
     # Defaults to 0, which is what every existing caller wants.
     wbase = int(os.environ.get("LEM_WRITES_BASE", "0"), 0)
+    # AND ONLY ONCE THE LEVEL IS RUNNING. A run recorded by
+    # tools/record_level.py passes through the title, the menu and the
+    # briefing first, and those are mode 0x10 at 80 bytes a row - so a filter
+    # expressed as "canvas row 81" is a LINEAR OFFSET that means something
+    # else entirely on every screen before the level. Counting the game's own
+    # end-of-frame at image 0x018F, which only runs inside a level, and
+    # ignoring everything before the Nth, is what makes the answer about the
+    # level. Without it a briefing blit is reported as a level one, and it
+    # looks exactly like a finding.
+    after = int(os.environ.get("LEM_WRITES_AFTER_FRAME", "0"))
+    seen_frames = [0]
     y0, y1 = (int(v) for v in
               os.environ.get("LEM_WRITES_ROWS", "0 349").split())
     cols = os.environ.get("LEM_WRITES_COLS")
     cx0, cx1 = ((int(v) for v in cols.split()) if cols else (None, None))
     hits = collections.Counter()
 
+    FRAME_END = 0x018F
+
+    def on_frame(uc, ad, size, _):
+        if ad - base == FRAME_END:
+            seen_frames[0] += 1
+
     def on_write(uc, access, address, size, value, _):
+        if seen_frames[0] < after:
+            return
         if not (VGA_LO <= address < VGA_HI):
             return
         off = address - VGA_LO - wbase
@@ -70,10 +89,15 @@ def install(m):
         pc = uc.reg_read(UC_X86_REG_CS) * 16 + uc.reg_read(UC_X86_REG_IP)
         hits[pc - base] += size
 
+    from unicorn import UC_HOOK_CODE
+    m.uc.hook_add(UC_HOOK_CODE, on_frame)
     m.uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
     atexit.register(lambda: (
         open(out_path, "w").write(json.dumps(sorted(hits.items()))),
-        print(f"  [hook] {len(hits)} distinct writing instructions")))
+        print(f"  [hook] {len(hits)} distinct writing instructions, "
+              f"{seen_frames[0]} level frames seen"
+              f"{'' if seen_frames[0] >= after else ' - FEWER THAN ASKED FOR, '
+                 'so nothing was recorded and that is a failure'}")))
 
 
 def main():
