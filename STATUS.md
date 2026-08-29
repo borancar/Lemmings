@@ -4833,22 +4833,17 @@ has nothing to seed with here.
   that would score it is a click-driven comparison - `compare_play.py` - run
   on frames 0..2 after an assignment, and that has not been done.
 
-- **DOES THE ORIGINAL HAVE ANY KEYBOARD SHORTCUT IN A LEVEL AT ALL?** The Z
-  and X keys turned out to be unreachable - image `0x04085` selects them on
-  `ds:0x1FD0` and every one of the eight writes to that byte stores 0, while
-  the ISR keeps key state in the table at `ds:0x0F78` instead. A player
-  confirmed it in DOSBox.
+- **SETTLED: the F-keys work, Z and X do not, and it is WHERE THEY ARE CALLED
+  FROM.** Both read `ds:0x1FD0`, which image `0x01707` sets to the scancode on
+  a press and image `0x01705` clears on the release.
 
-  **The same argument applies to the F-KEYS.** Image `0x03E6F` reads the same
-  `ds:0x1FD0`, so `level_key_button`'s F1..F12, Delete and keypad + rest on
-  the same premise and may be equally dead. The port binds them and they work
-  BECAUSE the port reads SDL keycodes directly, which is not what the original
-  does.
+  | reader | called from | sees |
+  | --- | --- | --- |
+  | image `0x03E6F` the F-keys | image `0x01874`, INSIDE THE KEYBOARD ISR | the key just stored |
+  | image `0x04085` Z and X | image `0x001A0`, the frame loop | zero - image `0x00194` cleared it three instructions before |
 
-  This is one question to a player and one minute in DOSBox: **do F3..F10
-  select skills there?** If they do not, the port has a set of keys the game
-  never had and they should go the way Z and X did - transcribed, cited and
-  unwired.
+  So the port keeps its F-keys and leaves Z and X transcribed but unwired.
+  Both were confirmed in DOSBox by a player.
 
 - **`level_key_button` dispatches on an SDL keycode, not the scancode the
   original reads.** Image `0x03E6F` reads the byte the keyboard handler left
