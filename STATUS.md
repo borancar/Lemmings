@@ -4837,13 +4837,26 @@ has nothing to seed with here.
   at **`ds:0x1F6B` index 49, Tricky 20**, an even entry so no ODDTABLE
   substitution complicates the record.
 
-  What makes this more than an option-add: image `0x07EB2` is reached BEFORE
-  the title screen - `probe_pvsrc.py` says so, and says why breaking there
-  with the control socket does not work - so the packer captures whichever
-  level `ds:0x1F6B` names on the way IN. A `--level` for this verifier has to
-  poke the index earlier than the menus, not merely before the level loads.
-  `record_level.py` pokes the same byte and its comment block is the place to
-  start.
+  **Attempted and reverted, and the attempt is the useful part.** Adding a
+  `--level` that pokes `ds:0x1F6B` at image `0x04401` - the menu, the same
+  moment `record_level.py` uses - made `verify_objects.py` fail with
+  `NEVER REACHED image 0x07EB2` **even with no `--level` given**, where the
+  committed tools pass. Measured four ways: modified + `--level` fails,
+  modified without it fails, pristine passes, modified without it on a QUIET
+  machine fails again - so it is the edit and not contention, and the guard
+  that looked inert is not.
+
+  Why it is not the option-add it appears to be: image `0x07EB2` is reached
+  BEFORE the title screen (`probe_pvsrc.py`'s header says so, and says why
+  breaking there with the control socket fails), so the packer captures
+  whichever level `ds:0x1F6B` names on the way IN, and a hook installed for a
+  later address is already in the wrong place. Whoever picks this up should
+  find out what an extra `hook_add` in that `install()` costs before assuming
+  a guarded one is free.
+
+  The level is worth having: 66 objects across the game carry `e[6] & 0x40`,
+  `level000.dat` section 3 has six, and `LEVEL_ORDER` reaches it at
+  `ds:0x1F6B` index **49**, Tricky 20 - an even entry, so no ODDTABLE.
 
 
 - **Eight verifiers exist that `tools/verify_all.sh` never runs**, and the
