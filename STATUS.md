@@ -5018,10 +5018,13 @@ has nothing to seed with here.
 4. **Prove the unpack by round-tripping** against the PKLITE stub's own output.
    Still the standard, still not done.
 
-- **The machine-type menu is mapped but not explained.** Which flags each of
-  the four options sets is established and written down in
-  [docs/machine-types.md](docs/machine-types.md); *what those flags change* is
-  not. Reading every use of `ds:0x200A/0x200B/0x200C/0x200E`, and confirming
+- **(read) The machine-type menu is mapped AND explained.** Which flags each
+  of the four options sets was already written down in
+  [docs/machine-types.md](docs/machine-types.md); what those flags CHANGE is
+  now read out of the image too, all four of them, and each one matches the
+  machine that sets it - which is what says the readings are right rather than
+  merely plausible. The paragraph below is the original note, kept because the
+  answer corrects part of it. Reading every use of `ds:0x200A/0x200B/0x200C/0x200E`, and confirming
   whether the PS/2 option really patches the retrace path at `ds:0x1FC6`, is
   outstanding work we intend to do — noted here so it is not mistaken for
   finished.
