@@ -7,14 +7,33 @@
 # rather than something they have to take from a commit message.
 #
 #   bash tools/verify_all.sh            # the screens, the proof, 120 frames
+#   bash tools/verify_all.sh --units    # ...and the eight per-routine checks
 #   bash tools/verify_all.sh --full     # ...and all 5,100 - the whole timer
 #
 # --full records the reference itself, which takes about twenty minutes of
 # wall clock, and needs ~1.5 GB under out/.
+#
+# --units adds the checks that drive ONE routine of the original rather than a
+# screen: the decompressor, the LVL header, the digit printer, the access
+# code, the two sprite pre-passes, the data load and the AdLib driver. They
+# were outside this script entirely, and STATUS.md's headline table quotes
+# five numbers that only they produce - 179,618 bytes across 7 sections, the
+# decompressor's 7 calls and 150,807 bytes, the LVL header's 15 fields, the
+# pre-shift's 200 calls, the pre-builder's 106 - under a heading promising
+# they were re-measured on the current build. Each drives an emulator, so
+# they are a flag rather than the default; a claim nobody re-runs is how
+# verify_dig's note came to say its own strongest half was broken, and how
+# verify_adlib's usage line kept naming an env var nothing reads.
 set -u
 cd "$(dirname "$0")/.."
 FULL=0
-[ "${1:-}" = "--full" ] && FULL=1
+UNITS=0
+for a in "$@"; do
+    case "$a" in
+        --full)  FULL=1; UNITS=1 ;;   # --full implies --units
+        --units) UNITS=1 ;;
+    esac
+done
 FRAMES=120
 REF=out/ref_verify
 [ $FULL = 1 ] && FRAMES=5100 && REF=out/ref5100
@@ -251,6 +270,34 @@ say "=== the TRIGGER MAP, which no picture can show ==="
 # on the whole byte when this was written.
 uv run python tools/verify_triggers.py --level 77 2>&1 | sed 's/^/  /'
 check_pipe "tools/verify_triggers.py --level 77"
+
+if [ $UNITS = 1 ]; then
+    say ""
+    say "=== the per-routine checks (--units) ==="
+    # Each of these drives ONE routine of the ORIGINAL and compares its own
+    # output with the port's on the same call - the differential shape
+    # tools/verify_dat.py documents. They are the only source of five figures
+    # in STATUS.md's headline table, and until now nothing re-ran them.
+    #
+    # verify_adlib.py needs a reference pair it does not record itself, so it
+    # is listed here with its inputs rather than run blind: a run that scores
+    # 0 of 54 is the two sides being different tunes, not a broken driver.
+    for u in verify_dat verify_level verify_digits verify_code \
+             verify_shift verify_preshift verify_data; do
+        uv run python "tools/$u.py" 2>&1 \
+            | grep -vE "^pygame|^ *\[vga\]" | sed "s/^/  /"
+        check_pipe "tools/$u.py"
+    done
+    if [ -s out/orig_opl.txt ] && [ -s out/port_opl.txt ]; then
+        uv run python tools/verify_adlib.py out/orig_opl.txt out/port_opl.txt \
+            2>&1 | sed "s/^/  /"
+        check_pipe "tools/verify_adlib.py"
+    else
+        line "tools/verify_adlib.py" "SKIPPED - no out/orig_opl.txt pair"
+        say "    record one with the recipe in that file's header; the OLD"
+        say "    recipe named an LEM_OPL_TUNE that nothing reads and scores 0"
+    fi
+fi
 
 say ""
 say "=== three further levels, frame by frame ==="

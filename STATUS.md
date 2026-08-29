@@ -4840,11 +4840,18 @@ has nothing to seed with here.
   reads as a broken sound port against a real 10,333 of 10,333. Neither is in
   the sweep, so neither was contradicted by anything.
 
-  Most of these drive the emulator, so adding all eight makes the sweep much
-  longer - which is the argument for a `--quick` and a `--full`, not for
-  leaving them out. Whatever is decided, **a number in the glance table whose
-  check the sweep does not run should say so beside itself**, because the
-  table's own header promises it was re-measured on the current build.
+  **Done: `tools/verify_all.sh --units` runs all eight**, and `--full`
+  implies it. They stay off the default because they cost real time - timed,
+  `verify_digits` alone is **92 seconds** (and passes, 256 of 256 values
+  driven exhaustively), so the eight together are about ten minutes on top of
+  a sweep that already takes twenty-five. A flag was the right shape, and the
+  number is why rather than an impression of why.
+
+  Each goes through `check_pipe`, so none of them can crash and still pass -
+  which is exactly how `verify_triggers.py` stayed dead for months.
+  `verify_adlib.py` is listed with its inputs rather than run blind: it needs
+  a reference pair, and a run scoring 0 of 54 means the two sides are
+  different tunes, not a broken driver.
 
 
 
