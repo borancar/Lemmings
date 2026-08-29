@@ -22,3 +22,4 @@ reconstruct/tests/opl
 # had been committed and re-committed on every iteration.
 .claude/*.local.md
 .claude/*.local.json
+reconstruct/libgame.so
