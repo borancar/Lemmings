@@ -1362,8 +1362,7 @@ automatically find the fault - I blamed the adlib duration when the cause was
 `--start`, and only the mechanism (`PIT ticks spanned: 0` means the timer ISR
 never ran) settled it.
 
-**The audit is cheap: parse every `--flag` a docstring hands to the tool it is
-RUNNING, and check it against that tool's own `add_argument` calls.** Two
+**The audit is cheap, and it has to cover BOTH classes.** Two of the five were not flags at all - `LEM_DIG_SHAFT` and `LEM_OPL_TUNE` are env vars nothing reads, and a flag checker misses them entirely. So: parse every `--flag` a recipe hands to the tool it is RUNNING and check it against that tool's own `add_argument` calls, AND every `LEM_*` a recipe SETS against what any source actually reads. Two
 things make it useful rather than noisy, and without them it reported 71
 findings of which 69 were its own fault:
 
@@ -1374,6 +1373,13 @@ findings of which 69 were its own fault:
 Tightened that way it reported two, and both were real. A scorer needs
 checking before its output is a finding - which is the same rule this file
 already states for `find_sprite.py`, one level out.
+
+The env half needs one more rule, learned the same way: **count only lines
+that are COMMANDS.** The first version fired on three occurrences of exactly
+the two traps above - the table in this section, and `verify_adlib.py`'s
+header explaining what its old recipe got wrong. A checker that fires on the
+DOCUMENTATION of a trap is worse than one that stays silent, because it
+teaches the reader to skim, and skimming is how these lasted.
 
 `tools/check_recipes.py` runs this in `verify_all.sh` by default, and
 `--self-test` is its control. Worth one more warning, learned by doing it: the
