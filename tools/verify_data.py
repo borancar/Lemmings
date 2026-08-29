@@ -7,7 +7,17 @@ against what the port produces from the same file on disk. Two programs, the
 same input, and a byte-for-byte answer.
 
   uv run python tools/play.py --auto --start --dump-vga \
-      --dump-mem "0x10000 0xA0000 out/mem.bin" -- --run-seconds 210 --shots 1
+      --dump-mem "0x10000 0xA0000 out/mem.bin" -- --run-seconds 210
+
+  NOT `--shots 1`. This line carried it and it cannot work: one shot is the
+  emulator's whole budget, so the run ends after 1.6 seconds having drawn the
+  text mode and nothing else, and play.py then dies on FileNotFoundError
+  connecting to a socket whose process has already gone. The error names the
+  socket, not the cause. tools/prove.sh pairs `--shots 1` with
+  `--shot-every 900`, which is what makes it mean "one shot, late".
+
+  Run as corrected it gives a 655,360-byte dump and this tool reports 7
+  sections byte-identical, 0 differing, 11 not resident.
   uv run python tools/verify_data.py out/mem.bin
 
 A section that is NOT found is not a failure. The game frees buffers it has

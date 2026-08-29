@@ -31,7 +31,7 @@ numbers, re-measured on the current build:
 | --- | --- |
 | **the game's own screen**, all 5,100 frames of the expiration timer | play area **exact — ZERO differing — on 5,099 of 5,100, THE CURSOR INCLUDED**; panel exact on 5,099 (frame 0 is the fade-in). The one play frame is 40, where a stray `MOUSEMOTION` from the dummy video driver moves the guest's pointer for a single frame before the recorder's per-frame re-assert takes it back — the instrument, not the port. This is the WINDOW path, what a player sees, not the harness (`tools/compare_screen.py` against `out/ref5100b`) |
 | the original's composed **level terrain** vs the port | **100.00%** — 49,741 pixels, 0 differing (`tools/prove.sh`) |
-| the port's **data loading** vs the original's RAM | **100.00%** — 179,618 bytes across 7 sections (`verify_all.sh --units`) |
+| the port's **data loading** vs the original's RAM | **7 sections byte-identical, 0 differing**, 11 freed by the game and so not resident — **re-run on this build** (`verify_all.sh --units`, which needs `out/mem.bin`; the recipe in that tool's header used to carry a `--shots 1` that ends the run after 1.6 seconds) |
 | the **level-code** screen | **100.00%** — 0 of 224,000 |
 | the **input chooser** | **100.00%** — 0 of 224,000 |
 | the **briefing** | **100.00%** — 0 of 224,000: background, text, palette, and the level preview |
