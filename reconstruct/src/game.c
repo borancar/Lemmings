@@ -566,6 +566,45 @@ uint8_t g_terrain_reverse = 0;
  * level_play_step exists, and the reason CLAUDE.md gives for reading the
  * eighteen Set/Reset loads rather than following flags to one of them.
  * ====================================================================== */
+/* ======================================================================
+ * IMAGE 0x09967 - THE CLIPPER, which bp bits 2 and 3 ask for.
+ *
+ * Image 0x08846 tests `bp & 0x0C` at the blitter's entry, before the
+ * dispatch, and calls this when either is set: bit 2 clips horizontally and
+ * bit 3 vertically. The preview builder at image 0x07E76 passes bp = 0x0C,
+ * so it asks for both.
+ *
+ * The entry has already computed the blit's geometry into three words:
+ *
+ *     0x0882D  ds:0x66FA = dx >> 3     the source row stride, in BYTES
+ *     0x08834  ds:0x66F8 = that * cx   one plane's size
+ *     0x0883A  ds:0x66FE = 0           what the vertical clip skipped
+ *     0x08840  ds:0x66FC = 0           what the horizontal clip skipped
+ *
+ * HORIZONTALLY IT CLIPS IN BYTES, NOT PIXELS. Image 0x09981 advances si and
+ * di by ONE, counts ds:0x66FC up, and image 0x0998C takes EIGHT off the
+ * width while image 0x0998F adds eight to x - repeating while x is still
+ * negative. So a sprite hanging off the left edge loses whole bytes at a
+ * time, and what remains starts on a byte boundary. Vertically image 0x099C6
+ * shrinks by rows and steps si and di by the stride, which is per-row.
+ *
+ * Off the edge entirely - image 0x0997E and image 0x099C4 - it jumps to
+ * image 0x09A0C and the blit does not happen at all.
+ *
+ * THE PORT CLIPS PER PIXEL, at every draw site, with `if (px < 0 || px >=
+ * w) continue`. For a sprite that is byte-aligned to begin with the two
+ * agree; for one that is not, they need not, and no comparison here has ever
+ * put a lemming half off the left edge. It is written down rather than
+ * changed, because changing it would be fitting a rule nothing has measured.
+ * ====================================================================== */
+#define BLIT_CLIP_X   0x0004      /* image 0x0996E */
+#define BLIT_CLIP_Y   0x0008      /* image 0x099B6 */
+#define BLIT_CLIP_STEP 8          /* image 0x0998C: whole bytes */
+
+/* Does this bp ask for clipping - image 0x08846's `test bp, 0xc`. */
+int blit_clips(uint16_t bp) { return (bp & (BLIT_CLIP_X | BLIT_CLIP_Y)) != 0; }
+
+/* Image 0x088EA's five-way dispatch - see the block above blit_clips. */
 blit_path blit_path_of(uint16_t bp)
 {
     if (bp & 0x4000) return BLIT_SETRESET_ZERO;   /* image 0x088EA */

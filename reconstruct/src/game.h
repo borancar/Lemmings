@@ -190,6 +190,9 @@ typedef enum {
     BLIT_SPRITE           /*               image 0x0890E  */
 } blit_path;
 blit_path blit_path_of(uint16_t bp);
+/* Image 0x08846's `test bp, 0xc` - whether the blit is clipped, and by which
+ * axis. Image 0x07E76's preview passes 0x0C and asks for both. */
+int blit_clips(uint16_t bp);
 
 /* ONE ENTRY OF THE SPRITE STORE'S BUILD TABLE - image 0x059BB.
  *
