@@ -28,6 +28,7 @@ honestly needs one address. Read the list; do not score it.
 """
 import argparse
 import json
+import glob
 import os
 import re
 import sys
@@ -39,7 +40,20 @@ SRC = os.path.join(ROOT, "reconstruct", "src")
 # adlib.c is left out on purpose: its addresses are offsets into adlib.dat's
 # decompressed section, not image offsets, and mixing the two spaces would
 # credit a routine here with a citation from there.
-FILES = ("game.c", "game.h", "data.c", "sdl_io.c", "main.c", "devmain.c")
+#
+# NAMED AS AN EXCLUSION, not as an inclusion list. This was six filenames
+# spelled out, which meant a source file added to the port would go unmeasured
+# and the total would simply be smaller - silently, the way
+# tools/verify_triggers.py silently died when LEVEL_ORDER moved out of the
+# file it named. reconstruct/tests/provenance.py globs, and so does this now;
+# what the report prints is which files it actually read.
+#
+# Globbing also picks up adlib.h and opl.h, which the hand-written list left
+# out. CHECKED rather than assumed, because adlib.h is exactly where an
+# adlib.dat offset would hide: its citations are image 0x01872 and image
+# 0x017FE, both about INT 8 and the retrace, so they are offsets in the main
+# image and belong here. The cited count is 59 either way.
+SKIP = ("adlib.c",)
 
 
 def functions(src_dir):
@@ -53,7 +67,10 @@ def functions(src_dir):
     defn = re.compile(r"^(?:static\s+)?[A-Za-z_][A-Za-z0-9_]*\s+\**"
                       r"([a-z_][a-z0-9_]*)\s*\(")
     out = []
-    for f in FILES:
+    for f in sorted(os.path.basename(q) for q in
+                    glob.glob(os.path.join(src_dir, "*.c"))
+                    + glob.glob(os.path.join(src_dir, "*.h"))
+                    if os.path.basename(q) not in SKIP):
         path = os.path.join(src_dir, f)
         if not os.path.exists(path) or not f.endswith(".c"):
             continue
@@ -131,7 +148,17 @@ def main():
         total[at] = sum(f["lines"] for f in fns
                         if any(at <= x < end for x in f["addrs"]))
 
-    print(f"\n  routines whose HEAD the port cites : {len(best)}")
+    # SAY WHICH FILES, so the number has a scope attached to it. A count of
+    # cited routines is meaningless without knowing what was read, and this
+    # tool named its six sources by hand until a seventh could have appeared
+    # and gone unmeasured.
+    read = sorted(os.path.basename(q) for q in
+                  glob.glob(os.path.join(SRC, "*.c"))
+                  + glob.glob(os.path.join(SRC, "*.h"))
+                  if os.path.basename(q) not in SKIP)
+    print("\n  read: " + ", ".join(read)
+          + "  (skipped " + ", ".join(SKIP) + " - adlib.dat's own offsets)")
+    print(f"  routines whose HEAD the port cites : {len(best)}")
     thin = [(at, sp, fn) for at, (sp, fn) in best.items()
             if sp >= a.min_span
             and sp / max(fn["lines"], 1) >= a.ratio
