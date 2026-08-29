@@ -4849,9 +4849,18 @@ has nothing to seed with here.
 
   Each goes through `check_pipe`, so none of them can crash and still pass -
   which is exactly how `verify_triggers.py` stayed dead for months.
-  `verify_adlib.py` is listed with its inputs rather than run blind: it needs
-  a reference pair, and a run scoring 0 of 54 means the two sides are
-  different tunes, not a broken driver.
+
+  **Two of the eight take an input and are SKIPPED without it**, with the
+  reason and the command that records one. `verify_data.py` wants a memory
+  dump from `play.py --dump-mem`; run bare it exits 2, and adding it to the
+  loop unguarded would have made `check_pipe` fail every sweep - a false
+  alarm of my own making, found by running the block rather than reading it.
+  `verify_adlib.py` wants a recorded reference pair, and a run scoring 0 of
+  54 means the two sides are different tunes, not a broken driver.
+
+  The block was checked in both directions before it went in, by stubbing
+  `uv`: every tool succeeding gives `fail=0` with those two SKIPPED, and
+  every tool exiting 3 gives `fail=1` with each one named.
 
 
 
