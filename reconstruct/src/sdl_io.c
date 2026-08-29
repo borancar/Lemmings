@@ -2381,10 +2381,39 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
     return out;
 }
 
-/* THE LEVEL ITSELF - image 0x0454C's `jmp 0x000FB`, the loop whose frame is
- * written out above level_play_step. It takes the level ALREADY LOADED,
- * because image 0x0197D ran before the briefing and its record is what both
- * of them read. */
+/* THE LEVEL ITSELF - IMAGE 0x00455, the level's set-up, and then image
+ * 0x0454C's `jmp 0x000FB`, the loop whose frame is written out above
+ * level_play_step.
+ *
+ *     0x00458  clear ss:0x42B2, 0x642 bytes   the trigger map
+ *     0x00462  call 0x00FB2   int 10h ax=0x8D - mode 0x0D
+ *     0x00465  call 0x052F4   the level palette, branching on ds:0x1F7C
+ *     0x00468  call 0x015AD   the PIT divisor into ds:0x1FC9
+ *     0x0046B  call 0x036B6   the header into the running state, and the
+ *                             terrain composed - it calls image 0x0368E to
+ *                             clear the master at 0x4A40 first
+ *     0x0046E  if ds:0x1F73 != 0xFF: INT 33h AX=4 to (0x96, 0x64)
+ *     0x00480  call 0x0410F   clear ds:0x0EA8, the on-screen column table
+ *
+ * It takes the level ALREADY LOADED, because image 0x0197D ran before the
+ * briefing and its record is what both of them read.
+ *
+ * WHAT MAPS WHERE. The trigger map is level_triggers_set; the mode and the
+ * palette are this file's, being what the card used to do; the divisor is
+ * LEVEL_FRAME_HZ, which paces the loop; image 0x036B6's two halves are the
+ * level_*_reset calls below and render_terrain. Image 0x0410F's table is
+ * rebuilt per frame rather than here - see the note at image 0x07070.
+ *
+ * The pointer centring is NOT missing. Image 0x0046E skips it when ds:0x1F73
+ * is 0xFF, which is the mouse, and this port always uses the mouse - so the
+ * original does not do it either in the configuration being reconstructed.
+ *
+ * AND THE MASTER IS COMPOSED TWICE, once here and once for the briefing's
+ * preview at image 0x0394F, which calls the same image 0x0368E. That is worth
+ * stating because the opposite was believed here for a while: that the
+ * briefing composed it and the play loop only windowed it through image
+ * 0x07900. Image 0x036B6's first instruction refutes that in one line, and a
+ * restructuring of this file was very nearly done on the strength of it. */
 int level_show(const char *dir, const level *lv, uint8_t scale,
                const char **err)
 {
