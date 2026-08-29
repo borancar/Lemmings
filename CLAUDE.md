@@ -255,6 +255,38 @@ be replaced. Things that FEEL like IO and are not:
 - a loop that waits for a button is not the window. The wait is the game's; the
   event queue behind the button is the host's.
 
+**Transcribe the VISIBLE behaviour, not the hardware mechanism.** The rule
+stops here, and earlier than "transcribe everything" suggests: what is owed is
+the pixels, the samples and the state - not the port writes that produced them.
+
+Image 0x08822 is the case in point. It programs a map mask, a bit mask, a
+set/reset value and a write function, stores one byte, and lets the card spread
+it across four planes through the latches. This port has no card, and writing
+an emulated Graphics Controller so the same `stosb` could go through it would
+buy nothing. `blit_plane_byte` is a read-modify-write of one bit in each of
+eight pixels, which is what the latches WERE, and the comment says so rather
+than pretending to be a card.
+
+The same goes for any idiom used for speed: if the latches were set to copy one
+byte to four planes at once, the transcription is four copies, not a latch
+model. An unrolled loop is a loop. A self-modified immediate is a branch.
+
+**But read the mechanism before deciding it does not matter**, because two
+things hide inside "that is just how the card works":
+
+- **how many passes there are, and in what order.** Image 0x08B42 makes FOUR,
+  one per plane, and recomputes its bit mask from the destination's plane 3 on
+  every one. A single pass gets the same answer only because plane 3 is written
+  last - it assumes what the pass order guarantees. This port wrote the
+  per-pixel version first and it was right by luck.
+- **what a register is computed FROM.** A bit mask derived from a READ of the
+  destination is a data dependency, not configuration. Flattened to a constant
+  it still works on most inputs.
+
+The test is whether the rule can be stated in inputs and outputs - "this pixel
+becomes that value" - without naming a register. If it can, write that. If it
+cannot yet, the reading is not finished.
+
 **How the drift happens**, because it is never a decision:
 
 1. A routine is needed and reading it would take an hour.

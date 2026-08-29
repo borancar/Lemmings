@@ -147,12 +147,13 @@ void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
 {
     if (scale < 1) scale = 1;
     if (view_open(w, h, title, scale) != 0) return;
+    video_screen_set(pix, w, h, palette, NULL, 0);
     for (;;) {
         /* The same two the transcribed screens poll - see mouse_buttons and
          * key_held. There is one queue and one handler behind both. */
         if (mouse_buttons() & 7) return;
         if (key_held(KEY_ESCAPE)) return;
-        view_screen_present(pix, w, h, palette);
+        video_page_flip();
         view_screen_pace();
     }
 }

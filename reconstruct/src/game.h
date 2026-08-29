@@ -1166,8 +1166,7 @@ int  level_run(struct level_frame *A, const canvas *c,
 /* image 0x04660 - a screen that waits; see game.c's menu_screen_wait. The
  * three below are the hardware's share of it. */
 uint16_t mouse_buttons(void);   /* ds:0x14, and there is one of it */
-void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
-                         const lem_rgb *palette);
+
 void view_screen_pace(void);
 /* image 0x000FB's two hardware shares - see game.c's level_loop. */
 /* WHAT THE HARDWARE USED TO DO for a level frame: ds:0x10, ds:0x12, ds:0x14
@@ -1201,9 +1200,7 @@ int     key_is_down(uint8_t sc);
 #define KEY_ESCAPE 0x0020
 #define KEY_ENTER  0x0040
 extern const uint8_t KEY_WATCH[16];
-void view_level_present(void);
-void view_level_bind(uint8_t *screen);
-void view_level_unbind(void);
+
 void level_palette_set(const lem_rgb *top, const lem_rgb *bottom, int live);
 void view_level_live(int on);   /* ds:0x200E - is there a window */
 void view_level_period(uint16_t hz);
@@ -1229,9 +1226,7 @@ int  harness_script_step(struct level_frame *A, int32_t *scroll_x);
 /* image 0x000FB - the level's loop. */
 void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
                 int32_t *scroll_x, int32_t max_x, long budget);
-int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
-                         const lem_rgb *palette, view_tick tick, void *ctx,
-                         long budget);
+int32_t menu_screen_wait(view_tick tick, void *ctx, long budget);
 
 
 /* Load one level out of `file` and show it, and show its briefing first.
@@ -1359,7 +1354,9 @@ void    video_page_flip(void);
 /* THE PORT'S OWN. The flip needs telling WHICH composed buffer is up - the
  * code screen is not the menu's - and closing the window or pressing Ctrl+C
  * ends the process where it stands. See view_quit_now in sdl_io.c. */
-void    video_screen_set(uint8_t *pix, lem_rgb *pal);
+void    video_screen_set(const uint8_t *pix, uint16_t w, uint16_t h,
+                         const lem_rgb *pal, const lem_rgb *low,
+                         uint16_t split);
 void    view_quit_now(void);
 /* THE PORT'S OWN - a host keycode as the scancode the game's keyboard handler
  * would have produced. Exported so a test can check every letter arrives. */
@@ -1443,7 +1440,8 @@ int     menu_fade_tick(void *ctx, uint8_t *pix);
 
 /* THE MENU SCREEN'S TWO PALETTE SLOTS - what the DAC used to hold. The loops
  * that walk them are game.c's, carrying image 0x045EF and image 0x046A2. */
-void menu_fade_arm(const lem_rgb *pal, const lem_rgb *low, uint16_t split);
+void menu_fade_arm(const uint8_t *pix, uint16_t w, uint16_t h,
+                   const lem_rgb *pal, const lem_rgb *low, uint16_t split);
 const lem_rgb *menu_split_palette(uint16_t y, const lem_rgb *upper);
 extern lem_rgb g_lvl_pal_top[16], g_lvl_pal_bottom[16];
 void menu_fade_to_black(void);
@@ -1459,8 +1457,7 @@ const lem_rgb *menu_fade_palette(void);
  */
 uint8_t widen6(uint8_t v);
 int  view_open(uint16_t w, uint16_t h, const char *title, uint8_t scale);
-void view_present_indexed(const uint8_t *pix, uint16_t w, uint16_t h,
-                          const lem_rgb *pal);
+
 int32_t level_results_wait(const uint8_t *pix, const lem_rgb *pal,
                            uint8_t scale);
 

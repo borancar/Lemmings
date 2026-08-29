@@ -240,14 +240,15 @@ uint8_t scancode_of(uint32_t k)
                     * found it */
 }
 
+
 /* ds:0x14 - THE BUTTON WORD, and there is one of it.
  *
  * The port had FOUR readers of this: view_buttons with its own state,
- * menu_buttons with g_menu_buttons and its own pump, view_screen_pump with a
- * callback, and lem_buttons. Four pumps on one queue, and only one of them
- * fed the keyboard handler - so a key-up swallowed by any of the other three
- * left ds:0x1FC7's bit SET, and Escape stayed pressed for ever. A player
- * found that as a level ending the moment it started.
+ * menu_buttons with its own pump, view_screen_pump with a callback, and
+ * lem_buttons. Four pumps on one queue, and only one of them fed the keyboard
+ * handler - so a key-up swallowed by any of the other three left ds:0x1FC7's
+ * bit SET, and Escape stayed pressed for ever. A player found that as a level
+ * ending the moment it started.
  *
  * The original has one byte, kept by image 0x04269 from INT 33h AX=3, and
  * every screen polls it. So does this. */
@@ -255,28 +256,6 @@ uint16_t mouse_buttons(void)
 {
     view_input_drain();
     return lem_buttons;
-}
-
-void view_screen_present(const uint8_t *pix, uint16_t w, uint16_t h,
-                         const lem_rgb *palette)
-{
-    void *pixels = NULL;
-    int pitch = 0;
-    if (SDL_LockTexture(g_tex, NULL, &pixels, &pitch)) {
-        for (uint16_t y = 0; y < h; y++) {
-            uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-            const uint8_t *src = pix + (size_t)y * w;
-            const lem_rgb *pl = menu_split_palette(y, palette);
-            for (uint16_t x = 0; x < w; x++) {
-                lem_rgb c = pl[src[x]];
-                row[x] = ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
-            }
-        }
-        SDL_UnlockTexture(g_tex);
-    }
-    SDL_RenderClear(g_ren);
-    SDL_RenderTexture(g_ren, g_tex, NULL, NULL);
-    SDL_RenderPresent(g_ren);
 }
 
 /* One pass per retrace, on an ABSOLUTE deadline - a sleep per frame is at the
@@ -294,54 +273,11 @@ void view_screen_pace(void)
 }
 
 
-/* ======================================================================
- * THE LEVEL'S SCREEN - WHAT THE CARD USED TO HOLD.
- *
- * The PALETTES are not here any more and were the last thing to leave. They
- * are the game's own slots, image 0x052F4's and image 0x05329's, and they live
- * in game.c beside the routines that load and walk them; image 0x0553D's push
- * at the DAC is the only part of a palette that was ever the card's, and with
- * no DAC to push at, this file's share is reading them when it draws.
- * ====================================================================== */
-static uint8_t     *g_lvl_screen;
-static SDL_Texture  *g_lvl_tex;
-static SDL_Renderer *g_lvl_ren;
-static int           g_lvl_live;        /* ds:0x200E - is there a display */
-
-/* The level's screen into the texture, through whatever the palettes hold
- * at this moment - the play area's on top, the panel's below. */
-static void level_screen_upload(void)
-{
-    void *pixels = NULL;
-    int pitch = 0;
-    /* A MISSING WINDOW IS NOT A QUIET FRAME. This returned silently when the
-     * handles were NULL, so a bug that left them unset showed as a game that
-     * drew nothing and said nothing - found by playing, not by any check
-     * here, because the frame sink writes the composed buffer and never comes
-     * through this function at all. Now it says so, once. */
-    if (!g_lvl_tex || !g_lvl_screen) {
-        static int said;
-        if (!said) {
-            said = 1;
-            fprintf(stderr, "  [video] the level has no window to draw into "
-                            "- nothing will be shown\n");
-        }
-        return;
-    }
-    if (!SDL_LockTexture(g_lvl_tex, NULL, &pixels, &pitch)) return;
-    for (uint16_t y = 0; y < LEVEL_SCREEN_H; y++) {
-        uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-        const uint8_t *src = g_lvl_screen + (size_t)y * LEVEL_SCREEN_W;
-        const lem_rgb *pal = (y < LEVEL_PLAY_H) ? g_lvl_pal_top
-                                                : g_lvl_pal_bottom;
-        for (uint16_t x = 0; x < LEVEL_SCREEN_W; x++) {
-            lem_rgb q = pal[src[x]];
-            row[x] = ((uint32_t)q.r << 16) | ((uint32_t)q.g << 8) | q.b;
-        }
-    }
-    SDL_UnlockTexture(g_lvl_tex);
-}
-
+/* ds:0x200E - is there a display. The level's SCREEN and its two palettes are
+ * not here any more: the screen is whichever page video_screen_set was given
+ * and the palettes are game.c's slots, so what is left of "the level's video
+ * state" is this one byte. */
+static int g_lvl_live;
 
 /* ds:0x200E, which image 0x00325 and image 0x00346 both test. */
 int video_present(void) { return g_lvl_live; }
@@ -391,11 +327,8 @@ void video_retrace_wait(void)
  * the fade visible. The screen itself has not changed. */
 void video_palette_upload(void)
 {
-    if (!g_lvl_live || !g_lvl_ren) return;
-    level_screen_upload();
-    SDL_RenderClear(g_lvl_ren);
-    SDL_RenderTexture(g_lvl_ren, g_lvl_tex, NULL, NULL);
-    SDL_RenderPresent(g_lvl_ren);
+    if (!g_lvl_live) return;
+    video_page_flip();          /* image 0x04C20 - the one upload */
     /* A fade holds the play loop for the best part of a second, and a window
      * that answers nothing for that long is one the desktop reports as hung.
      *
@@ -415,7 +348,17 @@ void video_palette_upload(void)
  * window's bookkeeping into a transcribed routine. */
 static lem_rgb     g_lv_top[16];
 static Uint64      g_lv_due, g_lv_period;
-static int         g_lv_grabbed;
+/* TWO STATES THE PORT HAD CONFLATED. `g_mouse_owned` is the LEVEL owning the
+ * pointer - image 0x00F43 hides the driver's own and image 0x00F2B sets the
+ * game's range, and that lasts the whole level. `g_lv_grabbed` is whether the
+ * WINDOW is holding it at this moment, which Ctrl+Alt gives back and a click
+ * takes again. They were one flag, tested through a level-only renderer
+ * handle; with the handles gone there was nothing left to ask. */
+static const uint8_t *g_page_pix;
+static uint16_t       g_page_w, g_page_h, g_page_split;
+static const lem_rgb *g_page_pal, *g_page_low;
+
+static int         g_lv_grabbed, g_mouse_owned;
 static port_key    g_port_key;
 
 /* WHAT THE HARDWARE USED TO DO: ONE DRAIN OF THE HOST'S QUEUE, dispatched the
@@ -458,20 +401,23 @@ void view_input_drain(void)
                  * range. */
                 lem_mouse_move((int32_t)lem_mouse_x + (int32_t)e.motion.xrel,
                                (int32_t)lem_mouse_y + (int32_t)e.motion.yrel);
-            } else if (g_lvl_ren) {
+            } else if (g_mouse_owned && g_ren) {
+                /* Scaled by the PAGE that is up rather than by a constant -
+                 * the level's is 320x200 and it was written out as such. */
                 int ow = 0, oh = 0;
-                SDL_GetRenderOutputSize(g_lvl_ren, &ow, &oh);
-                if (ow > 0 && oh > 0)
+                SDL_GetRenderOutputSize(g_ren, &ow, &oh);
+                if (ow > 0 && oh > 0 && g_page_w && g_page_h)
                     lem_mouse_move(
-                        (int32_t)(e.motion.x * LEVEL_SCREEN_W / (float)ow) + 8,
-                        (int32_t)(e.motion.y * LEVEL_SCREEN_H / (float)oh) + 8);
+                        (int32_t)(e.motion.x * g_page_w / (float)ow) + 8,
+                        (int32_t)(e.motion.y * g_page_h / (float)oh) + 8);
             }
         }
         else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            if (!g_lv_grabbed && g_lvl_ren) {
+            if (!g_lv_grabbed && g_mouse_owned) {
                 /* Click to take it back, the way every DOS front end does.
                  * That click is for the window, not the game. */
-                view_level_grab(1);
+                g_lv_grabbed = 1;
+                if (g_win) SDL_SetWindowRelativeMouseMode(g_win, true);
             } else {
                 /* THE TWO BUTTONS ARE DIFFERENT BITS. Image 0x04269 stores
                  * INT 33h AX=3's BX in ds:0x14, so bit 0 is the left button
@@ -503,7 +449,9 @@ void view_input_drain(void)
              * it never reaches the handler. */
             if (e.type == SDL_EVENT_KEY_DOWN
                     && (e.key.mod & SDL_KMOD_CTRL) && (e.key.mod & SDL_KMOD_ALT)) {
-                view_level_grab(0);
+                g_lv_grabbed = 0;      /* the window lets go; the LEVEL does
+                                        * not stop owning the pointer */
+                if (g_win) SDL_SetWindowRelativeMouseMode(g_win, false);
                 continue;
             }
             uint8_t sc = scancode_of(e.key.key);
@@ -538,16 +486,6 @@ level_input view_level_pump(void)
     return in;
 }
 
-/* WHAT THE HARDWARE USED TO DO once a frame is composed: image 0x00105 hands
- * the CRTC the other page. The SEQUENCE - flip, then wait five ticks - is the
- * play loop's and is level_frame_show in game.c. */
-void view_level_present(void)
-{
-    level_screen_upload();
-    SDL_RenderClear(g_lvl_ren);
-    SDL_RenderTexture(g_lvl_ren, g_lvl_tex, NULL, NULL);
-    SDL_RenderPresent(g_lvl_ren);
-}
 
 /* IMAGE 0x00164's wait, which is five of the timer's ticks - see
  * LEVEL_FRAME_HZ.
@@ -572,23 +510,6 @@ const lem_rgb *view_level_palette(void) { return g_lv_top; }
  * one line of it.
  * ====================================================================== */
 
-/* The handles view_open just made, and the page the game composes into.
- *
- * These read `g_lvl_tex = g_lvl_tex;` for a while: a scoped rename turned the
- * two locals into these globals and deleted the lines that had initialised
- * them, so both stayed NULL, level_screen_upload returned at its own guard,
- * and the game showed nothing while the sound played on. */
-void view_level_bind(uint8_t *screen)
-{
-    g_lvl_screen = screen;
-    g_lvl_tex = g_tex;
-    g_lvl_ren = g_ren;
-}
-
-void view_level_unbind(void)
-{
-    g_lvl_screen = NULL; g_lvl_tex = NULL; g_lvl_ren = NULL;
-}
 
 
 /* IMAGE 0x015AD - the PIT divisor into ds:0x1FC9, which is what sets a frame's
@@ -615,7 +536,8 @@ void view_level_period(uint16_t hz)
  * grepping the build for `error`. */
 void view_level_grab(int on)
 {
-    g_lv_grabbed = on ? 1 : 0;
+    g_mouse_owned = on ? 1 : 0;
+    g_lv_grabbed  = on ? 1 : 0;
     if (g_win) SDL_SetWindowRelativeMouseMode(g_win, on ? true : false);
 }
 
@@ -952,36 +874,68 @@ void canvas_free(canvas *c)
  * With image 0x016D4 transcribed the table is here and image 0x04D1A is a
  * transcription over it, so the ring is gone.
  * ====================================================================== */
-static uint8_t  *g_menu_pix;
-static lem_rgb  *g_menu_pal;
+/* THE PAGE THAT IS UP: which composed buffer, how big, and how a ROW picks its
+ * palette. The original has one of each - ds:0x1F76 and ds:0x1F78 are the two
+ * page offsets and image 0x04C20 swaps them - and this port had FIVE routines
+ * doing the same upload:
+ *
+ *     view_present_indexed   one palette, indices masked to 15
+ *     video_page_flip        the menu's buffer, at a fixed size
+ *     view_screen_present    one palette, with a per-row split
+ *     level_screen_upload    the level's, split at LEVEL_PLAY_H, into a
+ *                            SECOND set of handles that view_level_bind had
+ *                            just assigned from the first
+ *     view_level_present     that upload, then the present
+ *
+ * They differed in the size, in one `& 15`, and in where the palette changes.
+ * Five spellings of one thing is how they drift, and this file has the scars:
+ * the split arrived in one of them and not the others, and the `& 15` in only
+ * one. There is one now.
+ *
+ * `split` is the row the second palette starts at, 0 for a screen with one -
+ * the briefing is two pictures stacked and the level swaps attributes 8..15
+ * part-way down. */
 
-/* WHICH BUFFER THE PAGE FLIP PRESENTS. The original points the CRTC at
- * whatever it has just composed; here that is a pointer, and the code screen
- * is a DIFFERENT one from the menu's. Without this the flip went on showing
- * the menu while the code screen was being typed into - which is exactly
- * "nothing changes on screen when I type". */
-void video_screen_set(uint8_t *pix, lem_rgb *pal)
+void video_screen_set(const uint8_t *pix, uint16_t w, uint16_t h,
+                      const lem_rgb *pal, const lem_rgb *low, uint16_t split)
 {
-    g_menu_pix = pix;
-    g_menu_pal = pal;
+    g_page_pix = pix; g_page_w = w; g_page_h = h;
+    g_page_pal = pal; g_page_low = low; g_page_split = split;
 }
 
-int video_screen_is(const uint8_t *pix) { return g_menu_pix == pix; }
-/* Image 0x04C20: point the CRTC at the page just composed and swap
- * ds:0x1F76 with ds:0x1F78. One page here, so this is the present. */
+int video_screen_is(const uint8_t *pix) { return g_page_pix == pix; }
+
+/* IMAGE 0x04C20 - POINT THE CRTC AT THE PAGE JUST COMPOSED, and swap ds:0x1F76
+ * with ds:0x1F78. One page here, so this is the whole of it: the buffer
+ * through its palette and up.
+ *
+ * A MISSING PAGE IS NOT A QUIET FRAME. This returned silently when the
+ * pointers were NULL, so a bug that left them unset showed as a game that drew
+ * nothing and said nothing - found by playing, not by any check here, because
+ * the frame sink writes the composed buffer and never comes through this
+ * function at all. Now it says so, once. */
 void video_page_flip(void)
 {
     void *pixels = NULL;
     int pitch = 0;
-    if (!g_ren || !g_tex || !g_menu_pix || !g_menu_pal) return;
+    if (!g_ren || !g_tex) return;
+    if (!g_page_pix || !g_page_pal) {
+        static int said;
+        if (!said) {
+            said = 1;
+            fprintf(stderr, "  [video] no page is up - nothing will be shown\n");
+        }
+        return;
+    }
     if (SDL_LockTexture(g_tex, NULL, &pixels, &pitch)) {
-        for (uint16_t y = 0; y < MENU_H; y++) {
+        for (uint16_t y = 0; y < g_page_h; y++) {
             uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-            const uint8_t *src = g_menu_pix + (size_t)y * MENU_W;
-            for (uint16_t x = 0; x < MENU_W; x++) {
-                lem_rgb c = g_menu_pal[src[x]];
-                row[x] = ((uint32_t)c.r << 16)
-                       | ((uint32_t)c.g << 8) | c.b;
+            const uint8_t *src = g_page_pix + (size_t)y * g_page_w;
+            const lem_rgb *pal = (g_page_split && y >= g_page_split && g_page_low)
+                               ? g_page_low : g_page_pal;
+            for (uint16_t x = 0; x < g_page_w; x++) {
+                lem_rgb c = pal[src[x] & 15];
+                row[x] = ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
             }
         }
         SDL_UnlockTexture(g_tex);
@@ -1016,25 +970,3 @@ uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
 uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
 
-/* The picture, uploaded and shown. Nothing on this screen animates - image
- * 0x047A9 polls and draws nothing - so a caller shows it once. */
-void view_present_indexed(const uint8_t *pix, uint16_t w, uint16_t h,
-                          const lem_rgb *pal)
-{
-    void *px = NULL; int pitch = 0;
-    if (SDL_LockTexture(g_tex, NULL, &px, &pitch)) {
-        for (uint16_t y = 0; y < h; y++) {
-            uint32_t *row = (uint32_t *)((uint8_t *)px + y * pitch);
-            const uint8_t *src = pix + (size_t)y * w;
-            for (uint16_t x = 0; x < w; x++) {
-                lem_rgb q = pal[src[x] & 15];
-                row[x] = ((uint32_t)q.r << 16) | ((uint32_t)q.g << 8)
-                       | (uint32_t)q.b;
-            }
-        }
-        SDL_UnlockTexture(g_tex);
-    }
-    SDL_RenderClear(g_ren);
-    SDL_RenderTexture(g_ren, g_tex, NULL, NULL);
-    SDL_RenderPresent(g_ren);
-}

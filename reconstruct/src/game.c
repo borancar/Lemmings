@@ -9340,7 +9340,7 @@ menu_action menu_code_run(menu_screen *m)
      * CRTC at whatever was just composed; here the composed screen is a
      * pointer and the menu's was still in it, so the flip went on showing the
      * menu while this one was typed into - "nothing changes when I type". */
-    video_screen_set(m->pix, m->palette);
+    video_screen_set(m->pix, MENU_W, MENU_H, m->palette, NULL, 0);
 
     for (uint8_t i = 0; i < CODE_LEN; i++)
         g_code_cells[i] = '.';                  /* image 0x0497D */
@@ -11437,7 +11437,8 @@ int32_t level_results_wait(const uint8_t *pix, const lem_rgb *pal,
 {
     if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0)
         return RESULTS_MENU;
-    view_present_indexed(pix, MENU_W, MENU_H, pal);
+    video_screen_set(pix, MENU_W, MENU_H, pal, NULL, 0);
+    video_page_flip();                          /* image 0x04C20 */
 
     while (mouse_buttons() & 7) { }          /* image 0x047A9 */
     for (;;) {
@@ -12159,9 +12160,7 @@ void level_panel_click(struct level_frame *A, int32_t *scroll_x)
  * The pump, the page and the pacing are sdl_io.c's, for the reason ds:0x14
  * always is: it was a byte a driver kept current.
  */
-int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
-                         const lem_rgb *palette, view_tick tick, void *ctx,
-                         long budget)
+int32_t menu_screen_wait(view_tick tick, void *ctx, long budget)
 {
     /* IMAGE 0x04660's own first line: wait for every button to be UP, so the
      * click that opened this screen is not read again as the one that leaves
@@ -12178,8 +12177,8 @@ int32_t menu_screen_wait(uint8_t *pix, uint16_t w, uint16_t h,
         if (key_held(KEY_ESCAPE))  return BRIEF_MENU;    /* image 0x0468E */
         if (key_held(KEY_ENTER))   return BRIEF_PLAY;    /* image 0x04693 */
 
-        if (tick) tick(ctx, pix);                /* the fade, image 0x0031E */
-        view_screen_present(pix, w, h, palette);
+        if (tick) tick(ctx, NULL);               /* the fade, image 0x0031E */
+        video_page_flip();                       /* image 0x04C20 */
         view_screen_pace();                      /* image 0x04680's retrace */
         if (budget && --budget == 0) return VIEW_CLOSED;
     }
@@ -12521,7 +12520,11 @@ int level_run(struct level_frame *A, const canvas *c,
 
     uint8_t *screen = calloc(LEVEL_SCREEN_W * LEVEL_SCREEN_H, 1);
     if (!screen) return -1;
-    view_level_bind(screen);
+    /* image 0x04C20's page for the level: 320x200, and the palette CHANGES
+     * at LEVEL_PLAY_H - the play area keeps the terrain's browns and the
+     * panel below gets its own. */
+    video_screen_set(screen, LEVEL_SCREEN_W, LEVEL_SCREEN_H,
+                     g_lvl_pal_top, g_lvl_pal_bottom, LEVEL_PLAY_H);
 
     /* IMAGE 0x00465 - TWO PALETTES, and which one a row gets depends on where
      * it is. The game swaps attributes 8..15 part-way down the screen, so the
@@ -12582,7 +12585,7 @@ int level_run(struct level_frame *A, const canvas *c,
      * it was written out a second time in sdl_io.c for as long as the loop
      * exited the moment the level ended - which meant the picture being faded
      * was one nothing was still drawing. See level_end_begin. */
-    view_level_unbind();
+    video_screen_set(NULL, 0, 0, NULL, NULL, 0);
     view_level_grab(0);          /* never leave a going window holding it */
     harness_level_end();
     free(screen);
@@ -12602,7 +12605,7 @@ int level_run(struct level_frame *A, const canvas *c,
  * is being captured is the frame the GAME decided to show. */
 void level_frame_show(const uint8_t *screen, struct level_frame *A)
 {
-    view_level_present();                            /* image 0x00105 */
+    video_page_flip();                               /* image 0x00105 */
     harness_sink_frame(screen, view_level_palette(), A);
     /* A run with a sink is being measured, not played, and must not spend
      * wall clock waiting for a display that is not there. */
@@ -12639,7 +12642,7 @@ void menu_free(menu_screen *m)
 {
     if (!m) return;
     /* Never leave the page flip pointing at a buffer that has gone. */
-    if (video_screen_is(m->pix)) video_screen_set(NULL, NULL);
+    if (video_screen_is(m->pix)) video_screen_set(NULL, 0, 0, NULL, NULL, 0);
     free(m->pix);
     m->pix = NULL;
     free(m->gfx);
@@ -12724,8 +12727,17 @@ int level_fade_notch(uint8_t out)
 }
 
 /* Image 0x045F2's set-up: both slots aimed at the screen's palettes and the
- * current pair blacked, so the first notch starts from nothing. */
-void menu_fade_arm(const lem_rgb *pal, const lem_rgb *low, uint16_t split)
+ * current pair blacked, so the first notch starts from nothing.
+ *
+ * IT PUTS THE PAGE UP TOO, and that is deliberate rather than convenient. The
+ * page has to be pointed at the FADING pair, not at the screen's own - point
+ * it at the target and every notch draws the finished picture, so the fade
+ * runs and nothing moves on screen. Arming and pointing were two calls for one
+ * pass of this file and menu_screen_show already had the first without the
+ * second: it would have shown whatever the previous screen left. A call cannot
+ * be half-made where two lines can - the same lesson as ds:0x200E. */
+void menu_fade_arm(const uint8_t *pix, uint16_t w, uint16_t h,
+                   const lem_rgb *pal, const lem_rgb *low, uint16_t split)
 {
     g_menu_split = split;
     for (uint8_t i = 0; i < 16; i++) {
@@ -12735,6 +12747,8 @@ void menu_fade_arm(const lem_rgb *pal, const lem_rgb *low, uint16_t split)
         g_menu_pal_low_cur[i].r = g_menu_pal_low_cur[i].g =
             g_menu_pal_low_cur[i].b = 0;
     }
+    /* image 0x04C20's page, aimed at the pair a notch moves. */
+    video_screen_set(pix, w, h, g_menu_pal_cur, g_menu_pal_low_cur, split);
 }
 
 /* Image 0x046AB's: both slots aimed at black. */
@@ -12800,13 +12814,13 @@ const lem_rgb *menu_split_palette(uint16_t y, const lem_rgb *upper)
  * That is a real difference in what a player sees and nothing here has
  * measured which is right, so it is recorded and not fitted.
  * ====================================================================== */
-static void menu_screen_fade_in(const uint8_t *pix, uint16_t w, uint16_t h)
+static void menu_screen_fade_in(void)
 {
     for (;;) {                                   /* image 0x045F2 */
         int moved = menu_fade_notch();           /* image 0x045F8: call 0x5329 */
         /* The frame put up again, which is the DAC write the original does
          * not need - see sdl_io.c. */
-        view_screen_present(pix, w, h, menu_fade_palette());
+        video_page_flip();                       /* image 0x04C20 */
         view_input_drain();                      /* the close box only */
         view_screen_pace();
         if (!moved) break;                       /* image 0x045FB */
@@ -12835,13 +12849,13 @@ static void menu_screen_fade_in(const uint8_t *pix, uint16_t w, uint16_t h)
  * straight to the level is the thing that looks wrong even when every pixel
  * is right.
  */
-static void menu_screen_fade_out(const uint8_t *pix, uint16_t w, uint16_t h)
+static void menu_screen_fade_out(void)
 {
     menu_fade_to_black();                        /* image 0x046AB's targets */
     for (;;) {
         video_retrace_wait();                    /* image 0x046A2: call 0x46B9 */
         int moved = menu_fade_notch();           /* image 0x046B1: call 0x5329 */
-        view_screen_present(pix, w, h, menu_fade_palette());
+        video_page_flip();                       /* image 0x04C20 */
         view_input_drain();
         if (!moved) break;                       /* image 0x046B4 */
     }
@@ -12889,15 +12903,13 @@ menu_action menu_run(menu_screen *m, uint8_t scale)
 
     if (scale < 1) scale = 1;
     if (view_open(MENU_W, MENU_H, "PC Lemmings", scale) != 0) return MENU_EXIT;
-    video_screen_set(m->pix, m->palette);     /* which buffer the flip shows */
-
     menu_plates_arm();          /* image 0x04416, 0x0441B, 0x04420 */
 
     /* image 0x04425's black, then image 0x04450's climb out of it. What image
      * 0x04428's clear stood in front of has already happened: the caller
      * composed the screen, which is image 0x0442B..0x04447. */
-    menu_fade_arm(m->palette, m->palette, 0);    /* image 0x0531E */
-    menu_screen_fade_in(m->pix, MENU_W, MENU_H); /* image 0x04450 */
+    menu_fade_arm(m->pix, MENU_W, MENU_H, m->palette, m->palette, 0);
+    menu_screen_fade_in();                       /* image 0x04450 */
     menu_fade_disarm();
 
     menu_wait_release();                         /* image 0x04453 */
@@ -12936,17 +12948,17 @@ int32_t menu_screen_show(const menu_screen *m, const char *title, uint8_t scale)
 
     /* The briefing is two pictures stacked with different palettes - see
      * menu_screen.split. Every other screen leaves split at zero. */
-    menu_fade_arm(m->palette, m->palette_low, m->split);
-    menu_screen_fade_in(m->pix, MENU_W, MENU_H);        /* image 0x045EF */
+    menu_fade_arm(m->pix, MENU_W, MENU_H, m->palette, m->palette_low,
+                  m->split);
+    menu_screen_fade_in();        /* image 0x045EF */
 
     {
         const char *cap = getenv("LEM_FRAMES");
-        how = menu_screen_wait(m->pix, MENU_W, MENU_H, menu_fade_palette(),
-                               menu_fade_tick, NULL,
+        how = menu_screen_wait(menu_fade_tick, NULL,
                                cap ? (long)atoi(cap) : 0);
     }
 
-    menu_screen_fade_out(m->pix, MENU_W, MENU_H);       /* image 0x046A2 */
+    menu_screen_fade_out();       /* image 0x046A2 */
     menu_fade_disarm();
     return how;                                  /* image 0x0469F against the
                                                   * fall through past 0x046B6 */
