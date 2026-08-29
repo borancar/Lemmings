@@ -533,7 +533,6 @@ uint8_t g_plane_bits[4] = { 0, 1, 2, 3 };
 uint8_t g_msb_first = 1;
 
 
-
 /* ======================================================================
  * NOT TRANSCRIBED - terrain composition.
  *
@@ -1089,7 +1088,6 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
 }
 
 
-
 /* ======================================================================
  * THE LEVEL'S CONTROL PANEL - its font and its status line.
  *
@@ -1197,8 +1195,6 @@ static uint32_t panel_glyph(uint8_t ch)
  * skill 0 there, where the game begins with 2.
  *
  * Image 0x03F66 writes ds:0x82 when a button is chosen, by click or by key. */
-static uint8_t g_skill = 2;      /* ds:0x82, image 0x00422 */
-static uint8_t g_selected = PANEL_SEL_START;   /* ds:0x83, image 0x00427 */
 
 uint8_t level_skill(void)    { return g_skill; }
 uint8_t level_selected(void) { return g_selected; }
@@ -1219,7 +1215,6 @@ uint8_t level_selected(void) { return g_selected; }
  * AND THE HIGHLIGHT LAGS THE SELECTION, up to two frames of it, because
  * ds:0x83 is only copied when the divider fires. The port set both at once,
  * which is the tidier reading and not the original's. */
-static uint8_t g_skill_div;      /* ds:0x84 */
 
 uint8_t level_skill_div(void) { return g_skill_div; }
 
@@ -1595,8 +1590,6 @@ void panel_frame(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 
 
 static char    g_status[PANEL_COLS + 1];
-static uint8_t g_tick;        /* ds:0x85 */
-static uint8_t g_tick_load;   /* ds:0x86 */
 
 const char *level_status_line(void) { return g_status; }
 
@@ -1953,12 +1946,6 @@ void status_put_num(char *dst, uint8_t v)
  * ... on 84, 112, 140, 168, 196, 224, 252, 280 and 308. Twenty then
  * twenty-eight, exactly.
  * ====================================================================== */
-static uint8_t g_release_wait;   /* ds:0x48 */
-static uint8_t g_release_step;   /* ds:0x49 */
-static uint8_t g_rate;           /* ds:0x67 - the rate the buttons move */
-static uint8_t g_rate_min;       /* ds:0x64 - the level's own, and the floor */
-static uint8_t g_released;       /* ds:0x43 */
-static uint8_t g_to_release;     /* ds:0x47 */
 
 /* THE PORT'S OWN, only because ds:0x43 is a byte of the data segment and
  * anything in the original can read it. */
@@ -1988,10 +1975,6 @@ uint8_t level_to_release(void) { return g_to_release; }
  * timer reloads to 17 every second - so the double click measured its gap
  * against a byte that never went above 19, and the port nuked or refused to
  * depending on where in the second the press landed. */
-static uint8_t g_nuke_tick;      /* ds:0x1FD3, image 0x00199 */
-static uint8_t g_nuke;           /* ds:0x4B */
-static uint8_t g_nuke_at;        /* ds:0x4C, the cascade's cursor */
-static uint8_t g_nuke_last;      /* ds:0x1FD4, the previous press */
 
 void level_tick(void) { g_nuke_tick++; }         /* image 0x00199 */
 
@@ -2023,8 +2006,6 @@ void level_tick(void) { g_nuke_tick++; }         /* image 0x00199 */
  * and lets the level fill it in again. level_state_wipe is that, and a level
  * now starts unpaused because the original starts it unpaused.
  * ====================================================================== */
-static uint8_t g_paused;         /* ds:0x2B */
-static uint8_t g_pause_at;       /* ds:0x53 */
 
 uint8_t level_paused(void) { return g_paused; }
 
@@ -2113,7 +2094,6 @@ static uint8_t level_rate_step(uint8_t rate)
     return (uint8_t)(((99u - (uint16_t)rate) >> 1) + 4u);
 }
 
-static uint8_t g_rate_div;       /* ds:0x69 */
 /* ds:0x68 - the rate the PANEL is showing, which image 0x03B86 compares with
  * ds:0x67 to decide whether anything needs redrawing. Modelled as a flag
  * rather than a value because only "does it match" is ever asked. */
@@ -2300,11 +2280,6 @@ static const level *g_music_level;
 /* THE PORT'S OWN - see the note above. */
 void music_set_level(const level *lv) { g_music_level = lv; }
 
-static uint8_t g_tune;           /* ds:0x54  the driver's tune number */
-static uint8_t g_tune_rot;       /* ds:0x1F6C the rotation counter, 0..16 */
-static uint8_t g_tune_advance;   /* ds:0x1F6D non-zero: step the rotation */
-static uint8_t g_tune_pick;      /* ds:0x0FE8 0 rotates, 1..4 names one */
-static uint8_t g_snd_driver;     /* ds:0x2010 0xFF once a driver answered */
 
 /* image 0x04877 - the rotation, seventeen tunes deep. The names are the
  * driver's own, from its built-in test menu (docs/sound.md): 6 is "CanCan",
@@ -2378,8 +2353,6 @@ void music_cold_start(void)
  * image 0x0059F's detect answered. So bit 1 IS "a driver is present", which
  * is exactly why image 0x003AD can ask for music with no ds:0x2010 test of
  * its own while image 0x00380 and image 0x00394 both have one. */
-static uint8_t g_snd_bits = 1;         /* image 0x00591 */
-static uint8_t g_snd_setting = 1;      /* ds:0x1F71, image 0x00596 */
 
 uint8_t sound_enabled(uint8_t bits)
 {
@@ -2393,7 +2366,6 @@ uint8_t sound_enabled(uint8_t bits)
  * DISPLAY: image 0x017FE waits for a vertical retrace before image 0x01815
  * reloads the PIT from ds:0x1FC9. A tick is a retrace.
  * ====================================================================== */
-static uint8_t g_tick_pending;      /* ds:0x1FCD */
 
 /* image 0x017C7. The port has none of the handler's video work - the page
  * flip at image 0x017E5 and the PIT reload at image 0x01815 are things the
@@ -2553,9 +2525,6 @@ uint8_t sound_driver_answered(void) { return g_snd_driver == 0xFF; }
  * transcribed: watching writes to ds:0x55 shows 0xFF arriving from image
  * 0x394 at play-loop frame 35, which is 0x23.
  * ====================================================================== */
-static uint8_t g_level_frame;      /* ds:0x52 */
-static uint8_t g_level_phase;      /* ds:0x4E */
-static uint8_t g_entrance_open;    /* ds:0x55 */
 
 /* Image 0x0436..0x0447 clears these when a level starts; bit 2 of ds:0x4E is
  * what makes the opening sequence run at all. */
@@ -2735,7 +2704,6 @@ void level_phase_step(void)
  * reach the results. So the picture that fades is the level's own last
  * composed frame, still being drawn by the loop that composed it.
  * ====================================================================== */
-uint8_t g_level_over;                           /* ds:0x4F */
 
 void level_end_begin(void)
 {
@@ -3270,8 +3238,6 @@ int level_code_ok(const char *code)
  * code changed nothing. A player found that too.
  * ====================================================================== */
 #define CODE_CHEAT "BILLANDTED"          /* image 0x051A6 */
-static uint8_t g_cheat;                  /* ds:0x1F74 */
-static uint8_t g_code_pct;               /* ds:0x491D */
 
 uint8_t level_cheat_on(void)  { return g_cheat; }
 uint8_t level_code_pct(void)  { return g_code_pct; }
@@ -3371,7 +3337,6 @@ static const char S_NEEDED[]    = "You needed      ";          /* ds:0x4C65 */
  * 0x048D1, image 0x04781 and image 0x047EE all pick their wording from it.
  * The port's input screen matches the original's to the pixel but nothing
  * yet SETS this, so it stays on the mouse's wording. */
-uint8_t lem_input_kind;
 
 /* The three wordings, by ds:0x25A6 - images 0x04C77, 0x04C9D and 0x04CB9. */
 static const char *const S_MENU_PROMPT[3] = {
@@ -3807,8 +3772,6 @@ int level_won(uint8_t saved, uint8_t needed) { return saved >= needed; }
  *
  * Four routines move it and they are the whole of it:
  * ====================================================================== */
-static uint8_t g_level_index;      /* ds:0x1F6B */
-static uint8_t g_level_rating;     /* ds:0x1F6E */
 
 uint8_t level_index(void)  { return g_level_index; }
 uint8_t level_rating(void) { return g_level_rating; }
@@ -3905,7 +3868,6 @@ const char *level_verdict_text(uint8_t saved, uint8_t needed)
  * lose: that is the saved count against the level's requirement, and it is
  * the results screen's business.
  */
-uint8_t level_saved;              /* ds:0x46 */
 
 void level_saved_reset(void) { level_saved = 0; }
 
@@ -3922,8 +3884,6 @@ void level_lemming_saved(void) { level_saved++; }
  * main.c passed both in, which meant it had to know when to compute them -
  * and the port's results screen could be handed numbers the game would never
  * have had at that moment. */
-static uint8_t g_saved_pct;     /* ds:0x40 */
-static uint8_t g_needed_pct;    /* ds:0x41 */
 
 uint8_t level_saved_pct(void)  { return g_saved_pct; }
 uint8_t level_needed_pct(void) { return g_needed_pct; }
@@ -4226,11 +4186,9 @@ static void lem_settle(lemming *a, int16_t bp)
  * beside it. The port has no second button wired to this yet, so it reads
  * zero and always takes the busy one, exactly as the original does with the
  * button up. */
-uint8_t lem_buttons;
 
 /* ds:0x63 - HOW MANY lemmings are under the pointer, which is the number the
  * panel prints beside the name. Image 0x03DA1 counts them. */
-uint8_t lem_under_count;
 
 /* THE POINTER'S SCAN - transcribed from image 0x03CE9.
  *
@@ -4965,7 +4923,6 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 /* ------------------------------------------------------------------ miner */
 
 
-
 #define MINE_BIT     0x0800
 /* THE SAME CONSTANT IS THE GUARD AND THE KEEP-MASK, image 0x035A2 and image
  * 0x035D8 - the trap the digger's assignment was got wrong on. Its zero bits
@@ -5360,9 +5317,6 @@ static void lem_boom(lemming *a)
     if (g_snd_driver == 0xFF && sound_enabled(3))   /* image 0x02D57 */
         sound_request(0x61, 4, 0x0C);                     /* image 0x02D65 */
 }
-
-
-
 
 
 /* THE CLOUD - transcribed from image 0x02350, the last of the bomber.
@@ -7618,7 +7572,6 @@ int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n)
 #define CURSOR_ORIGIN 8
 
 
-
 /* THE BOX THE CURSOR BECOMES OVER A LEMMING - READ from the original's own
  * sprite store, not measured off a frame.
  *
@@ -7646,11 +7599,36 @@ int palette_fade_step(lem_rgb *cur, const lem_rgb *tgt, uint8_t n)
  * so eight more than the screen position and clamped the way image 0x0426D
  * clamps them. Image 0x00F41 starts it at (150, 100), which is where the
  * game puts it before anyone touches the mouse. */
-uint16_t lem_mouse_x = 150;
-uint16_t lem_mouse_y = 100;
+
+/* ======================================================================
+ * THE GAME'S DATA SEGMENT - one object at the original's own offsets.
+ *
+ * These were fifty-one separate globals, each carrying a `ds:` address in a
+ * comment that nothing could hold it to. dgroup.h lays the segment out and
+ * asserts every offset, so the address is the LAYOUT rather than a claim, and
+ * the whole thing can be compared against the guest's own DS in one pass.
+ *
+ * The names below are #defines for now - see game.h - so every use site is
+ * unchanged and the risk of the move is one line per variable rather than a
+ * thousand. They become DG.field directly once this has been measured.
+ *
+ * The nine initialisers are the ones the definitions carried; the rest of the
+ * segment starts zeroed, which is what a DOS BSS did.
+ * ====================================================================== */
+dgroup DG = {
+    .code_cells = "..........",
+    .fx_drawn = 0xFF,
+    .mouse_x = 150,
+    .mouse_y = 100,
+    .rating_drawn = 0xFF,
+    .selected = PANEL_SEL_START,
+    .skill = 2,
+    .snd_bits = 1,
+    .snd_setting = 1
+};
+
 /* ds:0x1A - is the pointer over a lemming? Image 0x03DE8 sets it, image
  * 0x03DAF clears it, and image 0x05854 is what it changes. */
-uint8_t lem_cursor_box;
 
 /* Transcribed from image 0x0426D: the original's own handler clamps the
  * position it got from INT 33h function 3 to 8..0x148 across and 8..0xC8
@@ -8603,7 +8581,6 @@ static const struct { uint8_t first, count; uint16_t x, y; } SIGN_ROW[2] = {
 #define SIGN_STRIDE_X 0x80          /* image 0x04F68: add ax, 0x80 */
 
 
-
 /* The menu palette, transcribed from image 0x0E3C0 - sixteen 6-bit RGB
  * triples, in attribute-register order. It is a table in the executable, not
  * in any data file, so it is transcribed here the way a routine would be.
@@ -9116,7 +9093,6 @@ int menu_code_screen(const char *dir, menu_screen *m, const char **err)
  * it into the code screen's line, and the briefing reads the same table. */
 static const char RATINGS[] = "Fun   TrickyTaxingMayhem";  /* image 0x0E691 */
 
-char g_code_cells[CODE_LEN + 1] = "..........";   /* ds:0x4DF2 */
 
 const char *level_code_cells(void) { return g_code_cells; }
 
@@ -10409,7 +10385,6 @@ static const struct {
  * Not static, for the same reason menu_scroll is not: a capture of the
  * original shows ONE phase of these, and the port has to be told which. The
  * accessor is the port's own, so it lives in sdl_io.c. */
-int16_t anim_ctr[ANIM_N];
 int     anim_started;
 
 /*
@@ -10621,7 +10596,6 @@ int menu_build(const char *dir, menu_screen *m, const char **err)
 {
     return menu_build_rating(dir, 0, m, err);
 }
-
 
 
 /* How many 16-pixel columns the strip holds. Image 0x07CBC stamps 0x23 of
@@ -11083,8 +11057,6 @@ void menu_wait_release(void)
  * mechanism, and a mechanism that agrees on every state anyone has compared
  * is exactly what this port has shipped wrong twice.
  * ====================================================================== */
-uint8_t g_rating_drawn = 0xFF;   /* ds:0x1F6F */
-uint8_t g_fx_drawn     = 0xFF;   /* ds:0x1F72 */
 
 /* ds:0x1F70, AND IT IS NOT THE SETTING. Image 0x044BA flips it with
  * `xor byte [0x1f70], 0xff`, so it holds 0x00 or 0xFF and carries no value
@@ -11094,7 +11066,6 @@ uint8_t g_fx_drawn     = 0xFF;   /* ds:0x1F72 */
  *
  * Reading it as the setting index is the obvious mistake and it would have
  * worked on two of the three states. */
-uint8_t g_fx_dirty;              /* ds:0x1F70 */
 
 void menu_plates_arm(void)
 {
@@ -12282,9 +12253,6 @@ void level_key_button(uint8_t scancode)
  *
  * `code` is the byte as it comes off port 0x60: bit 7 set is a release.
  * ====================================================================== */
-uint8_t  g_key_down[0x53];       /* ds:0x0F78 */
-uint16_t g_key_held;             /* ds:0x1FC7 */
-uint8_t  g_key_last;             /* ds:0x1FD0 */
 
 void keyboard_isr(uint8_t code)
 {

@@ -16,6 +16,7 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include "dgroup.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -572,7 +573,6 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x);
 
 /* ds:0x14, the mouse buttons. Bit 1 makes image 0x03DB7 prefer the plain
  * lemming to the busy one; nothing sets it in this port yet. */
-extern uint8_t lem_buttons;
 extern uint8_t lem_under_count;      /* ds:0x63 */
 
 /* What the pointer is over, written into the panel's status line - image
@@ -806,7 +806,6 @@ int level_out_of_time(void);
 const char *level_results_headline(int timed_out);
 const char *level_results_prompt(uint8_t input_kind);
 /* ds:0x25A6 - mouse, joystick or keyboard. Nothing sets it yet. */
-extern uint8_t lem_input_kind;
 void level_results_line(char *line, int needed_line, uint8_t percent);
 
 uint8_t level_verdict(uint8_t saved, uint8_t needed);
@@ -831,7 +830,6 @@ void level_rating_down(void);       /* image 0x0451C */
 void level_index_reset(void);
 void level_index_set(uint8_t index);   /* THE PORT'S OWN - the harness */
 
-extern uint8_t level_saved;
 void level_saved_reset(void);
 void level_lemming_saved(void);
 uint8_t level_saved_percent(const level *lv);
@@ -839,7 +837,6 @@ uint8_t level_saved_percent(const level *lv);
 /* ds:0x4F - whether the level has ended. Image 0x002B3 sets it and image
  * 0x001C8 tests it on every later pass. The rescued percentage is ds:0x40
  * and is level_saved_pct's, above. */
-extern uint8_t g_level_over;
 int level_over(const level *lv, uint8_t released, uint8_t live);
 
 const char *level_status_line(void);
@@ -962,10 +959,8 @@ uint8_t palette_fade_retraces(void);
 uint8_t palette_split_first(void);
 uint8_t palette_split_count(void);
 
-extern uint16_t lem_mouse_x, lem_mouse_y;
 /* Is the pointer over a lemming - the original's ds:0x1A, which is what
  * makes the cursor a box (image 0x05854). */
-extern uint8_t lem_cursor_box;
 void lem_mouse_move(int32_t x, int32_t y);
 void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x);
 
@@ -1500,7 +1495,6 @@ void menu_anim_step(void);
 /* Their counters, the original's ds:0x4960. Set them to score a capture: the
  * five walk on and off, so a composed frame that starts them from the
  * staggered reset shows a different moment from whatever the guest was at. */
-extern int16_t anim_ctr[MENU_ANIM_N];
 extern int     anim_started;
 void menu_set_anim(const int16_t *ctr, uint8_t n);
 /* How many of them are on screen right now. Exposed so the counter logic can
@@ -1544,5 +1538,70 @@ void harness_script_load(const char *path);
 /* lemdev putting a composed screen up for a person to look at. */
 void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
               const lem_rgb *palette, const char *title, uint8_t scale);
+
+
+/* ======================================================================
+ * THE DATA SEGMENT'S NAMES.
+ *
+ * Every one of these was a global with a `ds:` address in a comment. They are
+ * one object now - see dgroup.h, which lays the segment out at the original's
+ * own offsets and asserts every one of them - and these #defines keep the use
+ * sites unchanged while that move is measured.
+ *
+ * THEY ARE SCAFFOLDING. The end state is DG.field written out at each site;
+ * a #define hides which object a name belongs to, which is most of what was
+ * wrong with fifty-one globals in the first place.
+ * ====================================================================== */
+#define anim_ctr         DG.anim_ctr
+#define g_cheat          DG.cheat
+#define g_code_cells     DG.code_cells
+#define g_code_pct       DG.code_pct
+#define g_entrance_open  DG.entrance_open
+#define g_fx_dirty       DG.fx_dirty
+#define g_fx_drawn       DG.fx_drawn
+#define g_key_down       DG.key_down
+#define g_key_held       DG.key_held
+#define g_key_last       DG.key_last
+#define g_level_frame    DG.level_frame
+#define g_level_index    DG.level_index
+#define g_level_over     DG.level_over
+#define g_level_phase    DG.level_phase
+#define g_level_rating   DG.level_rating
+#define g_needed_pct     DG.needed_pct
+#define g_nuke           DG.nuke
+#define g_nuke_at        DG.nuke_at
+#define g_nuke_last      DG.nuke_last
+#define g_nuke_tick      DG.nuke_tick
+#define g_pause_at       DG.pause_at
+#define g_paused         DG.paused
+#define g_rate           DG.rate
+#define g_rate_div       DG.rate_div
+#define g_rate_min       DG.rate_min
+#define g_rating_drawn   DG.rating_drawn
+#define g_release_step   DG.release_step
+#define g_release_wait   DG.release_wait
+#define g_released       DG.released
+#define g_saved_pct      DG.saved_pct
+#define g_selected       DG.selected
+#define g_skill          DG.skill
+#define g_skill_div      DG.skill_div
+#define g_snd_bits       DG.snd_bits
+#define g_snd_driver     DG.snd_driver
+#define g_snd_setting    DG.snd_setting
+#define g_tick           DG.tick
+#define g_tick_load      DG.tick_load
+#define g_tick_pending   DG.tick_pending
+#define g_to_release     DG.to_release
+#define g_tune           DG.tune
+#define g_tune_advance   DG.tune_advance
+#define g_tune_pick      DG.tune_pick
+#define g_tune_rot       DG.tune_rot
+#define lem_buttons      DG.buttons
+#define lem_cursor_box   DG.cursor_box
+#define lem_input_kind   DG.input_kind
+#define lem_mouse_x      DG.mouse_x
+#define lem_mouse_y      DG.mouse_y
+#define lem_under_count  DG.under_count
+#define level_saved      DG.saved
 
 #endif /* GAME_H */
