@@ -431,6 +431,10 @@ void panel_char(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * bl = 0x28 bytes a row, cx = 0x28 rows, bh = 4 planes. PANEL_TOP is the
  * screen row it goes at, measured against a recorded frame. */
 #define PANEL_FONT_SECTION 2
+/* image 0x05976: a PC compatible unpacks its panel from this section. */
+#define PANEL_COMPAT_SECTION 6
+extern const uint8_t *g_panel_compat_sec;
+extern uint32_t       g_panel_compat_len;
 /* MAIN.DAT section 4 carries the results screen's 16x16 font at 0x69B0 -
  * measured, see level_results_draw. */
 #define RESULTS_FONT_SECTION 4

@@ -7686,6 +7686,11 @@ void level_play_draw(level_anim *st, const level *lv,
     level_status_out(out);                      /* image 0x03684 */
 }
 
+/* image 0x05976's section, handed over by level_show so level_panel_build
+ * need not know about files. NULL on a High Performance machine. */
+const uint8_t *g_panel_compat_sec;
+uint32_t       g_panel_compat_len;
+
 /* THE CONTROL PANEL, one frame of it.
  *
  * The port's own arrangement, and now for a reason rather than for want of
@@ -7767,7 +7772,20 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
      * measurement of the panel passed. */
     level_status_pointer(lem, nlem, view_x);
 
-    panel_frame(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, PANEL_ART_X, 0);
+    /* IMAGE 0x05976 - a PC compatible unpacks the panel from ANOTHER main.dat
+     * section. Image 0x059A1 calls the same image 0x057D1 this routine is
+     * transcribed from, but with ds pointing at a scratch segment holding
+     * that section rather than the usual one.
+     *
+     * main.dat has seven sections; the game uses 0, 2, 3 and 4, and section 6
+     * is 8,224 bytes. Image 0x059B4 then copies 0x720 of its bytes from
+     * 0x1900 - which is 8,224 exactly - over the prepared panel at 0xA0, and
+     * a dump of ds:0x1FEC in both machines differs in exactly 0xA0..0x7BD. */
+    const uint8_t *art = sec; uint32_t art_len = seclen;
+    if (lem_machine == LEM_PC_COMPATIBLE && g_panel_compat_sec) {
+        art = g_panel_compat_sec; art_len = g_panel_compat_len;
+    }
+    panel_frame(pp, PANEL_LINE_W, PANEL_ART_H, art, art_len, PANEL_ART_X, 0);
     panel_status(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen,
                  level_status_line(), 0, 0);
     panel_buttons(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, lv);
@@ -11495,6 +11513,14 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
             if (mainf.count > PANEL_FONT_SECTION) {
                 A.pan_sec = mainf.sections[PANEL_FONT_SECTION].data;
                 A.pan_len = mainf.sections[PANEL_FONT_SECTION].size;
+                /* image 0x05976: the compat panel's own section. */
+                g_panel_compat_sec = NULL;
+                if (mainf.count > PANEL_COMPAT_SECTION) {
+                    g_panel_compat_sec =
+                        mainf.sections[PANEL_COMPAT_SECTION].data;
+                    g_panel_compat_len =
+                        mainf.sections[PANEL_COMPAT_SECTION].size;
+                }
             }
         }
     }

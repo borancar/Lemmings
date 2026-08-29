@@ -4837,56 +4837,23 @@ has nothing to seed with here.
   per-frame swap, and the briefing is the screen that reprograms it mid-life.
   Cosmetic, but it is a thing the original does and this port does not.
 
-- **COMPAT USES A DIFFERENT PANEL GRAPHIC - MAIN.DAT SECTION 6 - and the port
-  has never loaded it.** Found by probing what writes the panel's rows and
-  following the source segment back, which is what settled six rounds of
-  guessing at palettes.
+- **FIXED: the compat panel is MAIN.DAT section 6.** A player reported orange
+  status text and orange skill buttons under `--pc compat`. Image `0x05976`
+  runs only when `ds:0x200E` is set and unpacks the panel from another
+  main.dat section through the same image `0x057D1` the port's `panel_frame`
+  is transcribed from. `main.dat` has seven sections; the game uses 0, 2, 3
+  and 4, and section 6 is 8,224 bytes - which is image `0x059A6`'s 0x1900 plus
+  image `0x059B4`'s 0x720 exactly.
 
-  `tools/probe_writes.py --play --rows 176 199` names the same four
-  instructions in both machines - image `0x077B9`, `0x077DD`, `0x077F5` and
-  image `0x07804`, a plane-by-plane blit - so the drawing code is identical.
-  Image `0x077AC` takes its source from the segment in `ds:0x1FEC`, and that
-  buffer is what differs.
+  Measured both ways, against recordings of the original on Fun 1 frame 39:
 
-  Image `0x058D2` opens `main.dat` (`ds:0x252B`) and reads its sections in
-  order. Image `0x05976` then does this, and ONLY when `ds:0x200E` is set:
+  | attribute | high orig/port | compat orig/port |
+  | --- | --- | --- |
+  | 4, the gold | 116 / 116 | **1442 / 1442** |
+  | 6, grey | 233 / 233 | 884 / 884 |
+  | 8..15 | 2680 / 2680 | 0 / 0 |
 
-  ```
-  0x0597E  es = ds = [0x1FE4]        a scratch segment
-  0x0598A  call 0x01BA9              decompress ANOTHER section into it
-  0x0599A  bx=0x428, cx=0x28, ax=0x2C, di=0xF91F
-  0x059A1  call 0x057D1              convert it
-  0x059A6  di = 0xA0, si = 0x1900
-  0x059AC  es = [0x1FEC]             the panel source
-  0x059B4  cx = 0x720 / rep movsb    1824 bytes over the panel artwork
-  ```
-
-  **The arithmetic pins the section.** `main.dat` has seven; the port uses 0,
-  2, 3 and 4. Section 6 is 8,224 bytes, and the copy takes 1,824 from offset
-  6,400 - which is 8,224 exactly. Section 6 is the compat panel.
-
-  **A first attempt at wiring it is reverted, and the failure is the useful
-  part.** Copying section 6's bytes to offset 0xA0 of the port's `A.pan_sec`
-  changed the panel but matched nothing: attributes 8..15 still carried 2,680
-  pixels where the original has none. `ds:0x1FEC` is a PREPARED panel buffer
-  and `A.pan_sec` is the RAW section, so `0xA0` is not the same place in the
-  two. The offsets are in the original's coordinate space and the port needs
-  them in its own.
-
-  What that measurement did establish: **the port's HIGH panel is exact** -
-  2964, 98, 156, 853, 116, 268, 233, 312 against the original's high capture,
-  attribute for attribute. So the decode is right and only the compat overlay
-  is missing.
-
-  And 2,680 is the same count on both sides - the pixels the original moves
-  out of 18/19/20/22/23 into the low eight. Much of that is the MINIMAP, which
-  suggests the compat difference is not only the artwork overlay.
-
-  So the port draws the HIGH panel art in compat, whose attributes 8..15 land
-  on the terrain's colours, which is the orange a player reported. The fix is
-  to load section 6 when the machine is a PC compatible and copy its last
-  1,824 bytes over the panel artwork at offset 0xA0 - and to read what image
-  `0x057D1` does to it first, because the copy is of the CONVERTED bytes.
+  **Zero difference in both modes**, every attribute.
 
 - ~~**THE PANEL IS DRAWN WITH DIFFERENT ATTRIBUTES PER MACHINE**~~ - true, and
   this is why. Two recordings of the original on the same level, Fun 1, frame
