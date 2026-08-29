@@ -5153,7 +5153,19 @@ has nothing to seed with here.
 - **The EGA path** through `vgalemmi.exe`.
 - **`flr.exe`** (the crack's trainer), `install.exe`, and the `lem*.com`
   loaders — not part of the game.
-- **Sound.** Not looked at; `adlib.dat` and `tandysnd.dat` are unexamined.
+- **`tandysnd.dat`** — the Tandy driver, unexamined, and a non-goal for the
+  same reason the CGA and Tandy builds are.
+
+  **`adlib.dat` is NOT deferred and this line used to say it was.** It is
+  transcribed as `reconstruct/src/adlib.c` - its own translation unit, because
+  it was its own program - and checked the way a screen is, against what the
+  original COMPOSES rather than what comes out of it: ask both sides for the
+  same tune through the driver's own request slots and compare the OPL2
+  register stream. **10,505 of 10,505 registers and values agree, 100.00%**,
+  with the gap between writes at 99.99% and a worst difference of one tick
+  that is the instrument. See `tools/verify_adlib.py`, whose header carries
+  the six ways the recipe for that comparison can silently produce a number
+  instead of an answer.
 
 ## Provenance notes
 
