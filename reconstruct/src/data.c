@@ -1229,6 +1229,26 @@ const uint8_t MENU_XLAT[0x53] = {
  * The cursor is the other part worth having: tools/probe_cursor.py measured
  * its two shapes off the store at 144 bytes a shift, and image 0x05CC1 is
  * where they are put there.
+ *
+ * HOW THE STORE IS ADDRESSED - image 0x070B6, which names the record fields
+ * probe_digger.py measured and could only describe by their offsets:
+ *
+ *     0x070B6  ax = frame * 8 + shift    EIGHT copies per frame, and the
+ *                                        low three bits of the x pick one -
+ *                                        image 0x0709E takes `dx & 7`
+ *     0x070BF  cx = [di+0x10]            the frame's size in bytes
+ *     0x070C2  ax * cx, then >> 4        the product, in paragraphs
+ *     0x070D6  bp += [di+0x0C]           a base
+ *     0x070DF  si = (ax & 0x0F) + [di+0x0A]   the INK pointer
+ *     0x070E4  bx = si + [di+0x12]       the MASK pointer
+ *
+ * So +0x0A is the ink base, +0x0C a segment base, +0x10 the frame size and
+ * +0x12 the distance to the mask - which is exactly the pair the port
+ * measured for the walker (0x5A = 90 and 0x3C = 60) and the digger (0x70 =
+ * 112 and 0x54 = 84). The measurement and the addressing agree.
+ *
+ * None of it is needed here: eight pre-shifted copies exist so a byte-
+ * aligned blit can start anywhere, and this port starts anywhere already.
  * ======================================================================
  *
  * THE SPRITE STORE'S BUILD TABLE - transcribed from image 0x059BB.
