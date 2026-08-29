@@ -496,11 +496,6 @@ int view_run(const canvas *c, const lem_rgb *palette, const char *title,
  * offers the arrow keys and the mouse at the edges and says so rather than
  * inventing a rate and calling it transcribed.
  */
-#define LEVEL_SCREEN_W 320
-#define LEVEL_SCREEN_H 200
-#define LEVEL_PLAY_H   160
-#define LEVEL_EDGE     8       /* how near the edge the pointer must be */
-#define LEVEL_SCROLL   8       /* pixels a step */
 
 
 /* WHAT THE PLAYER USED TO DO - a recorded input script.
@@ -1010,47 +1005,8 @@ int level_run(struct level_frame *A, const canvas *c,
          *
          * The RATE is still the port's own; the original's has not been
          * read. */
-        if (seen_motion) {
-            int32_t cx = (int32_t)lem_mouse_x - 8;
-            if (cx < LEVEL_EDGE)                        scroll_x -= LEVEL_SCROLL;
-            else if (cx > LEVEL_SCREEN_W - LEVEL_EDGE)  scroll_x += LEVEL_SCROLL;
-        }
-        if (scroll_x < 0) scroll_x = 0;
-        if (scroll_x > max_x) scroll_x = max_x;
-        A->view_x = (uint16_t)scroll_x;
-
-        /* One frame of the game, then one of the panel. */
-        sound_pump();
-        if (g_show_tick && g_show_pix) g_show_tick(g_show_ctx, g_show_pix);
-        if (A->panel && A->pan_sec) {
-            memset(A->panel, 0, (size_t)PANEL_LINE_W * PANEL_ART_H);
-            level_panel_build(A->panel, A->pan_sec, A->pan_len, &A->lv,
-                              A->from->pix, A->from->w, A->from->h,
-                              A->lem, A->released, A->view_x,
-                              level_selected());
-        }
-
-        for (uint16_t y = 0; y < LEVEL_PLAY_H; y++)
-            memcpy(screen + (size_t)y * LEVEL_SCREEN_W,
-                   c->pix + (size_t)y * c->w + scroll_x, LEVEL_SCREEN_W);
-        for (uint16_t y = 0; y < LEVEL_SCREEN_H - LEVEL_PLAY_H; y++) {
-            uint8_t *dst = screen + (size_t)(LEVEL_PLAY_H + y) * LEVEL_SCREEN_W;
-            if (A->panel && y < PANEL_ART_H)
-                memcpy(dst, A->panel + (size_t)y * PANEL_LINE_W + PANEL_ART_X,
-                       LEVEL_SCREEN_W);
-            else
-                memset(dst, 0, LEVEL_SCREEN_W);
-        }
-
-        /* The cursor goes on LAST, over the play area and the panel both -
-         * the original saves the bytes underneath it (image 0x0719C) and puts
-         * them back before the next frame, which is the same thing as drawing
-         * it after everything else into a buffer that is rebuilt each frame. */
-        /* Image 0x03DAF clears ds:0x1A and image 0x03DE8 sets it, every
-         * pass - so the box follows the pointer rather than a click. */
-        lem_cursor_box =
-            level_lemming_at(A->lem, A->released, A->view_x) >= 0;
-        level_cursor_draw(screen, LEVEL_SCREEN_W, LEVEL_SCREEN_H, A->view_x);
+        sound_pump();          /* the audio device, not the frame */
+        level_frame_compose(A, c, screen, &scroll_x, max_x, seen_motion);
 
         level_screen_upload();
         if (sink) {

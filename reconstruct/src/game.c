@@ -11656,3 +11656,135 @@ void level_panel_click(struct level_frame *A, int32_t *scroll_x)
         level_skill_select(h.button);     /* image 0x03F66: ds:0x82 */
     }
 }
+/* IMAGE 0x04096 - THE EDGE SCROLL, and the two routines it reaches.
+ *
+ *     0x04096  ds:0x12 + 8 >= 0xC0 -> ret      only in the PLAY AREA
+ *     0x040A1  ds:0x10 == 8      -> 0x0414F    the left edge
+ *     0x040AC  ds:0x10 == 0x148  -> 0x040E5    the right edge
+ *
+ *     0x040E5  cmp ds:0x00, 0x500 / je         the ceiling, and stop
+ *     0x040ED  add 8                           ONE STEP IS EIGHT
+ *     0x040F0  test ds:0x14, 2                 THE RIGHT BUTTON HELD
+ *     0x040F8  cmp 0x500 / je                  ... unless that hits it
+ *     0x040FD  add 8 AGAIN                     ... doubles the step
+ *     0x04103  ds:0x02 = ds:0x00 >> 3          the byte column
+ *
+ *     0x0414F  cmp ds:0x00, 0x10 / jle         the floor
+ *     0x04157  sub 8, and image 0x04167 subtracts a second on the button
+ *
+ * THREE THINGS THE PORT HAD WRONG, and all three came of writing this from
+ * the outside rather than reading it:
+ *
+ *   - it scrolled while the pointer was over the PANEL. Image 0x0409F refuses
+ *     that outright.
+ *   - the right button did nothing. Held, it doubles the step - both edges,
+ *     and each doubling is separately stopped at the limit.
+ *   - it tested a RANGE where the original tests EQUALITY. That is not a
+ *     tidier way of saying the same thing by luck: the mouse driver clamps the
+ *     pointer to 8..0x148 and lem_mouse_move does the same, so "exactly at the
+ *     limit" IS "pushing against the edge", and the range only agreed because
+ *     the clamp made it agree.
+ *
+ * ds:0x00 is this port's view_x plus sixteen - image 0x0372D - so the floor of
+ * 0x10 is view_x 0 and the ceiling of 0x500 is LEVEL_SCROLL_MAX.
+ *
+ * The button is read from lem_buttons, which IS ds:0x14 - image 0x04269
+ * stores INT 33h AX=3's BX there - so image 0x040F0's `test ds:0x14, 2` is
+ * the same bit here and needs nothing passed in.
+ */
+static void level_scroll_step(int32_t *sx, int32_t max_x)
+{
+    if ((int32_t)lem_mouse_y + 8 >= 0xC0) return;   /* image 0x0409F */
+
+    if (lem_mouse_x == 8) {                         /* image 0x040A4 */
+        if (*sx <= 0) return;                       /* image 0x04152 */
+        *sx -= LEVEL_SCROLL;                        /* image 0x04157 */
+        if ((lem_buttons & 2) && *sx > 0)           /* image 0x0415A */
+            *sx -= LEVEL_SCROLL;                    /* image 0x04167 */
+    } else if (lem_mouse_x == 0x148) {              /* image 0x040AC */
+        if (*sx >= max_x) return;                   /* image 0x040E8 */
+        *sx += LEVEL_SCROLL;                        /* image 0x040ED */
+        if ((lem_buttons & 2) && *sx < max_x)       /* image 0x040F0 */
+            *sx += LEVEL_SCROLL;                    /* image 0x040FD */
+    }
+}
+
+/* IMAGE 0x0018F - ONE FRAME OF A LEVEL, COMPOSED.
+ *
+ * The loop's own order, written out above level_play_step, ends with a page
+ * the CRTC is pointed at. This is that page being built, and it used to be
+ * spread through sdl_io.c's window loop between the event pump and the
+ * texture upload - so the frame order lived in two places, which is the thing
+ * this file warns about in three other notes.
+ *
+ *     image 0x04085  the EDGE SCROLL. Image 0x040A1 tests ds:0x10 against 8
+ *                    and 0x148 for the two edges; the RATE is still the
+ *                    port's own and the original's has not been read
+ *     image 0x001A7  the page set up, and image 0x001AA windows the master
+ *                    terrain onto it - the two memcpy loops below, the play
+ *                    area and then the panel
+ *     image 0x001B3  the lemmings stepped and image 0x001BC drawn, both
+ *                    inside level_frame_tick
+ *     image 0x03AC8  the panel, which image 0x001C2 calls
+ *     image 0x03DAF  ds:0x1A cleared and image 0x03DE8 set, EVERY PASS, so
+ *                    the cursor's box follows the pointer and not a click
+ *     image 0x07218  the cursor itself, drawn last over both halves - the
+ *                    original saves the bytes under it at image 0x0719C and
+ *                    puts them back, which is the same thing as drawing it
+ *                    after everything else into a buffer rebuilt each frame
+ *
+ * `screen` is the 320x200 page; `c` is the master the play area is windowed
+ * from. Scrolling is clamped here because image 0x040E8's ceiling is the
+ * game's, not the canvas's.
+ */
+void level_frame_compose(struct level_frame *A, const canvas *c,
+                         uint8_t *screen, int32_t *scroll_x, int32_t max_x,
+                         int seen_motion)
+{
+    int32_t sx = *scroll_x;
+    /* image 0x04096's edge scroll. seen_motion is the port's: under a dummy
+     * driver the pointer reads as present and somewhere definite when it is
+     * neither, so a scroll that has not been asked for must not start. */
+    if (seen_motion) level_scroll_step(&sx, max_x);
+    if (sx < 0) sx = 0;
+    if (sx > max_x) sx = max_x;
+    A->view_x = (uint16_t)sx;
+
+    /* One frame of the game, then one of the panel. */
+    /* IMAGE 0x0019D..0x001B9's share: the sound cues, then the frame. The
+     * indirection this used to go through - a function pointer sdl_io.c held
+     * - was the window path reaching back for the composer it had just been
+     * handed. It is a direct call now, and there is one frame order. */
+    level_frame_tick(A, c->pix);
+    if (A->panel && A->pan_sec) {
+        memset(A->panel, 0, (size_t)PANEL_LINE_W * PANEL_ART_H);
+        level_panel_build(A->panel, A->pan_sec, A->pan_len, &A->lv,
+                          A->from->pix, A->from->w, A->from->h,
+                          A->lem, A->released, A->view_x,
+                          level_selected());
+    }
+
+    for (uint16_t y = 0; y < LEVEL_PLAY_H; y++)
+        memcpy(screen + (size_t)y * LEVEL_SCREEN_W,
+               c->pix + (size_t)y * c->w + sx, LEVEL_SCREEN_W);
+    for (uint16_t y = 0; y < LEVEL_SCREEN_H - LEVEL_PLAY_H; y++) {
+        uint8_t *dst = screen + (size_t)(LEVEL_PLAY_H + y) * LEVEL_SCREEN_W;
+        if (A->panel && y < PANEL_ART_H)
+            memcpy(dst, A->panel + (size_t)y * PANEL_LINE_W + PANEL_ART_X,
+                   LEVEL_SCREEN_W);
+        else
+            memset(dst, 0, LEVEL_SCREEN_W);
+    }
+
+    /* The cursor goes on LAST, over the play area and the panel both -
+     * the original saves the bytes underneath it (image 0x0719C) and puts
+     * them back before the next frame, which is the same thing as drawing
+     * it after everything else into a buffer that is rebuilt each frame. */
+    /* Image 0x03DAF clears ds:0x1A and image 0x03DE8 sets it, every
+     * pass - so the box follows the pointer rather than a click. */
+    lem_cursor_box =
+        level_lemming_at(A->lem, A->released, A->view_x) >= 0;
+    level_cursor_draw(screen, LEVEL_SCREEN_W, LEVEL_SCREEN_H, A->view_x);
+    *scroll_x = sx;
+}
+

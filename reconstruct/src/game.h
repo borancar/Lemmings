@@ -96,6 +96,18 @@ void dat_free(dat_file *d);
 
 /* The file on disk. The original asks image 0x01916 for 0x1000 bytes at
  * image 0x01A15 and DOS returns what is there. */
+/* THE LEVEL'S SCREEN. Mode 0x0D is 320x200 and the play area is the top 160
+ * rows - image 0x02EC5 refuses a lemming at y >= 0xB0 and the panel is below
+ * it. These were in sdl_io.c, which made the game's own geometry look like a
+ * property of the window. */
+#define LEVEL_SCREEN_W 320
+#define LEVEL_SCREEN_H 200
+#define LEVEL_PLAY_H   160
+/* The port's own: image 0x040A1 tests ds:0x10 against 8 and 0x148, so the
+ * margin is the original's; how far a step goes has not been read. */
+#define LEVEL_EDGE     8
+#define LEVEL_SCROLL   8
+
 #define GROUND_SIZE 1056
 #define GROUND_OBJECTS 16
 #define GROUND_TERRAIN 64
@@ -1137,6 +1149,10 @@ int  level_frame_tick(void *ctx, uint8_t *pix);
 /* image 0x03EF9 - a click on the PANEL. The play area is image 0x03150 and
  * not this routine; see game.c. */
 void level_play_click(struct level_frame *A);   /* image 0x03150 */
+/* image 0x0018F - one frame of a level, composed into the 320x200 page. */
+void level_frame_compose(struct level_frame *A, const canvas *c,
+                         uint8_t *screen, int32_t *scroll_x, int32_t max_x,
+                         int seen_motion);
 void level_panel_click(struct level_frame *A, int32_t *scroll_x);
 int  level_run(struct level_frame *A, const canvas *c,
                const lem_rgb *palette, const char *title, uint8_t scale);
