@@ -8914,10 +8914,40 @@ static char *put_num2(char *dst, uint8_t v);
  * A failed search worth remembering: this was hunted for as a stored bitmap
  * and then as a 1:1 region of the level, which scored 71.4% and read as "no
  * match". It is the level, at a scale nobody had tried. */
-#define PV_X      120
-#define PV_Y       20
+/* ======================================================================
+ * THE PREVIEW'S GEOMETRY, and every number here now has an address.
+ *
+ * All four were MEASURED first - found by matching the port's output against
+ * a capture - and image 0x07EB2's packer turns out to state each of them.
+ * That is the strongest kind of agreement this project gets: two independent
+ * derivations of the same constant, one from pixels and one from the code.
+ *
+ *   image 0x07EBB  di = ds:0x1F76 + ds:0x1F7A + 0x64F
+ *                  The destination. Mode 0x10's logical line is 80 bytes, so
+ *                  0x64F = 1615 = 20 * 80 + 15: row 20, byte 15 - which is
+ *                  PV_Y = 20 and PV_X = 15 * 8 = 120.
+ *   image 0x07EFE  cx = 0x27 = 39 rows          PV_H, "not 40: the top row
+ *                                               is not drawn", measured
+ *   image 0x07F04  cx = 0x34 = 52 bytes a row   416 pixels, of which the
+ *                                               level's 396 are PV_W
+ *   image 0x07F28  the bit selection            PV_SAMPLE
+ *
+ * THE PACKER IS 4:1 AND TAKES THE THIRD PIXEL OF EACH FOUR. Image 0x07F1D
+ * reads four source bytes and builds one output byte from eight bits, and
+ * the rotate-and-mask pairs say which: `rol al,1` twice with `and 0x80`
+ * lands bit 5 at bit 7, `ror al,1` three times with `and 0x40` lands bit 1
+ * at bit 6, and so on down. In a byte the leftmost pixel is bit 7, so bits
+ * 5 and 1 are pixels 2 and 6 - pixel 2 of each group of four. PV_SAMPLE is
+ * 2 and was measured; this is why.
+ *
+ * The port samples the canvas rather than packing bit-planes, because it has
+ * no planes to pack. The GEOMETRY is the original's.
+ * ====================================================================== */
+#define PV_X      120      /* image 0x07EBB: 0x64F % 80 * 8 */
+#define PV_Y       20      /* image 0x07EBB: 0x64F / 80 */
 #define PV_W      396      /* LEVEL_W / 4 */
-#define PV_H       39      /* not 40: the top row is not drawn - see below */
+#define PV_H       39      /* image 0x07EFE: cx = 0x27, and not 40 - the top
+                            * row is not drawn; see below */
 /* BOTH OF THESE ARE READ NOW, out of image 0x07F28..0x07F76 - the packer's
  * bit scatter, which takes four source bytes and builds one output byte a
  * plane. Decoding where each output bit comes from (bit 7 is the leftmost
@@ -8935,7 +8965,8 @@ static char *put_num2(char *dst, uint8_t v);
  * which is every FOURTH pixel starting at the THIRD - scale 4, sample 2,
  * exactly what was measured off the screen. */
 #define PV_SCALE    4
-#define PV_SAMPLE   2      /* which pixel of each 4x4 block is taken */
+#define PV_SAMPLE   2      /* image 0x07F28: bits 5 and 1 of each byte, which
+                            * is pixel 2 of each four */
 #define PV_TOP      4      /* the first level row the preview shows
  *
  * NOT TRANSCRIBED - but the address is no longer unknown, and the reason no
@@ -9078,6 +9109,31 @@ static char *put_num2(char *dst, uint8_t v);
  * comparing the wrong pair.
  */
 
+/* TRANSCRIBED FROM IMAGE 0x07E76 AND ITS PACKER AT IMAGE 0x07EB2.
+ *
+ * The original builds the preview in two steps and the port does the same
+ * two, by different means:
+ *
+ *   image 0x07E76  ds:0x1FE4 = ds:0x1FEE, then FOUR passes of two blits -
+ *                  ax = 0 then ax = 0x140, both dx = 0x140 wide and
+ *                  cx = 0x268, bp = 0x0C - with bx stepping 0x68 = 104 rows
+ *                  a pass. Eight blits of 320 columns, which is the level
+ *                  laid into the working page. bp = 0x0C asks image 0x08846
+ *                  for BOTH clips, horizontal and vertical - see blit_clips.
+ *   image 0x07EB2  the packer: 39 rows of 52 bytes, four source bytes to
+ *                  one output byte, taking pixel 2 of each four.
+ *
+ * The port has no page to blit into and no planes to pack, so it composes
+ * the level on its canvas - render_terrain and render_objects, both of which
+ * this calls - and samples that. What transcribes is the GEOMETRY, and all
+ * four of its numbers are above with their addresses.
+ *
+ * WHAT IS NOT TRANSCRIBED, and it is one thing rather than a routine: image
+ * 0x07E76's eight blits go through 1010:8822 into video memory, and reading
+ * them properly means reading image 0x08822's modes. The port's sampling
+ * reaches the same picture - the briefing scores 0 of 224,000 against the
+ * original's own screen - so what is owed here is the ROUTE, not the result.
+ */
 static void draw_preview(const char *dir, const level *lv, const ground *g,
                          uint8_t *dst)
 {
