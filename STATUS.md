@@ -4865,6 +4865,23 @@ has nothing to seed with here.
   2, 3 and 4. Section 6 is 8,224 bytes, and the copy takes 1,824 from offset
   6,400 - which is 8,224 exactly. Section 6 is the compat panel.
 
+  **A first attempt at wiring it is reverted, and the failure is the useful
+  part.** Copying section 6's bytes to offset 0xA0 of the port's `A.pan_sec`
+  changed the panel but matched nothing: attributes 8..15 still carried 2,680
+  pixels where the original has none. `ds:0x1FEC` is a PREPARED panel buffer
+  and `A.pan_sec` is the RAW section, so `0xA0` is not the same place in the
+  two. The offsets are in the original's coordinate space and the port needs
+  them in its own.
+
+  What that measurement did establish: **the port's HIGH panel is exact** -
+  2964, 98, 156, 853, 116, 268, 233, 312 against the original's high capture,
+  attribute for attribute. So the decode is right and only the compat overlay
+  is missing.
+
+  And 2,680 is the same count on both sides - the pixels the original moves
+  out of 18/19/20/22/23 into the low eight. Much of that is the MINIMAP, which
+  suggests the compat difference is not only the artwork overlay.
+
   So the port draws the HIGH panel art in compat, whose attributes 8..15 land
   on the terrain's colours, which is the orange a player reported. The fix is
   to load section 6 when the machine is a PC compatible and copy its last
