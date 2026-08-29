@@ -238,6 +238,16 @@ say "=== what these comparisons exercise ==="
 uv run python tools/coverage.py 2>&1 | tail -6 | sed 's/^/  /'
 
 say ""
+say "=== the usage blocks name flags that exist ==="
+# Five recipes here specified something that cannot work, each in the header
+# of a check the port rests on, and each failing as something OTHER than
+# itself - a percentage of zero, a socket error, a usage message. This is
+# cheap (no emulator) so it runs by default, and it carries its own control:
+# --self-test plants a bad recipe and confirms it is caught.
+uv run python tools/check_recipes.py 2>&1 | grep -vE "^pygame" | sed "s/^/  /"
+check_pipe "tools/check_recipes.py"
+
+say ""
 say "=== the sprite regions tile the file ==="
 uv run python tools/tile_sprites.py 2>&1 | tail -2 | sed 's/^/  /'
 check_pipe "tools/tile_sprites.py"
