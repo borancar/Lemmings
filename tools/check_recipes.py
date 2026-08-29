@@ -11,6 +11,11 @@ a usage message that reads as the reader mistyping.
     uv run python tools/check_recipes.py
     uv run python tools/check_recipes.py --self-test   # the control
 
+It reads tool docstrings, the `.sh` headers, CLAUDE.md, STATUS.md and docs/.
+The shell scripts were missed on the first pass and the gap widened the moment
+another `.sh` with a usage block was added - a recipe is no safer for being in
+`#` than in a docstring.
+
 TWO RULES MAKE THIS USABLE and without them it is noise. The first version
 reported 71 findings and about 69 were its own fault:
 
@@ -86,6 +91,14 @@ def read_docs():
     for path in sorted(md):
         with open(path) as f:
             docs.append((path, f.read()))
+    # AND THE SHELL SCRIPTS. tools/verify_all.sh, prove.sh, record_skills.sh
+    # and record_adlib_ref.sh all carry usage blocks in their comment headers,
+    # and a recipe is no safer for being in `#` than in a docstring. This was
+    # missed on the first pass and the gap widened the moment another .sh with
+    # a usage block was added.
+    for path in sorted(glob.glob(os.path.join(HERE, "*.sh"))):
+        with open(path) as f:
+            docs.append((path, f.read()))
     return docs
 
 
@@ -119,7 +132,7 @@ def main():
         return 0 if (ok and quiet) else 1
 
     bad = findings(docs)
-    print(f"  {len(docs)} sources scanned (tool docstrings, CLAUDE.md, STATUS.md, docs/)")
+    print(f"  {len(docs)} sources scanned (tool docstrings, the .sh\n  headers, CLAUDE.md, STATUS.md and docs/)")
     print(f"  flags handed to a tool that does not define them: {len(bad)}")
     for f, t, flag in sorted(set(bad)):
         print(f"    {f:24s} runs {t}.py {flag}")
