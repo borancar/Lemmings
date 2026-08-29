@@ -4764,7 +4764,21 @@ has nothing to seed with here.
   them together and appends the result - so the mask is "any plane set",
   which is exactly the port's `v != 0`. The transparency rule is confirmed
   from the original, not assumed, and it is not where the extra ink comes
-  from. **Cause undetermined** - recorded at this level
+  from.
+
+  **And the states are identical.** The reference's own manifest carries the
+  ORIGINAL's records: at frame 298 it has nine lemmings with flags 0x0010 for
+  the digger and 0x0004 for five fallers, anim 10 and 2, at screen x 146..148
+  where the port has 162..164 - the known sixteen between the guest's scroll
+  of 640 and the port's `view_x` of 624. Same states, same animation
+  counters, same positions. So nothing about the simulation differs and the
+  residue is entirely in how the sprites are COMPOSED.
+
+  What is left is that the digger (14 rows from y = 91) and five fallers (10
+  rows from y = 102) OVERLAP at rows 102..104, and the residue spans the
+  fallers' whole extent. Everything checkable about each sprite alone has
+  been checked; what has not is how two of them interact where they meet.
+  **Cause undetermined** - recorded at this level
   of detail rather than guessed at, because the last four attributions of
   these forty pixels were wrong.
 
