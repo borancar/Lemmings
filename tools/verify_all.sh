@@ -282,6 +282,11 @@ if [ $UNITS = 1 ]; then
     # verify_adlib.py needs a reference pair it does not record itself, so it
     # is listed here with its inputs rather than run blind: a run that scores
     # 0 of 54 is the two sides being different tunes, not a broken driver.
+    # Checked with both controls before this went in, by stubbing `uv`:
+    # every tool succeeding gives fail=0 with the two argument-taking checks
+    # SKIPPED, and every tool exiting 3 gives fail=1 with each one named. The
+    # risk in this block was never the tools - it is PIPESTATUS surviving a
+    # pipeline inside a loop inside an if, and that is what the stubs test.
     for u in verify_dat verify_level verify_digits verify_code \
              verify_shift verify_preshift; do
         uv run python "tools/$u.py" 2>&1 \
