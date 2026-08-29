@@ -4978,6 +4978,15 @@ has nothing to seed with here.
   behaviour - so under load it would be intermittent rather than quiet, and
   the two are worth telling apart before changing anything.
 
+  **Half of that is already settled: the discard is transcribed.**
+  `adlib.c`'s `start_effect` walks backwards from channel 8 for four
+  channels and returns at driver `+0x053C` when none is free, dropping the
+  effect exactly as the original drops it - it does not queue, and neither
+  does the port. So intermittency under load is MATCHING behaviour and not a
+  fault to chase; what is open is the loudness alone, and only against
+  DOSBox. Anyone hearing the warning come and go should count the busy
+  channels before touching a volume.
+
 
 1. **Draw the interactive objects as sprites, not as terrain.** The terrain is
    exact. The objects are the remaining visual difference, and the earlier plan
