@@ -1689,7 +1689,19 @@ int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
      * menu_screen.split. Every other screen leaves split at zero. */
     g_split = m->split;
 
-    /* Up from black, the way the original arrives at it. */
+    /* UP FROM BLACK - IMAGE 0x045EF, and it had no address on it until the
+     * question was put directly:
+     *
+     *     0x045EF  call 0x04DEF     the page cleared
+     *     0x045F2  cx = 0x10, dx = 0x10   reloaded every pass, they are
+     *                              image 0x05329's arguments
+     *     0x045F8  call 0x05329     one notch of both palettes
+     *     0x045FB  jne 0x045F2      while it still moved
+     *     0x045FD  al = 1
+     *     0x04600  call 0x053FE     show slot 1, all sixteen
+     *
+     * palette_fade_step is image 0x05329's notch and carries that address;
+     * what follows is the LOOP around it, which is this routine's. */
     for (uint8_t i = 0; i < 16; i++) {
         g_fade_tgt[i] = m->palette[i];
         g_fade_low_tgt[i] = m->palette_low[i];
@@ -1701,7 +1713,17 @@ int32_t menu_show_until_dismissed(const menu_screen *m, const char *title,
     how = view_interact_anim(m->pix, MENU_W, MENU_H, g_fade_cur, title, scale,
                              dismiss_input, BRIEF_PLAY, fade_tick, NULL);
 
-    /* And back down to black on the way out. The original fades the screen
+    /* AND BACK DOWN - IMAGE 0x046A2, the same shape inverted:
+     *
+     *     0x046A2  call 0x046B9     a retrace
+     *     0x046A5  al = 0
+     *     0x046A8  call 0x053CA     show slot 0's UPPER EIGHT
+     *     0x046AB  cx = 0x10, dx = 0x10
+     *     0x046B1  call 0x05329     one notch
+     *     0x046B4  jne 0x046A2      while it still moved
+     *     0x046B6  jmp 0x04DEF      and the page cleared behind it
+     *
+     * The original fades the screen
      * away before it draws the next one; cutting straight to the level is
      * the thing that looks wrong even when every pixel is right. */
     for (uint8_t i = 0; i < 16; i++) {
