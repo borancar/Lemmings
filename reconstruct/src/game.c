@@ -7047,8 +7047,24 @@ static int fade_component(uint8_t *cur8, uint8_t tgt8)
  *    4    ds:0x25E8 ds:0x25F0 THE PANEL'S - image 0x0C080, which CLAUDE.md
  *                             already names as the eight the level swaps in
  *    5    ds:0x1F0B ds:0x1F23
- *    6    ds:0x25A8 ds:0x25B8 THE LEVEL'S
+ *    6    ds:0x25A8 ds:0x25B8 NOT IDENTIFIED - see below
  *    7    ds:0x2668 ds:0x2668
+ *
+ * SLOT 6 IS NOT IDENTIFIED, and was called "the level's" here on nothing but
+ * its position between the panel's and the working buffers. Checked: its
+ * eight entries at image 0x0C048 are
+ *
+ *     000000 101038 002c00 3c3434 2c2c00 3c0808 202020 382008
+ *
+ * - black, dark blue, green, near-white, olive, red, grey, orange - and they
+ * match NONE of the palettes this port carries: not MENU_PAL6, not
+ * PANEL_PAL6, not BRIEF_PAL6, not BRIEF_LOWER6, and not RESULTS_PAL widened.
+ * Slot 4 by contrast is PANEL_PAL6 byte for byte, so the comparison works
+ * and the negative is real.
+ *
+ * Left unnamed rather than guessed. A palette that matches nothing the port
+ * draws is either a screen this port has not reached or a default something
+ * overwrites, and those are different facts.
  *
  * The selectors over it, and who calls each:
  *
