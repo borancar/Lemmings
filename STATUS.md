@@ -4702,6 +4702,18 @@ has nothing to seed with here.
 
 ## Next
 
+- **The digger is drawn now, and 40 pixels short.** Image 0x059BB's build
+  table settles its geometry - three planes of fourteen rows, 84 bytes a
+  frame from base 720, with image 0x05BB0 appending the mask to make the 112
+  the record reports - so it is no longer invisible. Against its own recorded
+  run the play area is exact on **659 frames of 709**, worst **40**: a
+  ten-by-ten block in the digger's own colours, the right shape with wrong
+  values, bottom rows differing more than the top. That is a different
+  ANIMATION FRAME rather than a different geometry - the port uses `a->anim`
+  as the index and image 0x023FF's counter runs 0..15, and the mapping
+  between them is unread. NOT fitted: trying frame indices until the number
+  falls is narrowing without settling.
+
 - **A level's sound runs on into the next one, and it is the PORT'S BUFFER.**
   Reported from playing: switching level leaves a moment of music and a couple
   of effects before it resets. Image 0x002FE stops the driver when a level

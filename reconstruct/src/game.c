@@ -6175,7 +6175,26 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
          * makes of it by appending the mask as a fourth plane.
          *
          * A digging lemming was invisible until now, which is wrong in a way
-         * that is obvious rather than wrong in a way that looks fine. */
+         * that is obvious rather than wrong in a way that looks fine.
+         *
+         * NOT FINISHED, and the residue is stated rather than tuned away.
+         * Against the original's own recorded run the play area is exact on
+         * 659 frames of 709 and the worst is 40 pixels - a ten-by-ten block
+         * in the digger's own colours, right shape and wrong values in
+         * places, with the bottom rows differing more than the top. That is
+         * the signature of a different ANIMATION FRAME, not a different
+         * geometry: the port uses a->anim as the frame index directly and
+         * the original's counter runs 0..15 through image 0x023FF, so the
+         * mapping between them is unread.
+         *
+         * The plane layout IS read: image 0x05BB0 copies `planes` planes of
+         * `rows` words contiguously and then walks down them ORing into a
+         * mask it appends, so the frame is plane 0, 1, 2, mask - which is
+         * what the loop below assumes with a stride of rows * 2.
+         *
+         * Fitting the frame index until the number falls is what CLAUDE.md
+         * calls narrowing without settling, so it stays 40 until the
+         * counter's mapping is read. */
         else if (a->flags & DIG_BIT) {                 /* image 0x059D8 */
             sb = LEM_SPRITE[1].base; sh = LEM_SPRITE[1].rows;
             sp = LEM_SPRITE[1].planes; sf = LEM_SPRITE[1].count;
