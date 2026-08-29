@@ -4837,8 +4837,30 @@ has nothing to seed with here.
   per-frame swap, and the briefing is the screen that reprograms it mid-life.
   Cosmetic, but it is a thing the original does and this port does not.
 
-- **THE COMPAT PALETTE IS NOT TRANSCRIBED, and the port shows the terrain's
-  oranges through the panel because of it.** A player reported the status text
+- **COMPAT DRAWS THE PANEL WITH ATTRIBUTES 0..7, and the port uses 8..15.**
+  NOT a missing palette - that was two wrong diagnoses ago. Measured, with a
+  player's DOSBox capture in machine type 1 as the reference:
+
+  | | |
+  | --- | --- |
+  | attributes 0..7, both modes | `000000 4141e3 00b200 f3d3d3 b2b200 f32020 828282 d38220` |
+  | attributes 8..15, high | ALTERNATE: terrain, and the panel's `00aa00 55ff55 555555 aa0000 aa5500 00aaaa ff55ff aa00aa` |
+  | attributes 8..15, compat | terrain only. No swap, settled, confirmed |
+
+  The DOSBox panel's colours are green, gold, pale pink, red and grey - and
+  every one of them is in the FIRST row: `00b200`, `b2b200`, `f3d3d3`,
+  `f32020`, `828282`. They are not in either half of the second. So compat
+  reaches them by drawing the panel with attributes 0..7, and the DAC is the
+  same in both modes, which is exactly why three rounds of capturing the
+  palette kept answering "the same as the port already has".
+
+  **What is not found yet** is the branch that does the remapping. The
+  attribute registers are identical in both modes -
+  `00 01 02 03 04 05 06 07 10 11 12 13 14 15 16 17` - so it is not the ATC.
+  Image `0x05399` returns early when `ds:0x200E` is set and image `0x053A1`
+  assembles a palette into `ds:0x25B8`, which is the region to read next.
+
+- ~~**THE COMPAT PALETTE IS NOT TRANSCRIBED**~~ - superseded by the above. A player reported the status text
   and skill buttons coming out orange under `--pc compat`.
 
   **The split is a machine capability.** A High Performance PC can reprogram
