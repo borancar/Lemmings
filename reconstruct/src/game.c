@@ -3978,15 +3978,25 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
  * the mask at 84, and 14 rows of a 16-wide sprite and 7 rows of a 32-wide
  * one are very different pictures.
  *
- * So it is not drawn. Picking one and seeing whether it looks plausible is
- * the fitting this project has been caught by before; what settles it is
- * reading the store, or capturing a frame of the original mid-dig and
- * matching the pixels the way the cursor's shape was matched. Until then a
- * digging lemming is invisible, which is wrong in a way that is obvious
- * rather than wrong in a way that looks fine.
+ * STALE FROM HERE - AND IT MISLED SOMEBODY. This block used to end "so it
+ * is not drawn... a digging lemming is invisible". That stopped being true
+ * when DIG_SPR_BASE was worked out further down this file, by rendering both
+ * candidate geometries and looking - the note there records the wrong
+ * turning - and this paragraph was never updated.
+ *
+ * The consequence: a later pass read THIS and believed it, added a second
+ * digger draw beside the working one, and wrote "the digger is drawn now, it
+ * was not drawn at all before" into a commit message. Measured, the two
+ * paths score identically (659 of 709 frames exact, worst 40), so the
+ * duplicate changed nothing and the claim was false.
+ *
+ * The answer is 3 planes x 14 rows x 2 bytes = 84, with image 0x05BB0
+ * appending the mask to make 112 - which image 0x059BB's build table states
+ * outright, so the geometry now has a reading behind it as well as a
+ * measurement. See DIG_SPR_BASE and LEM_SPRITE.
  *
  * Transcribed from image 0x0320D - the assignment itself, which is what the
- * function below is; only the sprite it points the record at is missing.
+ * function below is.
  */
 
 /* Image 0x0320D. The refusal is image 0x0321D's `test word [si+8], 0xf57f`
@@ -6328,42 +6338,6 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
         else if (a->flags & 0x0001) { sb = SPLAT_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x8000) { sb = BLAST_SPR_BASE; sh = 10; sp = 2; sf = 16; }
         else if (a->flags & 0x0004) { sb = FALL_SPR_BASE; sh = 10; sp = 2; sf = 4; }
-        /* THE DIGGER, at last, and from the original's own build table
-         * rather than from a shape that looked plausible.
-         *
-         * LEM_SPRITE[1] is image 0x059D8's group: sixteen frames from 720,
-         * three planes of fourteen rows, 84 bytes apiece. CLAUDE.md records
-         * why this was left undrawn - the record says 112 with the mask at
-         * 84, 112 is not divisible by three, and two different geometries
-         * produce it - and image 0x059BB settles it without fitting: the
-         * source frame is 3 x 14 x 2 = 84, and 112 is what image 0x05BB0
-         * makes of it by appending the mask as a fourth plane.
-         *
-         * A digging lemming was invisible until now, which is wrong in a way
-         * that is obvious rather than wrong in a way that looks fine.
-         *
-         * NOT FINISHED, and the residue is stated rather than tuned away.
-         * Against the original's own recorded run the play area is exact on
-         * 659 frames of 709 and the worst is 40 pixels - a ten-by-ten block
-         * in the digger's own colours, right shape and wrong values in
-         * places, with the bottom rows differing more than the top. That is
-         * the signature of a different ANIMATION FRAME, not a different
-         * geometry: the port uses a->anim as the frame index directly and
-         * the original's counter runs 0..15 through image 0x023FF, so the
-         * mapping between them is unread.
-         *
-         * The plane layout IS read: image 0x05BB0 copies `planes` planes of
-         * `rows` words contiguously and then walks down them ORing into a
-         * mask it appends, so the frame is plane 0, 1, 2, mask - which is
-         * what the loop below assumes with a stride of rows * 2.
-         *
-         * Fitting the frame index until the number falls is what CLAUDE.md
-         * calls narrowing without settling, so it stays 40 until the
-         * counter's mapping is read. */
-        else if (a->flags & DIG_BIT) {                 /* image 0x059D8 */
-            sb = LEM_SPRITE[1].base; sh = LEM_SPRITE[1].rows;
-            sp = LEM_SPRITE[1].planes; sf = LEM_SPRITE[1].count;
-        }
         if (sb) {
             if (a->anim >= sf) return;
             uint32_t plane = 2u * sh;

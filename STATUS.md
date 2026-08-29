@@ -4736,11 +4736,16 @@ has nothing to seed with here.
   exercises it" is not "it is wrong" - but recorded so nobody spends time on
   a rule nothing can reach.
 
-- **The digger is drawn now, and 40 pixels short.** Image 0x059BB's build
-  table settles its geometry - three planes of fourteen rows, 84 bytes a
-  frame from base 720, with image 0x05BB0 appending the mask to make the 112
-  the record reports - so it is no longer invisible. Against its own recorded
-  run the play area is exact on **659 frames of 709**, worst **40**: a
+- **The digger's residue is 40 pixels, and it is not new.** The port has
+  drawn the digger since DIG_SPR_BASE was settled; a stale comment beside
+  `lem_dig_start` still said "so it is not drawn", a later pass believed it
+  and added a second draw path, and measured the two score identically - so
+  the claim that this work made the digger visible was wrong and is
+  withdrawn. What image 0x059BB's build table adds is EVIDENCE for the
+  geometry (three planes of fourteen rows, 84 a frame from base 720, image
+  0x05BB0 appending the mask to make 112) which the port had reached by
+  rendering candidates and looking. Against its own recorded run the play
+  area is exact on **659 frames of 709**, worst **40**: a
   ten-by-ten block in the digger's own colours, the right shape with wrong
   values, bottom rows differing more than the top. That is a different
   ANIMATION FRAME rather than a different geometry - the port uses `a->anim`

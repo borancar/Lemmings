@@ -1235,18 +1235,21 @@ const uint8_t MENU_XLAT[0x53] = {
  *                             84 end at 2064" - CLAUDE.md, measured
  *     group  9  base 14320   FALL_SPR_BASE, "10 rows, 2 planes"
  *
- * AND IT SETTLES THE DIGGER, which this port does not draw. CLAUDE.md
- * records the reasoning: its record says 0x70 = 112 bytes a frame with the
- * mask at 0x54 = 84, "112 is NOT divisible by three, so its store is not
- * that shape", and three planes over 14 rows at 2 bytes or three over 7 at 4
- * both give 112 - "so it is not drawn", rather than pick one and see if it
- * looked plausible.
+ * AND IT CONFIRMS THE DIGGER'S GEOMETRY, which the port had already worked
+ * out the hard way. An older comment beside lem_dig_start said the store's
+ * shape could not be decided - 112 with the mask at 84 is satisfied by three
+ * planes of 14 rows at 2 bytes AND by three of 7 at 4 - and concluded "so it
+ * is not drawn". That was true when written and stopped being true when
+ * DIG_SPR_BASE was settled by rendering both and looking; the older comment
+ * was never updated, and a later pass read it, believed it, and added a
+ * second draw path beside the working one. Measured, the two are identical.
  *
- * The table answers it without fitting: group 2 is dx = 0x30E, THREE planes
- * and FOURTEEN rows, stride 84 = 3 * 14 * 2. The frame is 16 pixels wide.
- * The 112 is what the frame becomes once image 0x05BB0 has appended the
- * mask - four planes of 14 rows - and 84 is where that mask starts, which is
- * exactly the pair the port measured off the record.
+ * What the table adds is not the drawing but the EVIDENCE: group 2 is dx =
+ * 0x30E, three planes and fourteen rows, stride 84 = 3 * 14 * 2, stated by
+ * the original rather than inferred from pixels. The 112 is what image
+ * 0x05BB0 makes of it by appending the mask, and 84 is where that mask
+ * starts - which is exactly the pair the port had measured off the record.
+ * A geometry derived twice, independently, agreeing.
  *
  * The walker checks the same way: source 40 = 2 * 10 * 2, and its record
  * reads 90 with the mask at 60, which is (2 planes + mask) * 10 rows * THREE

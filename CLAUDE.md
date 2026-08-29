@@ -1162,6 +1162,30 @@ not a line saying "FAIL".
 **Check `make test`'s exit status, not its output**, and after moving anything
 in `game.c` re-run `provenance.py` before believing the build is clean.
 
+## A comment that was true when written is not a fact about the code now
+
+`lem_dig_start` carried a careful paragraph explaining that the digger's
+store could be one of two geometries, that picking one would be fitting, and
+that "so it is not drawn... a digging lemming is invisible". Every word of
+that was true the day it was written. `DIG_SPR_BASE` was worked out later, by
+rendering both candidates and looking, and the paragraph was never updated.
+
+A pass through this file then read it, believed it, added a second digger
+draw beside the working one, and wrote "the digger is drawn now, it was not
+drawn at all before" into a commit message. The two paths measure identically
+- 659 of 709 frames exact, worst 40 - so the duplicate changed nothing and
+the claim was false.
+
+**The reconstruction is the code; the comments are a record of how it got
+there, and they go stale silently.** Before believing a comment that says
+something is missing, grep for the thing. `DIG_SPR_BASE` was forty lines away
+in the same file.
+
+This is the same failure this file already records for `STATUS.md`'s numbers,
+one level down: a figure or a claim that is cheap to re-derive should be
+re-derived rather than carried forward. It applies to prose about what the
+port does not do, and those are harder to notice because nothing re-runs them.
+
 ## The original's arithmetic over the port's layout is a different picture
 
 Image 0x070A2 computes a lemming's sprite frame as its animation counter, and
