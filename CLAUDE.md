@@ -1162,6 +1162,44 @@ not a line saying "FAIL".
 **Check `make test`'s exit status, not its output**, and after moving anything
 in `game.c` re-run `provenance.py` before believing the build is clean.
 
+## The original's arithmetic over the port's layout is a different picture
+
+Image 0x070A2 computes a lemming's sprite frame as its animation counter, and
+image 0x070AB **adds the state** when the direction byte is not 1 - so a
+lemming facing the other way draws from further along. That is a correct
+reading of the original and it is wrong here, and the difference is not
+subtle: applied to `lemming_draw`, three of the seven levels that are exact on
+all 1,100 frames collapsed to 88, 103 and 91, with residues of 209, 275 and
+305 pixels.
+
+The original indexes its **pre-shifted store**, where the two directions sit
+one after the other and `+ state` reaches the second set. This port indexes
+**MAIN.DAT**, whose layout is the file's. `lemming_draw`'s own header already
+said it "splits by state because it indexes MAIN.DAT rather than the
+pre-shifted store" - the warning was there and the reading walked past it.
+
+**A transcription is of a routine's MEANING, not of its arithmetic.** When the
+original addresses a structure this port does not build - a pre-shifted store,
+a planar page, a prepared parallel array - its index arithmetic is about that
+structure and does not carry over. The tell is a formula that reads cleanly
+and moves the score a long way in the wrong direction.
+
+Keep the reading as a comment when it is disproved. It cost a measurement to
+refute and the next person to find image 0x070AB should not spend it again.
+
+## A control that never fires proves nothing, including about your own change
+
+The same rule, put in the wrong place first: `lemming_draw` computes the frame
+once at the top, and it went into a later block that only handles
+burn/drown/float/splat/blast/fall/dig. The seven-level sweep then reported all
+seven still exact and that looked like confirmation.
+
+It was not. **The branch fired zero times in that run** - counted, not
+assumed. This file already says a negative result is only evidence if the
+positive control fired in the same run; that applies to a change you have just
+made as much as to a probe. Count the executions of a new branch before
+reading a sweep that did not regress as a pass.
+
 ## A byte-scan for callers finds callers that are not there
 
 Grepping the image for `E8 rel16` whose target matches an address is a quick

@@ -6166,6 +6166,26 @@ static void lem_draw_fuse(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
                   const uint8_t *sec, uint32_t sec_len, const lemming *a)
 {
+    /* THE DIRECTION RULE IS THE ORIGINAL'S STORE'S, NOT THIS PORT'S INDEX.
+     *
+     * Image 0x070A2 computes the frame as the animation counter, and image
+     * 0x070AB ADDS [di+0x29] - the state - when [di+0x27] is not 1, so a
+     * lemming facing the other way draws from further along. That reading is
+     * right about the original and does NOT transfer here, and the
+     * measurement is unambiguous: applied at this line, three of the seven
+     * levels that are exact on all 1,100 frames collapsed to 88, 103 and 91,
+     * with residues of 209, 275 and 305 pixels.
+     *
+     * Why: the original indexes its PRE-SHIFTED STORE, where the two
+     * directions are laid out one after the other and `+ state` reaches the
+     * second set. This port indexes MAIN.DAT, whose layout is the file's -
+     * which is exactly what the note above this function already says, and
+     * which is why lemming_draw splits by state at all. The same arithmetic
+     * over a different layout is a different picture.
+     *
+     * Kept as a comment because the reading cost a measurement to disprove
+     * as a change, and the next person to find image 0x070AB should not
+     * have to spend it again. */
     uint16_t frame = a->anim;
     uint32_t base;
     int32_t x0, y0;

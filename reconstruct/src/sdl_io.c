@@ -1205,6 +1205,7 @@ static int level_run(struct level_frame *A, const canvas *c,
      * 0x002C6: stop the driver before the results screen. */
     level_end_finish();
 
+
     /* No fade here. It is image 0x0031E's, it runs INSIDE the loop above,
      * and it was written out a second time in this file for as long as the
      * loop exited the moment the level ended - which meant the picture
