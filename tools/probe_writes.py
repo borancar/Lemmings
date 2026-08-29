@@ -40,16 +40,33 @@ def install(m):
     base = m.load_seg * 16
     out_path = os.environ["LEM_WRITES_OUT"]
     stride = int(os.environ.get("LEM_WRITES_STRIDE", "40"))
+    # THE LEVEL'S CANVAS DOES NOT START AT THE SEGMENT. Image 0x05DEA adds
+    # 0x4A40 and its rows are 0xD0 bytes, not the screen's 40 - so watching a
+    # canvas row needs the base as well as the stride, or the division smears
+    # every row across the wrong bucket (0x4A40 / 0xD0 is not an integer).
+    # Defaults to 0, which is what every existing caller wants.
+    wbase = int(os.environ.get("LEM_WRITES_BASE", "0"), 0)
     y0, y1 = (int(v) for v in
               os.environ.get("LEM_WRITES_ROWS", "0 349").split())
+    cols = os.environ.get("LEM_WRITES_COLS")
+    cx0, cx1 = ((int(v) for v in cols.split()) if cols else (None, None))
     hits = collections.Counter()
 
     def on_write(uc, access, address, size, value, _):
         if not (VGA_LO <= address < VGA_HI):
             return
-        row = ((address - VGA_LO) // stride) if stride else 0
+        off = address - VGA_LO - wbase
+        if off < 0:
+            return
+        row = (off // stride) if stride else 0
         if not (y0 <= row <= y1):
             return
+        if cx0 is not None:
+            # The byte holds eight pixels, so a column filter is a range of
+            # bytes: anything overlapping [cx0, cx1].
+            b = off % stride
+            if not (cx0 // 8 <= b <= cx1 // 8):
+                return
         pc = uc.reg_read(UC_X86_REG_CS) * 16 + uc.reg_read(UC_X86_REG_IP)
         hits[pc - base] += size
 

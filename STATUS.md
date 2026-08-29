@@ -992,10 +992,35 @@ What it is **not**, each ruled out by measurement rather than by reading:
   image `0x05854`'s `0x480` shape never appears
 
 The pointer is parked, which is why a world that moves leaves the difference
-at a fixed screen spot. The next step is `tools/probe_writes.py` filtered to
-that row during a mining run: it attributes every EGA write to the
-instruction that made it, and that answers "who draws attribute 2 here"
-without another hypothesis.
+at a fixed screen spot.
+
+**It is drawn, not carved**, and that is now measured. `tools/probe_writes.py`
+gained `LEM_WRITES_BASE` and `LEM_WRITES_COLS` - the level's canvas starts at
+image `0x05DEA`'s `0x4A40` with `0xD0`-byte rows, so without a base every row
+buckets wrongly, and both default to the old behaviour. Filtered to canvas row
+81 and the byte holding column 799, twelve instructions write it: four inside
+the shared blitter (`0x089C4`, `0x08A52`, `0x08AC0`, `0x08B2B` - the range
+`game.c` already calls the ordinary blitter), four more of its paths, the
+miner's own mask clear at `0x06117`/`0x06126`, and image **`0x04DEB`**.
+
+`tools/probe_blits.py` then named the callers into rows 74..90: image
+`0x07CBA` 54 times - the terrain composition, whose flag unpack at `0x07C67`
+is already read here - image `0x04DC0` 14 times, and two from the preview's
+`0x07E95`/`0x07EAA`.
+
+**And image `0x04DC2` is a page copy nobody here had read.** It sets the
+Sequencer's map mask to `0x0F` and the graphics controller to mode `0x105` -
+write mode 1, the latched copy - and `rep movsb`s `0x6D60` (28,000) bytes from
+`ds:[0x1F76]` to `ds:[0x1F78]` inside A000, moving all four planes at once.
+So the original holds a composed buffer and copies a window of it to the
+display page each frame, drawing the lemmings onto the PAGE; image `0x04DEF`
+is the same loop clearing instead.
+
+That is why the canvas filter caught only the composition and the miner's
+clear: the per-frame sprite drawing never touches `0x4A40`. The next step is
+the same probe pointed at the display page - the two pages are `0x4A40` apart,
+which is exactly the gap between the run's two `crtc_start` values `0x02C2`
+and `0x27E2` doubled - and that will name the sprite rather than the buffer.
 
 Two instrument faults were found on the way and both produced confident
 numbers: a scorer looking for `%05d.raw` where the port writes `f%05d.raw`
