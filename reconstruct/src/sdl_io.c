@@ -813,21 +813,31 @@ int level_run(struct level_frame *A, const canvas *c,
      * level_panel_palette - so the play area keeps the terrain's browns and
      * the panel below gets greens and greys. The lower eight never change.
      *
-     * IT IS THE ADAPTER THAT DECIDES, NOT THE MACHINE TYPE, and this used to
-     * be `if (lem_machine == LEM_PC_HIGH)`. Image 0x055B7 and image 0x053CA
-     * both branch on ds:0x1F7C, which image 0x0130A..0x01322 set to 2, 4, 8
-     * or 0 from the COMMAND LINE LETTER - LEMMINGS.BAT runs `lemvga.com /v`
-     * for VGA and `/e` for EGA - and 4 is the one they test for. The machine
-     * type is a different pair of bytes entirely: image 0x01200 sets ds:0x200C
-     * and ds:0x200E for "PC compatibles" and neither is read here.
+     * THE SPLIT IS A MACHINE CAPABILITY. A High Performance PC can reprogram
+     * the DAC part-way down the frame, so the play area keeps the terrain's
+     * browns while the panel below gets greens and greys. A PC compatible
+     * cannot - image 0x01200 sets ds:0x200C, which image 0x055xx uses to turn
+     * the screen OFF across a palette write - so the whole frame must live on
+     * ONE palette, and that palette has to serve the terrain AND show the
+     * skills UI in green.
      *
-     * This port reconstructs the VGA adapter and nothing else, so ds:0x1F7C
-     * is 4 always and the swap always happens. Tying it to --pc meant that
-     * `--pc compat` left the panel on the LEVEL's palette: a player reported
-     * the status text and the skill buttons coming out orange. */
+     * NOT TRANSCRIBED: that single compat palette. Leaving compat on the
+     * level's own sixteen is what a player saw as orange status text and
+     * orange skill buttons - the terrain's colours running through the panel
+     * because nothing replaced them. The gate below is right and the missing
+     * half is the palette it should select. tools/probe_dac.py --machine 1 is
+     * the instrument: capture what the original uploads in compat and read the
+     * sixteen off it, the way PANEL_PAL6 was measured for high.
+     *
+     * Two earlier readings of this were wrong and are worth not repeating.
+     * "--pc selects whether the swap happens" was right about the gate and
+     * silent about the palette; "it is the adapter, so always swap" mistook
+     * image 0x055B7's ds:0x1F7C - which picks the palette FORMAT, EGA
+     * attributes against VGA triples - for the thing that decides the split. */
     lem_rgb bottom[16];
     for (uint8_t i = 0; i < 16; i++) g_lv_top[i] = bottom[i] = palette[i];
-    level_panel_palette(&bottom[8]);
+    if (lem_machine == LEM_PC_HIGH)
+        level_panel_palette(&bottom[8]);
     /* And the fade's copy of them: `g_lv_top` and `bottom` stay the level's own
      * colours - the capture below writes them, and a capture must never
      * hold a mid-fade palette - while the pair the screen is drawn through

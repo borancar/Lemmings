@@ -4826,6 +4826,39 @@ has nothing to seed with here.
 
 ## Next
 
+- **THE COMPAT PALETTE IS NOT TRANSCRIBED, and the port shows the terrain's
+  oranges through the panel because of it.** A player reported the status text
+  and skill buttons coming out orange under `--pc compat`.
+
+  **The split is a machine capability.** A High Performance PC can reprogram
+  the DAC part-way down the frame, so the play area keeps the terrain's browns
+  and the panel gets greens and greys; a PC compatible cannot - image `0x01200`
+  sets `ds:0x200C`, which turns the screen off across a palette write - so the
+  whole frame lives on ONE palette, and that palette has to serve the terrain
+  AND show the skills UI in green.
+
+  Measured so far, with `tools/probe_dac.py --machine 1` against `--machine 2`
+  as the control:
+
+  | | |
+  | --- | --- |
+  | lower eight, both | `000000 4141e3 00b200 f3d3d3 b2b200 f32020 828282 d38220` - identical, and it already holds the green and the grey |
+  | upper eight, high | alternates: terrain `d38220 c35110 922010 610010 414151 616171 719200 206120` and panel `00aa00 55ff55 555555 aa0000 aa5500 00aaaa ff55ff aa00aa` |
+  | upper eight, compat | **not yet observed settled** |
+
+  The compat run has not reached a settled level frame in three attempts at
+  120s, 300s and 700s: its fade blocks one step per retrace and loops (image
+  `0x01200`'s `ds:0x200E`), so it is far slower to get there. The control DID
+  fire in the same budget, so this is the instrument's reach and not an
+  absence. A 1800s run is going.
+
+  **Two wrong readings so far, both recorded so they are not repeated.**
+  CLAUDE.md said `--pc high|compat` selects whether the swap happens - right
+  about the gate, silent about the palette. Then I read image `0x055B7`'s
+  `ds:0x1F7C` as the decider and made the swap unconditional, which mistook
+  the palette FORMAT (EGA attributes against VGA triples, set by the
+  command-line adapter letter) for the thing that decides the split.
+
 - **SETTLED: the F-keys work, Z and X do not, and it is WHERE THEY ARE CALLED
   FROM.** Both read `ds:0x1FD0`, which image `0x01707` sets to the scancode on
   a press and image `0x01705` clears on the release.
