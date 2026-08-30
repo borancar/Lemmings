@@ -4861,35 +4861,40 @@ has nothing to seed with here.
   a few pixels - and the order or the masking between them.
 
 
-- **`compare_play.py` has never been exact on a single frame, and nothing here
-  said so.** It is the tool whose whole purpose is a PLAYED level - the skills,
-  the panel, the cursor's box, the level's ending - and re-baselining it after
-  the replay alignment gives, over 400 frames of "Just dig!":
+- **A PLAYED level is pixel-exact apart from one known pixel and the cursor.**
+  `compare_play.py` had never once been exact and reported a 294-pixel residue;
+  it was comparing the wrong frames. `record_level.py` captures the screen at
+  image `0x018F`, after image `0x00105`'s flip, so the picture saved on pass N
+  was composed by pass N-1, while the port's sink writes the page it has just
+  composed. `compare_run.py` carried that offset and `compare_screen.py`, which
+  compare_play drives, did not.
 
-  | | before the alignment | after |
-  | --- | --- | --- |
-  | play area exact | 0 | 0 |
-  | exactly 28 differing (the cursor) | 0 | 0 |
-  | worst | 445 at frame 318 | **294 at frame 361** |
-  | panel exact | 158 | **186** |
+  Corrected, over 399 frames of "Just dig!" with the digger assigned:
 
-  The alignment improved it and did not cause it: zero exact frames is what it
-  scored before as well. STATUS.md's headline table has figures for five
-  screens, the whole 5,100-frame timer and the nuke, and NONE for this - so the
-  one measurement covering a level with a player in it was the one nobody wrote
-  down.
+  | | |
+  | --- | --- |
+  | play area | exact on **295**, worst 28 |
+  | panel | exact on **396**, worst 43 |
 
-  Two things are worth separating before reading the 294. `compare_run.py`
-  scores lemdev's COMPOSED canvas and gets 99.89%; this scores the game's own
-  screen with the cursor in it, which is a different claim and a harder one.
-  And `verify_dgroup.py --script` on the same recording says the STATE agrees
-  on 34 of 51 fields with twelve unexplained - so whatever the 294 pixels are,
-  the bytes the game decides with are mostly right, and the residue is more
-  likely in what is DRAWN than in what is computed.
+  and the whole run's residue is **131 pixels**, all accounted for:
 
-  `tools/diff_png.py` on frame 361 is the next step and this file's own rule
-  says to run it before writing another word about what the residue "looks
-  like": a percentage says how much is wrong and never what.
+  | | |
+  | --- | --- |
+  | the cursor, on one frame | 28 |
+  | the miner's pixel at canvas (799, 81), one per frame on 103 frames | 103 |
+  | everything else | **0** |
+
+  The second is the open item this file already describes at length - image
+  `0x06117` and image `0x06126`, six wrong answers deep. So it is the only
+  thing between a played level and pixel-exactness, and it was already known.
+
+  WHAT THIS COST: that misalignment is what made the lemmings look wrong, which
+  sent a whole iteration after a frame-index rule in `lemming_draw` that does
+  not exist - using a sweep that was ITSELF misaligned, so two wrong alignments
+  stacked and each produced a clean, consistent, 100%-confident answer. Six
+  alignment faults have now been found in this instrument. Before reading any
+  cross-instrument number here, prove the two sides describe the same moment.
+
 
 - **The original has ONE loop and every screen JUMPS into it - the port has
   four.** Image `0x000FB` is the loop; image `0x0454C` ends `jmp 0x000FB`
