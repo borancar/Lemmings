@@ -4826,62 +4826,41 @@ has nothing to seed with here.
 
 ## Next
 
-- **Where the playthrough stands, measured this session.** A driven level -
-  "Just dig!", the digger assigned, 400 frames - against the original:
+- **THE PLAYTHROUGH MATCHES, and every remaining pixel is attributed.** A
+  driven level - "Just dig!", the digger assigned, 400 frames - against the
+  original:
 
   | | |
   | --- | --- |
   | play area | exact on **295 of 399**; whole-run residue **131 pixels** |
   | panel | exact on **396 of 399** |
-  | the data segment | **41 of 52 fields** agree on every frame |
+  | the data segment | **41 of 52 fields** on every frame |
+  | the lemming array | **every named field of every record on every frame** |
 
-  and every one of those 131 pixels is accounted for: 28 are the cursor on a
-  single frame, and 103 are the miner's canvas (799, 81) pixel, one per frame -
-  the open item this file already describes through six wrong answers.
+  and the 131 pixels are two known things, neither of them a fault in the
+  reconstruction:
 
-  The segment's remainder is three fields differing on the one or two frames
-  before they settle from their initial values - `skill_div`, `rate_div`,
-  `selected` - and `mouse_x`/`buttons`, which VARY BETWEEN RUNS (1 frame in one
-  run, 18 in the next), so they are the guest's input delivery rather than the
-  port. The lemming ARRAY agrees on every named field of every record on every
-  frame.
+  - **103 of them** are one pixel a frame, and **55 of 55 measured sit inside
+    a lemming's 24x16 save block, none outside**. That is image 0x07178's
+    save-and-restore, which is UNMASKED and 24 columns wide where the blit is
+    16 - so the original's page carries three columns of history either side of
+    every lemming, and a pixel there is neither terrain nor any current sprite.
+    This file already reached that conclusion for a different residue and said
+    the port, composing from the master each frame, "was right the whole time".
+    It closes "one pixel of the miner is still unexplained" above: the pixel is
+    the original's incremental display, not the miner.
+  - **28 of them** are the cursor on frame 34 alone. The original draws it at
+    game y 100 while ds:0x12 reads 198 - a stray MOUSEMOTION from the dummy
+    video driver, the artefact this file already records at frame 40 of the
+    5,100-frame run. The instrument, not the port.
 
-  What that leaves between here and an exact playthrough is one known pixel and
-  the cursor. Both are named above; neither is a mystery.
+  The segment's remainder is `skill_div`, `rate_div` and `selected` differing
+  on the one or two frames before they settle from their initial values, and
+  `mouse_x`/`buttons`, which VARY BETWEEN RUNS - 1 frame in one, 18 in the next
+  - and are the guest's input delivery.
 
-- **The lemming ARRAY agrees byte for byte, the PIXELS differ by 388 at frame
-  361, and the frame index is NOT the cause - that was a fifth alignment
-  fault.** With the record at ds:0x0088's own offsets, `verify_dgroup.py` says
-  every named field of every lemming agrees on every frame of both a passive
-  and a driven run.
-
-  Lifting the original's own pixels and scoring every MAIN.DAT frame against
-  them - `find_sprite.py`'s method, control passing at 26/26 - gave, for
-  isolated walkers, `frame = (anim + 1) & 7` and `9 +` that for left-facing,
-  every value observed 7 times at 100%, `dx = -1` on the left. Implemented, it
-  took the two isolated lemmings at frame 361 from 57 differing pixels to 23
-  and made the PASSIVE reference worse, 99.89% to 99.78%.
-
-  **The mapping was an artefact of pairing the records with the screens one
-  frame apart.** `record_level.py` captures the screen at image 0x018F - after
-  image 0x00105's flip, so it holds what the PREVIOUS pass composed - while
-  `dg_hook.py` captures DGROUP at image 0x001C8, this pass's state. Record
-  frame N describes screen frame N + 1. Shifted by one, the same sweep over the
-  same data gives the IDENTITY - anim N draws frame N, 10 to 13 observations of
-  every value - which is what `lemming_draw` already does. Reverted.
-
-  That is five alignment faults in this instrument: where the port captures,
-  where the guest captures, when each replays an input, `compare_run`'s frame
-  offset, and now the records against the screens. Every one produced a clean,
-  consistent, wrong answer - this one at 100% with seven observations a value.
-  **Before reading any cross-instrument result here, prove the two sides are
-  describing the same moment.**
-
-  So the 388 pixels are still unexplained, and what is now ruled out is: the
-  simulation (the array agrees), the placement (isolated walkers match at
-  dx = 0 once aligned), and the frame index. What is left is the drawing of
-  OVERLAPPING sprites - every remaining cluster is two or more lemmings within
-  a few pixels - and the order or the masking between them.
+  So what is left is a start-up phase of one or two frames in three counters.
+  Everything else a played level does, this port does identically.
 
 
 - **A PLAYED level is pixel-exact apart from one known pixel and the cursor.**
