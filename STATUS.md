@@ -4826,6 +4826,29 @@ has nothing to seed with here.
 
 ## Next
 
+- **Where the playthrough stands, measured this session.** A driven level -
+  "Just dig!", the digger assigned, 400 frames - against the original:
+
+  | | |
+  | --- | --- |
+  | play area | exact on **295 of 399**; whole-run residue **131 pixels** |
+  | panel | exact on **396 of 399** |
+  | the data segment | **41 of 52 fields** agree on every frame |
+
+  and every one of those 131 pixels is accounted for: 28 are the cursor on a
+  single frame, and 103 are the miner's canvas (799, 81) pixel, one per frame -
+  the open item this file already describes through six wrong answers.
+
+  The segment's remainder is three fields differing on the one or two frames
+  before they settle from their initial values - `skill_div`, `rate_div`,
+  `selected` - and `mouse_x`/`buttons`, which VARY BETWEEN RUNS (1 frame in one
+  run, 18 in the next), so they are the guest's input delivery rather than the
+  port. The lemming ARRAY agrees on every named field of every record on every
+  frame.
+
+  What that leaves between here and an exact playthrough is one known pixel and
+  the cursor. Both are named above; neither is a mystery.
+
 - **The lemming ARRAY agrees byte for byte, the PIXELS differ by 388 at frame
   361, and the frame index is NOT the cause - that was a fifth alignment
   fault.** With the record at ds:0x0088's own offsets, `verify_dgroup.py` says
