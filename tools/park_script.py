@@ -40,7 +40,13 @@ def write(ref, out):
         p = (e.get("mx"), e.get("my"))
         if p == prev or p[0] is None:
             continue
-        lines.append(f"{e['frame']} move {p[0] + DX} {p[1] + DY}")
+        # ONE FRAME EARLIER THAN THE MANIFEST SAYS. compare_screen.py pairs
+        # the guest's frame N with the port's N-1, because record_level.py
+        # captures at image 0x018F - the top of a pass, showing what the pass
+        # before composed. So the pointer the guest reports at frame N has to
+        # be on the port's frame N-1, or the two cross-hairs are one frame
+        # apart and that is 56 differing pixels wherever the pointer moved.
+        lines.append(f"{max(0, e['frame'] - 1)} move {p[0] + DX} {p[1] + DY}")
         prev = p
     if prev is None:
         raise SystemExit(f"{ref}: no pointer in the manifest - a script that "
