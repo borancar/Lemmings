@@ -13172,9 +13172,28 @@ void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
  *                    tools/probe_page_history.py measures one: canvas
  *                    (799, 81) goes 14 -> 0 in the master on frame 121, the
  *                    port follows it, and the original's page reads 2 from
- *                    frame 122 to 361. Modelling this means the flag array,
- *                    every writer of it, the page pair and image 0x07178's
- *                    unmasked 24 x 16 background save. It is OWED.
+ *                    frame 122 to 361.
+ *
+ *                    AND THE REASON IS READ, not guessed. Image 0x09A15
+ *                    marks the tiles a rectangle covers - it takes y in ax,
+ *                    biases it by 0x10, and walks ss:[si] setting 1s - and
+ *                    the code map says it has ONE caller: image 0x0885B,
+ *                    inside the blitter, gated on ds:0x2A != 0xFF. So a blit
+ *                    marks what it wrote and image 0x080FD carries those
+ *                    tiles to the page.
+ *
+ *                    The digger's clear at image 0x05EBA does not go through
+ *                    the blitter. It is a bare stosb run into the master
+ *                    with no call in it, so it marks NOTHING, and the page
+ *                    keeps whatever it had until some other blit happens to
+ *                    dirty that tile. The stale 2 is that, and it is the
+ *                    ORIGINAL's behaviour rather than a fault in it.
+ *
+ *                    Modelling it means the flag array, image 0x09A15 on
+ *                    every blit, image 0x080FD's tile copy, the page pair
+ *                    and image 0x07178's unmasked 24 x 16 background save.
+ *                    It is OWED, and it is now specified rather than
+ *                    half-read.
  *     image 0x001B3  the lemmings stepped and image 0x001BC drawn, both
  *                    inside level_frame_tick
  *     image 0x03AC8  the panel, which image 0x001C2 calls
