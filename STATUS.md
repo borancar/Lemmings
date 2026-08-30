@@ -4826,38 +4826,39 @@ has nothing to seed with here.
 
 ## Next
 
-- **The lemming ARRAY agrees byte for byte and the lemming PIXELS do not, so
-  the residue is in `lemming_draw` - and the frame it picks is measured but NOT
-  yet explained.** With the record at ds:0x0088's own offsets,
-  `verify_dgroup.py --script` over 400 frames says every named field of every
-  lemming agrees on every frame. Frame 361 of the same run differs by 388
-  pixels, all on lemmings, with all ten records identical on both sides.
+- **The lemming ARRAY agrees byte for byte, the PIXELS differ by 388 at frame
+  361, and the frame index is NOT the cause - that was a fifth alignment
+  fault.** With the record at ds:0x0088's own offsets, `verify_dgroup.py` says
+  every named field of every lemming agrees on every frame of both a passive
+  and a driven run.
 
-  Lifting the ORIGINAL's own pixels and scoring every MAIN.DAT frame against
-  them - `find_sprite.py`'s method, with its control: frame 5 scores 26/26
-  against the PORT's own pixels, so the decode and the placement are right -
-  gives, for the two walkers isolated enough to score:
+  Lifting the original's own pixels and scoring every MAIN.DAT frame against
+  them - `find_sprite.py`'s method, control passing at 26/26 - gave, for
+  isolated walkers, `frame = (anim + 1) & 7` and `9 +` that for left-facing,
+  every value observed 7 times at 100%, `dx = -1` on the left. Implemented, it
+  took the two isolated lemmings at frame 361 from 57 differing pixels to 23
+  and made the PASSIVE reference worse, 99.89% to 99.78%.
 
-  | lemming | `anim` | the original draws | score |
-  | --- | --- | --- | --- |
-  | k=7 | 1 | MAIN.DAT frame 2 | 29/29 |
-  | k=8 | 5 | MAIN.DAT frame 6 | 25/25 |
+  **The mapping was an artefact of pairing the records with the screens one
+  frame apart.** `record_level.py` captures the screen at image 0x018F - after
+  image 0x00105's flip, so it holds what the PREVIOUS pass composed - while
+  `dg_hook.py` captures DGROUP at image 0x001C8, this pass's state. Record
+  frame N describes screen frame N + 1. Shifted by one, the same sweep over the
+  same data gives the IDENTITY - anim N draws frame N, 10 to 13 observations of
+  every value - which is what `lemming_draw` already does. Reverted.
 
-  Both `anim + 1`, at the same position - so the placement is exact and only
-  the frame index differs. **And `anim + 1` is not the rule.** Applied, k=8
-  goes to ZERO differing and k=7 from 33 to 16, while every `anim = 0` walker
-  gets WORSE - 64 to 72, 91 to 100, 109 to 102 - for a total of 388 to 373. A
-  fifteen-pixel improvement that makes two lemmings perfect and six worse is a
-  wrong rule improving the number, which this file has a section about. It was
-  measured and reverted.
+  That is five alignment faults in this instrument: where the port captures,
+  where the guest captures, when each replays an input, `compare_run`'s frame
+  offset, and now the records against the screens. Every one produced a clean,
+  consistent, wrong answer - this one at 100% with seven observations a value.
+  **Before reading any cross-instrument result here, prove the two sides are
+  describing the same moment.**
 
-  Image 0x070A2 says why no arithmetic here will settle it: it uses the
-  animation counter directly, and the ×8 at image 0x070B6 is the PRE-SHIFT -
-  the original indexes a store image 0x05B11 built, not MAIN.DAT. So "frame N"
-  means a different picture on each side, and the question is what order image
-  0x05B11 puts the walker's frames in. `tools/verify_preshift.py` already
-  drives that routine against the original's own output; reading its store's
-  layout is a fact to be observed, and is the only thing that will settle this.
+  So the 388 pixels are still unexplained, and what is now ruled out is: the
+  simulation (the array agrees), the placement (isolated walkers match at
+  dx = 0 once aligned), and the frame index. What is left is the drawing of
+  OVERLAPPING sprites - every remaining cluster is two or more lemmings within
+  a few pixels - and the order or the masking between them.
 
 
 - **`compare_play.py` has never been exact on a single frame, and nothing here

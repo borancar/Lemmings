@@ -42,6 +42,20 @@ import os
 # difference of behaviour, and there is no percentage that tells them apart.
 # Three of the four attempts above produced a plausible, wrong answer.
 #
+# AND THE RECORDS ARE ONE FRAME AHEAD OF record_level.py's SCREENS, which is a
+# fifth way to get this wrong and cost a whole investigation. That tool
+# captures the screen at image 0x018F - after image 0x00105's flip, so the
+# picture it saves was composed by the PREVIOUS pass - while this captures
+# DGROUP at image 0x001C8, which is this pass's state. So
+#
+#     record frame N  describes  screen frame N + 1
+#
+# Pairing them N to N made isolated walkers score 100% against MAIN.DAT frame
+# anim + 1, seven observations of every value, and that is what a wrong
+# alignment looks like: not noise, a clean and completely consistent wrong
+# answer. Shifted by one the same sweep gives the IDENTITY - anim N draws frame
+# N - which is what the port already does.
+#
 # 0x018F is the game's own end-of-frame and is where record_level.py captures
 # the SCREEN. But the three instructions AT it are housekeeping - ds:0x1FCD
 # cleared, ds:0x1FD0 cleared, ds:0x1FD3 bumped - so a hook that fires at 0x018F
