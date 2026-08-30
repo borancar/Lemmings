@@ -41,6 +41,90 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* ds:0x43 counts the live entries; this is the ARRAY's capacity, which is
+ * what the segment has to make room for. */
+#define LEMMING_MAX 80
+
+/* ONE LEMMING - image 0x03634 walks the array at ds:0x88, ds:0x43 entries of
+ * 0x2D bytes, and image 0x0367F steps it with `add di, 0x2d`.
+ *
+ * THE FIELDS ARE AT THE ORIGINAL'S OFFSETS, which they were not: every one
+ * carried its offset in a comment and they were DECLARED in a different order,
+ * so C packed them into 34 bytes with nothing where the original has it. The
+ * record could not sit at ds:0x88 in dgroup.h - it is the largest padding run
+ * there - and no state check could see a lemming's POSITION at all. When the
+ * played comparison came down to "the lemmings differ and the terrain does
+ * not", the only witness was a picture.
+ *
+ * Laid out this way the array is data both sides hold in the same shape, and
+ * ENSURE_LEM_AT below means a field that drifts does not compile.
+ *
+ * The five padding runs are what has not been read. Four of them -
+ * 0x0A, 0x0C, 0x10, 0x12 and 0x14 - are the original's SPRITE pointers, into
+ * a pre-shifted store this port does not build; they are named in
+ * tools/probe_lemmings.py as ink, mask, frame_sz and mask_d. The port reaches
+ * the same pictures from MAIN.DAT instead, which is why it needs none of them
+ * and why they will very likely stay padding.
+ */
+typedef struct {
+    int16_t  x;                 /* +0x00 */
+    int16_t  y;                 /* +0x02 */
+    int16_t  hot_x;             /* +0x04 */
+    int16_t  hot_y;             /* +0x06 */
+    /* the state bitmask image 0x01F5E dispatches on */
+    uint16_t flags;             /* +0x08 */
+    /* +0x0A ink and +0x0C mask - sprite pointers, see above */
+    uint8_t  _pad_0A[4];
+    /* how far into the float table image 0x02A70 has got */
+    int16_t  fscript;           /* +0x0E */
+    /* +0x10 frame_sz, +0x12 mask_d, +0x14 - more of the same store */
+    uint8_t  _pad_10[6];
+    /* the nine trigger cells a BLOCKER covers, kept so they can be put back.
+     * Image 0x0346E reads each one out and image 0x03471 writes the blocker's
+     * own value over it. */
+    uint8_t  under[9];          /* +0x16 */
+    uint8_t  _pad_1F[1];
+    /* image 0x031E1 sets it to 0x4F and the LOOP HEAD counts it down at
+     * image 0x01F45 */
+    uint8_t  fuse;              /* +0x20 */
+    /* image 0x032F2 gives a builder twelve */
+    uint8_t  bricks;            /* +0x21 */
+    uint8_t  _pad_22[1];
+    /* the fall counter, +3 a frame */
+    uint8_t  fall;              /* +0x23 */
+    /* image 0x027DE sets bit 7 when a builder runs out, and image 0x03DFD
+     * reads that bit to keep calling it a BUILDER */
+    uint8_t  extra;             /* +0x24 */
+    /* image 0x0356B sets it to 0xFF, and image 0x03E0E reads it to call one
+     * a FLOATER */
+    uint8_t  floater;           /* +0x25 */
+    uint8_t  alive;             /* +0x26 - 0xFF is dead */
+    int8_t   dir;               /* +0x27 */
+    uint8_t  anim;              /* +0x28 */
+    uint8_t  state;             /* +0x29 - 4 falling, 9 walking */
+    uint8_t  _pad_2A[1];
+    /* the trigger cell two rows up and two along the way it faces,
+     * image 0x02EFC */
+    uint8_t  tahead;            /* +0x2B */
+    /* the one under it, image 0x02EEA */
+    uint8_t  tcell;             /* +0x2C */
+} __attribute__((packed)) lemming;
+
+#define ENSURE_LEM_AT(f, off) \
+    _Static_assert(offsetof(lemming, f) == (off), #f " is not at +" #off)
+
+ENSURE_LEM_AT(x, 0x00);      ENSURE_LEM_AT(y, 0x02);
+ENSURE_LEM_AT(hot_x, 0x04);  ENSURE_LEM_AT(hot_y, 0x06);
+ENSURE_LEM_AT(flags, 0x08);  ENSURE_LEM_AT(fscript, 0x0E);
+ENSURE_LEM_AT(under, 0x16);  ENSURE_LEM_AT(fuse, 0x20);
+ENSURE_LEM_AT(bricks, 0x21); ENSURE_LEM_AT(fall, 0x23);
+ENSURE_LEM_AT(extra, 0x24);  ENSURE_LEM_AT(floater, 0x25);
+ENSURE_LEM_AT(alive, 0x26);  ENSURE_LEM_AT(dir, 0x27);
+ENSURE_LEM_AT(anim, 0x28);   ENSURE_LEM_AT(state, 0x29);
+ENSURE_LEM_AT(tahead, 0x2B); ENSURE_LEM_AT(tcell, 0x2C);
+/* image 0x0367F's `add di, 0x2d` - the stride, and the whole point. */
+_Static_assert(sizeof(lemming) == 0x2D, "a lemming is not 0x2D bytes");
+
 #define DG_END 0x4DFDu          /* one past the last byte any field claims */
 
 typedef struct {
@@ -105,7 +189,15 @@ typedef struct {
     uint8_t  tick;                          /* ds:0x0085 */
     uint8_t  tick_load;                     /* ds:0x0086 */
     /* ds:0x0088 IS THE LEMMING ARRAY - see the header. Not a field yet. */
-    uint8_t  _pad_0087[0x0EF1];
+    uint8_t  _pad_0087[1];
+    /* IMAGE 0x03634's ARRAY. It was this file's largest padding run - 0xEF1
+     * bytes with a note saying the record could not sit here because the
+     * port's was 34 bytes and the original's is 0x2D. The record is laid out
+     * at its own offsets now, so the array is data both sides hold in the same
+     * shape and a lemming's POSITION can be compared as a byte rather than
+     * inferred from a picture. */
+    lemming  lem[LEMMING_MAX];  /* ds:0x0088 */
+    uint8_t  _pad_0E98[0x00E0];
     /* image 0x016D4's per-scancode table: 0x94 while a key is held, 0 when it
      * comes up, and image 0x04D1A scans it with the repeat countdown in the
      * low seven bits. */
@@ -173,6 +265,7 @@ ENSURE_DG_AT(rate,         0x0067);  ENSURE_DG_AT(rate_div,     0x0069);
 ENSURE_DG_AT(skill,        0x0082);  ENSURE_DG_AT(selected,     0x0083);
 ENSURE_DG_AT(skill_div,    0x0084);  ENSURE_DG_AT(tick,         0x0085);
 ENSURE_DG_AT(tick_load,    0x0086);  ENSURE_DG_AT(key_down,     0x0F78);
+ENSURE_DG_AT(lem,         0x0088);
 ENSURE_DG_AT(tune_pick,    0x0FE8);  ENSURE_DG_AT(level_index,  0x1F6B);
 ENSURE_DG_AT(tune_rot,     0x1F6C);  ENSURE_DG_AT(tune_advance, 0x1F6D);
 ENSURE_DG_AT(level_rating, 0x1F6E);  ENSURE_DG_AT(rating_drawn, 0x1F6F);

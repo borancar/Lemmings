@@ -55,16 +55,21 @@ def fields():
     if not end:
         sys.exit("dgroup.h: cannot find the end of the struct")
     body = src[src.index("typedef struct {"):end.start()]
+    W = {"uint8_t": 1, "int8_t": 1, "char": 1, "uint16_t": 2,
+         "int16_t": 2, "uint32_t": 4, "int32_t": 4,
+         # image 0x0367F's `add di, 0x2d` - the record dgroup.h asserts.
+         "lemming": 0x2D}
+    consts = {"LEMMING_MAX":
+              int(re.search(r'#define LEMMING_MAX\s+(\d+)', src).group(1))}
     for typ, name, arr in re.findall(
-            r'(u?int(?:8|16|32)_t|char)\s+(\w+)(\[[^\]]*\])?\s*;', body):
+            r'(u?int(?:8|16|32)_t|char|lemming)\s+\*?(\w+)(\[[^\]]*\])?\s*;',
+            body):
         if name not in off:
             continue
-        w = {"uint8_t": 1, "int8_t": 1, "char": 1,
-             "uint16_t": 2, "int16_t": 2, "uint32_t": 4, "int32_t": 4}[typ]
         n = 1
         if arr:
-            n = int(eval(arr[1:-1], {"__builtins__": {}}, {}))
-        size[name] = w * n
+            n = int(eval(arr[1:-1], {"__builtins__": {}}, consts))
+        size[name] = W[typ] * n
     missing = sorted(set(off) - set(size))
     if missing:
         sys.exit("dgroup.h asserts %s but the struct has no such field"
@@ -104,6 +109,28 @@ EXPECTED = {
                     "purpose - a fade inside frame 0 would spend a second of "
                     "wall clock producing nothing",
 }
+
+
+# The record's own fields, out of dgroup.h's assertions, so the array can be
+# reported as lemmings rather than as bytes.
+def lem_fields():
+    src = open(DG_H).read()
+    off = {n: int(v, 16)
+           for n, v in re.findall(r'ENSURE_LEM_AT\((\w+),\s*(0x[0-9A-Fa-f]+)\)',
+                                  src)}
+    W = {"uint8_t": 1, "int8_t": 1, "uint16_t": 2, "int16_t": 2}
+    body = src[src.index("typedef struct {"):src.index("} __attribute__((packed)) lemming;")]
+    out = []
+    for typ, name, arr in re.findall(
+            r'(u?int(?:8|16)_t)\s+(\w+)(\[\d+\])?\s*;', body):
+        if name in off:
+            n = int(arr[1:-1]) if arr else 1
+            out.append((off[name], W[typ] * n, name))
+    return sorted(out)
+
+
+LEM_FIELDS = lem_fields()
+LEMMING_MAX = 80
 
 
 def run(cmd, env=None, why=""):
@@ -190,6 +217,25 @@ def main():
         O = o[f * DG_END:(f + 1) * DG_END]
         P = p[f * DG_END:(f + 1) * DG_END]
         for off, size, name in fields():
+            if name == "lem":
+                # THE ARRAY IS COMPARED FIELD BY FIELD, not byte by byte, for
+                # the same reason the segment is: five runs of the record are
+                # the original's SPRITE POINTERS into a pre-shifted store this
+                # port does not build - ink, mask, frame_sz, mask_d - and it
+                # reaches the same pictures out of MAIN.DAT instead. Comparing
+                # them would report a difference on every lemming for ever and
+                # none of it would mean anything.
+                for k in range(LEMMING_MAX):
+                    a_ = off + k * 0x2D
+                    for fo, fw, fn in LEM_FIELDS:
+                        if O[a_+fo:a_+fo+fw] != P[a_+fo:a_+fo+fw]:
+                            bad.setdefault("lem", []).append(
+                                (f, O[off:off+size], P[off:off+size]))
+                            break
+                    else:
+                        continue
+                    break
+                continue
             if O[off:off + size] != P[off:off + size]:
                 bad.setdefault(name, []).append(
                     (f, O[off:off + size], P[off:off + size]))
@@ -208,9 +254,30 @@ def main():
 
     def show(name, rows):
         f, ov, pv = rows[0]
-        return ("   ds:0x%04X %-14s %d/%d frames; first at %d: "
-                "original %s port %s"
-                % (at[name], name, len(rows), n, f, ov.hex(), pv.hex()))
+        if name != "lem":
+            return ("   ds:0x%04X %-14s %d/%d frames; first at %d: "
+                    "original %s port %s"
+                    % (at[name], name, len(rows), n, f, ov.hex(), pv.hex()))
+        # A 3,600-BYTE HEX DUMP SAYS NOTHING. Which lemming, and which field of
+        # it, is the whole question - so the array is broken back down into the
+        # records dgroup.h says it holds.
+        out = ["   ds:0x0088 %-14s %d/%d frames; first at %d:"
+               % ("lem", len(rows), n, f)]
+        for k in range(LEMMING_MAX):
+            a_, b_ = ov[k*0x2D:(k+1)*0x2D], pv[k*0x2D:(k+1)*0x2D]
+            if a_ == b_:
+                continue
+            bits = []
+            for fo, fw, fn in LEM_FIELDS:
+                if a_[fo:fo+fw] != b_[fo:fo+fw]:
+                    bits.append("%s %s/%s" % (fn, a_[fo:fo+fw].hex(),
+                                              b_[fo:fo+fw].hex()))
+            out.append("       lemming %-2d  %s" % (k, ", ".join(bits) or
+                                                    "only unread bytes"))
+            if len(out) > 8:
+                out.append("       ...")
+                break
+        return "\n".join(out)
 
     print("   %d of %d fields agree on every frame" % (tot - len(bad), tot))
 

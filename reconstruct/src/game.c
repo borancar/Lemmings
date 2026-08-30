@@ -5663,15 +5663,27 @@ static void lem_fall(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
     if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;
 }
 
-/* THE PORT'S OWN. The original clears the whole record when it releases one
- * - image 0x030F1 - and never needs an array-wide reset, because the count at
- * ds:0x43 is what says which entries mean anything. */
+/* THE PORT'S OWN, and it is the array as DOS left it rather than a state of
+ * its own invention.
+ *
+ * The original clears each record when it RELEASES one - image 0x030F1 - and
+ * never resets the array, because ds:0x43 is what says which entries mean
+ * anything. Its DGROUP arrives zeroed and stays that way in the slots nothing
+ * has used.
+ *
+ * This used to write 0xFF into every +0x26, which is the port's "not in use".
+ * Comparing the array against the original's own at ds:0x0088 - 200 frames,
+ * eighty records - that ONE BYTE was the only thing that differed in the whole
+ * record: x, y, the hot spot, the flags, the direction, the animation counter,
+ * the state, the fuse, the bricks and the nine trigger cells all agreed on
+ * every frame of every lemming. A single invented initial value, and it was
+ * invisible until the record was laid out at its own offsets.
+ *
+ * DG is static and outlives a level, so the zeroing is still needed; what is
+ * gone is the 0xFF. */
 void lemmings_reset(lemming *lem)
 {
-    for (uint8_t k = 0; k < LEMMING_MAX; k++) {
-        lem[k].alive = 0xFF;
-        lem[k].state = 0;
-    }
+    memset(lem, 0, (size_t)LEMMING_MAX * sizeof *lem);
 }
 
 
@@ -11688,6 +11700,7 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
     A.lem_sec = NULL; A.lem_len = 0; A.released = 0;
     A.pan_sec = NULL; A.pan_len = 0;
     free(A.pan_own); A.pan_own = NULL;
+    A.lem = DG.lem;             /* ds:0x0088 */
     A.stepped = 0;
     A.panel = calloc((size_t)PANEL_LINE_W * PANEL_ART_H, 1);
 

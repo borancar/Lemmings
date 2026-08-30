@@ -489,38 +489,10 @@ void panel_button_num(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * lemmings_release refused to fill, so they existed in the OUT count and
  * nowhere else: a level of fifty showed all fifty released, none of them
  * anywhere, and could only end by running its clock out. */
-#define LEMMING_MAX      80
 #define LEMMING_DX       16     /* prove.sh's own offset 16 */
 #define LEMMING_DY       16     /* image 0x5DC6: di = [si+2] - 0x10 */
 #define LEMMING_DEAD_Y   0xB4   /* image 0x2210 */
 
-typedef struct {
-    int16_t  x, y;        /* +0x00, +0x02 */
-    int16_t  hot_x, hot_y;/* +0x04, +0x06 */
-    uint16_t flags;       /* +0x08 - the state bitmask image 0x1F5E dispatches on */
-    uint8_t  fall;        /* +0x23 - the fall counter, +3 a frame */
-    uint8_t  alive;       /* +0x26 - 0xFF is dead */
-    int8_t   dir;         /* +0x27 */
-    uint8_t  anim;        /* +0x28 */
-    uint8_t  state;       /* +0x29 - 4 falling, 9 walking */
-    uint8_t  bricks;      /* +0x21 - image 0x032F2 gives a builder twelve */
-    uint8_t  under[9];    /* +0x16 - the nine trigger cells a BLOCKER covers,
-                           * kept so they can be put back. Image 0x0346E
-                           * reads each one out and image 0x03471 writes the
-                           * blocker's own value over it. */
-    int16_t  fscript;     /* +0x0E - how far into the float table image
-                           * 0x02A70 has got */
-    uint8_t  fuse;        /* +0x20 - image 0x031E1 sets it to 0x4F and the
-                           * LOOP HEAD counts it down at image 0x01F45 */
-    uint8_t  tahead;      /* +0x2B - the trigger cell two rows up and two
-                           * along the way it faces, image 0x02EFC */
-    uint8_t  tcell;       /* +0x2C - the one under it, image 0x02EEA */
-    uint8_t  floater;     /* +0x25 - image 0x0356B sets it to 0xFF, and image
-                           * 0x03E0E reads it to call one a FLOATER */
-    uint8_t  extra;       /* +0x24 - image 0x027DE sets bit 7 when a builder
-                           * runs out, and image 0x03DFD reads that bit to
-                           * keep calling it a BUILDER */
-} lemming;
 
 /* THE PORT'S OWN - sizeof(lemming), for the ctypes declarations in tools/ to
  * assert against. See lemming_record_size in sdl_io.c for why. */
@@ -1136,7 +1108,12 @@ struct level_frame {
     uint32_t     pan_len;
     uint8_t     *panel;      /* PANEL_LINE_W x PANEL_ART_H, rebuilt a frame */
     uint8_t     *pan_own;    /* image 0x059B4's overlaid font, compat only */
-    lemming      lem[LEMMING_MAX];
+    /* IMAGE 0x03634's ARRAY, and it is DG.lem - ds:0x0088 - rather than
+     * storage of its own. The original has one array at one address; a copy
+     * inside this struct was the port's arrangement, and it is what kept a
+     * lemming's position out of every state comparison. A pointer rather than
+     * a move so no `A->lem[k]` changes. */
+    lemming     *lem;
     uint8_t      released;   /* how many have come out of the trapdoor */
     uint16_t     view_x;     /* where the play area has scrolled to */
     int          stepped;    /* the first frame is the state before a step */
