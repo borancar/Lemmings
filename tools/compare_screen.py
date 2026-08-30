@@ -55,6 +55,13 @@ def main():
     ap.add_argument("--ref", required=True, help="directory of .scrn frames")
     ap.add_argument("--dir", required=True, help="directory of the game's .raw frames")
     ap.add_argument("--every", type=int, default=1)
+    ap.add_argument("--frame-offset", type=int, default=1,
+                    help="the reference's frame N is the port's N-OFFSET. "
+                         "record_level.py captures at image 0x018F, which is "
+                         "AFTER image 0x00105's flip, so the picture it saves "
+                         "was composed by the previous pass; the port's sink "
+                         "writes the page it has just composed. Default 1 - "
+                         "see the note where the frames are paired.")
     a = ap.parse_args()
 
     refs = sorted(f for f in os.listdir(a.ref) if f.endswith(".scrn"))
@@ -67,8 +74,21 @@ def main():
     panel_exact = 0
     worst_play = (-1, None)
     worst_panel = (-1, None)
+    # THE REFERENCE IS ONE FRAME BEHIND THE PORT, and comparing them N to N is
+    # what made this tool report a played level as never once exact.
+    # record_level.py captures the screen at image 0x018F - after image
+    # 0x00105's flip - so the picture saved on pass N was composed by pass
+    # N-1, while the port's sink writes the page it has just composed.
+    #
+    # Measured, on one matched run: guest 300 against port 300 differs by 144
+    # pixels and against port 299 by ONE. Over the run at the right offset it
+    # is 0, 0, 0, 1, 1, 0. compare_run.py already carried this offset; this
+    # tool did not, and the difference read as 294 pixels of the port's.
     for i in range(0, len(refs), a.every):
-        g = os.path.join(a.dir, f"f{i:05d}.raw")
+        k = i - a.frame_offset
+        if k < 0:
+            continue
+        g = os.path.join(a.dir, f"f{k:05d}.raw")
         if not os.path.isfile(g):
             break
         gw, gh, gp = read_raw(g)
