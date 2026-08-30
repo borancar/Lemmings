@@ -13147,9 +13147,34 @@ void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
  *     image 0x04085  the EDGE SCROLL. Image 0x040A1 tests ds:0x10 against 8
  *                    and 0x148 for the two edges; the RATE is still the
  *                    port's own and the original's has not been read
- *     image 0x001A7  the page set up, and image 0x001AA windows the master
- *                    terrain onto it - the two memcpy loops below, the play
- *                    area and then the panel
+ *     image 0x001A7  call 0x80FD, which windows the master onto the page -
+ *                    and it is a DIRTY-RECTANGLE blitter, not a copy. It
+ *                    scans a 20 x 40 array of flags at ss:[ds:0x26] with
+ *                    `repne scasb` for a 1, `repe scasb` for the run's
+ *                    length, copies only those tiles from ds:0x4A40 to
+ *                    ds:0x1F76 + 0x2C2, and clears all 0x320 flags at image
+ *                    0x08153. A tile is 8 x 8: image 0x0814C steps the
+ *                    source by 0x680, which is eight of the master's
+ *                    0xD0-byte rows, and image 0x08148 the page by 0x160.
+ *                    So the original's page is maintained INCREMENTALLY and
+ *                    keeps whatever no flag asked it to refresh.
+ *     image 0x001AA  call 0x7900, which is NOT that window - it copies 13
+ *                    bytes by 19 rows from ds:0xD320 to ds:0x1F76 + 0x2174.
+ *                    This line used to name it as the terrain window, which
+ *                    is the kind of confident wrong comment that stops the
+ *                    next reader going to look.
+ *
+ *                    THE TWO memcpy LOOPS BELOW ARE THE PORT'S OWN. They
+ *                    recompose the whole play area from the master every
+ *                    frame, which is a different mechanism reaching the same
+ *                    picture almost everywhere - and where it does not, the
+ *                    original is showing a tile nothing marked dirty.
+ *                    tools/probe_page_history.py measures one: canvas
+ *                    (799, 81) goes 14 -> 0 in the master on frame 121, the
+ *                    port follows it, and the original's page reads 2 from
+ *                    frame 122 to 361. Modelling this means the flag array,
+ *                    every writer of it, the page pair and image 0x07178's
+ *                    unmasked 24 x 16 background save. It is OWED.
  *     image 0x001B3  the lemmings stepped and image 0x001BC drawn, both
  *                    inside level_frame_tick
  *     image 0x03AC8  the panel, which image 0x001C2 calls
