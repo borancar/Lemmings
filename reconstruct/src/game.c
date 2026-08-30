@@ -12621,6 +12621,20 @@ int level_run(struct level_frame *A, const canvas *c,
  * is being captured is the frame the GAME decided to show. */
 void level_frame_show(const uint8_t *screen, struct level_frame *A)
 {
+    /* IMAGE 0x0018F CLEARS ds:0x1FCD, every frame, and the port never did.
+     *
+     * The original's loop counts the timer's ticks into it and image 0x0018B
+     * waits for five before starting a frame; this port paces on an absolute
+     * deadline instead, so timer_frame_due - which IS image 0x0018F's clear -
+     * ended up with no callers at all and the byte ran away to 0x20 while the
+     * original's sat between 0 and 5.
+     *
+     * Substituting the WAIT is right: a host deadline is what a retrace-driven
+     * count has to become. Leaving the byte behind was not, and it took a
+     * comparison against the original's own segment to notice - nothing that
+     * looks at pixels ever could. */
+    (void)timer_frame_due();                     /* image 0x0018F */
+
     /* THE SINK CAPTURES BEFORE THE FLIP, so it meets the guest's hook at
      * image 0x00105 - the one instruction both sides share. It used to be
      * after, which put the guest's end-of-frame tests in the gap between the
@@ -13154,8 +13168,13 @@ void level_frame_compose(struct level_frame *A, const canvas *c,
      * it after everything else into a buffer that is rebuilt each frame. */
     /* Image 0x03DAF clears ds:0x1A and image 0x03DE8 sets it, every
      * pass - so the box follows the pointer rather than a click. */
+    /* 0xFF, which is what image 0x03DE8 stores - not a C boolean's 1. Both
+     * writers of this byte have to agree with the ORIGINAL and not merely with
+     * each other: everything that reads ds:0x1A tests it for non-zero, so a 1
+     * draws the same box and the difference is invisible until the byte itself
+     * is compared. level_pointer_scan already wrote 0xFF; this did not. */
     lem_cursor_box =
-        level_lemming_at(A->lem, A->released, A->view_x) >= 0;
+        level_lemming_at(A->lem, A->released, A->view_x) >= 0 ? 0xFF : 0;
     level_cursor_draw(screen, LEVEL_SCREEN_W, LEVEL_SCREEN_H, A->view_x);
     *scroll_x = sx;
 }

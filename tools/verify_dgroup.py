@@ -104,6 +104,16 @@ EXPECTED = {
                     "(150, 100)",
     "mouse_y":      "as mouse_x",
     "buttons":      "as mouse_x - ds:0x14 while the driver was clicking",
+    "tick_pending": "the port SUBSTITUTES image 0x0018B's wait. The original "
+                    "counts the timer's ticks into ds:0x1FCD and starts a "
+                    "frame on the fifth; this paces on an absolute host "
+                    "deadline, and its own timer_isr runs on the audio "
+                    "device's clock - which in a capture harness with no "
+                    "device does not run at all. The CLEAR at image 0x0018F "
+                    "is transcribed; the count cannot be",
+    "needed_pct":   "image 0x0459E stores it while the BRIEFING draws its "
+                    "text, and this harness enters the level directly - "
+                    "./lemmings shows the briefing and would set it",
     "level_phase":  "the FADE. Image 0x00325 and image 0x00346 branch on "
                     "ds:0x200E, and a capture harness answers 0 to that on "
                     "purpose - a fade inside frame 0 would spend a second of "

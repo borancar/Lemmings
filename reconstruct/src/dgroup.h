@@ -239,8 +239,13 @@ typedef struct {
     /* image 0x0E3F0's counters, one per menu animation. */
     int16_t  anim_ctr[10];                  /* ds:0x4960 */
     uint8_t  _pad_4974[0x047E];
-    /* The ten typed cells of the access-code screen. */
-    char     code_cells[11];                /* ds:0x4DF2 */
+    /* THE TEN TYPED CELLS of the access-code screen, and ten is the whole
+     * field. The eleventh byte at ds:0x4DFC is the text record's own line
+     * terminator - the original keeps 0x0D there and this port writes its C
+     * string's NUL over it - so it belongs to neither side's idea of a cell,
+     * and comparing it reports a difference of PURPOSE as one of value. */
+    char     code_cells[10];                /* ds:0x4DF2 */
+    uint8_t  _pad_4DFC[1];
 } __attribute__((packed)) dgroup;
 
 /* THE ADDRESSES, ASSERTED. A field that drifts from the offset its comment
