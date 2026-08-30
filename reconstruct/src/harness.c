@@ -175,6 +175,7 @@ static const char *g_sink_dir;
 static FILE       *g_sink_state;
 static long        g_sink_frame;
 static uint32_t    g_script_at;
+static FILE       *g_dg_file;
 
 /* A LEVEL IS ABOUT TO RUN AND SOMETHING WANTS TO WATCH IT. All three are
  * environment variables because the game has no command line and writes no
@@ -194,6 +195,15 @@ void harness_level_begin(void)
 {
     const char *state  = getenv("LEM_STATE_FILE");
     const char *script = getenv("LEM_INPUT_SCRIPT");
+    /* THE DATA SEGMENT, frame by frame - LEM_DG_FILE. What the guest's own DS
+     * is compared against: sizeof(dgroup) raw bytes a frame, captured at the
+     * same point the guest's hook captures, so tools/verify_dgroup.py can diff
+     * every field the port claims to know. Nothing in the original writes a
+     * file; this is here for the same reason the frame sink is. */
+    {
+        const char *dgf = getenv("LEM_DG_FILE");
+        g_dg_file = dgf ? fopen(dgf, "wb") : NULL;
+    }
     g_sink_dir   = getenv("LEM_SCREEN_DIR");
     g_sink_state = state ? fopen(state, "w") : NULL;
     g_sink_frame = 0;
@@ -205,6 +215,8 @@ void harness_level_end(void)
 {
     if (g_sink_state) fclose(g_sink_state);
     g_sink_state = NULL;
+    if (g_dg_file) fclose(g_dg_file);
+    g_dg_file = NULL;
 }
 
 int  harness_sink_active(void) { return g_sink_dir != NULL; }
@@ -257,6 +269,10 @@ void harness_sink_frame(const uint8_t *screen, const lem_rgb *top,
         }
         fprintf(g_sink_state, "]}\n");
     }
+    /* The whole segment, padding included - the FIELDS are chosen in the
+     * comparison, not here, so a field added to dgroup.h needs no change to
+     * this file or to the capture format. */
+    if (g_dg_file) fwrite(&DG, 1, sizeof DG, g_dg_file);
     g_sink_frame++;
 }
 

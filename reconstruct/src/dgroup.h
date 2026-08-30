@@ -43,7 +43,6 @@
 
 #define DG_END 0x4DFDu          /* one past the last byte any field claims */
 
-#pragma pack(push, 1)
 typedef struct {
     uint8_t  _pad_0000[0x0010];
     /* Where the pointer is, in the ORIGINAL's coordinates - eight more than
@@ -150,42 +149,41 @@ typedef struct {
     uint8_t  _pad_4974[0x047E];
     /* The ten typed cells of the access-code screen. */
     char     code_cells[11];                /* ds:0x4DF2 */
-} dgroup;
-#pragma pack(pop)
+} __attribute__((packed)) dgroup;
 
 /* THE ADDRESSES, ASSERTED. A field that drifts from the offset its comment
  * claims does not compile - which is the whole reason for laying the segment
  * out rather than keeping fifty globals that each say where they came from
  * and cannot be held to it. */
-#define DG_AT(f, off) \
+#define ENSURE_DG_AT(f, off) \
     _Static_assert(offsetof(dgroup, f) == (off), #f " is not at ds:" #off)
 
-DG_AT(mouse_x,      0x0010);  DG_AT(mouse_y,      0x0012);
-DG_AT(buttons,      0x0014);  DG_AT(cursor_box,   0x001A);
-DG_AT(paused,       0x002B);  DG_AT(saved_pct,    0x0040);
-DG_AT(needed_pct,   0x0041);  DG_AT(released,     0x0043);
-DG_AT(saved,        0x0046);  DG_AT(to_release,   0x0047);
-DG_AT(release_wait, 0x0048);  DG_AT(release_step, 0x0049);
-DG_AT(nuke,         0x004B);  DG_AT(nuke_at,      0x004C);
-DG_AT(level_phase,  0x004E);  DG_AT(level_over,   0x004F);
-DG_AT(level_frame,  0x0052);  DG_AT(pause_at,     0x0053);
-DG_AT(tune,         0x0054);  DG_AT(entrance_open,0x0055);
-DG_AT(under_count,  0x0063);  DG_AT(rate_min,     0x0064);
-DG_AT(rate,         0x0067);  DG_AT(rate_div,     0x0069);
-DG_AT(skill,        0x0082);  DG_AT(selected,     0x0083);
-DG_AT(skill_div,    0x0084);  DG_AT(tick,         0x0085);
-DG_AT(tick_load,    0x0086);  DG_AT(key_down,     0x0F78);
-DG_AT(tune_pick,    0x0FE8);  DG_AT(level_index,  0x1F6B);
-DG_AT(tune_rot,     0x1F6C);  DG_AT(tune_advance, 0x1F6D);
-DG_AT(level_rating, 0x1F6E);  DG_AT(rating_drawn, 0x1F6F);
-DG_AT(fx_dirty,     0x1F70);  DG_AT(snd_setting,  0x1F71);
-DG_AT(fx_drawn,     0x1F72);  DG_AT(cheat,        0x1F74);
-DG_AT(key_held,     0x1FC7);  DG_AT(tick_pending, 0x1FCD);
-DG_AT(key_last,     0x1FD0);  DG_AT(nuke_tick,    0x1FD3);
-DG_AT(nuke_last,    0x1FD4);  DG_AT(snd_driver,   0x2010);
-DG_AT(input_kind,   0x25A6);  DG_AT(snd_bits,     0x25A7);
-DG_AT(code_pct,     0x491D);  DG_AT(anim_ctr,     0x4960);
-DG_AT(code_cells,   0x4DF2);
+ENSURE_DG_AT(mouse_x,      0x0010);  ENSURE_DG_AT(mouse_y,      0x0012);
+ENSURE_DG_AT(buttons,      0x0014);  ENSURE_DG_AT(cursor_box,   0x001A);
+ENSURE_DG_AT(paused,       0x002B);  ENSURE_DG_AT(saved_pct,    0x0040);
+ENSURE_DG_AT(needed_pct,   0x0041);  ENSURE_DG_AT(released,     0x0043);
+ENSURE_DG_AT(saved,        0x0046);  ENSURE_DG_AT(to_release,   0x0047);
+ENSURE_DG_AT(release_wait, 0x0048);  ENSURE_DG_AT(release_step, 0x0049);
+ENSURE_DG_AT(nuke,         0x004B);  ENSURE_DG_AT(nuke_at,      0x004C);
+ENSURE_DG_AT(level_phase,  0x004E);  ENSURE_DG_AT(level_over,   0x004F);
+ENSURE_DG_AT(level_frame,  0x0052);  ENSURE_DG_AT(pause_at,     0x0053);
+ENSURE_DG_AT(tune,         0x0054);  ENSURE_DG_AT(entrance_open,0x0055);
+ENSURE_DG_AT(under_count,  0x0063);  ENSURE_DG_AT(rate_min,     0x0064);
+ENSURE_DG_AT(rate,         0x0067);  ENSURE_DG_AT(rate_div,     0x0069);
+ENSURE_DG_AT(skill,        0x0082);  ENSURE_DG_AT(selected,     0x0083);
+ENSURE_DG_AT(skill_div,    0x0084);  ENSURE_DG_AT(tick,         0x0085);
+ENSURE_DG_AT(tick_load,    0x0086);  ENSURE_DG_AT(key_down,     0x0F78);
+ENSURE_DG_AT(tune_pick,    0x0FE8);  ENSURE_DG_AT(level_index,  0x1F6B);
+ENSURE_DG_AT(tune_rot,     0x1F6C);  ENSURE_DG_AT(tune_advance, 0x1F6D);
+ENSURE_DG_AT(level_rating, 0x1F6E);  ENSURE_DG_AT(rating_drawn, 0x1F6F);
+ENSURE_DG_AT(fx_dirty,     0x1F70);  ENSURE_DG_AT(snd_setting,  0x1F71);
+ENSURE_DG_AT(fx_drawn,     0x1F72);  ENSURE_DG_AT(cheat,        0x1F74);
+ENSURE_DG_AT(key_held,     0x1FC7);  ENSURE_DG_AT(tick_pending, 0x1FCD);
+ENSURE_DG_AT(key_last,     0x1FD0);  ENSURE_DG_AT(nuke_tick,    0x1FD3);
+ENSURE_DG_AT(nuke_last,    0x1FD4);  ENSURE_DG_AT(snd_driver,   0x2010);
+ENSURE_DG_AT(input_kind,   0x25A6);  ENSURE_DG_AT(snd_bits,     0x25A7);
+ENSURE_DG_AT(code_pct,     0x491D);  ENSURE_DG_AT(anim_ctr,     0x4960);
+ENSURE_DG_AT(code_cells,   0x4DF2);
 _Static_assert(sizeof(dgroup) == DG_END, "the segment is not DG_END bytes");
 
 extern dgroup DG;
