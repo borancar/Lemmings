@@ -143,6 +143,13 @@ LEM_FIELDS = lem_fields()
 LEMMING_MAX = 80
 
 
+# A FIELD CAN BE WIDER THAN WHAT IT MEANS. code_cells is eleven bytes because
+# the port keeps the cells as a C string; the eleventh at ds:0x4DFC is the text
+# record's own line terminator, which the original holds as 0x0D. Ten is the
+# field's meaning and eleven is its storage.
+COMPARE = {"code_cells": 10}
+
+
 def run(cmd, env=None, why=""):
     e = dict(os.environ)
     if env:
@@ -164,15 +171,26 @@ def main():
                     help="the GAME's level index, ds:0x1F6B - a permutation "
                          "away from a file and section, see CLAUDE.md")
     ap.add_argument("--frames", type=int, default=40)
-    ap.add_argument("--rating", default="fun")
     ap.add_argument("--script", default=None,
                     help="an input recording - lemdev --record-input - fed to "
                          "BOTH sides, so the comparison covers the part of the "
                          "game that needs a player")
     ap.add_argument("--seconds", type=int, default=240,
                     help="how long the guest may run to reach the level")
-    ap.add_argument("--number", type=int, default=1)
     a = ap.parse_args()
+
+    # THE PORT'S LEVEL IS DERIVED, NEVER GIVEN. These used to be a --rating and
+    # a --number the caller passed beside --level, and the defaults did not
+    # agree: --level 8 drove the original to Fun 9 while the port rendered Fun
+    # 1. That does not read as a mix-up - both sides run, both print numbers,
+    # and five fields come back "unexplained" because they are facts about two
+    # different levels. ds:0x1F6B is rating * 30 + (number - 1), image 0x019C9.
+    RATINGS = ("fun", "tricky", "taxing", "mayhem")
+    if not 0 <= a.level < 120:
+        sys.exit("--level is ds:0x1F6B, 0..119")
+    rating = RATINGS[a.level // 30]
+    number = a.level % 30 + 1
+    print("== both sides on %s %d (ds:0x1F6B = %d) ==" % (rating, number, a.level))
 
     out = os.path.join(ROOT, "out")
     os.makedirs(out, exist_ok=True)
@@ -201,8 +219,8 @@ def main():
 
     print("== the port's ==")
     run([os.path.join(ROOT, "reconstruct", "lemdev"),
-         "--data", "lemming1.pc", "--rating", a.rating,
-         "--number", str(a.number), "--raw", "/dev/null", "--show"],
+         "--data", "lemming1.pc", "--rating", rating,
+         "--number", str(number), "--raw", "/dev/null", "--show"],
         dict({"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy",
               "LEM_DG_FILE": port, "LEM_FRAMES": str(a.frames)},
              **({"LEM_INPUT_SCRIPT": os.path.abspath(a.script)}
@@ -246,6 +264,7 @@ def main():
                         continue
                     break
                 continue
+            size = COMPARE.get(name, size)
             if O[off:off + size] != P[off:off + size]:
                 bad.setdefault(name, []).append(
                     (f, O[off:off + size], P[off:off + size]))

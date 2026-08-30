@@ -243,9 +243,13 @@ typedef struct {
      * field. The eleventh byte at ds:0x4DFC is the text record's own line
      * terminator - the original keeps 0x0D there and this port writes its C
      * string's NUL over it - so it belongs to neither side's idea of a cell,
-     * and comparing it reports a difference of PURPOSE as one of value. */
-    char     code_cells[10];                /* ds:0x4DF2 */
-    uint8_t  _pad_4DFC[1];
+     * and comparing it reports a difference of PURPOSE as one of value.
+     *
+     * The ARRAY is eleven because this port needs the NUL - it treats the
+     * cells as a C string - so the eleventh byte stays here and
+     * tools/verify_dgroup.py compares ten. Shrinking the field instead put
+     * that write out of bounds, which -Warray-bounds said at once. */
+    char     code_cells[11];                /* ds:0x4DF2 */
 } __attribute__((packed)) dgroup;
 
 /* THE ADDRESSES, ASSERTED. A field that drifts from the offset its comment

@@ -166,6 +166,66 @@ class LemmingsVga(VgaDos):
         self._seed_config()
         self._opl_init()
 
+    # WHILE A SCRIPT DRIVES, THE POINTER IS THE SCRIPT'S AND NOBODY ELSE'S.
+    #
+    # The start-up driver in run() clicks at (160, 100) to get through the
+    # title and the briefing, and those clicks go through click_mouse like any
+    # other. One of them lands after the level's capture has begun: the
+    # DGROUP comparison came back with ds:0x10 and ds:0x14 differing on
+    # exactly ONE frame of forty, at (160, 100) with the button down, and that
+    # reads as the port mishandling a click rather than as the harness still
+    # pressing the one it used to open the level.
+    #
+    # tools/record_level.py re-asserting the position every frame is not
+    # enough, because the capture and the re-assert are different hooks at
+    # different addresses: the stray write lands between them and survives for
+    # exactly the one frame that gets dumped.
+    #
+    # So pin it. While pinned, only script_mouse() moves the pointer - the
+    # start-up clicker, the control socket and any host event write nothing.
+    # That includes INT 33h AX=4, which the game never calls (the emulator's
+    # own mouse_calls[4] stays at 2, both from start-up, which is what settled
+    # an earlier round of this); if it ever does, this will hold the pointer
+    # still and that is a difference the comparison will show rather than hide.
+    #
+    # tools/play.py never pins - there the pointer is a person's.
+    _mouse_pos = (160, 100)
+    _mouse_btn = 0
+    _mouse_pinned = False
+    _mouse_from_script = False
+
+    def pin_mouse(self, on=True):
+        self._mouse_pinned = on
+
+    def script_mouse(self, pos, down):
+        """Move the pointer AS THE SCRIPT, past the pin."""
+        self._mouse_from_script = True
+        try:
+            self.mouse_pos = tuple(pos)
+            self.mouse_btn = 1 if down else 0
+        finally:
+            self._mouse_from_script = False
+
+    @property
+    def mouse_pos(self):
+        return self._mouse_pos
+
+    @mouse_pos.setter
+    def mouse_pos(self, v):
+        if self._mouse_pinned and not self._mouse_from_script:
+            return
+        self._mouse_pos = v
+
+    @property
+    def mouse_btn(self):
+        return self._mouse_btn
+
+    @mouse_btn.setter
+    def mouse_btn(self, v):
+        if self._mouse_pinned and not self._mouse_from_script:
+            return
+        self._mouse_btn = v
+
     # The game's config file starts every run from the SHIPPED copy.
     #
     # RUSSELL.DAT is a working file the game rewrites, and its state decides

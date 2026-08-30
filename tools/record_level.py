@@ -158,6 +158,17 @@ def install(m):
             return
         if not modes or modes[-1] != 0x0D:
             return
+        # THE LEVEL IS UP, SO THE POINTER IS THE SCRIPT'S FROM HERE.
+        #
+        # run()'s start-up driver clicks at (160, 100) to get through the
+        # title and the briefing, and one of those clicks lands after the
+        # first frames have been captured - one frame of forty came back at
+        # (160, 100) with the button down, which reads as a port bug. Pinning
+        # makes every writer but script_mouse() a no-op, so a click meant for
+        # the briefing cannot arrive inside the level.
+        if script and not st.get("pinned"):
+            st["pinned"] = True
+            m.pin_mouse(True)
         if sum(1 for v in modes if v == 0x0D) < 2:
             return
         try:
@@ -285,14 +296,14 @@ def install(m):
                 # here aimed eight pixels apart and the original assigned a
                 # digger the port had no way to.
                 at = (arg[0] + 8, arg[1] + 8)
-                m.click_mouse(0, at[0], at[1], False)
+                m.script_mouse(at, False)
                 st["at"] = at
             elif verb == "down" and st.get("at"):
                 st["down"] = st["at"]
-                m.click_mouse(0, st["at"][0], st["at"][1], True)
+                m.script_mouse(st["at"], True)
             elif verb == "up" and st.get("at"):
                 st["down"] = None
-                m.click_mouse(0, st["at"][0], st["at"][1], False)
+                m.script_mouse(st["at"], False)
             elif verb in ("key", "keyup") and len(arg) >= 1:
                 # A SCANCODE, the byte port 0x60 produced, which is what
                 # lemdev --record-input writes. It goes in through the
@@ -325,8 +336,7 @@ def install(m):
         # through its own handler rather than on an edge - see
         # tools/probe_digger.py - and a tapped one is missed as often as not.
         if st.get("at"):
-            m.click_mouse(0, st["at"][0], st["at"][1],
-                          bool(st["down"]))
+            m.script_mouse(st["at"], bool(st["down"]))
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame,
                   None, base + FRAME_DONE, base + FRAME_DONE)

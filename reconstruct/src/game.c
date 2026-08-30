@@ -2124,10 +2124,20 @@ static uint8_t level_rate_step(uint8_t rate)
     return (uint8_t)(((99u - (uint16_t)rate) >> 1) + 4u);
 }
 
-/* ds:0x68 - the rate the PANEL is showing, which image 0x03B86 compares with
- * ds:0x67 to decide whether anything needs redrawing. Modelled as a flag
- * rather than a value because only "does it match" is ever asked. */
-static uint8_t g_rate_shown = 1;
+/* ds:0x68 - THE RATE THE PANEL IS SHOWING, and it is a VALUE.
+ *
+ * This was a flag - "does it match ds:0x67" - because only that question is
+ * ever asked of it. The reading is sound and the model is not: image 0x03A25
+ * puts 0xFF in it when the panel starts, which is not any rate, so the panel
+ * begins with a redraw PENDING and image 0x03B8C's divider running. A flag
+ * cannot hold 0xFF; forcing it to "pending" instead moved the cursor and the
+ * panel on the very first frames, because the flag was also standing in for
+ * things the byte does not decide.
+ *
+ * As a value it needs no such forcing: image 0x03B86 compares it with ds:0x67
+ * and image 0x03B93 copies. A click changes ds:0x67 and the two differ by
+ * themselves. */
+static uint8_t g_rate_shown = 0xFF;   /* image 0x03A25 */
 
 /* THE RELEASE-RATE BUTTONS, image 0x04032. `up` is non-zero for the plus.
  *
@@ -2174,7 +2184,8 @@ uint8_t level_rate_click(uint8_t up)
     g_release_step = level_rate_step(g_rate);   /* image 0x04053 */
     /* The number on the panel is now stale, which is what starts the divider
      * turning - see level_rate_tick. */
-    g_rate_shown = 0;                           /* ds:0x68 != ds:0x67 */
+    /* Nothing to set: changing ds:0x67 is what makes them differ, which
+     * is image 0x03B86's whole test. */
     return 1;
 }
 
@@ -2208,16 +2219,20 @@ uint8_t level_rate_click(uint8_t up)
 void level_rate_tick(void)
 {
     if (level_paused() == 0xFF) return;         /* image 0x03944 */
-    if (g_rate_shown) return;                   /* image 0x03B86 */
+    if (g_rate_shown == g_rate) return;         /* image 0x03B86 */
     if (g_rate_div == 2) {                      /* image 0x03B8C */
-        g_rate_shown = 1;                       /* image 0x03B93 */
+        g_rate_shown = g_rate;                  /* image 0x03B93 */
         g_rate_div = 0xFF;                      /* image 0x03B97 */
     }
     g_rate_div++;                               /* image 0x03B9C */
 }
 
-/* Image 0x039EE clears ds:0x69 when the level starts. */
-void level_rate_div_reset(void) { g_rate_div = 0; g_rate_shown = 1; }
+/* Image 0x039EE clears ds:0x69 when the level starts, and image 0x03A25 puts
+ * 0xFF in ds:0x68 - which is not any rate, so the panel starts with a redraw
+ * PENDING and the divider running. This set the flag to "matches" instead, so
+ * image 0x03B86's gate returned at once and ds:0x69 never moved: the original
+ * held 2 at the first captured frame where the port held 0. */
+void level_rate_div_reset(void) { g_rate_div = 0; g_rate_shown = 0xFF; }
 
 /* ds:0x67 and ds:0x64 - the rate in force and the level's own, which the
  * panel draws as its first two numbers (image 0x036C1, image 0x036C4). */
@@ -11832,6 +11847,22 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
         level_anim_step(A.st, &A.lv);
         /* image 0x04836 reads the level's extended graphics set. */
         music_set_level(&A.lv);
+        /* IMAGE 0x0049E - ONE PANEL UPDATE BEFORE THE LOOP EVER RUNS, and the
+         * port had none. The set-up's tail is image 0x0048F's panel INIT, the
+         * objects at image 0x00495 and image 0x00498, image 0x0049B's window
+         * of the terrain, and then image 0x03AC8 once - so by the end of the
+         * loop's first pass the panel has been updated TWICE.
+         *
+         * That is exactly what the state comparison saw: both dividers are
+         * zeroed by the init (image 0x039EE, image 0x03A1B) and the original
+         * held 2 in each at the first captured frame where the port held 1 and
+         * 0. One missing call, and it is only visible in the segment - the
+         * panel is recomposed every frame, so no picture of it can differ. */
+        if (A.panel && A.pan_sec)
+            level_panel_build(A.panel, A.pan_sec, A.pan_len, &A.lv,
+                              A.from->pix, A.from->w, A.from->h,
+                              A.lem, A.released, A.view_x,
+                              (uint8_t)(level_skill() + 1));   /* image 0x0049E */
     }
     if (rc == 0) {
 
