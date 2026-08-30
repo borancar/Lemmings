@@ -7346,9 +7346,16 @@ void level_frame_step(level_anim *st, const level *lv)
     level_release_step();
     (void)st; (void)lv;
     level_timer_step();
-    level_status_out(level_released());
-    /* Image 0x03ACE: the saved count over the total, as a percentage. */
-    level_status_in(level_saved_percent(lv));
+    /* THE TWO COUNTS ARE NOT SET HERE, and they used to be.
+     *
+     * OUT is image 0x3684's, the tail of the walk image 0x01BC calls, and IN
+     * is image 0x03ACE's, inside the panel image 0x01C2 calls. Both of those
+     * run AFTER image 0x01B3 has stepped the lemmings; this routine is image
+     * 0x0019D's share and runs before it. Setting them here read the counts
+     * one step early, so a lemming that reached the exit during the step
+     * showed up in the panel on the NEXT frame - measured as ten frames of
+     * one character cell, the IN percentage's tens digit, over a 671-frame
+     * playthrough. They are now at the two addresses that own them. */
 }
 
 /* WHAT THE POINTER IS OVER - transcribed from image 0x03EF9.
@@ -8019,6 +8026,14 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
                        const lemming *lem, uint8_t nlem,
                        uint16_t view_x, uint8_t sel)
 {
+    /* IMAGE 0x03ACE - THE 'IN' READING IS THE PANEL'S OWN, and it is
+     * computed HERE because image 0x01C2 calls this after image 0x01B3 has
+     * stepped the lemmings. The port had it in level_frame_step, which is
+     * image 0x0019D's share and runs BEFORE the step, so a lemming that
+     * reached the exit during the step was not in the percentage until the
+     * next frame. Ten frames of a 671-frame playthrough differed by one
+     * character cell - the tens digit - and by nothing else. */
+    level_status_in(level_saved_percent(lv));
     /* THE RATE DIVIDER TURNS HERE, because image 0x03B8C is part of this
      * redraw rather than of the button - see level_rate_tick. It is in this
      * routine rather than in the callers for the reason the next paragraph
