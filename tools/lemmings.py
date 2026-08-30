@@ -6,6 +6,7 @@ importing `dos_emulator` directly, so when the shared code moves underneath
 there is one file to fix instead of nine.
 """
 import os
+import re
 import sys
 import time
 
@@ -89,20 +90,65 @@ def lem_struct(lib):
     """
     import ctypes
 
-    class Lem(ctypes.Structure):
-        _fields_ = [("x", ctypes.c_int16), ("y", ctypes.c_int16),
-                    ("hot_x", ctypes.c_int16), ("hot_y", ctypes.c_int16),
-                    ("flags", ctypes.c_uint16), ("fall", ctypes.c_uint8),
-                    ("alive", ctypes.c_uint8), ("dir", ctypes.c_int8),
-                    ("anim", ctypes.c_uint8), ("state", ctypes.c_uint8),
-                    ("bricks", ctypes.c_uint8),
-                    ("under", ctypes.c_uint8 * 9),
-                    ("fscript", ctypes.c_int16), ("fuse", ctypes.c_uint8),
-                    ("tahead", ctypes.c_uint8), ("tcell", ctypes.c_uint8),
-                    ("floater", ctypes.c_uint8), ("extra", ctypes.c_uint8)]
+    # DERIVED FROM dgroup.h, NEVER RESTATED HERE.
+    #
+    # This used to be a hand-written _fields_ list, and CLAUDE.md already
+    # records what that cost once: a ctypes struct is a SECOND declaration of
+    # the record, ctypes lays out its own idea of it, and every lemming after
+    # the first is then read out of the middle of its neighbour. That produced
+    # 553 of 600 frames "agreeing" and read as a fault in level_lemming_at.
+    #
+    # It happened AGAIN the moment the record moved into dgroup.h at the
+    # original's own 0x2D layout: the list here still described the port's old
+    # 34-byte one, in a different field ORDER, and tools/verify_skills.py came
+    # back with 345 of 400 frames differing for six different skills - the
+    # same number three times over, which is an instrument constant and not a
+    # measurement. The size guard below caught it, and the guard is the only
+    # reason it was not written up as eight broken skills.
+    #
+    # So the layout is read out of the header's own ENSURE_LEM_AT asserts,
+    # which is where the offsets are already proved at compile time. A field
+    # added to game.h and not here can no longer produce a plausible number.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    hdr = os.path.join(root, "reconstruct", "src", "dgroup.h")
+    with open(hdr) as f:
+        src = f.read()
+    offs = {m.group(1): int(m.group(2), 16)
+            for m in re.finditer(r"ENSURE_LEM_AT\((\w+),\s*0x([0-9A-Fa-f]+)\)", src)}
+    if not offs:
+        raise SystemExit(f"{hdr}: no ENSURE_LEM_AT - the record's offsets are "
+                         "not where this expects them, and guessing them is "
+                         "how the last two of these went wrong")
+    # The widths, from the header's own declarations.
+    body = src[src.index("typedef struct {"):src.index("} __attribute__((packed)) lemming;")]
+    TYPES = {"int16_t": ctypes.c_int16, "uint16_t": ctypes.c_uint16,
+             "int8_t": ctypes.c_int8, "uint8_t": ctypes.c_uint8}
+    width = {}
+    for m in re.finditer(r"^\s*(u?int\d+_t)\s+(\w+)\s*(\[(\d+)\])?\s*;",
+                         body, re.M):
+        t, name, _, n = m.groups()
+        width[name] = (TYPES[t], int(n) if n else 0)
 
-    lib.lemming_record_size.restype = ctypes.c_uint32
+    fields, at = [], 0
+    for name in sorted(offs, key=lambda k: offs[k]):
+        off = offs[name]
+        if off < at:
+            raise SystemExit(f"lemming field {name} at {off:#x} overlaps "
+                             f"what came before it, ending {at:#x}")
+        if off > at:
+            fields.append((f"_gap_{at:02x}", ctypes.c_uint8 * (off - at)))
+        ct, n = width[name]
+        fields.append((name, ct * n if n else ct))
+        at = off + ctypes.sizeof(ct) * (n or 1)
+
     want = lib.lemming_record_size()
+    if at < want:
+        fields.append((f"_gap_{at:02x}", ctypes.c_uint8 * (want - at)))
+
+    class Lem(ctypes.Structure):
+        _pack_ = 1
+        _fields_ = fields
+
     got = ctypes.sizeof(Lem)
     if got != want:
         raise SystemExit(

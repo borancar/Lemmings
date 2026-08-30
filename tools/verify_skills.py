@@ -196,9 +196,25 @@ def compare(ref, script, number, frames, skills=20):
         r = json.loads(line)
         port[r["frame"]] = r["lem"]
     bad = shared = 0
+    # THE PORT'S FRAME N-1, NOT N - the same offset compare_screen.py applies
+    # and this did not.
+    #
+    # record_level.py captures at image 0x018F, the top of a pass, so the
+    # manifest's frame N holds what the pass BEFORE produced; the port's state
+    # is written at the end of its own compose. Compared N to N the port is
+    # exactly one step ahead, which on a faller is y + 3 and anim + 1 - and
+    # every row of this tool read "345 of 400 frames differ", the same number
+    # for six different skills, because the only frames that agreed were the
+    # ones before any lemming had been released.
+    #
+    # It was visible as a contradiction rather than a number: "level 2, nobody
+    # touching it" scored its SCREEN exact on 481 of 482 and its RECORDS 426
+    # of 482 differing, and the screen is drawn FROM those records. Measured
+    # at three offsets, 0 and 2 both give 426 and 1 gives ZERO, so this is an
+    # alignment and not a fit.
     for r in man:
         f = r["frame"]
-        p = port.get(f)
+        p = port.get(f - 1)
         if p is None or r.get("lem") is None:
             continue
         shared += 1
