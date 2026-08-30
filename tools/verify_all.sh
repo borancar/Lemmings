@@ -94,7 +94,21 @@ done
 
 say ""
 say "=== the level, frame by frame ==="
-if [ $FULL = 1 ] || [ ! -d "$REF" ]; then
+# RE-RECORD WHEN THE REFERENCE LACKS WHAT THE COMPARISON NEEDS, not merely
+# when the directory is absent. out/ref_verify was cached from a
+# record_level.py that predated the pointer fields, so its manifest carried
+# frame, game_frame, lit_dac and crtc_start and nothing else - and
+# park_script.py could not aim the port's cross-hair at the guest's. That
+# scored 39 of 119 with a residue that was entirely two cursors, and it had
+# been doing so silently for as long as the directory had existed.
+need_rec=0
+[ $FULL = 1 ] && need_rec=1
+[ -d "$REF" ] || need_rec=1
+if [ -f "$REF/manifest.json" ] && ! grep -q '"mx"' "$REF/manifest.json"; then
+    need_rec=1
+fi
+if [ $need_rec = 1 ]; then
+    rm -rf "$REF"
     uv run python tools/record_level.py --frames "$FRAMES" --out "$REF" \
         >/dev/null 2>&1
 fi
@@ -124,7 +138,15 @@ else
     say ""
     say "  the game's own screen (the window path, not the harness):"
     rm -rf out/verify_screen; mkdir -p out/verify_screen
+    # AIM THE PORT'S POINTER AT THE ORIGINAL'S OWN, as the seven levels below
+    # already do. Without a script the port's cross-hair sits where it
+    # defaults while the guest's moves, which is 56 differing pixels - two
+    # cross-hairs - on every frame after the guest first moves. It scored 39
+    # of 119 that way and the residue was entirely cursor.
+    uv run python tools/park_script.py "$REF" out/park_verify.txt \
+        >/dev/null 2>&1
     SDL_VIDEODRIVER=dummy LEM_FRAMES="$n" LEM_SCREEN_DIR=out/verify_screen \
+        LEM_INPUT_SCRIPT="$PWD/out/park_verify.txt" \
         ./reconstruct/lemdev --data lemming1.pc --rating fun --number 1 \
         --show >/dev/null 2>&1
     uv run python tools/compare_screen.py --ref "$REF" \
