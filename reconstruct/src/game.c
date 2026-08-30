@@ -12578,8 +12578,12 @@ int level_run(struct level_frame *A, const canvas *c,
  * is being captured is the frame the GAME decided to show. */
 void level_frame_show(const uint8_t *screen, struct level_frame *A)
 {
-    video_page_flip();                               /* image 0x00105 */
+    /* THE SINK CAPTURES BEFORE THE FLIP, so it meets the guest's hook at
+     * image 0x00105 - the one instruction both sides share. It used to be
+     * after, which put the guest's end-of-frame tests in the gap between the
+     * two captures, and those include image 0x00213's `dec ds:0x85`. */
     harness_sink_frame(screen, view_level_palette(), A);
+    video_page_flip();                               /* image 0x00105 */
     /* A run with a sink is being measured, not played, and must not spend
      * wall clock waiting for a display that is not there. */
     if (!harness_sink_active()) view_level_pace();   /* image 0x00164 */

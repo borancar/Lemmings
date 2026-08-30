@@ -24,11 +24,23 @@ import os
 #   0x019D  after those, before the frame's work. Now everything image
 #           0x0019D..0x001C5 writes reads one frame behind - ds:0x0052 is
 #           bumped at image 0x001A3 and came out 0 against 1.
-#   0x01C8  after the whole chain and before the end tests. The port dumps
-#           after level_frame_compose, which is the same place.
+#   0x01C8  after the whole chain - but BEFORE the end-of-frame tests, and
+#           those are not inert: image 0x00213 is `dec byte ptr [0x85]`, the
+#           clock. The port dumps after its flip, which is past that point in
+#           its own frame, so ds:0x85 and anything else image 0x001C8..0x00105
+#           touches was being compared across a seam.
+#   0x0105  THE PAGE FLIP, which looks like the one instruction both sides
+#           share and is not: the guest's flip is at the TOP of the pass, so
+#           its first capture precedes any work while the port's follows a
+#           step. Measured, it scored 34 of 51 where 0x01C8 scores 40 - four
+#           fields came back that 0x01C8 had settled.
+#
+# So 0x01C8 it is, with the port dumping BEFORE its flip so image 0x00213's
+# `dec ds:0x85` is on the same side of both captures.
 #
 # A difference that is really a difference of MOMENT looks exactly like a
 # difference of behaviour, and there is no percentage that tells them apart.
+# Three of the four attempts above produced a plausible, wrong answer.
 #
 # 0x018F is the game's own end-of-frame and is where record_level.py captures
 # the SCREEN. But the three instructions AT it are housekeeping - ds:0x1FCD
