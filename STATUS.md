@@ -4826,6 +4826,36 @@ has nothing to seed with here.
 
 ## Next
 
+- **`compare_play.py` has never been exact on a single frame, and nothing here
+  said so.** It is the tool whose whole purpose is a PLAYED level - the skills,
+  the panel, the cursor's box, the level's ending - and re-baselining it after
+  the replay alignment gives, over 400 frames of "Just dig!":
+
+  | | before the alignment | after |
+  | --- | --- | --- |
+  | play area exact | 0 | 0 |
+  | exactly 28 differing (the cursor) | 0 | 0 |
+  | worst | 445 at frame 318 | **294 at frame 361** |
+  | panel exact | 158 | **186** |
+
+  The alignment improved it and did not cause it: zero exact frames is what it
+  scored before as well. STATUS.md's headline table has figures for five
+  screens, the whole 5,100-frame timer and the nuke, and NONE for this - so the
+  one measurement covering a level with a player in it was the one nobody wrote
+  down.
+
+  Two things are worth separating before reading the 294. `compare_run.py`
+  scores lemdev's COMPOSED canvas and gets 99.89%; this scores the game's own
+  screen with the cursor in it, which is a different claim and a harder one.
+  And `verify_dgroup.py --script` on the same recording says the STATE agrees
+  on 34 of 51 fields with twelve unexplained - so whatever the 294 pixels are,
+  the bytes the game decides with are mostly right, and the residue is more
+  likely in what is DRAWN than in what is computed.
+
+  `tools/diff_png.py` on frame 361 is the next step and this file's own rule
+  says to run it before writing another word about what the residue "looks
+  like": a percentage says how much is wrong and never what.
+
 - **The original has ONE loop and every screen JUMPS into it - the port has
   four.** Image `0x000FB` is the loop; image `0x0454C` ends `jmp 0x000FB`
   rather than calling it, and image `0x0469F` leaves a briefing with `pop ax /
