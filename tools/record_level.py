@@ -281,6 +281,23 @@ def install(m):
             elif verb == "up" and st.get("at"):
                 st["down"] = None
                 m.click_mouse(0, st["at"][0], st["at"][1], False)
+            elif verb in ("key", "keyup") and len(arg) >= 1:
+                # A SCANCODE, the byte port 0x60 produced, which is what
+                # lemdev --record-input writes. It goes in through the
+                # keyboard the same way a player's would, so image 0x016D4
+                # builds ds:0x0F78, ds:0x1FC7 and ds:0x1FD0 from it rather
+                # than the state being poked in behind the handler's back.
+                m.press_key(arg[0], 0, verb == "key")
+            else:
+                # A VERB THIS DOES NOT KNOW IS NOT A LINE TO SKIP QUIETLY.
+                # The two sides would then read one file and act on different
+                # halves of it, and the divergence would arrive looking like a
+                # port bug. record_level.py and harness.c share this format;
+                # a verb added to one and not the other must SAY so.
+                raise SystemExit(
+                    "input script line %d: verb %r is not one this can "
+                    "replay - the port's harness.c and this must know the "
+                    "same format" % (st["script_at"], verb))
         # RE-ASSERT THE POSITION EVERY FRAME, not just when the script moves.
         #
         # Under the dummy video driver pygame still delivers a MOUSEMOTION,

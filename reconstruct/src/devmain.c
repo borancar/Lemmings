@@ -73,6 +73,9 @@ static void usage(void)
           "  --bitorder B  leftmost pixel is the byte's msb or lsb\n"
           "  --reverse     draw the terrain list back to front\n"
           "  --no-objects  terrain only, as the original composes it first\n"
+          "  --record-input F  play the level and write what you did to F,\n"
+          "                a frame-locked script both this port and the\n"
+          "                ORIGINAL can be driven from\n"
           "  --baked       bake objects into the terrain (NOT what the\n"
           "                original does; for comparing the two)\n"
           "  --panel FILE  write the 320x40 control panel on its own\n"
@@ -136,6 +139,7 @@ static int g_rate_probe;
 
 static int render_level(const char *data, const char *file, uint32_t which,
                         int objects, const char *raw, const char *panel_out,
+                        const char *rec_input,
                         uint8_t scale, int show)
 {
     char path[1024];
@@ -464,9 +468,18 @@ static int render_level(const char *data, const char *file, uint32_t which,
     if (show || !raw) {
         level lv2;
         const char *e3 = "unknown error";
+        /* --record-input: play it, and write down what was done. The recording
+         * is of what the GAME reads - ds:0x10, ds:0x12, ds:0x14, ds:0x1FD0 -
+         * so the same file drives the original, which has those bytes and no
+         * SDL at all. */
+        if (rec_input) harness_record_open(rec_input);
         if (level_load(data, file, which, &lv2, &e3) < 0
                 || level_show(data, &lv2, scale, &e3) != 0)
             fprintf(stderr, "level_show: %s\n", e3);
+        if (rec_input) {
+            harness_record_close();
+            fprintf(stderr, "  [record] wrote %s\n", rec_input);
+        }
     }
     free(terrain);
     canvas_free(&c);
@@ -868,6 +881,10 @@ int main(int argc, char **argv)
     uint32_t game_number = 0;       /* what the briefing prints; 0 = unknown */
     const char *raw  = NULL;
     const char *panel_out = NULL;
+    /* THE HARNESS'S, and the flag is here because a developer's flag is the
+     * harness's command line - the per-frame write is harness.c's, which is in
+     * the CORE link where devmain.o is not. */
+    const char *rec_input = NULL;
     uint32_t which = 2;
     uint8_t scale = 3;
     int show = 0;
@@ -991,6 +1008,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--rate-probe")) g_rate_probe = 1;
         else if (!strcmp(argv[i], "--raw") && i + 1 < argc)   { raw  = argv[++i]; want_menu = 0; }
         else if (!strcmp(argv[i], "--panel") && i + 1 < argc) { panel_out = argv[++i]; want_menu = 0; }
+        else if (!strcmp(argv[i], "--record-input") && i + 1 < argc)
+            rec_input = argv[++i];
         else if (!strcmp(argv[i], "--reverse")) g_terrain_reverse = 1;
         else if (!strcmp(argv[i], "--bitorder") && i + 1 < argc) {
             const char *o = argv[++i];
@@ -1162,7 +1181,7 @@ int main(int argc, char **argv)
                         menu_free(&br);
                     }
                 }
-                render_level(data, file, which, objects, NULL, NULL, scale, 1);
+                render_level(data, file, which, objects, NULL, NULL, NULL, scale, 1);
                 continue;
             }
             /* F2 and F4 reach real screens in the original - a level-code
@@ -1201,5 +1220,6 @@ int main(int argc, char **argv)
     }
 
     level_odd_pending(g_odd_entry);
-    return render_level(data, file, which, objects, raw, panel_out, scale, show);
+    return render_level(data, file, which, objects, raw, panel_out,
+                        rec_input, scale, show);
 }

@@ -1530,10 +1530,18 @@ void menu_free(menu_screen *m);
  * ====================================================================== */
 #define SCRIPT_MAX 256
 typedef struct { long frame; uint8_t what; int32_t x, y; } script_act;
-enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2 };
+enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2,
+       SCRIPT_KEY = 3, SCRIPT_KEYUP = 4 };
 extern script_act harness_script[SCRIPT_MAX];
 extern uint16_t   harness_script_n;
 void harness_script_load(const char *path);
+
+/* RECORDING one, which is the mirror of replaying it. The flag that turns it
+ * on is devmain.c's, because a developer's flag is the harness's command line;
+ * the per-frame write is here because harness.c is in the CORE link and
+ * devmain.o is not, so nothing in the frame loop could call into it. */
+void harness_record_open(const char *path);
+void harness_record_close(void);
 
 /* lemdev putting a composed screen up for a person to look at. */
 void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,

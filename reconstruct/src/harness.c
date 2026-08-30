@@ -77,6 +77,12 @@ void harness_script_load(const char *path)
         if (!strcmp(verb, "move") && got == 4) a->what = SCRIPT_MOVE;
         else if (!strcmp(verb, "down")) a->what = SCRIPT_DOWN;
         else if (!strcmp(verb, "up")) a->what = SCRIPT_UP;
+        /* A KEY IS A SCANCODE, the byte port 0x60 produced - not a character
+         * and not SDL's numbering. Replayed through image 0x016D4's own
+         * handler, so ds:0x0F78, ds:0x1FC7 and ds:0x1FD0 all end up holding
+         * what they would have held. */
+        else if (!strcmp(verb, "key")) a->what = SCRIPT_KEY;
+        else if (!strcmp(verb, "keyup")) a->what = SCRIPT_KEYUP;
         else continue;
         harness_script_n++;
     }
@@ -222,6 +228,82 @@ void harness_level_end(void)
 int  harness_sink_active(void) { return g_sink_dir != NULL; }
 long harness_frame_no(void)    { return g_sink_frame; }
 
+/* ======================================================================
+ * RECORDING A RUN - the mirror of replaying one, and beside it for the reason
+ * dat_free sits beside dat_load: the two know one format, and a verb added to
+ * one and not the other is a silent hole.
+ *
+ * WHAT IS RECORDED is what the game READS, not what the host sent: ds:0x10 and
+ * ds:0x12 for the pointer, ds:0x14's bit 0 for the button, and a scancode when
+ * ds:0x1FD0 changes. So a replay puts the same bytes in the same places rather
+ * than reproducing a sequence of SDL events, and the recording is as valid
+ * against the ORIGINAL - which has ds:0x14 and no SDL at all - as against the
+ * port. That is the whole point of it: one file drives both sides.
+ *
+ * It is written a FRAME at a time, on the harness's own frame counter, because
+ * a wall-clock timestamp would replay differently on a different machine and
+ * the thing being compared is what the game did on frame N.
+ *
+ * Nothing in the original records anything. The flag is devmain.c's.
+ * ====================================================================== */
+static FILE   *g_rec;
+static int32_t g_rec_x = -1, g_rec_y = -1;
+static uint8_t g_rec_btn, g_rec_key;
+
+void harness_record_open(const char *path)
+{
+    g_rec = fopen(path, "w");
+    if (!g_rec) {
+        fprintf(stderr, "  [record] %s: cannot open it for writing\n", path);
+        return;
+    }
+    fprintf(g_rec, "# recorded by lemdev --record-input\n"
+                   "# frames are the harness's own count; move is in SCREEN\n"
+                   "# pixels, which is ds:0x10 less the eight image 0x0426D\n"
+                   "# clamps against; key is a SCANCODE.\n");
+    g_rec_x = g_rec_y = -1;
+    g_rec_btn = g_rec_key = 0;
+}
+
+/* One frame's worth, and only what CHANGED - a script is a list of edges over
+ * a polled state, so a frame where nothing moved writes nothing. */
+static void harness_record_frame(long frame)
+{
+    int32_t x, y;
+    uint8_t btn, k;
+    if (!g_rec) return;
+
+    x = (int32_t)lem_mouse_x - 8;        /* the script is in screen pixels */
+    y = (int32_t)lem_mouse_y - 8;
+    if (x != g_rec_x || y != g_rec_y) {
+        fprintf(g_rec, "%ld move %d %d\n", frame, x, y);
+        g_rec_x = x; g_rec_y = y;
+    }
+
+    btn = (uint8_t)(lem_buttons & 1);
+    if (btn != g_rec_btn) {
+        fprintf(g_rec, "%ld %s\n", frame, btn ? "down" : "up");
+        g_rec_btn = btn;
+    }
+
+    /* ds:0x1FD0 holds the last scancode and image 0x016D4 clears it on any
+     * release, so a change to non-zero is a press and a change to zero is the
+     * release of whatever was held. */
+    k = key_last();
+    if (k != g_rec_key) {
+        if (k) fprintf(g_rec, "%ld key %u\n", frame, (unsigned)k);
+        else   fprintf(g_rec, "%ld keyup %u\n", frame, (unsigned)g_rec_key);
+        g_rec_key = k;
+    }
+    fflush(g_rec);
+}
+
+void harness_record_close(void)
+{
+    if (g_rec) fclose(g_rec);
+    g_rec = NULL;
+}
+
 /* One frame out: the raw screen with its palette, and a line of state. The
  * container holds ONE palette and the play area is what gets scored, so it is
  * the top one - the split is a fact about the screen, not about this file. */
@@ -273,6 +355,9 @@ void harness_sink_frame(const uint8_t *screen, const lem_rgb *top,
      * comparison, not here, so a field added to dgroup.h needs no change to
      * this file or to the capture format. */
     if (g_dg_file) fwrite(&DG, 1, sizeof DG, g_dg_file);
+    /* BEFORE the counter moves, so a recorded frame number means the same
+     * thing to harness_script_step, which compares against g_sink_frame. */
+    harness_record_frame(g_sink_frame);
     g_sink_frame++;
 }
 
@@ -299,6 +384,10 @@ int harness_script_step(struct level_frame *A, int32_t *scroll_x)
             level_panel_click(A, scroll_x);         /* image 0x03168 */
         } else if (act->what == SCRIPT_UP) {
             lem_buttons &= (uint8_t)~1u;
+        } else if (act->what == SCRIPT_KEY) {
+            keyboard_isr((uint8_t)(act->x & 0x7F));      /* image 0x016D4 */
+        } else if (act->what == SCRIPT_KEYUP) {
+            keyboard_isr((uint8_t)((act->x & 0x7F) | 0x80));
         }
     }
     return moved;
