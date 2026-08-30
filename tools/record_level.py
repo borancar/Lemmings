@@ -251,8 +251,20 @@ def install(m):
         st["n"] = i + 1
 
         # Then the input for the frame about to be composed.
+        #
+        # STRICTLY LESS THAN, and the one character matters. `st["n"]` was just
+        # set to i + 1, so `<=` applied the action for frame N+1 during the
+        # pass that produces capture N - one frame EARLY against the port,
+        # every time. Measured with a recording of real play: the file says
+        # `39 move 157 83` and the original had the pointer there at capture
+        # 38 while the port had it at 39.
+        #
+        # That offset is not cosmetic. It propagates into the pointer, the
+        # cursor's box, the count under it and which frame a skill is assigned
+        # on - and a skill one frame late is exactly the click latency it
+        # would be tempting to report as the port's.
         while (st["script_at"] < len(script)
-               and script[st["script_at"]][0] <= st["n"]):
+               and script[st["script_at"]][0] < st["n"]):
             _, verb, arg = script[st["script_at"]]
             st["script_at"] += 1
             if verb == "move" and len(arg) == 2:
