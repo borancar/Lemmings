@@ -49,6 +49,7 @@ numbers, re-measured on the current build:
 | **a recorded playthrough**, the whole level to its end | **534 of 534 frames exact — ZERO differing, play area AND panel, worst 0**, with the cursor scored rather than excused (`tools/compare_screen.py --ref out/me_ref535`). Both sides read one recording of real play: 80 lemmings released, all eighty dead, the level ending itself at 535. The scorer's control is `--frame-offset 0`, which scores **0** of 534 exact — so the 534 is a result and not an insensitive instrument. **What this run does NOT cover is a skill**: the recording's clicks move `selected` but never spend one, so the skill vector is `[20]*8` at the first frame and at the last. That case is `tools/compare_play.py`'s, which assigns a digger and refuses to report a figure for a run where it was not |
 | **both sides PLAYING**, a digger assigned from one script | play area exact on **568 of 671**, and every one of the other 103 frames differs by **exactly one pixel, always canvas (799, 81)**; panel exact on **671 of 671, worst 0** (`tools/compare_play.py --frames 700`). The panel read 661 until the two counts were put where the original computes them: OUT is image 0x3684's, the tail of the walk image 0x01BC calls, and IN is image 0x03ACE's, inside the panel image 0x01C2 calls — both AFTER image 0x01B3 steps the lemmings, where the port had them in its pre-step routine. A lemming reaching the exit therefore showed in the percentage a frame late, which is ten frames of one character cell and nothing else. The positive control fired: the original's own digger count falls 10 → 9 at frame 113. **The one pixel is not the port's.** Probed in the guest, the original's MASTER terrain at image 0x05DEA's `0x4A40` goes 14 → 0 on frame 121 — the digger clears it, exactly as the port does — while its displayed PAGE reads **2** from frame 122 on, and the page not being displayed reads 0. So the master agrees and the page carries something the master does not; the reason is read rather than guessed: **image 0x080FD, which image 0x001A7 calls, is a DIRTY-RECTANGLE blitter.** It scans a 20x40 array of flags at `ss:[ds:0x26]` — `repne scasb` for a set one, `repe scasb` for the run's length — copies only those 8x8 tiles from the master at `0x4A40` to the page at `ds:0x1F76 + 0x2C2`, and clears all 0x320 flags at image 0x08153. So the original's page is maintained INCREMENTALLY and keeps whatever no flag asked it to refresh. (Image 0x001AA's `0x7900` is not that window: it copies 13 bytes by 19 rows, and this file used to name it as the terrain window.) This port recomposes the whole play area from the master every frame, which reaches the same picture everywhere a flag was set. **And which writer leaves it stale is read too**: image 0x09A15 marks the tiles a rectangle covers, and the code map gives it ONE caller — image 0x0885B, inside the blitter, gated on `ds:0x2A != 0xFF`. So a blit marks what it wrote; the digger's clear at image 0x05EBA is a bare `stosb` run into the master with no call in it, marks nothing, and the page keeps what it had. The stale 2 is the ORIGINAL's behaviour rather than a fault in it. Modelling it means the flag array, image 0x09A15 on every blit, image 0x080FD's tile copy, the page pair and image 0x07178's unmasked 24x16 background save — **owed**, and now specified rather than half-read |
 | **the window path**, the 320x200 the game displays | **119 of 119 exact, play area AND panel, worst 0** (`tools/verify_all.sh`'s own level section). It read **39 of 119** with worst 56 for as long as `out/ref_verify` had existed: verify_all.sh re-recorded that reference only `if [ ! -d "$REF" ]`, and the cached one predated record_level.py's pointer fields — its manifest carried `frame`, `game_frame`, `lit_dac` and `crtc_start` and nothing else, so nothing could aim the port's cross-hair at the guest's and the section ran with no input script at all. The condition is now about what the reference CONTAINS. A directory that exists is not a reference that answers the question |
+| **all eight skills**, driven, against the original's own | **every skill's RECORD 0 differing**, and in the picture the climber, bomber, blocker, builder and basher are **399 of 399 exact, play area AND panel, worst 0**; pause 499 of 499 and an untouched level 482 of 482 (`tools/verify_skills.py`). The floater, miner and digger — the three that cut terrain — differ by **worst 1 or 2 pixels**, which is the page ghost. These read 345 of 400 records differing and screens around 108 of 399 until two instruments were fixed: the record comparison scored the port's frame N against the guest's N where the screen comparison scores N-1, and the eight references had outlived the fix to `record_level.py`'s replay, so each pressed its button a frame before the port now does |
 | tests | `make test` 134 checks across two binaries, `make sanitize` clean under ASan + UBSan |
 
 **Transcription is a different claim from any of the above, and it is 153
@@ -839,13 +840,31 @@ wrong for ever. `tools/record_level.py --skills` stocks all eight in the guest
 `tools/make_skill_script.py` writes the input for one of them. Both sides get
 the same poke, so the comparison stays a comparison.
 
-| 400 driven frames | records | play area |
-| --- | --- | --- |
-| the digger (button 9) | 0 differ | — the level's own |
-| the builder (button 6) | **0 differ** | **399 of 400 exact** |
-| the blocker (button 5) | **0 differ** | **398 of 400 exact** |
-| the climber (button 2) | **0 differ** | 390 of 400 |
-| the floater (button 3) | **0 differ** | 400 of 400 — but see below |
+Re-measured on the current build, against references re-recorded after
+`record_level.py`'s replay was fixed — **the old ones pressed their button a
+frame before the port now does, so everything after the assignment diverged**
+and the blocker read 107 of 399 where it is 399 of 399:
+
+| driven | records | play area | panel |
+| --- | --- | --- | --- |
+| the climber (button 2) | **0 of 399 differ** | **399 of 399, worst 0** | **399 of 399** |
+| the bomber (button 4) | **0 of 399** | **399 of 399, worst 0** | **399 of 399** |
+| the blocker (button 5) | **0 of 399** | **399 of 399, worst 0** | **399 of 399** |
+| the builder (button 6) | **0 of 399** | **399 of 399, worst 0** | **399 of 399** |
+| the basher (button 7) | **0 of 399** | **399 of 399, worst 0** | **399 of 399** |
+| the floater (button 3) | **0 of 482** | 404 of 482, **worst 2** | **482 of 482** |
+| the miner (button 8) | **0 of 399** | 259 of 399, **worst 1** | 383 of 399, worst 1 |
+| the digger (button 9) | **0 of 671** | 568 of 671, **worst 1** | **671 of 671** |
+| level 2, nobody touching it | **0 of 482** | **482 of 482, worst 0** | **482 of 482** |
+| the nuke (not a skill) | **0 of 558** | 541 of 558, worst 12 | 543 of 558, worst 6 |
+| pause | **0 of 499** | **499 of 499, worst 0** | **499 of 499** |
+
+Every record is exact. Five skills, the untouched level and pause are exact
+in the picture too, both halves. What is left is **worst 1 or 2 pixels** on
+the three that cut terrain, and it is the page ghost this file describes
+above — the original's dirty-rectangle page keeping a tile nothing marked,
+measured at canvas (799, 81) by `tools/probe_page_history.py` and specified
+in [docs/page-model.md](docs/page-model.md).
 
 ### What is left of the eight
 
