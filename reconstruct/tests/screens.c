@@ -1836,15 +1836,19 @@ int main(int argc, char **argv)
     {
         level_start_reset();
         level_skill_select(4);
+        /* THE BOX IS DRAWN FROM ds:0x82 - image 0x03B33 - and the panel is
+         * handed level_skill() + 1. This used to ask level_selected(), which
+         * is ds:0x83, the PREVIOUSLY drawn button image 0x0789E erases; the
+         * two had been made one byte and the check could not tell them apart. */
         ck("the box follows the click at once (image 0x03B33)",
-           level_selected() == 5, NULL);
+           level_skill() + 1 == 5, NULL);
 
         /* And it must not need the divider to come round. Turn it to every
          * phase and the answer cannot change. */
         int drifted = 0;
         for (int i = 0; i < 6; i++) {
             level_skill_div_step();
-            if (level_selected() != 5) drifted = 1;
+            if (level_skill() + 1 != 5) drifted = 1;
         }
         ck("and no phase of the divider moves it (image 0x03B3F)",
            !drifted, "the highlight followed the counter");

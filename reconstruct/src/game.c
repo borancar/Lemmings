@@ -1233,9 +1233,35 @@ uint8_t level_skill_div(void) { return g_skill_div; }
  * itself is kept because image 0x03F15 and image 0x040B5 gate on it. */
 void level_skill_div_step(void)
 {
-    if (g_skill_div == 2)                          /* image 0x03B3F */
-        g_skill_div = 0xFF;                        /* image 0x03B4E */
-    g_skill_div++;                                 /* image 0x03B53 */
+    /* IMAGE 0x03B29 AND 0x03B2D GATE THE WHOLE BLOCK, and the port had neither.
+     *
+     *     0x03B29  ah = ds:0x82            the selected skill
+     *     0x03B2D  cmp ds:0x83, ah         against the DRAWN one
+     *     0x03B31  je 0x03B57              the same: skip all of it
+     *     0x03B33  draw the box at ds:0x82
+     *     0x03B39  erase the box at ds:0x83
+     *     0x03B3F  ds:0x84 == 2 ->
+     *     0x03B46     ds:0x83 = ds:0x82    what is drawn is now recorded
+     *     0x03B4E     ds:0x84 = 0xFF
+     *     0x03B53  inc ds:0x84
+     *
+     * So the divider only runs WHILE A CHANGE IS PENDING - in the steady
+     * state, where the drawn skill already is the selected one, ds:0x84 does
+     * not move at all. The port advanced it on every frame, which is why the
+     * comparison against the original's own byte differed on 268 of 400
+     * frames, and it never copied ds:0x82 into ds:0x83 at all, which is why
+     * ds:0x83 sat at PANEL_SEL_START while the original's followed.
+     *
+     * This is also why an earlier attempt at the copy "felt like a lag on
+     * every skill click": without image 0x03B2D's gate the divider is running
+     * all the time, so a click waits for wherever in the cycle it happens to
+     * land. Gated, the divider starts from rest when the change arrives. */
+    if (g_selected == g_skill) return;              /* image 0x03B31 */
+    if (g_skill_div == 2) {                         /* image 0x03B3F */
+        g_selected = g_skill;                       /* image 0x03B46 */
+        g_skill_div = 0xFF;                         /* image 0x03B4E */
+    }
+    g_skill_div++;                                  /* image 0x03B53 */
 }
 
 /* image 0x03F66, reached by a click at image 0x03F27 and by a function key
@@ -1247,8 +1273,12 @@ void level_skill_div_step(void)
  * drawn at k + 1. */
 void level_skill_select(uint8_t button)
 {
+    /* IMAGE 0x03F66 STORES ONE BYTE. This also set ds:0x83, which is not what
+     * that byte is: image 0x03B33 draws the box from ds:0x82 and image 0x03B39
+     * ERASES the old one from ds:0x83, so ds:0x83 is what was drawn LAST and
+     * image 0x03B46 lets it catch up one frame in three. Setting it here made
+     * the two bytes one, and the port then had no ds:0x83 to compare. */
     g_skill = button;                              /* image 0x03F66 */
-    g_selected = (uint8_t)(button + 1);            /* image 0x03B33's draw */
 }
 
 /* IMAGE 0x040B5 AND IMAGE 0x040CD - Z AND X, AND THEY ARE UNREACHABLE.
@@ -13098,7 +13128,12 @@ void level_frame_compose(struct level_frame *A, const canvas *c,
         level_panel_build(A->panel, A->pan_sec, A->pan_len, &A->lv,
                           A->from->pix, A->from->w, A->from->h,
                           A->lem, A->released, A->view_x,
-                          level_selected());
+                          /* IMAGE 0x03B33 DRAWS FROM ds:0x82, not from
+                           * ds:0x83 - so the box follows a click at once and
+                           * does not wait for image 0x03B46's divider. The
+                           * slot is one on from the skill: PANEL_SEL_X0 is 16
+                           * where the numbers start at PANEL_ART_X, 32. */
+                          (uint8_t)(level_skill() + 1));
     }
 
     for (uint16_t y = 0; y < LEVEL_PLAY_H; y++)
