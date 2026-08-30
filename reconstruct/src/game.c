@@ -11314,26 +11314,31 @@ int level_frame_tick(void *ctx, uint8_t *pix)
     uint16_t w = a->from->w, h = a->from->h;
 
     memcpy(pix, a->from->pix, (size_t)w * h);
-    /* The FIRST frame is the level as it stands before anything moves, and
-     * every frame after it is one step on. Stepping before the first draw
-     * instead put the whole game one frame ahead of the original: measured,
-     * the game's frame N matched the original's N+1 to 28 pixels - the mouse
-     * cursor - and its own N to 300. The original's loop at image 0x019C
-     * steps and then draws, but its first captured frame at image 0x018F is
-     * the one before any of that. */
-    if (a->stepped) {
-        level_play_step(a->st, &a->lv, a->lem, &a->released,
-                        a->from->pix, w, h);
-        /* Image 0x001E7 and image 0x001FA: everyone released and none
-         * active, or the clock run out. Which of the two it was does not
-         * decide win or lose - that is the saved count against the level's
-         * requirement. Both go to image 0x002B3, which does not end the
-         * loop: it arms the fade and lets it run. */
-        if (!g_level_over && level_over(&a->lv, a->released,
-                                        lemmings_live(a->lem, a->released)))
-            level_end_begin();                  /* image 0x002B3 */
-    }
-    a->stepped = 1;
+    /* IMAGE 0x0019D'S ORDER: STEP, THEN DRAW - image 0x001B3 walks the
+     * lemmings and image 0x001BC draws them, on EVERY pass including the
+     * first.
+     *
+     * This used to skip the step on frame 0, and the comment explaining it
+     * said the quiet part out loud: "the original's loop steps and then draws,
+     * but its FIRST CAPTURED FRAME is the one before any of that". That is a
+     * fact about where record_level.py captures - image 0x018F, after the page
+     * flip, so the picture it saves was composed by the previous pass - and
+     * the port answered it by changing the GAME. A frame of simulation was
+     * skipped to make a comparison line up.
+     *
+     * It is the same shape as a constant chosen to make the observed behaviour
+     * come out right: it moved the number and it was not what the program
+     * does. An alignment belongs in the tool that aligns. */
+    level_play_step(a->st, &a->lv, a->lem, &a->released,
+                    a->from->pix, w, h);
+    /* Image 0x001E7 and image 0x001FA: everyone released and none active, or
+     * the clock run out. Which of the two it was does not decide win or lose -
+     * that is the saved count against the level's requirement. Both go to
+     * image 0x002B3, which does not end the loop: it arms the fade and lets it
+     * run. */
+    if (!g_level_over && level_over(&a->lv, a->released,
+                                    lemmings_live(a->lem, a->released)))
+        level_end_begin();                      /* image 0x002B3 */
     level_play_draw(a->st, &a->lv, a->sec, a->len,
                     a->lem_sec, a->lem_len, a->lem, a->released,
                     pix, w, h, a->view_x);

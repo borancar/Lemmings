@@ -71,6 +71,10 @@ def main():
                          "frame and holds it, so a drift shows up as a score "
                          "falling rather than being fitted away")
     ap.add_argument("--every", type=int, default=1)
+    ap.add_argument("--frame-offset", type=int, default=1,
+                    help="the reference's frame N is the port's N-OFFSET; 1 "
+                         "because record_level.py captures after the page "
+                         "flip. See the note where the frames are paired.")
     ap.add_argument("--limit", type=int, default=0)
     a = ap.parse_args()
 
@@ -102,7 +106,23 @@ def main():
         lit = sum(1 for k in range(0, 768, 3)
                   if pal[k] or pal[k+1] or pal[k+2])
         if a.port_dir:
-            p = os.path.join(a.port_dir, n.replace(".scrn", ".raw"))
+            # THE REFERENCE IS ONE FRAME BEHIND THE PORT, and that is a fact
+            # about where it was CAPTURED rather than about either side.
+            # record_level.py captures at image 0x018F, which is after image
+            # 0x00105's page flip - so the picture saved on pass N was composed
+            # by pass N-1. The port's sink writes the page it has just
+            # composed. Image 0x0019D steps and then draws on every pass
+            # including the first, so the port's frame N is the reference's
+            # N+1.
+            #
+            # The port used to skip its first STEP to make this line up, and
+            # said so in a comment. That moved the number and changed the game;
+            # scored at this offset the two are identical, 99.89% worst either
+            # way, which is what shows the simulation never differed.
+            k = int(n[1:6]) - a.frame_offset
+            if k < 0:
+                continue
+            p = os.path.join(a.port_dir, "f%05d.raw" % k)
             if not os.path.exists(p):
                 print(f"  {n}: no port frame at {p} - not scored")
                 continue

@@ -12,7 +12,33 @@ address. The same rule applies here even though DS is the obvious answer.
 """
 import os
 
-FRAME_END = 0x018F          # the game's own end-of-frame
+# IMAGE 0x001C8 - THE END OF THE PASS, which is where the PORT dumps.
+#
+# Getting this right took three tries and each was the same mistake one level
+# down: capturing at a moment that is not the moment the other side captures.
+#
+#   0x018F  the game's own end-of-frame, where record_level.py saves the
+#           SCREEN - but the three instructions AT it are housekeeping, so
+#           ds:0x1FCD and ds:0x1FD0 read as they were during the frame just
+#           finished. ds:0x1FCD came out 7 against 0 on every frame.
+#   0x019D  after those, before the frame's work. Now everything image
+#           0x0019D..0x001C5 writes reads one frame behind - ds:0x0052 is
+#           bumped at image 0x001A3 and came out 0 against 1.
+#   0x01C8  after the whole chain and before the end tests. The port dumps
+#           after level_frame_compose, which is the same place.
+#
+# A difference that is really a difference of MOMENT looks exactly like a
+# difference of behaviour, and there is no percentage that tells them apart.
+#
+# 0x018F is the game's own end-of-frame and is where record_level.py captures
+# the SCREEN. But the three instructions AT it are housekeeping - ds:0x1FCD
+# cleared, ds:0x1FD0 cleared, ds:0x1FD3 bumped - so a hook that fires at 0x018F
+# reads those bytes as they were during the frame just finished, while the port
+# dumps its own after clearing them. That is not a disagreement, it is two
+# different moments, and it showed up as ds:0x1FCD reading 7 against 0 on every
+# frame. Capturing at 0x0019D - the first call of the frame's real work - puts
+# both sides at the same point.
+FRAME_END = 0x001C8
 DG_END = 0x4DFD             # reconstruct/src/dgroup.h
 
 

@@ -72,6 +72,36 @@ def fields():
     return sorted((off[n], size[n], n) for n in off)
 
 
+# WHAT THIS RUN CANNOT PUT THE TWO SIDES IN AGREEMENT ABOUT, and why.
+#
+# The guest is driven from the title through the menu and the briefing into a
+# level; the port is handed the level directly. So anything the MENU left
+# behind differs, and so does the pointer, because the guest's auto-driver
+# clicked its way in and the port's never moved.
+#
+# These are STATE, not behaviour. They are reported on their own line rather
+# than counted as disagreements, and never hidden - verify_menu.py scored 728
+# pixels for exactly this shape of thing (two sides in different states, one
+# percentage) until the state was passed in. When one of these can be put in
+# agreement it should be, and the entry deleted.
+EXPECTED = {
+    "rating_drawn": "the MENU's plate guard - the guest ran the menu, the "
+                    "port was handed the level",
+    "fx_drawn":     "the same, image 0x0441B",
+    "anim_ctr":     "the menu's animation counters, image 0x0E3F0",
+    "tune":         "no sound driver in this harness, so music_choose returns "
+                    "at image 0x04834 without picking one",
+    "mouse_x":      "the guest's auto-driver clicked its way in; the port's "
+                    "pointer has not moved from image 0x00F41's (150, 100)",
+    "mouse_y":      "as mouse_x",
+    "buttons":      "as mouse_x - ds:0x14 while the driver was clicking",
+    "level_phase":  "the FADE. Image 0x00325 and image 0x00346 branch on "
+                    "ds:0x200E, and a capture harness answers 0 to that on "
+                    "purpose - a fade inside frame 0 would spend a second of "
+                    "wall clock producing nothing",
+}
+
+
 def run(cmd, env=None, why=""):
     e = dict(os.environ)
     if env:
@@ -153,14 +183,31 @@ def main():
                     (f, O[off:off + size], P[off:off + size]))
 
     tot = len(fields())
-    print("   %d of %d fields agree on every frame" % (tot - len(bad), tot))
-    for name, rows in sorted(bad.items(), key=lambda kv: -len(kv[1])):
-        off = [o_ for o_, s, n_ in fields() if n_ == name][0]
+    at = {n_: o_ for o_, s_, n_ in fields()}
+    known = {k: v for k, v in bad.items() if k in EXPECTED}
+    real = {k: v for k, v in bad.items() if k not in EXPECTED}
+
+    def show(name, rows):
         f, ov, pv = rows[0]
-        print("   ds:0x%04X %-14s differs on %d/%d frames; first at %d: "
-              "original %s port %s"
-              % (off, name, len(rows), n, f, ov.hex(), pv.hex()))
-    return 1 if bad else 0
+        return ("   ds:0x%04X %-14s %d/%d frames; first at %d: "
+                "original %s port %s"
+                % (at[name], name, len(rows), n, f, ov.hex(), pv.hex()))
+
+    print("   %d of %d fields agree on every frame" % (tot - len(bad), tot))
+
+    if known:
+        print("\n   %d differ for a reason this run cannot remove:" % len(known))
+        for name, rows in sorted(known.items(), key=lambda kv: -len(kv[1])):
+            print(show(name, rows))
+            print("       %s" % EXPECTED[name])
+
+    if real:
+        print("\n   %d DIFFER AND ARE NOT EXPLAINED:" % len(real))
+        for name, rows in sorted(real.items(), key=lambda kv: -len(kv[1])):
+            print(show(name, rows))
+    else:
+        print("\n   nothing differs that is not accounted for.")
+    return 1 if real else 0
 
 
 if __name__ == "__main__":
