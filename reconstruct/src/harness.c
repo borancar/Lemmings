@@ -257,10 +257,21 @@ void harness_record_open(const char *path)
         fprintf(stderr, "  [record] %s: cannot open it for writing\n", path);
         return;
     }
+    /* WHICH LEVEL IT IS OF, because a recording that does not say can be
+     * replayed against a different one - and this project has measured what
+     * that looks like: both sides run the same SIMULATION, the panel's OUT, IN
+     * and TIME agree to the character, and the terrain is a different graphics
+     * set entirely. It scored 0 of 535 frames and read as the port being
+     * comprehensively broken.
+     *
+     * ds:0x1F6B is the game's own running order and ds:0x1F6E the rating, so
+     * these are the two numbers both drivers take. */
     fprintf(g_rec, "# recorded by lemdev --record-input\n"
+                   "# level %u  rating %u   (ds:0x1F6B, ds:0x1F6E)\n"
                    "# frames are the harness's own count; move is in SCREEN\n"
                    "# pixels, which is ds:0x10 less the eight image 0x0426D\n"
-                   "# clamps against; key is a SCANCODE.\n");
+                   "# clamps against; key is a SCANCODE.\n",
+            (unsigned)DG.level_index, (unsigned)DG.level_rating);
     g_rec_x = g_rec_y = -1;
     g_rec_btn = g_rec_key = 0;
 }

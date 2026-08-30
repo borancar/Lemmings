@@ -91,8 +91,12 @@ EXPECTED = {
     "anim_ctr":     "the menu's animation counters, image 0x0E3F0",
     "tune":         "no sound driver in this harness, so music_choose returns "
                     "at image 0x04834 without picking one",
-    "mouse_x":      "the guest's auto-driver clicked its way in; the port's "
-                    "pointer has not moved from image 0x00F41's (150, 100)",
+    # These three are only expected to differ WITHOUT --script. Driven from
+    # one recording the two pointers are in the same place, and if they still
+    # differ that is the finding rather than the set-up.
+    "mouse_x":      "no --script: the guest's auto-driver clicked its way in "
+                    "and the port's pointer never moved from image 0x00F41's "
+                    "(150, 100)",
     "mouse_y":      "as mouse_x",
     "buttons":      "as mouse_x - ds:0x14 while the driver was clicking",
     "level_phase":  "the FADE. Image 0x00325 and image 0x00346 branch on "
@@ -124,6 +128,10 @@ def main():
                          "away from a file and section, see CLAUDE.md")
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--rating", default="fun")
+    ap.add_argument("--script", default=None,
+                    help="an input recording - lemdev --record-input - fed to "
+                         "BOTH sides, so the comparison covers the part of the "
+                         "game that needs a player")
     ap.add_argument("--seconds", type=int, default=240,
                     help="how long the guest may run to reach the level")
     ap.add_argument("--number", type=int, default=1)
@@ -148,16 +156,20 @@ def main():
          "--level", str(a.level), "--frames", str(a.frames),
          "--seconds", str(a.seconds),
          "--out", os.path.join(out, "dg_shots")],
-        {"LEM_EXTRA_HOOK": os.path.join(HERE, "dg_hook.py"),
-         "LEM_DG_OUT": orig, "LEM_DG_FRAMES": str(a.frames)},
+        dict({"LEM_EXTRA_HOOK": os.path.join(HERE, "dg_hook.py"),
+              "LEM_DG_OUT": orig, "LEM_DG_FRAMES": str(a.frames)},
+             **({"LEM_REC_SCRIPT": os.path.abspath(a.script)}
+                if a.script else {})),
         "driving the original")
 
     print("== the port's ==")
     run([os.path.join(ROOT, "reconstruct", "lemdev"),
          "--data", "lemming1.pc", "--rating", a.rating,
          "--number", str(a.number), "--raw", "/dev/null", "--show"],
-        {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy",
-         "LEM_DG_FILE": port, "LEM_FRAMES": str(a.frames)},
+        dict({"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy",
+              "LEM_DG_FILE": port, "LEM_FRAMES": str(a.frames)},
+             **({"LEM_INPUT_SCRIPT": os.path.abspath(a.script)}
+                if a.script else {})),
         "rendering with the port")
 
     if not os.path.exists(orig) or os.path.getsize(orig) == 0:
@@ -184,8 +196,15 @@ def main():
 
     tot = len(fields())
     at = {n_: o_ for o_, s_, n_ in fields()}
-    known = {k: v for k, v in bad.items() if k in EXPECTED}
-    real = {k: v for k, v in bad.items() if k not in EXPECTED}
+    pointer = {"mouse_x", "mouse_y", "buttons"}
+    exp = dict(EXPECTED)
+    if a.script:
+        # Both sides read the same recording, so a pointer that still differs
+        # is not the set-up any more.
+        for k in pointer:
+            exp.pop(k, None)
+    known = {k: v for k, v in bad.items() if k in exp}
+    real = {k: v for k, v in bad.items() if k not in exp}
 
     def show(name, rows):
         f, ov, pv = rows[0]
@@ -199,7 +218,7 @@ def main():
         print("\n   %d differ for a reason this run cannot remove:" % len(known))
         for name, rows in sorted(known.items(), key=lambda kv: -len(kv[1])):
             print(show(name, rows))
-            print("       %s" % EXPECTED[name])
+            print("       %s" % exp[name])
 
     if real:
         print("\n   %d DIFFER AND ARE NOT EXPLAINED:" % len(real))
