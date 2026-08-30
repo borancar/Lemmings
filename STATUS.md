@@ -4827,38 +4827,38 @@ has nothing to seed with here.
 ## Next
 
 - **The lemming ARRAY agrees byte for byte and the lemming PIXELS do not, so
-  the residue is in `lemming_draw`.** With the record laid out at ds:0x0088's
-  own offsets, `verify_dgroup.py --script` over 400 frames of a driven level
-  says every named field of every lemming agrees on every frame - x, y, the hot
-  spot, the flags, the direction, the animation counter, the state, the fuse,
-  the bricks, the float script and the nine trigger cells.
+  the residue is in `lemming_draw` - and the frame it picks is measured but NOT
+  yet explained.** With the record at ds:0x0088's own offsets,
+  `verify_dgroup.py --script` over 400 frames says every named field of every
+  lemming agrees on every frame. Frame 361 of the same run differs by 388
+  pixels, all on lemmings, with all ten records identical on both sides.
 
-  Frame 361 of the same run differs by 388 pixels and every one of them is on a
-  lemming. At that frame all ten records are identical on both sides, and the
-  picture of one isolated walker - k=8, `dir 1, anim 5, state 9`, 17 differing
-  pixels - shows the same lemming at the same place in a DIFFERENT POSE. Same
-  record in, different sprite out.
+  Lifting the ORIGINAL's own pixels and scoring every MAIN.DAT frame against
+  them - `find_sprite.py`'s method, with its control: frame 5 scores 26/26
+  against the PORT's own pixels, so the decode and the placement are right -
+  gives, for the two walkers isolated enough to score:
 
-  The alignment was checked before reading any of it, because that has caught
-  three faults in this instrument already: refplay 361 against the port's 359,
-  360, 361, 362 and 363 scores 763, 730, **388**, 409, 409 - so 361 against 361
-  is the minimum and the frames are paired correctly.
+  | lemming | `anim` | the original draws | score |
+  | --- | --- | --- | --- |
+  | k=7 | 1 | MAIN.DAT frame 2 | 29/29 |
+  | k=8 | 5 | MAIN.DAT frame 6 | 25/25 |
 
-  Where to look, and what NOT to do. `lemming_draw`'s default arm computes
-  `frame = anim`, adds the state when `dir != 1` (image 0x070AB) and indexes
-  MAIN.DAT at `frame * LEM_SPR_FRAME`. The original indexes its PRE-SHIFTED
-  store instead, and this file already records a measurement disproving the
-  obvious change: applying image 0x070AB's offset on top of the port's own
-  two-base scheme corrected the direction twice and collapsed three levels from
-  exact to 88, 103 and 91. The comment above that line says so.
+  Both `anim + 1`, at the same position - so the placement is exact and only
+  the frame index differs. **And `anim + 1` is not the rule.** Applied, k=8
+  goes to ZERO differing and k=7 from 33 to 16, while every `anim = 0` walker
+  gets WORSE - 64 to 72, 91 to 100, 109 to 102 - for a total of 388 to 373. A
+  fifteen-pixel improvement that makes two lemmings perfect and six worse is a
+  wrong rule improving the number, which this file has a section about. It was
+  measured and reverted.
 
-  So the next step is not another reading of image 0x070A2. It is to take one
-  record both sides agree on - k=8 above is the cleanest - and compare the
-  BYTES each side blits for it: `tools/verify_preshift.py` already checks image
-  0x05B11's store against the original's own, and `tools/probe_blits.py`
-  reports every blit into a band of rows with its caller. Which frame of which
-  group the original actually fetches for `anim 5` is a fact to be read off a
-  running game, not inferred from the index arithmetic.
+  Image 0x070A2 says why no arithmetic here will settle it: it uses the
+  animation counter directly, and the ×8 at image 0x070B6 is the PRE-SHIFT -
+  the original indexes a store image 0x05B11 built, not MAIN.DAT. So "frame N"
+  means a different picture on each side, and the question is what order image
+  0x05B11 puts the walker's frames in. `tools/verify_preshift.py` already
+  drives that routine against the original's own output; reading its store's
+  layout is a fact to be observed, and is the only thing that will settle this.
+
 
 - **`compare_play.py` has never been exact on a single frame, and nothing here
   said so.** It is the tool whose whole purpose is a PLAYED level - the skills,
