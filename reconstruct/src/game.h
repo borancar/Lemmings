@@ -1201,7 +1201,6 @@ void view_level_live(int on);   /* ds:0x200E - is there a window */
 void view_level_period(uint16_t hz);
 void view_level_grab(int on);
 void view_level_pace(void);
-const lem_rgb *view_level_palette(void);
 
 /* image 0x04085's input step and image 0x00105/0x00164's show - both game.c's,
  * both carrying their addresses. */

@@ -31,9 +31,20 @@ import struct
 import sys
 import zlib
 
-# The menu's attribute-to-DAC mapping: the port's index i is DAC entry ATTR[i].
-ATTR = [0, 1, 2, 3, 4, 5, 0x14, 7] + [0x38 + i for i in range(8)]
-INV = {v: i for i, v in enumerate(ATTR)}
+# THE ATTRIBUTE-TO-DAC MAPPING IS PER MODE, and this had only the MENU's.
+#
+# The port stores ATTRIBUTES and a capture stores DAC indices. Mode 0x10 - the
+# menu, the briefing, the code screen - maps them one way; the level is mode
+# 0x0D and maps attributes 8..15 to DAC 16..23, which is what
+# tools/probe_attrpal.py reads off the attribute controller and what
+# compare_screen.py has always applied.
+#
+# With only the menu's table a LEVEL frame came back with a third of its pixels
+# unmapped, scored as differences, and reported 44.20% agree - against
+# compare_play.py's 294 pixels for the same frame. No error, no warning: just a
+# confident wrong number of exactly the kind this tool exists to prevent.
+ATTR_MENU  = [0, 1, 2, 3, 4, 5, 0x14, 7] + [0x38 + i for i in range(8)]
+ATTR_LEVEL = [i if i < 8 else i + 8 for i in range(16)]
 
 
 def write_png(path, w, h, rows):
@@ -54,6 +65,10 @@ def write_png(path, w, h, rows):
         f.write(chunk(b"IEND", b""))
 
 
+ATTR = ATTR_MENU
+MODE = "menu"
+
+
 def read_capture(path):
     """An emulator .scrn: w,h at offset 4, then the 768-byte DAC, then the
     screen as DAC indices."""
@@ -62,7 +77,17 @@ def read_capture(path):
     w, h = struct.unpack_from("<HH", b, 4)
     dac = b[8:8 + 768]
     pix = b[8 + 768:]
-    idx = [INV.get(v, -1) for v in pix[:w * h]]
+    inv = {v: i for i, v in enumerate(ATTR)}
+    idx = [inv.get(v, -1) for v in pix[:w * h]]
+    # AN UNMAPPED VALUE IS NOT A DIFFERENCE. It means this capture is not in
+    # the mode the table is for, and counting it as the port being wrong is
+    # how 44.20% got reported for a frame that differs by 294 pixels.
+    n = sum(1 for v in idx if v < 0)
+    if n:
+        raise SystemExit(
+            "%s: %d of %d pixels hold a DAC index this mode's attribute table\n"
+            "does not name. The table is the %s's; a level capture needs "
+            "--level and\na menu one does not." % (path, n, w * h, MODE))
     rgb = [(dac[v * 3], dac[v * 3 + 1], dac[v * 3 + 2]) for v in range(256)]
     return w, h, idx, [rgb[v] for v in pix[:w * h]]
 
@@ -105,7 +130,17 @@ def main():
     ap.add_argument("--cols", nargs=2, type=int, metavar=("X0", "X1"),
                     help="crop to these columns, inclusive")
     ap.add_argument("--scale", type=int, default=1)
+    ap.add_argument("--level", action="store_true",
+                    help="the capture is a LEVEL - mode 0x0D, where "
+                         "attributes 8..15 are DAC 16..23. Without it a level "
+                         "frame has a third of its pixels unmapped and the "
+                         "tool now refuses rather than scoring them as "
+                         "differences.")
     a = ap.parse_args()
+
+    global ATTR, MODE
+    if a.level:
+        ATTR, MODE = ATTR_LEVEL, "level"
 
     ow, oh, oidx, ocol = read_capture(a.capture)
     pw, ph, pidx, pcol = read_raw(a.raw)

@@ -321,6 +321,26 @@ void harness_record_close(void)
 void harness_sink_frame(const uint8_t *screen, const lem_rgb *top,
                         struct level_frame *A)
 {
+    /* A DEAD PALETTE IS NOT A QUIET CAPTURE. view_level_palette() returned
+     * g_lv_top for a while - an array nothing wrote, left behind when the
+     * level's slots moved to game.c - so every frame written here carried
+     * sixteen black entries while its INDICES were perfect. Nothing caught it:
+     * compare_screen.py and compare_run.py both score indices, which is what
+     * makes them independent of a palette sampled at one moment, and this
+     * file's own notes say matching indices is not matching colours. It showed
+     * up only when a picture was finally looked at. */
+    if (g_sink_dir && top) {
+        static int said;
+        uint8_t lit = 0;
+        for (uint8_t i = 0; i < 16; i++)
+            if (top[i].r | top[i].g | top[i].b) lit = 1;
+        if (!lit && !said) {
+            said = 1;
+            fprintf(stderr, "  [sink] the palette written with these frames is "
+                            "ALL BLACK - the indices may be right and no index "
+                            "comparison will tell you\n");
+        }
+    }
     if (g_sink_dir) {
         char path[1024];
         snprintf(path, sizeof(path), "%s/f%05ld.raw", g_sink_dir, g_sink_frame);

@@ -346,7 +346,6 @@ void video_palette_upload(void)
  * whether the window holds the pointer, and the deadline a frame is paced
  * against. Threading them through the game's signature would have put the
  * window's bookkeeping into a transcribed routine. */
-static lem_rgb     g_lv_top[16];
 static Uint64      g_lv_due, g_lv_period;
 /* TWO STATES THE PORT HAD CONFLATED. `g_mouse_owned` is the LEVEL owning the
  * pointer - image 0x00F43 hides the driver's own and image 0x00F2B sets the
@@ -502,7 +501,6 @@ void view_level_pace(void)
 }
 
 /* The level's upper palette, for the harness's frame sink. */
-const lem_rgb *view_level_palette(void) { return g_lv_top; }
 
 /* ======================================================================
  * WHAT THE CARD AND THE DRIVERS DID FOR A LEVEL. The SEQUENCE that calls
