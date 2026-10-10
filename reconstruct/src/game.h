@@ -1117,6 +1117,12 @@ struct level_frame {
     uint8_t      released;   /* how many have come out of the trapdoor */
     uint16_t     view_x;     /* where the play area has scrolled to */
     int          stepped;    /* the first frame is the state before a step */
+    /* THE PAGE PAIR - video memory at ds:0x1F76 and ds:0x1F78, which image
+     * 0x081CC starts at 0 and 0x2520. Each is a canvas the master's size so
+     * the draws can keep the master's coordinates; only the 320 x 160 window
+     * at view_x is ever shown, and a scroll redraws all of it. See
+     * level_page_refresh in game.c. */
+    uint8_t     *page[2];
 };
 
 /* image 0x00455 and the loop at image 0x000FB - see game.c. level_run is

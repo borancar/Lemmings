@@ -1,6 +1,6 @@
 # STATUS — PC Lemmings (VGA) reconstruction
 
-Last updated: **2026-08-30**
+Last updated: **2026-10-10**
 
 **Which world this is in: hand-written assembly** — settled, not assumed. The
 whole 131,072-byte image contains **zero** `push bp / mov bp,sp` prologues and
@@ -37,7 +37,7 @@ numbers, re-measured on the current build:
 | the **briefing** | **100.00%** — 0 of 224,000: background, text, palette, and the level preview |
 | the **main menu** | **100.00%** — zero pixels differing, at all four ratings, **with one of the walking lemmings on screen** in three of the four. Background, logo, all six plates, both drop shadows, the rating name, the FX label, the credits, the whole scrolling banner, its two end lemmings, and the animation. This figure needs the two sides to agree about the SOUND: image 0x04E5A picks the FX label from `ds:0x25A7` and `ds:0x2010`, the emulator answers the AdLib detect and `lemdev` loads no driver, so a run that does not carry those two bytes across scores 728 — one label, and nothing else on the screen. `verify_menu.py` reads them out of the guest and passes `--snd`; it did not, and the 728 read as the port's |
 | **seven further levels**, frame by frame for over a minute each | every one **exact — ZERO differing, worst 0** — play area AND panel, on every frame the comparison scores: `level001.dat --level 3` 530 of 530, and `level002.dat --level 4`, `level002.dat --level 6`, `level004.dat --level 3`, `level006.dat --level 3`, `level007.dat --level 1`, `level009.dat --level 1` all **1,099 of 1,099** (`tools/verify_all.sh`, re-measured on the current build). The pair count is 1,099 rather than 1,100 because `compare_screen.py` pairs the guest's frame N with the port's N-1; this row used to say 1,100 and mean the same thing. It also read **1,098** with worst 56 until `tools/park_script.py` was corrected: it wrote the guest's own frame number for each pointer move, one frame later than that pairing wants, so each run's first scored frame carried two cross-hairs — 56 pixels in one 24x14 box with identical value sets on both sides, which is two cursors and not the reconstruction |
-| **the nuke**, driven by a double click | record **0 of 557 frames**; screen exact on **541 of 557**, the residue being 16 frames of 12 pixels - the crater's top row, which the original's incremental display has not repainted yet |
+| **the nuke**, driven by a double click | record **0 of 558 frames**; screen exact on **558 of 558**, play area; panel **543 of 558, worst 6** - the minimap, which the original refreshes one column a frame (image 0x0796F) and the port rebuilt whole. The play area read 541 until the PAGE MODEL was transcribed: the residue was 16 frames of 12 pixels at the crater's top row, which is the master changing under tiles nothing marked, and the port now keeps the original's two pages and their dirty-tile flags (see [docs/page-model.md](docs/page-model.md)) |
 | the DAT decompressor vs the original's own body | 7 calls, 150,807 bytes, byte-identical — **re-run on this build, 0 differing** (`verify_all.sh --units`) |
 | the LVL header parse | 15 fields, all agreeing — **re-run on this build, 0 differing** (`verify_all.sh --units`) |
 | the sprite pre-shift vs the original's own body | 200 calls, byte-identical (`verify_all.sh --units`) |
@@ -47,9 +47,9 @@ numbers, re-measured on the current build:
 | **pace** | the level 170 frames in 10.01s against 17/s; the menu 350 passes in 5.01s against 70 Hz (`tools/verify_pace.py`) |
 | **the DATA SEGMENT**, field by field, over a recorded playthrough | **45 of 52 fields agree on every one of 40 frames, and nothing differs that is not accounted for** (`tools/verify_dgroup.py --script out/me.txt`). This is a different claim from every picture above: `dgroup.h` lays the port's globals out at the original's own `ds:` offsets, packed, with named padding runs for the bytes nobody has read, so the two segments can be compared as memory rather than as a screen. The seven that differ are the harness — the briefing's `needed_pct`, the tune with no sound driver, the menu's two plate guards and its animation counters, the timer's `ds:0x1FCD` count this port substitutes, and the fade — and each carries its reason in the tool rather than in prose here |
 | **a recorded playthrough**, the whole level to its end | **534 of 534 frames exact — ZERO differing, play area AND panel, worst 0**, with the cursor scored rather than excused (`tools/compare_screen.py --ref out/me_ref535`). Both sides read one recording of real play: 80 lemmings released, all eighty dead, the level ending itself at 535. The scorer's control is `--frame-offset 0`, which scores **0** of 534 exact — so the 534 is a result and not an insensitive instrument. **What this run does NOT cover is a skill**: the recording's clicks move `selected` but never spend one, so the skill vector is `[20]*8` at the first frame and at the last. That case is `tools/compare_play.py`'s, which assigns a digger and refuses to report a figure for a run where it was not |
-| **both sides PLAYING**, a digger assigned from one script | play area exact on **568 of 671**, and every one of the other 103 frames differs by **exactly one pixel, always canvas (799, 81)**; panel exact on **671 of 671, worst 0** (`tools/compare_play.py --frames 700`). The panel read 661 until the two counts were put where the original computes them: OUT is image 0x3684's, the tail of the walk image 0x01BC calls, and IN is image 0x03ACE's, inside the panel image 0x01C2 calls — both AFTER image 0x01B3 steps the lemmings, where the port had them in its pre-step routine. A lemming reaching the exit therefore showed in the percentage a frame late, which is ten frames of one character cell and nothing else. The positive control fired: the original's own digger count falls 10 → 9 at frame 113. **The one pixel is not the port's.** Probed in the guest, the original's MASTER terrain at image 0x05DEA's `0x4A40` goes 14 → 0 on frame 121 — the digger clears it, exactly as the port does — while its displayed PAGE reads **2** from frame 122 on, and the page not being displayed reads 0. So the master agrees and the page carries something the master does not; the reason is read rather than guessed: **image 0x080FD, which image 0x001A7 calls, is a DIRTY-RECTANGLE blitter.** It scans a 20x40 array of flags at `ss:[ds:0x26]` — `repne scasb` for a set one, `repe scasb` for the run's length — copies only those 8x8 tiles from the master at `0x4A40` to the page at `ds:0x1F76 + 0x2C2`, and clears all 0x320 flags at image 0x08153. So the original's page is maintained INCREMENTALLY and keeps whatever no flag asked it to refresh. (Image 0x001AA's `0x7900` is not that window: it copies 13 bytes by 19 rows, and this file used to name it as the terrain window.) This port recomposes the whole play area from the master every frame, which reaches the same picture everywhere a flag was set. **And which writer leaves it stale is read too**: image 0x09A15 marks the tiles a rectangle covers, and the code map gives it ONE caller — image 0x0885B, inside the blitter, gated on `ds:0x2A != 0xFF`. So a blit marks what it wrote; the digger's clear at image 0x05EBA is a bare `stosb` run into the master with no call in it, marks nothing, and the page keeps what it had. The stale 2 is the ORIGINAL's behaviour rather than a fault in it. Modelling it means the flag array, image 0x09A15 on every blit, image 0x080FD's tile copy, the page pair and image 0x07178's unmasked 24x16 background save — **owed**, and now specified rather than half-read |
+| **both sides PLAYING**, a digger assigned from one script | play area exact on **671 of 671**, panel **671 of 671**, worst 0 (`tools/verify_skills.py`'s digger row, the same reference `tools/compare_play.py` scores). The positive control fired: the original's own digger count falls 10 → 9 at frame 113. For a long time the play area was 568 with one pixel on each of the other 103 frames, at screen (159, 81), the original holding 2, and this row explained it at length as the original's dirty-tile page keeping a stale tile. **That explanation was wrong**, and transcribing the page is what showed it: with the page in place the port's page held 0 there exactly as the original's master did, and the 2 stayed. It is the CURSOR - image 0x074AF ORs plane 1 unmasked over the whole cursor window, the box's corner pixels have ink 2 outside the mask, the script parks the pointer on the digger, and once the ground under it is cleared 0 \| 2 is a 2. The panel read 661 until the two counts were put where the original computes them: OUT is image 0x3684's and IN is image 0x03ACE's, both AFTER image 0x01B3 steps the lemmings |
 | **the window path**, the 320x200 the game displays | **119 of 119 exact, play area AND panel, worst 0** (`tools/verify_all.sh`'s own level section). It read **39 of 119** with worst 56 for as long as `out/ref_verify` had existed: verify_all.sh re-recorded that reference only `if [ ! -d "$REF" ]`, and the cached one predated record_level.py's pointer fields — its manifest carried `frame`, `game_frame`, `lit_dac` and `crtc_start` and nothing else, so nothing could aim the port's cross-hair at the guest's and the section ran with no input script at all. The condition is now about what the reference CONTAINS. A directory that exists is not a reference that answers the question |
-| **all eight skills**, driven, against the original's own | **every skill's RECORD 0 differing**, and in the picture the climber, bomber, blocker, builder and basher are **399 of 399 exact, play area AND panel, worst 0**; pause 499 of 499 and an untouched level 482 of 482 (`tools/verify_skills.py`). The floater, miner and digger — the three that cut terrain — differ by **worst 1 or 2 pixels**, which is the page ghost. These read 345 of 400 records differing and screens around 108 of 399 until two instruments were fixed: the record comparison scored the port's frame N against the guest's N where the screen comparison scores N-1, and the eight references had outlived the fix to `record_level.py`'s replay, so each pressed its button a frame before the port now does |
+| **all eight skills**, driven, against the original's own | **every skill's RECORD 0 differing, and every skill's PLAY AREA exact on every frame** - climber, bomber, blocker, builder and basher 399 of 399, floater 482 of 482, miner 399 of 399, digger 671 of 671; pause 499 of 499 and an untouched level 482 of 482 (`tools/verify_skills.py`). Panels are exact on all of them but the miner's, **383 of 399, worst 1**, which is the minimap's one-column-a-frame refresh. The floater, miner and digger carried a 1-2 pixel residue for as long as they had been scored, written off as the page ghost; it was the cursor's unmasked OR pass, image 0x074AF |
 | tests | `make test` 134 checks across two binaries, `make sanitize` clean under ASan + UBSan |
 
 **Transcription is a different claim from any of the above, and it is 153
@@ -852,19 +852,28 @@ and the blocker read 107 of 399 where it is 399 of 399:
 | the blocker (button 5) | **0 of 399** | **399 of 399, worst 0** | **399 of 399** |
 | the builder (button 6) | **0 of 399** | **399 of 399, worst 0** | **399 of 399** |
 | the basher (button 7) | **0 of 399** | **399 of 399, worst 0** | **399 of 399** |
-| the floater (button 3) | **0 of 482** | 404 of 482, **worst 2** | **482 of 482** |
-| the miner (button 8) | **0 of 399** | 259 of 399, **worst 1** | 383 of 399, worst 1 |
-| the digger (button 9) | **0 of 671** | 568 of 671, **worst 1** | **671 of 671** |
+| the floater (button 3) | **0 of 482** | **482 of 482, worst 0** | **482 of 482** |
+| the miner (button 8) | **0 of 399** | **399 of 399, worst 0** | 383 of 399, worst 1 |
+| the digger (button 9) | **0 of 671** | **671 of 671, worst 0** | **671 of 671** |
 | level 2, nobody touching it | **0 of 482** | **482 of 482, worst 0** | **482 of 482** |
-| the nuke (not a skill) | **0 of 558** | 541 of 558, worst 12 | 543 of 558, worst 6 |
+| the nuke (not a skill) | **0 of 558** | **558 of 558, worst 0** | 543 of 558, worst 6 |
 | pause | **0 of 499** | **499 of 499, worst 0** | **499 of 499** |
 
-Every record is exact. Five skills, the untouched level and pause are exact
-in the picture too, both halves. What is left is **worst 1 or 2 pixels** on
-the three that cut terrain, and it is the page ghost this file describes
-above — the original's dirty-rectangle page keeping a tile nothing marked,
-measured at canvas (799, 81) by `tools/probe_page_history.py` and specified
-in [docs/page-model.md](docs/page-model.md).
+Every record is exact, and every play area is exact on every frame
+(re-measured 2026-10-10). Two changes got it there, and they were not the
+ones this paragraph used to predict:
+
+- **the page model**, transcribed ([docs/page-model.md](docs/page-model.md)):
+  two pages, a dirty-tile array each, three markers. It took the NUKE from
+  541 to 558 - its craters are the master changing under tiles nothing
+  marked - and changed nothing else.
+- **the cursor's OR pass**, image 0x074AF. The 1-2 pixels on the floater,
+  miner and digger were written off here as the page ghost; with the page in
+  place they stayed, and they were the cursor box's corner ink being ORed in
+  unmasked over ground a skill had cleared.
+
+What is left is two PANELS - the miner's 16 frames and the nuke's 15 - and
+both are the minimap, which the original refreshes one column a frame.
 
 ### What is left of the eight
 

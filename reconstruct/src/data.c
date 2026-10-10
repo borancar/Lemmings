@@ -1068,13 +1068,15 @@ const uint8_t CURSOR_BOX[CURSOR_BOX_H][CURSOR_W] = {
 /* THE MASK IS NOT "THE INK IS NOT ZERO" HERE, and that is the whole
  * reason it is carried.
  *
- * Store row 13 holds ink 2 at both ends and its mask is CLEAR, so the
- * original does not draw those two pixels - the ink there is data the
- * mask suppresses. Drawing them cost exactly two pixels a frame, at
- * (146, 81) and (159, 81), and there is no rule anyone would have
- * guessed that produces an outline missing one side row and not the
- * other. Reading the mask out of the store settles it; fitting could
- * not have. */
+ * Store row 13 holds ink 2 at both ends and its mask is CLEAR. The
+ * first pass, image 0x07218, does not write them; the second, image
+ * 0x074AF, ORs plane 1 over the whole window unmasked - so those two
+ * pixels become whatever was there, with bit 1 set. Over terrain that
+ * is invisible (14 | 2 is 14), which is why this comment once said the
+ * original "does not draw" them; over ground a digger has cleared it is
+ * a 2, at (146, 81) and (159, 81), and that was the floater's, the
+ * miner's and the digger's whole remaining residue. See
+ * level_cursor_draw. */
 const uint8_t CURSOR_BOX_MASK[CURSOR_BOX_H][CURSOR_W] = {
     { 1,1,1,1,0,0,1,1,0,0,1,1,1,1 },
     { 1,0,0,0,0,0,0,0,0,0,0,0,0,1 },

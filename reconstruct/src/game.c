@@ -6576,6 +6576,336 @@ static void lem_draw_fuse(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     }
 }
 
+/* ======================================================================
+ * THE PAGE PAIR - image 0x081CC's set-up, image 0x080FD's copy and the
+ * three routines that decide what it copies.
+ *
+ * The original never recomposes the play area. It keeps two pages in video
+ * memory, draws into one while the CRTC shows the other, and swaps them at
+ * image 0x00105. Each page has its own array of 20 x 40 flags, one per 8 x 8
+ * tile, and a flag means "something was drawn over the master here". Image
+ * 0x080FD runs at the top of every frame and copies only the flagged tiles
+ * from the master at 0x4A40 back onto the page being drawn, then clears the
+ * flags. The objects and the lemmings are then drawn onto the page, and each
+ * marks the tiles it covered, so two frames later, when this page is drawn
+ * into again, those tiles are put back before anything new goes over them.
+ *
+ * What it does NOT do is notice the master changing underneath. A digger, a
+ * basher, a miner and a bomb all write the master directly - image 0x05EBA
+ * is a bare stosb run - and mark nothing. Their work reaches a page only
+ * where some sprite happened to mark the tile, so a pixel they clear outside
+ * every marked tile stays on that page until a scroll redraws it. That is
+ * the original's behaviour, a player can see it, and it is why this is here.
+ *
+ * THE MARKERS. There are three and they are separate routines:
+ *
+ *     image 0x09A15  a rectangle, called from inside the blitter at image
+ *                    0x0885B when ds:0x2A is 0xFF. In a level the only blits
+ *                    are the objects, image 0x07BF9.
+ *     image 0x05726  a lemming, called by image 0x03654 before every draw.
+ *     image 0x06F01  one tile, for each pixel of a bomber's debris.
+ *
+ * Image 0x07178, which docs/page-model.md once named as each lemming's
+ * background save, is the CURSOR's: image 0x05827 calls it straight after
+ * the flip, and its restore puts back exactly what its save took, so the
+ * cursor leaves nothing on a page. The port drawing it last over the window
+ * is the same picture.
+ *
+ * THE PAGES ARE CANVASES THE MASTER'S SIZE, which is the port's own
+ * arrangement: the original's are 44 bytes wide, but a window that only ever
+ * moves by redrawing the whole of itself (image 0x0413B) can as well live at
+ * the master's coordinates, and then every draw in this file keeps the
+ * coordinates it already has. The tiles are the screen's: column c of a row
+ * is canvas x view_x + 8c.
+ * ====================================================================== */
+
+/* The two flag arrays live in the STACK segment, like the trigger map: image
+ * 0x081DE puts them at ss:0x42B2 and ss:0x45D3, each 0x321 bytes - a
+ * redraw-everything byte, then 0x320 tiles. They are contiguous, which
+ * matters: image 0x09A15 bounds a rectangle only between rows, so the first
+ * row of one can run off the end of its array into the next. The slack is
+ * for the same thing running off the second. */
+#define PAGE_FLAGS_SS    0x42B2u            /* image 0x081DE */
+#define PAGE_FLAGS_SS2   0x45D3u            /* image 0x081E4 */
+#define PAGE_FLAGS_LEN   0x321u             /* image 0x09A29 */
+#define PAGE_TILES_W     0x28u              /* image 0x08140: 40 a row */
+#define PAGE_TILES_H     0x14u              /* image 0x0813C: 20 rows */
+#define PAGE_SHOWN_INIT  0x2520u            /* image 0x081D2 */
+#define PAGE_X_LIMIT     0x160              /* ds:0x66F2, image 0x0821C */
+#define PAGE_Y_LIMIT     0xA0               /* ds:0x66F0, image 0x0821F */
+
+static uint8_t g_page_tiles[2 * PAGE_FLAGS_LEN + 0x40];
+
+/* One byte of the stack segment's flag area. Not transcribed - it is the
+ * port's bounds on a write the original makes without any: a degenerate
+ * rectangle (width 0 after clipping) would have image 0x09A15 store 65,536
+ * ones through ss. No level reaches it. */
+static void page_tile_set(uint32_t ss)
+{
+    if (ss >= PAGE_FLAGS_SS && ss - PAGE_FLAGS_SS < sizeof g_page_tiles)
+        g_page_tiles[ss - PAGE_FLAGS_SS] = 1;
+}
+
+/* IMAGE 0x09A15 - mark the tiles a rectangle covers, on the page being
+ * drawn. ax is the blitter's x, which carries the page's sixteen-pixel left
+ * margin; bx the row; cl the rows and dx the width in pixels. A rectangle
+ * that starts part-way into a tile reaches one further, which is the two
+ * `add 8`s, and the bound at image 0x09A81 is tested only after a row has
+ * been written. */
+static void page_mark_rect(int16_t ax, int16_t bx, uint8_t cl, uint16_t dx)
+{
+    ax = (int16_t)(ax - 0x10);                      /* image 0x09A1C */
+    if (ax < 0) ax = 0;                             /* image 0x09A21 */
+    uint16_t si = DG.page_flags;                    /* image 0x09A23 */
+    uint16_t bp = (uint16_t)(si + PAGE_FLAGS_LEN);  /* image 0x09A29 */
+    si++;                                           /* image 0x09A2D */
+    if (ax & 7) dx = (uint16_t)(dx + 8);            /* image 0x09A33 */
+    si = (uint16_t)(si + ((uint16_t)ax >> 3));      /* image 0x09A3C */
+    if (bx & 7) cl = (uint8_t)(cl + 8);             /* image 0x09A44 */
+    uint16_t row = (uint16_t)bx & 0xFFF8u;          /* image 0x09A47 */
+    si = (uint16_t)(si + row + (uint16_t)(row << 2));   /* image 0x09A4A */
+    if (cl & 7) cl = (uint8_t)(cl + 8);             /* image 0x09A57 */
+    uint16_t cx = (uint16_t)(cl >> 3);              /* image 0x09A5A */
+    if (dx & 7) dx = (uint16_t)(dx + 8);            /* image 0x09A68 */
+    dx = (uint16_t)(dx >> 3);                       /* image 0x09A6B */
+    do {
+        uint16_t n = dx;
+        uint16_t at = si;
+        do page_tile_set(at++); while (--n && at - si < 0x100);
+        si = (uint16_t)(si + PAGE_TILES_W);         /* image 0x09A7E */
+        if (si >= bp) break;                        /* image 0x09A81 */
+    } while (--cx);                                 /* image 0x09A85 */
+}
+
+/* IMAGE 0x07BB8's MARKS - the half of each object's blit that is not the
+ * drawing. Image 0x07BCF takes the object's x to the page (`sub ax,[0] /
+ * add ax,0x10`), the blitter clips it at image 0x09967 when the flag word
+ * asks, and image 0x0885B marks what survived if ds:0x2A is 0xFF. The
+ * drawing is level_anim_draw; the two read the same object and are kept
+ * apart because the port draws at the master's coordinates.
+ *
+ * The clip, image 0x09967, is in eights: an object hanging off the left edge
+ * loses whole bytes until its x is non-negative, and one off the right loses
+ * them until it fits the page's 0x160. Off the top it loses rows; a
+ * rectangle with nothing left in it is refused before it is marked. */
+static void level_anim_mark(const level_anim *st, const level *lv,
+                            uint16_t view_x)
+{
+    if (DG.page_mark != 0xFF) return;               /* image 0x08853 */
+    for (uint16_t i = 0; i < lv->num_objects && i < LEVEL_ANIM_MAX; i++) {
+        const level_anim *a = &st[i];
+        if (!a->live || !a->w || !a->rows) continue;    /* image 0x07BCA */
+        const level_object *o = &lv->objects[i];
+        /* level_parse took the 16 off o->x, and ds:0x00 is view_x + 16 */
+        int16_t  ax = (int16_t)(o->x - (int16_t)view_x + 0x10); /* 0x07BCF */
+        int16_t  bx = o->y;                         /* image 0x07BD6 */
+        int16_t  dx = a->w;                         /* image 0x07BE7 */
+        int16_t  cx = a->rows;                      /* image 0x07BEC */
+        if (o->bp & 4) {                            /* image 0x0996E */
+            if (ax < 0) {
+                if (ax + dx < 0) continue;          /* image 0x0997C */
+                do { dx -= 8; ax += 8; } while (ax < 0);  /* image 0x0998C */
+            } else {
+                if (ax >= PAGE_X_LIMIT) continue;   /* image 0x09997 */
+                while (ax + dx >= PAGE_X_LIMIT) dx -= 8;  /* image 0x099A1 */
+            }
+        }
+        if (o->bp & 8) {                            /* image 0x099B6 */
+            if (bx < 0) {
+                if (bx + cx < 0) continue;          /* image 0x099C4 */
+                cx += bx;                           /* image 0x099C6 */
+                bx = 0;                             /* image 0x099E0 */
+            } else {
+                if (bx >= PAGE_Y_LIMIT) continue;   /* image 0x099E8 */
+                if (bx + cx >= PAGE_Y_LIMIT)
+                    cx = PAGE_Y_LIMIT - bx;         /* image 0x099F8 */
+                if (!dx || !cx) continue;           /* image 0x099FE */
+            }
+        }
+        page_mark_rect(ax, bx, (uint8_t)cx, (uint16_t)dx);  /* 0x0885B */
+    }
+}
+
+/* IMAGE 0x07070 - is this lemming on screen at all. A table lookup rather
+ * than a comparison: the drawer takes `x + hot_x`, wraps a negative one by
+ * the page's 0x160, takes its BYTE column and refuses the whole sprite
+ * unless ds:0x0EA8[column] holds 1 (image 0x07086). Image 0x04113 clears
+ * that table and image 0x0412B marks exactly 41 bytes of it starting two
+ * byte columns left of the scroll, so the window is
+ * (scroll >> 3) - 2 .. (scroll >> 3) + 38. Image 0x05726 asks the same
+ * question of the same table at image 0x0573D. */
+static int lemming_on_screen(const lemming *a, uint16_t view_x)
+{
+    int32_t col = (int32_t)a->x + a->hot_x;         /* image 0x07070 */
+    if (col < 0) col += 0x160;                      /* image 0x07077 */
+    col >>= 3;                                      /* image 0x0707D */
+    int32_t first = (((int32_t)view_x + 16) >> 3) - 2;  /* image 0x04125 */
+    return col >= first && col < first + 41;        /* image 0x0412B: 0x29 */
+}
+
+/* IMAGE 0x05726 - mark the tiles a lemming is about to be drawn over. Image
+ * 0x03654 calls it for every lemming still alive, just before image
+ * 0x0706F draws it, whatever it is drawn as.
+ *
+ * The rectangle starts eight rows above the hot spot, sixteen with a fuse
+ * burning, because image 0x0714E puts the digit there. It is three tiles
+ * wide - five while the cloud bit 0x0002 is set (image 0x05799) - and as
+ * tall as that top is above the feet. A top above the play area is walked
+ * down in eights at image 0x0577B and then put back one step, so it is not
+ * clipped so much as started at row 0. */
+static void lemming_mark(const lemming *a, uint16_t view_x)
+{
+    if (!lemming_on_screen(a, view_x)) return;      /* image 0x0573D */
+    int16_t ax = (int16_t)(a->x + a->hot_x);        /* image 0x05726 */
+    if (ax < 0) ax = (int16_t)(ax + 0x160);         /* image 0x0572D */
+    ax = (int16_t)(ax - (int16_t)(view_x + 16));    /* image 0x05745 */
+    if (ax < 0) ax = 0;                             /* image 0x0574B */
+    uint16_t si = (uint16_t)(DG.page_flags + 1 + ((uint16_t)ax >> 3));
+    uint16_t bp = (uint16_t)(DG.page_flags + PAGE_FLAGS_LEN);   /* 0x0575B */
+    int16_t cx = (int16_t)(a->hot_y - 8);           /* image 0x05765 */
+    if (a->fuse) cx = (int16_t)(cx - 8);            /* image 0x05771 */
+    int16_t y = (int16_t)(a->y + cx - 0x10);        /* image 0x05774 */
+    if (y < 0) {
+        do { cx = (int16_t)(cx + 8); y = (int16_t)(y + 8); }
+        while (y < 0);                              /* image 0x0577B */
+        y = 0;                                      /* image 0x05783 */
+        cx = (int16_t)(cx - 8);                     /* image 0x05785 */
+    }
+    cx = (int16_t)-cx;                              /* image 0x05788 */
+    uint16_t row = (uint16_t)y & 0xFFF8u;           /* image 0x0578C */
+    si = (uint16_t)(si + row + (uint16_t)(row << 2));
+    uint8_t cols = (a->flags & 0x0002) ? 5 : 3;     /* image 0x05797 */
+    uint8_t h = (uint8_t)cx;                        /* image 0x057A2 */
+    uint8_t rows = (uint8_t)(h >> 3);               /* image 0x057A4 */
+    if (y & 7) rows++;                              /* image 0x057AF */
+    if (h & 7) rows++;                              /* image 0x057B5 */
+    do {
+        for (uint8_t c = 0; c < cols; c++)          /* image 0x057BB */
+            page_tile_set((uint16_t)(si + c));
+        si = (uint16_t)(si + PAGE_TILES_W);         /* image 0x057C5 */
+        if (si >= bp) break;                        /* image 0x057C8 */
+    } while (--rows);                               /* image 0x057CC */
+}
+
+/* IMAGE 0x06F01 - one tile, for one pixel of a bomber's debris. bp is the
+ * page x with its sixteen-pixel margin, dx the row; image 0x06EF2 has
+ * already refused anything off the page. */
+static void lemming_mark_particle(int32_t bp, int32_t dx)
+{
+    int32_t col = bp - 0x10;                        /* image 0x06F06 */
+    if (col < 0) col = 0;                           /* image 0x06F0B */
+    page_tile_set((uint32_t)(DG.page_flags + 1 + (col >> 3)
+                             + (dx & ~7) * 5));     /* image 0x06F20 */
+}
+
+/* IMAGE 0x080FD - put the master back where the page was drawn over.
+ *
+ * Byte 0 of the array is REDRAW EVERYTHING (image 0x0811C), and that path,
+ * image 0x0819D, copies the whole window and clears byte 0 alone - the
+ * tiles stay flagged and are copied again next time, which changes nothing.
+ * Otherwise image 0x0813F walks the twenty rows, finds a run of flagged
+ * tiles with `repne scasb` and its end with `repe scasb`, and copies it.
+ *
+ * THE RUN IS ONE TILE LONGER THAN ITS FLAGS whenever it ends on an unflagged
+ * one: image 0x08176's length is the count before the `repe` less the count
+ * after it, plus one, and the `repe` has already consumed the tile that
+ * stopped it. Only a run reaching the end of the row is exact. That is
+ * transcribed with the two counts as the registers had them rather than as
+ * "a run", because it is where a tidier reading would differ.
+ *
+ * Every flag is then cleared at image 0x08153.
+ *
+ * The full copy is 44 bytes a row from ds:0x02, which reaches 16 pixels
+ * either side of the screen and wraps the last two bytes onto the next
+ * page row - all of it outside the 320 the CRTC shows. This copies the 320,
+ * because a canvas-wide page has no next row to wrap onto and nothing reads
+ * the margin back. */
+static void level_page_refresh(const canvas *m, uint8_t *page,
+                               uint16_t view_x)
+{
+    uint8_t *f = &g_page_tiles[DG.page_flags - PAGE_FLAGS_SS];
+    if (f[0]) {                                     /* image 0x0811C */
+        f[0] = 0;                                   /* image 0x0819D */
+        for (uint16_t y = 0; y < LEVEL_PLAY_H; y++) /* image 0x081BA: 0xA0 */
+            memcpy(page + (size_t)y * m->w + view_x,
+                   m->pix + (size_t)y * m->w + view_x, LEVEL_VIEW_W);
+        return;
+    }
+    const uint8_t *t = f + 1;                       /* image 0x08124 */
+    for (uint16_t r = 0; r < PAGE_TILES_H; r++, t += PAGE_TILES_W) {
+        uint16_t di = 0;                            /* into this row */
+        uint16_t cx = PAGE_TILES_W;                 /* image 0x08140 */
+        for (;;) {
+            /* image 0x08143: repne scasb for a 1 */
+            int found = 0;
+            while (cx) { cx--; if (t[di++] == 1) { found = 1; break; } }
+            if (!found) break;                      /* image 0x08145 */
+            uint16_t before = cx;                   /* image 0x08160 */
+            /* image 0x08161: repe scasb while 1 */
+            while (cx) { cx--; if (t[di++] != 1) break; }
+            uint16_t p   = (uint16_t)(PAGE_TILES_W - (before + 1)); /* 0x08170 */
+            uint16_t len = (uint16_t)(before + 1 - cx);   /* image 0x08176 */
+            for (uint16_t y = 0; y < 8; y++) {      /* image 0x08185: al = 8 */
+                size_t at = (size_t)(r * 8u + y) * m->w + view_x + p * 8u;
+                memcpy(page + at, m->pix + at, (size_t)len * 8u);
+            }
+            if (!cx) break;                         /* image 0x08199 */
+        }
+    }
+    memset(f + 1, 0, PAGE_TILES_W * PAGE_TILES_H);  /* image 0x08153 */
+}
+
+/* The page ds:0x1F76 names - the one being drawn. */
+static uint8_t *level_page_drawn(const struct level_frame *A)
+{
+    return A->page[DG.page_draw == 0 ? 0 : 1];      /* image 0x081CC's two */
+}
+
+/* IMAGE 0x00105's TWO EXCHANGES - the pages, and their flag arrays with
+ * them, so ds:0x26 always belongs to the page being drawn. */
+static void level_pages_swap(void)
+{
+    uint16_t t = DG.page_shown;                     /* image 0x00105 */
+    DG.page_shown = DG.page_draw;
+    DG.page_draw = t;
+    t = DG.page_flags_other;                        /* image 0x0010F */
+    DG.page_flags_other = DG.page_flags;
+    DG.page_flags = t;
+}
+
+/* IMAGE 0x0413B - REDRAW EVERYTHING, on both pages. Image 0x0410F does it
+ * after every scroll, from the edge (image 0x04100, image 0x0416A) and from
+ * the minimap (image 0x03FDE), because a page that only refreshes what was
+ * drawn over cannot follow the master sliding underneath it. */
+static void level_pages_redraw_all(void)
+{
+    g_page_tiles[DG.page_flags - PAGE_FLAGS_SS] = 0xFF;         /* 0x0413F */
+    g_page_tiles[DG.page_flags_other - PAGE_FLAGS_SS] = 0xFF;   /* 0x04147 */
+}
+
+/* IMAGE 0x081CC - the pages for a new level. Both are drawn whole from the
+ * master, the first before the swap at image 0x08202 and the second after
+ * it, so the loop's own first swap starts it drawing on page 0 with page
+ * 0x2520 on show. ds:0x2A turns the blitter's marks on for the level.
+ *
+ * Image 0x08216 calls image 0x039CE between the two, the panel's counters;
+ * that is level_panel_build's business and not the pages'. Image 0x08226
+ * points the blitter at the page and image 0x0822B the cursor's two save
+ * buffers at 0xD2C0 and 0xD2F0, which this port's cursor does not need. */
+static void level_pages_init(struct level_frame *A)
+{
+    memset(g_page_tiles, 0, sizeof g_page_tiles);
+    DG.page_draw = 0;                               /* image 0x081CC */
+    DG.page_shown = PAGE_SHOWN_INIT;                /* image 0x081D2 */
+    DG.page_flags = PAGE_FLAGS_SS;                  /* image 0x081DE */
+    DG.page_flags_other = PAGE_FLAGS_SS2;           /* image 0x081E4 */
+    level_pages_redraw_all();                       /* image 0x081EA */
+    DG.page_mark = 0xFF;                            /* image 0x081FA */
+    level_page_refresh(A->from, level_page_drawn(A), A->view_x); /* 0x081FF */
+    level_pages_swap();                             /* image 0x08202 */
+    level_page_refresh(A->from, level_page_drawn(A), A->view_x); /* 0x08219 */
+}
+
 /* Image 0x070A2 onwards - the blit that draws one lemming, which the port
  * splits by state because it indexes MAIN.DAT rather than the pre-shifted
  * store the original blits from. */
@@ -6648,15 +6978,7 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
 
     if (a->alive == 0xFF) return;
 
-    /* IS THIS LEMMING ON SCREEN AT ALL - image 0x07070, and it is a table
-     * lookup rather than a comparison.
-     *
-     * The drawer takes `x + hot_x`, wraps a negative one by the page's 0x160,
-     * takes its BYTE column and refuses the whole sprite unless
-     * ds:0x0EA8[column] holds 1 (image 0x07086). Image 0x04113 clears that
-     * table and image 0x0412B marks exactly 41 bytes of it starting two byte
-     * columns left of the scroll, so the window is
-     * (scroll >> 3) - 2 .. (scroll >> 3) + 38.
+    /* IS THIS LEMMING ON SCREEN AT ALL - see lemming_on_screen.
      *
      * Because it is keyed on the BYTE column, a sprite is refused the moment
      * its left edge crosses into the first unmarked byte - not when its
@@ -6669,14 +6991,7 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
      * that level WORSE, 1,071 frames exact down to 875 and 1,015. The
      * blitter's limit is innocent: measured from a running level it is 352,
      * the whole page. */
-    {
-        int32_t col = (int32_t)a->x + a->hot_x;   /* image 0x07070 */
-        if (col < 0) col += 0x160;                /* image 0x07077 */
-        col >>= 3;                                /* image 0x0707D */
-        int32_t first = (((int32_t)view_x + 16) >> 3) - 2;  /* image 0x04125 */
-        if (col < first || col >= first + 41)     /* image 0x0412B: 0x29 */
-            return;                               /* image 0x0708B */
-    }
+    if (!lemming_on_screen(a, view_x)) return;      /* image 0x0708B */
 
     /* Before the sprite, because the sprite's own branches all return. */
     lem_draw_fuse(dst, dst_w, dst_h, a);
@@ -6745,8 +7060,13 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
                      * so it is not byte-trimmed the way a sprite is. */
                     int32_t sx = px - (int32_t)view_x;
                     if (sx < -16 || sx >= LEVEL_VIEW_W) continue;
-                    if (px < 0 || px >= (int32_t)dst_w) continue;
                     if (py < 0 || py >= (int32_t)dst_h) continue;
+                    /* Marked before the canvas test, which is the port's:
+                     * a particle in the page's margin left of a level
+                     * scrolled hard left is off the canvas and still on the
+                     * page, and image 0x06F01 marks it all the same. */
+                    lemming_mark_particle(sx + 16, py);  /* image 0x06F01 */
+                    if (px < 0 || px >= (int32_t)dst_w) continue;
                     /* image 0x06F5B: the count runs DOWN from eighty. */
                     dst[(size_t)py * dst_w + px] =
                         DEBRIS_INK[(DEBRIS_N - i) & 0x0F];
@@ -7753,10 +8073,26 @@ void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x)
         if (y < 0 || y >= (int32_t)h) continue;
         for (uint16_t c = 0; c < CURSOR_W; c++) {
             int32_t x = sx + c;
-            /* Image 0x07218 writes where the MASK says, not where the ink
-             * is non-zero. See CURSOR_BOX_MASK for where those differ. */
-            if (!mask[r][c] || x < 0 || x >= (int32_t)w) continue;
-            pix[(size_t)y * w + (size_t)x] = shape[r][c];
+            if (x < 0 || x >= (int32_t)w) continue;
+            uint8_t *p = &pix[(size_t)y * w + (size_t)x];
+            /* TWO PASSES, and only the first is masked. Image 0x07218
+             * writes plane 0 through the mask with planes 1..3 cleared
+             * (GC 1 = 0x0E, GC 0 = 0); image 0x074AF then sets the write
+             * function to OR (GC 3 = 0x10), the bit mask to 0xFF and the
+             * map mask to plane 1 alone, and writes plane 1 over the WHOLE
+             * window. So inside the mask the pixel is the ink, and outside
+             * it plane 1 of the ink is ORed into whatever is there.
+             *
+             * That matters exactly where the store has ink the mask does
+             * not cover - CURSOR_BOX's row 13 ends, at (146, 81) and
+             * (159, 81) over the digger in "Just dig!". Over terrain, 14|2
+             * is 14 and nothing shows; once the digger has cleared the
+             * ground under a pointer parked there, 0|2 is a 2 on screen.
+             * This port wrote it off for a long time as the page model's
+             * stale tile, which it is not: the page holds 0, and the 2 is
+             * drawn over it every frame. */
+            if (mask[r][c]) *p = shape[r][c];       /* image 0x07239 */
+            else *p = (uint8_t)(*p | (shape[r][c] & 2));   /* image 0x074B9 */
         }
     }
 }
@@ -7933,6 +8269,7 @@ void level_play_draw(level_anim *st, const level *lv,
                      uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x)
 {
     level_anim_draw(st, lv, obj_sec, obj_len, pix, w, h, 0);
+    level_anim_mark(st, lv, view_x);            /* image 0x0885B */
     if (!lem_sec) return;
     /* THE 'OUT' COUNT IS THE DRAW'S, not the step's. Image 0x03645's loop
      * skips a lemming whose [di+0x26] is 0xFF and counts the rest into
@@ -7954,6 +8291,7 @@ void level_play_draw(level_anim *st, const level *lv,
     for (uint8_t k = 0; k < released && k < LEMMING_MAX; k++) {
         if (lem[k].alive == 0xFF) continue;     /* image 0x03647 */
         out++;                                  /* image 0x0364D */
+        lemming_mark(&lem[k], view_x);          /* image 0x03654 */
         lemming_draw(pix, w, h, view_x, lem_sec, lem_len, &lem[k]);
     }
     level_status_out(out);                      /* image 0x03684 */
@@ -11385,7 +11723,11 @@ int level_frame_tick(void *ctx, uint8_t *pix)
     struct level_frame *a = (struct level_frame *)ctx;
     uint16_t w = a->from->w, h = a->from->h;
 
-    memcpy(pix, a->from->pix, (size_t)w * h);
+    /* IMAGE 0x001A7 - the page being drawn gets the master back where it
+     * was drawn over. It used to get ALL of the master, which is the same
+     * picture except where the master changed under a tile nothing marked;
+     * see level_page_refresh. */
+    level_page_refresh(a->from, pix, a->view_x);    /* image 0x080FD */
     /* IMAGE 0x0019D'S ORDER: STEP, THEN DRAW - image 0x001B3 walks the
      * lemmings and image 0x001BC draws them, on EVERY pass including the
      * first.
@@ -11740,12 +12082,17 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
     if (gfx.count < 1) { dat_free(&gfx); if (err) *err = "no terrain section";
                          return -1; }
 
-    canvas c, terrain;
-    if (canvas_init(&c) != 0 || canvas_init(&terrain) != 0) {
+    /* c and c2 are the two pages, ds:0x1F76 and ds:0x1F78 - see
+     * level_page_refresh. */
+    canvas c, c2, terrain;
+    if (canvas_init(&c) != 0 || canvas_init(&c2) != 0
+            || canvas_init(&terrain) != 0) {
+        canvas_free(&c); canvas_free(&c2);
         dat_free(&gfx); if (err) *err = "out of memory"; return -1;
     }
     if (gfx.count < 2) {
         canvas_free(&c);
+        canvas_free(&c2);
         canvas_free(&terrain);
         dat_free(&gfx);
         if (err) *err = "no sprite section";
@@ -11757,6 +12104,8 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
     int have_main = 0;
     A.lv = *lv; A.sec = gfx.sections[1].data; A.len = gfx.sections[1].size;
     A.from = &terrain;
+    A.page[0] = c.pix;          /* video memory at 0 */
+    A.page[1] = c2.pix;         /* and at 0x2520 */
     A.lem_sec = NULL; A.lem_len = 0; A.released = 0;
     A.pan_sec = NULL; A.pan_len = 0;
     free(A.pan_own); A.pan_own = NULL;
@@ -11856,10 +12205,19 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
 
     if (rc == 0) {
         level_anim_init(A.st, &A.lv, &g);
+        level_pages_init(&A);                   /* image 0x0048C */
         /* One step before the first frame. Measured: without it the exit's
          * flames are one animation frame behind the original's at every
-         * frame checked. */
+         * frame checked. It is image 0x00495's. */
         level_anim_step(A.st, &A.lv);
+        /* IMAGE 0x00498 - the objects, once, on the page being drawn - which
+         * after image 0x081CC's swap is the one at 0x2520, so the loop's
+         * first frame draws on the other. Marked like any other blit, and
+         * that is the only trace it leaves: those tiles go back to the
+         * master the first time this page is drawn into. */
+        level_anim_draw(A.st, &A.lv, A.sec, A.len, level_page_drawn(&A),
+                        A.from->w, A.from->h, 0);
+        level_anim_mark(A.st, &A.lv, A.view_x);
         /* image 0x04836 reads the level's extended graphics set. */
         music_set_level(&A.lv);
         /* IMAGE 0x0049E - ONE PANEL UPDATE BEFORE THE LOOP EVER RUNS, and the
@@ -11896,6 +12254,7 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
         if (have_main) dat_free(&mainf);
     }
     canvas_free(&c);
+    canvas_free(&c2);
     canvas_free(&terrain);
     dat_free(&gfx);
     return rc;
@@ -12142,8 +12501,10 @@ void level_panel_click(struct level_frame *A, int32_t *scroll_x)
 {
     /* Image 0x03EF9 decides what was clicked. */
     level_hit h = level_pointer_hit();
-    if (h.what == LEVEL_HIT_MINIMAP)
+    if (h.what == LEVEL_HIT_MINIMAP) {
         *scroll_x = h.scroll;
+        level_pages_redraw_all();                   /* image 0x03FDE -> 0x0410F */
+    }
     else if (h.what == LEVEL_HIT_PLAY) {
         /* image 0x03F04 LEAVES here - see level_play_click, which is the
          * frame loop's own call at image 0x001AD, not this routine's. */
@@ -12686,7 +13047,8 @@ void level_frame_show(const uint8_t *screen, struct level_frame *A)
      * after, which put the guest's end-of-frame tests in the gap between the
      * two captures, and those include image 0x00213's `dec ds:0x85`. */
     harness_sink_frame(screen, g_lvl_pal_top, A);
-    video_page_flip();                               /* image 0x00105 */
+    level_pages_swap();                              /* image 0x00105 */
+    video_page_flip();                               /* image 0x00142 */
     /* A run with a sink is being measured, not played, and must not spend
      * wall clock waiting for a display that is not there. */
     if (!harness_sink_active()) view_level_pace();   /* image 0x00164 */
@@ -13089,11 +13451,13 @@ static void level_scroll_step(int32_t *sx, int32_t max_x)
         *sx -= LEVEL_SCROLL;                        /* image 0x04157 */
         if ((lem_buttons & 2) && *sx > 0)           /* image 0x0415A */
             *sx -= LEVEL_SCROLL;                    /* image 0x04167 */
+        level_pages_redraw_all();                   /* image 0x04179 -> 0x0410F */
     } else if (lem_mouse_x == 0x148) {              /* image 0x040AC */
         if (*sx >= max_x) return;                   /* image 0x040E8 */
         *sx += LEVEL_SCROLL;                        /* image 0x040ED */
         if ((lem_buttons & 2) && *sx < max_x)       /* image 0x040F0 */
             *sx += LEVEL_SCROLL;                    /* image 0x040FD */
+        level_pages_redraw_all();                   /* image 0x0410F */
     }
 }
 
@@ -13226,7 +13590,8 @@ void level_frame_compose(struct level_frame *A, const canvas *c,
      * indirection this used to go through - a function pointer sdl_io.c held
      * - was the window path reaching back for the composer it had just been
      * handed. It is a direct call now, and there is one frame order. */
-    level_frame_tick(A, c->pix);
+    uint8_t *page = level_page_drawn(A);         /* ds:0x1F76 */
+    level_frame_tick(A, page);
     if (A->panel && A->pan_sec) {
         memset(A->panel, 0, (size_t)PANEL_LINE_W * PANEL_ART_H);
         level_panel_build(A->panel, A->pan_sec, A->pan_len, &A->lv,
@@ -13242,7 +13607,7 @@ void level_frame_compose(struct level_frame *A, const canvas *c,
 
     for (uint16_t y = 0; y < LEVEL_PLAY_H; y++)
         memcpy(screen + (size_t)y * LEVEL_SCREEN_W,
-               c->pix + (size_t)y * c->w + sx, LEVEL_SCREEN_W);
+               page + (size_t)y * c->w + sx, LEVEL_SCREEN_W);
     for (uint16_t y = 0; y < LEVEL_SCREEN_H - LEVEL_PLAY_H; y++) {
         uint8_t *dst = screen + (size_t)(LEVEL_PLAY_H + y) * LEVEL_SCREEN_W;
         if (A->panel && y < PANEL_ART_H)

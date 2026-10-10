@@ -141,7 +141,17 @@ typedef struct {
     /* Is the pointer over a lemming - image 0x03DE8 sets it, image 0x03DAF
      * clears it, image 0x05854 is what it changes. */
     uint8_t  cursor_box;                    /* ds:0x001A */
-    uint8_t  _pad_001B[0x0010];
+    uint8_t  _pad_001B[0x000B];
+    /* THE PAGE PAIR'S TWO FLAG ARRAYS, as offsets into the STACK segment -
+     * image 0x081DE starts them at 0x42B2 and 0x45D3, 0x321 bytes apart, and
+     * image 0x0010F swaps them every frame along with the pages. ds:0x26 is
+     * always the array of the page being DRAWN; see level_page_refresh. */
+    uint16_t page_flags;                    /* ds:0x0026 */
+    uint16_t page_flags_other;              /* ds:0x0028 */
+    /* 0xFF while a blit marks the tiles it covers - image 0x08853 tests it.
+     * Image 0x081FA sets it for the level, image 0x00441 and image 0x002F6
+     * clear it either side. */
+    uint8_t  page_mark;                     /* ds:0x002A */
     uint8_t  paused;                        /* ds:0x002B */
     uint8_t  _pad_002C[0x0014];
     uint8_t  saved_pct;                     /* ds:0x0040 */
@@ -217,7 +227,13 @@ typedef struct {
     uint8_t  fx_drawn;                      /* ds:0x1F72 - the plate's guard */
     uint8_t  _pad_1F73[1];
     uint8_t  cheat;                         /* ds:0x1F74 */
-    uint8_t  _pad_1F75[0x0052];
+    uint8_t  _pad_1F75[1];
+    /* THE TWO PAGES, as offsets into video memory - image 0x081CC starts them
+     * at 0 and 0x2520 and image 0x00105 swaps them every frame. ds:0x1F76 is
+     * the one being drawn, ds:0x1F78 the one the CRTC is showing. */
+    uint16_t page_draw;                     /* ds:0x1F76 */
+    uint16_t page_shown;                    /* ds:0x1F78 */
+    uint8_t  _pad_1F7A[0x004D];
     /* The sixteen watched keys as a HELD mask - image 0x0176E sets a bit and
      * image 0x01776 clears it. Bit 5 is Escape and bit 6 is Enter. */
     uint16_t key_held;                      /* ds:0x1FC7 */
@@ -261,6 +277,8 @@ typedef struct {
 
 ENSURE_DG_AT(mouse_x,      0x0010);  ENSURE_DG_AT(mouse_y,      0x0012);
 ENSURE_DG_AT(buttons,      0x0014);  ENSURE_DG_AT(cursor_box,   0x001A);
+ENSURE_DG_AT(page_flags,   0x0026);  ENSURE_DG_AT(page_flags_other, 0x0028);
+ENSURE_DG_AT(page_mark,    0x002A);
 ENSURE_DG_AT(paused,       0x002B);  ENSURE_DG_AT(saved_pct,    0x0040);
 ENSURE_DG_AT(needed_pct,   0x0041);  ENSURE_DG_AT(released,     0x0043);
 ENSURE_DG_AT(saved,        0x0046);  ENSURE_DG_AT(to_release,   0x0047);
@@ -280,6 +298,7 @@ ENSURE_DG_AT(tune_rot,     0x1F6C);  ENSURE_DG_AT(tune_advance, 0x1F6D);
 ENSURE_DG_AT(level_rating, 0x1F6E);  ENSURE_DG_AT(rating_drawn, 0x1F6F);
 ENSURE_DG_AT(fx_dirty,     0x1F70);  ENSURE_DG_AT(snd_setting,  0x1F71);
 ENSURE_DG_AT(fx_drawn,     0x1F72);  ENSURE_DG_AT(cheat,        0x1F74);
+ENSURE_DG_AT(page_draw,    0x1F76);  ENSURE_DG_AT(page_shown,   0x1F78);
 ENSURE_DG_AT(key_held,     0x1FC7);  ENSURE_DG_AT(tick_pending, 0x1FCD);
 ENSURE_DG_AT(key_last,     0x1FD0);  ENSURE_DG_AT(nuke_tick,    0x1FD3);
 ENSURE_DG_AT(nuke_last,    0x1FD4);  ENSURE_DG_AT(snd_driver,   0x2010);

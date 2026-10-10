@@ -27,25 +27,25 @@ nothing here was looking.
 A skill with no reference recorded is reported as such rather than skipped
 silently.
 
-THE MINER'S 134 FRAMES ARE EXPLAINED - do not chase them again
---------------------------------------------------------------
-The miner scores every RECORD exactly and its screen differs on 134 of 400
-frames by exactly one pixel, at screen (159, 81), where the original holds
-attribute 2 and the port 0. The histogram is [(1, 134), (28, 1)] - one rule
-and the cursor - and it is NOT a fault in the port.
+THE ONE-PIXEL RESIDUES WERE THE CURSOR - read it before chasing one again
+-------------------------------------------------------------------------
+For a long time the floater, the miner and the digger each differed by one
+or two pixels at screen (146, 81) and (159, 81), the original holding 2 and
+the port 0, and this header explained it as the original's display page
+keeping a stale tile. That was wrong, and it was disproved by transcribing
+the page (level_page_refresh in game.c): the port's page then held 0 there
+exactly as the original's master did, and the 2 remained.
 
-The original's master canvas holds attribute 0 there on every frame sampled
-(all four planes, image 0x05DEA's 0x4A40); the value is only ever on the
-display PAGE. A lemming's blit takes di from x >> 3, so its window starts at
-x & ~7 and spans 24 columns, and image 0x07178 saves and restores that
-24 x 16 block UNMASKED - three columns of history either side of every
-lemming. At frame 190 the pixel is the last column of the window belonging to
-the lemming at record x 789 (781 & ~7 = 776, 776 + 23 = 799).
+The 2 is DRAWN, every frame, by the cursor. Image 0x07218 writes plane 0
+through the mask, and image 0x074AF then ORs plane 1 over the whole window
+unmasked - and CURSOR_BOX's corner pixels on row 13 have ink 2 outside the
+mask. The scripts park the pointer on the lemming they clicked, so over
+terrain 14|2 is 14 and nothing shows, and once a skill has cleared the
+ground underneath, 0|2 is a 2. With the OR in level_cursor_draw all three
+are exact.
 
-The port composes each frame from the master plus the sprites, so it holds
-the honest 0. Reproducing the 2 means transcribing the page model, not
-adjusting a sprite, a mask or an offset. STATUS.md carries the whole account
-and the six hypotheses that were killed first.
+The same lesson as the rest of this file: an explanation that fits every
+measurement is still a reading, and the routine settles it.
 """
 import json
 import os
@@ -252,15 +252,6 @@ def main():
             continue
         print(f"    {name:9s} record {bad} of {shared} frames differ")
         print(f"    {'':9s} screen {pic or 'NOT SCORED'}")
-        # SAY IT BESIDE THE NUMBER, not only in this file's header. The
-        # miner's screen residue is understood - the original's page keeps
-        # three columns of history either side of every lemming, image
-        # 0x07178's unmasked restore - and a reader who sees "exact on 265"
-        # with nothing next to it has an unexplained regression on their
-        # hands and will chase the six hypotheses again.
-        if name == "miner":
-            print(f"    {'':9s}        the shortfall is the original's PAGE "
-                  "ghost, not the port: see this file's header")
         worst = max(worst, 1 if bad else 0)
     for name, ref, script, number in UNTOUCHED:
         d = os.path.join(ROOT, "out", ref)
