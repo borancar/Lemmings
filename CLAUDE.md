@@ -87,8 +87,17 @@ The executable is PKLITE-packed *and* the protection decrypts itself one
 instruction at a time under the trap flag, re-encrypting behind itself. Neither
 the file on disk nor a plain memory dump is the program.
 
-**The readable image is already built and committed.** Work from it; there is
-no need to decrypt anything again:
+**The readable image is built once and kept locally - it is not committed.**
+It and the records it is merged from are the game's own code, so they are
+gitignored along with `lemming1.pc/`. On a fresh checkout, with the game in
+`lemming1.pc/`, build it once:
+
+```sh
+uv run python tools/extract_image.py                 # image/vgalemmi.img
+uv run python tools/decrypt_image.py --record        # records + decrypted image
+```
+
+After that, work from it; there is no need to decrypt anything again:
 
 ```sh
 uv run python tools/disasm.py image/vgalemmi.decrypted.img 0xdff -n 40
