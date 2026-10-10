@@ -1087,6 +1087,141 @@ int render_terrain(canvas *c, const level *lv, const ground *g,
     return 0;
 }
 
+/* ======================================================================
+ * THE FOUR VGASPEC LEVELS - one whole picture as the terrain.
+ *
+ * Image 0x03742 tests ds:0x0FE8, the header's extended graphics set, and a
+ * level that has one never reaches the piece loop at image 0x0374F: image
+ * 0x03749 calls image 0x01A7B and jumps straight to image 0x0376A, where the
+ * ordinary composition also ends. Image 0x0368E has already cleared the
+ * master by then, so the picture goes onto an empty 1664 x 164.
+ *
+ * Its source is section 0 of vgaspecN.dat, which image 0x01A5A unpacked into
+ * ds:0x1FF4 at +0x10 - so image 0x01A7B's `si = 0x10` is the section's first
+ * byte. The section is
+ *
+ *     +0x00  eight VGA colours, three bytes each
+ *     +0x18  eight EGA attributes          +0x20  eight more
+ *     +0x28  four strips, each run-length coded by image 0x01B42
+ *
+ * and all four files here are exactly that: four strips of 14,400 bytes
+ * apiece, and nothing left over in any of them.
+ * ====================================================================== */
+#define SPEC_PAL        0x00    /* image 0x01A83: si = 0x10, less the 0x10 */
+#define SPEC_DATA       0x28    /* image 0x01AC5: si = 0x38, less the 0x10 */
+#define SPEC_STRIPS     4       /* images 0x08238, 0x08243, 0x08249, 0x0824F */
+#define SPEC_ROWS       40      /* image 0x082C2: ch = 0x28 */
+#define SPEC_ROW_BYTES  120     /* image 0x082C2: cl = 0x78 - 960 pixels */
+#define SPEC_PLANE      (SPEC_ROWS * SPEC_ROW_BYTES)    /* 0x12C0, image 0x08262 */
+#define SPEC_PLANES     3       /* image 0x08262 and 0x08267: three ORed */
+#define SPEC_AT_X       (0x28 * 8 - 16)  /* image 0x0827D: byte 0x28 of the
+                                         * master, less the canvas's sixteen */
+
+/* IMAGE 0x01B42 - the strips' run-length code. A byte of 0x80 ends the
+ * strip; below it, n copies the next n + 1 bytes; above it, the next byte is
+ * repeated 257 - n times (`neg al / inc al`). Image 0x01B53's segment step
+ * every 64K is the 8086's way of writing more than one segment and changes
+ * no byte. Returns the bytes written, or -1 if the source runs out or the
+ * output would overflow - the original checks neither. */
+static int32_t vgaspec_unpack(const uint8_t *src, uint32_t len, uint32_t *pos,
+                              uint8_t *out, uint32_t cap)
+{
+    uint32_t n = 0;
+    for (;;) {
+        if (*pos >= len) return -1;
+        uint8_t b = src[(*pos)++];                  /* image 0x01B42 */
+        if (b == 0x80) return (int32_t)n;           /* image 0x01B45 */
+        if (b < 0x80) {                             /* image 0x01B62 */
+            uint16_t k = (uint16_t)(b + 1);
+            if (*pos + k > len || n + k > cap) return -1;
+            memcpy(out + n, src + *pos, k);         /* image 0x01B68 */
+            *pos += k;
+            n += k;
+        } else {                                    /* image 0x01B49 */
+            uint16_t k = (uint16_t)(257 - b);
+            if (*pos >= len || n + k > cap) return -1;
+            memset(out + n, src[(*pos)++], k);      /* image 0x01B51 */
+            n += k;
+        }
+    }
+}
+
+/* IMAGE 0x01A7B - the palettes, then the four strips.
+ *
+ * THE PALETTES. Image 0x01A8D copies the eight VGA colours over ds:0x1F23,
+ * the level's custom eight - palette entries 8..15 here - and image 0x01A90
+ * then writes 1F 1F 00 over the first of them. Image 0x01AA4 copies the same
+ * eight, unaltered, to ds:0x1F53, which is ds:0x1F3B's entries 8..15: the
+ * briefing's preview palette. Entry 7 follows entry 8 as it always does,
+ * because image 0x053A1 copies custom[0] there when the palette goes up. The
+ * EGA attributes at image 0x01AB0 and image 0x01ABA are the EGA path's, and
+ * that half of the program is a non-goal - see image 0x05425.
+ *
+ * THE STRIPS. Each goes through image 0x01B42 into ds:0x1FF0 at 0x8000 and
+ * then to one of four entries that differ only in bx, the strip's first row
+ * - 0, 0x28, 0x50, 0x78 - before image 0x08252. That ORs the three planes
+ * into a fourth at image 0x0825F, and writes the strip into the master at
+ * row bx, byte 0x28, 120 bytes by 40 rows: plane 0 at image 0x082C2 with
+ * Set/Reset clearing planes 1..3, then planes 1 and 2 through the map mask,
+ * then the OR as plane 3. So a pixel is its three bits as a colour 0..7,
+ * with the solidity bit set wherever that colour is not 0 - attribute
+ * `c ? 8 | c : 0`, and every pixel of the 960 x 160 is written.
+ *
+ * Image 0x01B19's reload of vgagrN.dat is the OBJECTS - the strips used
+ * ds:0x1FF0 as scratch, and that is where the objects' graphics live. The
+ * caller loads that file for them; nothing here needs it. */
+int render_vgaspec(canvas *c, ground *g, const uint8_t *sec, uint32_t len,
+                   const char **err)
+{
+    if (len < SPEC_DATA) {
+        if (err) *err = "VGASPEC section shorter than its palettes";
+        return -1;
+    }
+    for (uint8_t i = 0; i < 8; i++) {
+        lem_rgb v = { widen6(sec[SPEC_PAL + i * 3 + 0]),
+                      widen6(sec[SPEC_PAL + i * 3 + 1]),
+                      widen6(sec[SPEC_PAL + i * 3 + 2]) };
+        g->palette[8 + i] = v;                      /* image 0x01A8D */
+        g->preview[i] = v;                          /* image 0x01AA4 */
+    }
+    g->palette[8].r = widen6(0x1F);                 /* image 0x01A90 */
+    g->palette[8].g = widen6(0x1F);
+    g->palette[8].b = widen6(0x00);
+    g->palette[7] = g->palette[8];                  /* image 0x053AF */
+
+    static uint8_t strip[SPEC_PLANES * SPEC_PLANE];
+    uint32_t pos = SPEC_DATA;
+    for (uint8_t s = 0; s < SPEC_STRIPS; s++) {
+        int32_t got = vgaspec_unpack(sec, len, &pos, strip, sizeof strip);
+        if (got != (int32_t)sizeof strip) {
+            if (err) *err = "VGASPEC strip is not three planes of 40 x 120";
+            return -1;
+        }
+        uint16_t y0 = (uint16_t)(s * SPEC_ROWS);    /* image 0x08272 */
+        for (uint16_t r = 0; r < SPEC_ROWS; r++) {
+            uint16_t y = (uint16_t)(y0 + r);
+            if (y >= c->h) break;
+            for (uint16_t b = 0; b < SPEC_ROW_BYTES; b++) {
+                uint32_t at = (uint32_t)r * SPEC_ROW_BYTES + b;
+                uint8_t p0 = strip[at];
+                uint8_t p1 = strip[SPEC_PLANE + at];
+                uint8_t p2 = strip[2 * SPEC_PLANE + at];
+                for (uint8_t k = 0; k < 8; k++) {
+                    uint16_t x = (uint16_t)(SPEC_AT_X + b * 8 + k);
+                    if (x >= c->w) break;
+                    uint8_t m = (uint8_t)(0x80u >> k);
+                    uint8_t v = (uint8_t)(((p0 & m) ? 1 : 0)
+                                        | ((p1 & m) ? 2 : 0)
+                                        | ((p2 & m) ? 4 : 0));
+                    c->pix[(size_t)y * c->w + x] =
+                        v ? (uint8_t)(v | 8) : 0;   /* image 0x0825F */
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 
 /* ======================================================================
  * THE LEVEL'S CONTROL PANEL - its font and its status line.
@@ -10071,6 +10206,17 @@ int level_graphics_names(const level *lv, char *gname, size_t gn,
     return 1;
 }
 
+/* Image 0x01A1B writes the graphics set's digit into ds:0x2534 before the
+ * branch at image 0x01A2B, so the name is the same on both paths - and image
+ * 0x01B19 loads it again at the end of a VGASPEC build, for the objects. */
+int level_objects_name(const level *lv, char *name, size_t n)
+{
+    if (n < sizeof(T_VGAGR)) return -1;
+    memcpy(name, T_VGAGR, sizeof(T_VGAGR));
+    name[VGAGR_DIGIT] = (char)('0' + (uint8_t)(lv->graphics_set & 0xFF));
+    return 0;
+}
+
 /* The level briefing, which the original shows between the menu and the level.
  *
  * The TEMPLATES are transcribed from the executable, with the addresses they
@@ -10386,22 +10532,41 @@ static char *put_num2(char *dst, uint8_t v);
  * reaches the same picture - the briefing scores 0 of 224,000 against the
  * original's own screen - so what is owed here is the ROUTE, not the result.
  */
-static void draw_preview(const char *dir, const level *lv, const ground *g,
+static void draw_preview(const char *dir, const level *lv, ground *g,
                          uint8_t *dst)
 {
     char path[1024];
-    dat_file gfx;
+    dat_file gfx, spec = { NULL, 0 };
     const char *err = NULL;
-    snprintf(path, sizeof(path), "%s/vgagr%u.dat", dir,
-             (unsigned)(lv->graphics_set & 0x0F));
-    if (dat_load(path, &gfx, &err) != 0)
+    char gname[16], xname[16];
+    /* Image 0x0394F takes the same branch as the level, image 0x03959 to
+     * image 0x01A7B for a VGASPEC one - which also writes its colours into
+     * the preview palette, so the caller reads g->preview after this. */
+    int special = level_graphics_names(lv, gname, sizeof gname,
+                                       xname, sizeof xname);
+    if (special < 0) return;
+    if (special) {
+        snprintf(path, sizeof(path), "%s/%s", dir, xname);
+        if (dat_load(path, &spec, &err) != 0) return;
+        if (spec.count < 1) { dat_free(&spec); return; }
+    }
+    level_objects_name(lv, xname, sizeof xname);
+    snprintf(path, sizeof(path), "%s/%s", dir, xname);
+    if (dat_load(path, &gfx, &err) != 0) {
+        dat_free(&spec);
         return;                       /* no preview is better than a wrong one */
-    if (gfx.count < 1) { dat_free(&gfx); return; }
+    }
+    if (gfx.count < 1) { dat_free(&gfx); dat_free(&spec); return; }
 
     canvas c;
-    if (canvas_init(&c) != 0) { dat_free(&gfx); return; }
-    if (render_terrain(&c, lv, g, gfx.sections[0].data,
-                       gfx.sections[0].size, &err) == 0) {
+    if (canvas_init(&c) != 0) { dat_free(&gfx); dat_free(&spec); return; }
+    int drawn = special
+        ? render_vgaspec(&c, g, spec.sections[0].data, spec.sections[0].size,
+                         &err)
+        : render_terrain(&c, lv, g, gfx.sections[0].data,
+                         gfx.sections[0].size, &err);
+    dat_free(&spec);
+    if (drawn == 0) {
         /* THE OBJECTS ARE IN THE PREVIEW - the entrance and the exit.
          *
          * This file said "terrain only" for one commit, on the strength of an
@@ -10633,13 +10798,20 @@ int menu_briefing_screen(const char *dir, const level *lv, uint8_t rating,
                                  xname, sizeof xname) < 0) gname[0] = '\0';
         snprintf(gpath, sizeof(gpath), "%s/%s", dir, gname);
         if (ground_load(gpath, &g, &gerr) == 0) {
-            for (uint8_t i = 8; i < 16; i++)
-                m->palette[i] = g.preview[i - 8];
             /* Image 0x0394F then image 0x07EB2: the second composition
              * path lays the level down WITH its objects - which is image
              * 0x03981, render_objects - and the packer takes it 4:1 into
-             * the visible page. draw_preview carries both. */
+             * the visible page. draw_preview carries both. It runs FIRST
+             * because a VGASPEC level's image 0x01A7B rewrites the preview
+             * eight, and the original's briefing shows the rewritten ones:
+             * MEASURED on Fun 22, DAC 56..63 hold vgaspec3.dat's eight
+             * unaltered and the whole screen is 0 of 224,000 differing.
+             * How they reach the DAC is not read - image 0x045EF's fade
+             * starts before image 0x0394F composes, so it is not simply
+             * that the fade comes later. */
             draw_preview(dir, lv, &g, m->pix);   /* image 0x07EB2 */
+            for (uint8_t i = 8; i < 16; i++)
+                m->palette[i] = g.preview[i - 8];
         }
     }
 
@@ -12085,16 +12257,21 @@ int level_show_results(const char *dir, uint8_t level_no, const char *code,
  * The port's level_status_reset carries image 0x036C7, image 0x036D0 and the
  * skills at image 0x036E5, because it calls level_skills_reset itself. */
 static int level_begin(canvas *terrain, struct level_frame *A,
-                       const ground *g, const uint8_t *sec, uint32_t len,
+                       ground *g, const uint8_t *sec, uint32_t len,
+                       const uint8_t *spec, uint32_t spec_len,
                        const char **err)
 {
     level_release_reset(&A->lv);      /* image 0x036BC: ds:0x64 and ds:0x67 */
     level_status_reset(&A->lv);       /* image 0x036C7 .. image 0x0372A */
     A->view_x = A->lv.start_x;        /* image 0x0372D, less the sixteen */
-    /* image 0x0374F, and image 0x0368E's clear is render_terrain's own first
-     * act. A VGASPEC level (image 0x03742) is refused before this is reached
-     * - see level_graphics_names. */
-    if (render_terrain(terrain, &A->lv, g, sec, len, err) != 0) return -1;
+    /* image 0x03742: ds:0x0FE8 sends a VGASPEC level to image 0x01A7B and the
+     * rest to image 0x0374F's piece loop; image 0x0368E's clear is the
+     * canvas's own, which starts empty. */
+    if (spec) {
+        if (render_vgaspec(terrain, g, spec, spec_len, err) != 0) return -1;
+    } else if (render_terrain(terrain, &A->lv, g, sec, len, err) != 0) {
+        return -1;
+    }
     minimap_build(terrain->pix, terrain->w, terrain->h);   /* image 0x03779 */
     return 0;
 }
@@ -12186,18 +12363,21 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
     if (special < 0) { if (err) *err = "level names too long"; return -1; }
     snprintf(path, sizeof(path), "%s/%s", dir, gname);
     if (ground_load(path, &g, err) != 0) return -1;
+    /* A VGASPEC level's terrain is section 0 of vgaspecN.dat, image 0x01A5A,
+     * and its objects are vgagrN.dat's, which image 0x01B19 loads back once
+     * the picture is down - so gfx is vgagrN.dat on both paths, and only an
+     * ordinary level draws its section 0. */
+    dat_file spec = { NULL, 0 };
     if (special) {
-        /* NOT TRANSCRIBED - the VGASPEC terrain build, image 0x03742. The
-         * name is right now and the file exists; what is missing is the
-         * routine that lays one whole picture down as the terrain instead of
-         * composing pieces. Refusing here is deliberate: loading vgagr0.dat
-         * for these four is what the port did before, and it renders the
-         * wrong graphics set without saying so. */
-        if (err) *err = "VGASPEC level - image 0x03742 not transcribed";
-        return -1;
+        snprintf(path, sizeof(path), "%s/%s", dir, xname);
+        if (dat_load(path, &spec, err) != 0) return -1;
+        if (spec.count < 1) { dat_free(&spec);
+                              if (err) *err = "no VGASPEC section";
+                              return -1; }
+        level_objects_name(lv, xname, sizeof xname);    /* image 0x01B19 */
     }
     snprintf(path, sizeof(path), "%s/%s", dir, xname);
-    if (dat_load(path, &gfx, err) != 0) return -1;
+    if (dat_load(path, &gfx, err) != 0) { dat_free(&spec); return -1; }
     if (gfx.count < 1) { dat_free(&gfx); if (err) *err = "no terrain section";
                          return -1; }
 
@@ -12311,7 +12491,10 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
 
     /* IMAGE 0x0046B - the record into the state, and then the terrain. */
     rc = level_begin(&terrain, &A, &g, gfx.sections[0].data,
-                     gfx.sections[0].size, err);
+                     gfx.sections[0].size,
+                     spec.count ? spec.sections[0].data : NULL,
+                     spec.count ? spec.sections[0].size : 0, err);
+    dat_free(&spec);
 
     /* IMAGE 0x0046E puts the pointer at (0x96, 0x64) through INT 33h AX=4,
      * and only when ds:0x1F73 is not 0xFF - which is to say only when the

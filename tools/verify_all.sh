@@ -7,7 +7,7 @@
 # rather than something they have to take from a commit message.
 #
 #   bash tools/verify_all.sh            # the screens, the proof, 120 frames
-#   bash tools/verify_all.sh --units    # ...and the eight per-routine checks
+#   bash tools/verify_all.sh --units    # ...the per-routine checks and VGASPEC
 #   bash tools/verify_all.sh --full     # ...and all 5,100 - the whole timer
 #
 # --full records the reference itself, which takes about twenty minutes of
@@ -334,6 +334,13 @@ if [ $UNITS = 1 ]; then
             | grep -vE "^pygame|^ *\[vga\]" | sed "s/^/  /"
         check_pipe "tools/$u.py"
     done
+    # The four VGASPEC levels, whose terrain is image 0x01A7B's one picture
+    # rather than pieces: the master at image 0x0376A, the briefing's bitmap
+    # at image 0x07EB2 and the level palette, each plate driven in the
+    # original. About ten minutes a plate, which is why it is here.
+    uv run python tools/verify_vgaspec.py 2>&1 \
+        | grep -vE "^pygame|^ *\[vga\]" | sed "s/^/  /"
+    check_pipe "tools/verify_vgaspec.py"
     # verify_data.py takes a MEMORY DUMP, not nothing: it compares the bytes
     # the original has in RAM after loading against what the port makes of the
     # same file. Run bare it exits 2 on a missing argument, and check_pipe

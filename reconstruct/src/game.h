@@ -310,6 +310,10 @@ int level_locate(char *file, size_t file_len, uint32_t *section);
  * (0). A VGASPEC file holds ONE section, not two - image 0x01A5A. */
 int level_graphics_names(const level *lv, char *gname, size_t gn,
                          char *gfx, size_t xn);
+/* image 0x01A1B / 0x01B19: vgagrN.dat for the level's graphics set - the
+ * terrain pieces for an ordinary level, and only the OBJECTS for a VGASPEC
+ * one, whose terrain is vgaspecN.dat. */
+int level_objects_name(const level *lv, char *name, size_t n);
 
 /* The 15 header fields, flat and in the order the original stores them, for
  * tools/verify_level.py. Transcribed from image 0x036B6. */
@@ -419,6 +423,11 @@ void canvas_free(canvas *c);
  * drawing order and the "do not overwrite" and "erase" flags depend on it. */
 int render_terrain(canvas *c, const level *lv, const ground *g,
                    const uint8_t *terrain_sec, uint32_t terrain_len,
+                   const char **err);
+/* image 0x01A7B - a VGASPEC level's terrain: one 960 x 160 picture from
+ * section 0 of vgaspecN.dat, and the palettes that come with it, which it
+ * writes over the ground set's custom and preview eight. */
+int render_vgaspec(canvas *c, ground *g, const uint8_t *sec, uint32_t len,
                    const char **err);
 
 /* The level's control panel: its own three-plane font, at the tail of

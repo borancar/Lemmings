@@ -231,15 +231,34 @@ static int render_level(const char *data, const char *file, uint32_t which,
         fprintf(stderr, "  wrote the port's trigger map to %s\n", g_triggers_out);
     }
 
-    snprintf(path, sizeof(path), "%s/vgagr%u.dat", data, lv.graphics_set);
+    /* The same two files level_show loads: vgagrN.dat always, for the
+     * pieces or only the objects, and vgaspecN.dat as well for one of the
+     * four VGASPEC levels, whose terrain image 0x01A7B draws instead. */
+    char gname[16], xname[16];
+    int special = level_graphics_names(&lv, gname, sizeof gname,
+                                       xname, sizeof xname);
+    dat_file spec = { NULL, 0 };
+    if (special > 0) {
+        snprintf(path, sizeof(path), "%s/%s", data, xname);
+        if (dat_load(path, &spec, &err) != 0 || spec.count < 1) {
+            fprintf(stderr, "%s: %s\n", path, err ? err : "no section");
+            dat_free(&spec);
+            return 1;
+        }
+        printf("  VGASPEC level: terrain from %s\n", xname);
+    }
+    level_objects_name(&lv, xname, sizeof xname);
+    snprintf(path, sizeof(path), "%s/%s", data, xname);
     dat_file gfx;
     if (dat_load(path, &gfx, &err) != 0) {
         fprintf(stderr, "%s: %s\n", path, err);
+        dat_free(&spec);
         return 1;
     }
     if (gfx.count < 1) {
         fprintf(stderr, "%s: no terrain section\n", path);
         dat_free(&gfx);
+        dat_free(&spec);
         return 1;
     }
 
@@ -247,10 +266,16 @@ static int render_level(const char *data, const char *file, uint32_t which,
     if (canvas_init(&c) != 0) {
         fprintf(stderr, "out of memory\n");
         dat_free(&gfx);
+        dat_free(&spec);
         return 1;
     }
-    if (render_terrain(&c, &lv, &g, gfx.sections[0].data,
-                       gfx.sections[0].size, &err) != 0) {
+    int drawn = special > 0
+        ? render_vgaspec(&c, &g, spec.sections[0].data,
+                         spec.sections[0].size, &err)
+        : render_terrain(&c, &lv, &g, gfx.sections[0].data,
+                         gfx.sections[0].size, &err);
+    dat_free(&spec);
+    if (drawn != 0) {
         fprintf(stderr, "render: %s\n", err);
         canvas_free(&c);
         dat_free(&gfx);

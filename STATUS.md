@@ -5182,35 +5182,50 @@ has nothing to seed with here.
   is unread; it is recorded because a loop read once should not have to be
   read again to find it.
 
-- **THE FOUR VGASPEC LEVELS DO NOT LOAD, and until now they loaded the WRONG
-  FILE without saying so.** Transcribing image `0x0197D`'s tail
-  (`level_graphics_names`, image `0x01A00..0x01A7A`) turned up a branch nobody
-  had read: image `0x01A26` tests the level header's +0x1C, and when it is
-  non-zero the graphics come from `vgaspecN.dat` rather than `vgagrN.dat` -
-  with `add al, 0x2F` at image `0x01A5E`, because the extended set is 1-based.
+- **THE FOUR VGASPEC LEVELS LOAD, and are exact against the original.**
+  Image `0x03742` tests the level header's extended graphics set
+  (ds:0x0FE8, the header's +0x1C) and sends a non-zero one to image
+  `0x01A7B` instead of the piece loop. `render_vgaspec` is that routine, with
+  its run-length decoder (image `0x01B42`) and the strip writer it calls four
+  times (images `0x08238`/`0x08243`/`0x08249`/`0x0824F` into `0x08252`):
 
-  The port built `vgagr%u.dat` for every level, so all four loaded graphics
-  set 0 and rendered the wrong pieces. Scanning all eighty sections for a
-  non-zero +0x1C finds exactly four, which is the same four `music_choose`'s
-  by-number table has entries for:
+  - section 0 of `vgaspecN.dat` is eight VGA colours, sixteen EGA bytes, then
+    four strips of 960 x 40, each three planes; all four files decode to
+    exactly four strips of 14,400 bytes with nothing left over
+  - a strip goes into the master at byte 0x28 (canvas x 304) as its three
+    colour planes, with their OR as the solidity plane - attribute
+    `c ? 8 | c : 0`
+  - the eight colours replace the level's custom eight with the first forced
+    to `1F 1F 00` (image `0x01A90`), and replace the preview eight unaltered
+  - the OBJECTS still come from `vgagrN.dat`, which image `0x01B19` loads
+    back once the picture is down
 
-  | | | |
-  | --- | --- | --- |
-  | `level000.dat` §1 | ext 1 | `What an AWESOME level` |
-  | `level000.dat` §2 | ext 2 | `MENACING !!` |
-  | `level000.dat` §4 | ext 3 | `A BeastII of a level` |
-  | `level001.dat` §3 | ext 4 | `A Beast of a level` |
+  | `ds:0x1F6B` | plate | lemdev | file | composed | with objects | screens | palette |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 21 | Fun 22 | `level001.dat --level 4` | vgaspec3 | 0 of 263,680 | 0 | 299 of 299 | 9 of 9 |
+  | 43 | Tricky 14 | `level000.dat --level 3` | vgaspec1 | 0 | 0 | 298 of 299 | 9 of 9 |
+  | 74 | Taxing 15 | `level000.dat --level 2` | vgaspec0 | 0 | 0 | 299 of 299 | 9 of 9 |
+  | 111 | Mayhem 22 | `level000.dat --level 5` | vgaspec2 | 0 | 0 | 298 of 299 | 9 of 9 |
 
-  The NAME is right now and `level_show` refuses these four with
-  `VGASPEC level - image 0x03742 not transcribed` rather than loading the
-  wrong graphics quietly. **What is owed is image `0x03742`**, the terrain
-  build that lays one whole picture down instead of composing pieces - image
-  `0x01A5A` reads section 0 alone, where the ordinary path reads two.
+  "Composed" is the master at image `0x0376A`; "with objects" the bitmap
+  image `0x07EB2` packs for the briefing, against `--baked`; "screens" the
+  game's own screen frame by frame (`compare_screen.py`), play area and
+  panel; "palette" DAC 7 and 16..23 against the port's sixteen. The one
+  inexact frame on Tricky 14 and Mayhem 22 is frame 15, 56 pixels in two
+  clusters on the cursor's old and new positions: the guest's pointer moves
+  at frame 14 in those two recordings and 16 in the others, and the parked
+  script lands it a frame apart. `tools/verify_vgaspec.py` re-runs the
+  composed, with-objects and palette columns.
 
-  Refusing is deliberate and it is a REGRESSION IN WHAT RUNS, traded for a
-  gain in what is true: this repository's own rule is that a plausible wrong
-  answer costs more than a loud failure, and nothing here could see the fault
-  because no check ever opened one of these four.
+  The BRIEFING, measured on Fun 22: the original shows the VGASPEC file's
+  eight unaltered at DAC 56..63, and the port's whole briefing screen is 0 of
+  224,000 differing, preview and palette included. How those eight reach the
+  DAC is not read - image `0x045EF`'s fade starts before image `0x0394F`
+  composes - and `verify_vgaspec.py` does not re-run this one.
+
+  Before this the port refused these four with `VGASPEC level - image
+  0x03742 not transcribed`, and before THAT it loaded `vgagr0.dat` for them
+  and drew the wrong graphics set without saying so.
 
 - **`verify_objects.py` says nothing about image `0x09709`, and there is a
   level that would fix it.** Its own output reports the gap honestly -
