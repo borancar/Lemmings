@@ -26,7 +26,7 @@ reconstruct/libgame.so
 
 # The original game. Not ours to redistribute; the tools read it locally.
 lemming1.pc/
-# The unpacked and decrypted game executable, and the instruction records it
-# is merged from - the game's own code. Rebuilt locally by tools/decrypt_image.py.
-image/*.img
-image/rec/
+# The unpacked and decrypted game executable, the instruction records it is
+# merged from, and its code map - built locally by tools/extract_image.py and
+# tools/decrypt_image.py, never committed.
+image/

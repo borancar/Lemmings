@@ -88,13 +88,14 @@ instruction at a time under the trap flag, re-encrypting behind itself. Neither
 the file on disk nor a plain memory dump is the program.
 
 **The readable image is built once and kept locally - it is not committed.**
-It and the records it is merged from are the game's own code, so they are
-gitignored along with `lemming1.pc/`. On a fresh checkout, with the game in
-`lemming1.pc/`, build it once:
+It and the records it is merged from are the game's own code, so the whole
+of `image/` is gitignored along with `lemming1.pc/`. On a fresh checkout, with
+the game in `lemming1.pc/`, build it once:
 
 ```sh
 uv run python tools/extract_image.py                 # image/vgalemmi.img
 uv run python tools/decrypt_image.py --record        # records + decrypted image
+uv run python tools/codemap.py                       # image/codemap.json
 ```
 
 After that, work from it; there is no need to decrypt anything again:
@@ -105,7 +106,8 @@ uv run python tools/disasm.py image/vgalemmi.decrypted.img 0xdff -n 40
 
 `image/vgalemmi.decrypted.img` is the unpacked image with the protected code
 written back in the clear - 651 bytes across nine spans, which is the whole of
-what the protection was hiding. See [image/README.md](image/README.md).
+what the protection was hiding. `tools/decrypt_image.py`'s header says how
+it is made.
 
 To rebuild it, or to grow it after reaching a new screen:
 
