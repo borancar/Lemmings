@@ -26,8 +26,10 @@
  * neither does it come here.
  * ====================================================================== */
 
+#define _POSIX_C_SOURCE 200809L         /* nanosleep, for the follow wait */
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 
 #include "game.h"
@@ -61,21 +63,17 @@
 script_act harness_script[SCRIPT_MAX];
 uint16_t   harness_script_n;
 
-void harness_script_load(const char *path)
+/* One line of a script into the next free slot. 1 if it was an action. */
+static int script_parse_line(const char *line)
 {
-    FILE *f = fopen(path, "r");
-    if (!f) {
-        fprintf(stderr, "input script %s: cannot open it\n", path);
-        return;
-    }
-    char line[128];
-    while (harness_script_n < SCRIPT_MAX && fgets(line, sizeof line, f)) {
-        char verb[16];
-        long fr;
-        int32_t x = 0, y = 0;
-        if (line[0] == '#' || line[0] == '\n') continue;
-        int got = sscanf(line, "%ld %15s %d %d", &fr, verb, &x, &y);
-        if (got < 2) continue;
+    char verb[16];
+    long fr;
+    int32_t x = 0, y = 0;
+    if (harness_script_n >= SCRIPT_MAX) return 0;
+    if (line[0] == '#' || line[0] == '\n') return 0;
+    int got = sscanf(line, "%ld %15s %d %d", &fr, verb, &x, &y);
+    if (got < 2) return 0;
+    {
         script_act *a = &harness_script[harness_script_n];
         a->frame = fr; a->x = x; a->y = y;
         if (!strcmp(verb, "move") && got == 4) a->what = SCRIPT_MOVE;
@@ -89,11 +87,66 @@ void harness_script_load(const char *path)
          * what they would have held. */
         else if (!strcmp(verb, "key")) a->what = SCRIPT_KEY;
         else if (!strcmp(verb, "keyup")) a->what = SCRIPT_KEYUP;
-        else continue;
+        else return 0;
         harness_script_n++;
     }
+    return 1;
+}
+
+void harness_script_load(const char *path)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        fprintf(stderr, "input script %s: cannot open it\n", path);
+        return;
+    }
+    char line[128];
+    while (harness_script_n < SCRIPT_MAX && fgets(line, sizeof line, f))
+        script_parse_line(line);
     fclose(f);
     fprintf(stderr, "  [script] %u actions from %s\n", harness_script_n, path);
+}
+
+/* FOLLOWING A SCRIPT THAT IS STILL BEING WRITTEN - LEM_INPUT_FOLLOW=1.
+ *
+ * tools/lockstep.py has a person play the ORIGINAL and writes what its frame
+ * loop read, frame by frame, into the same format this replays. After the
+ * lines for frame N it writes `# frame N`, and that comment is the promise
+ * that nothing more is coming for N - so the port, about to run frame N,
+ * waits for it rather than running ahead of a player it has not heard from.
+ * A comment because every other reader of the format skips comments, so the
+ * file the run leaves behind replays like any recording.
+ *
+ * Read a character at a time and kept across calls, because the writer is
+ * another process and the end of the file can fall in the middle of a line. */
+static FILE *g_follow;
+static long  g_follow_done = -1;            /* the last `# frame N` seen */
+static char  g_follow_line[128];
+static uint32_t g_follow_len;
+
+int harness_input_follows(void) { return g_follow != NULL; }
+
+static void script_follow_to(long frame)
+{
+    while (g_follow_done < frame) {
+        int c = fgetc(g_follow);
+        if (c == EOF) {
+            struct timespec ts = { 0, 2000000 };     /* 2 ms */
+            clearerr(g_follow);
+            nanosleep(&ts, NULL);
+            continue;
+        }
+        if (g_follow_len < sizeof g_follow_line - 1)
+            g_follow_line[g_follow_len++] = (char)c;
+        if (c != '\n') continue;
+        g_follow_line[g_follow_len] = 0;
+        g_follow_len = 0;
+        long n;
+        if (sscanf(g_follow_line, "# frame %ld", &n) == 1) g_follow_done = n;
+        else if (g_follow_line[0] == '#' && strstr(g_follow_line, "# end"))
+            g_follow_done = 0x7FFFFFFF;          /* the player has gone */
+        else script_parse_line(g_follow_line);
+    }
 }
 
 /* THE PORT'S OWN, and it is a CONTROL rather than a convenience.
@@ -188,6 +241,10 @@ static FILE       *g_sink_state;
 static long        g_sink_frame;
 static uint32_t    g_script_at;
 static FILE       *g_dg_file;
+/* The recorded keys waiting for the next wait - see harness_script_keys. */
+#define SCRIPT_KEYS_MAX 16
+static uint8_t     g_keys_due[SCRIPT_KEYS_MAX];
+static uint32_t    g_keys_n;
 
 /* A LEVEL IS ABOUT TO RUN AND SOMETHING WANTS TO WATCH IT. All three are
  * environment variables because the game has no command line and writes no
@@ -220,7 +277,17 @@ void harness_level_begin(void)
     g_sink_state = state ? fopen(state, "w") : NULL;
     g_sink_frame = 0;
     g_script_at  = 0;
-    if (script) harness_script_load(script);
+    g_keys_n     = 0;
+    harness_script_n = 0;
+    if (g_follow) fclose(g_follow);
+    g_follow = NULL;
+    g_follow_done = -1;
+    g_follow_len = 0;
+    if (script && getenv("LEM_INPUT_FOLLOW")) {
+        g_follow = fopen(script, "r");
+        if (!g_follow)
+            fprintf(stderr, "input script %s: cannot open it\n", script);
+    } else if (script) harness_script_load(script);
 }
 
 void harness_level_end(void)
@@ -414,9 +481,29 @@ void harness_sink_frame(const uint8_t *screen, const lem_rgb *top,
  * SDL_VIDEODRIVER=dummy pygame still delivers a MOUSEMOTION and the pointer
  * wanders back, which CLAUDE.md records costing two rounds of reading
  * disassembly for a clamp that does not exist. */
+/* A RECORDED KEY WAITS FOR THE TICKS. Image 0x00194 clears ds:0x1FD0 at the
+ * top of every frame, and image 0x03E6F reads it on the timer ticks that
+ * fall in the wait after the frame's work - so a key handed over with the
+ * frame's mouse would be cleared before anything could see it.
+ * tools/record_level.py and tools/lockstep.py press theirs at the same
+ * moment, image 0x00105, once the frame's work is done. */
+void harness_script_keys(void)
+{
+    for (uint32_t i = 0; i < g_keys_n; i++)
+        keyboard_isr(g_keys_due[i]);                /* image 0x016D4 */
+    g_keys_n = 0;
+}
+
 int harness_script_step(struct level_frame *A, int32_t *scroll_x)
 {
     int moved = 0;
+    (void)scroll_x;
+    if (g_follow) {
+        /* Everything already acted on can go, so a live run is not bounded
+         * by SCRIPT_MAX the way a loaded file is. */
+        if (g_script_at == harness_script_n) g_script_at = harness_script_n = 0;
+        script_follow_to(g_sink_frame);
+    }
     while (g_script_at < harness_script_n
             && harness_script[g_script_at].frame <= g_sink_frame) {
         const script_act *act = &harness_script[g_script_at++];
@@ -427,17 +514,17 @@ int harness_script_step(struct level_frame *A, int32_t *scroll_x)
             moved = 1;
         } else if (act->what == SCRIPT_DOWN) {
             lem_buttons |= 1;                       /* ds:0x14 bit 0 */
-            level_panel_click(A, scroll_x);         /* image 0x03168 */
+            level_play_press(A);                    /* image 0x03150 */
         } else if (act->what == SCRIPT_UP) {
             lem_buttons &= (uint8_t)~1u;
         } else if (act->what == SCRIPT_RDOWN) {
             lem_buttons |= 2;                       /* ds:0x14 bit 1 */
         } else if (act->what == SCRIPT_RUP) {
             lem_buttons &= (uint8_t)~2u;
-        } else if (act->what == SCRIPT_KEY) {
-            keyboard_isr((uint8_t)(act->x & 0x7F));      /* image 0x016D4 */
-        } else if (act->what == SCRIPT_KEYUP) {
-            keyboard_isr((uint8_t)((act->x & 0x7F) | 0x80));
+        } else if ((act->what == SCRIPT_KEY || act->what == SCRIPT_KEYUP)
+                   && g_keys_n < SCRIPT_KEYS_MAX) {
+            g_keys_due[g_keys_n++] = (uint8_t)((act->x & 0x7F)
+                                     | (act->what == SCRIPT_KEYUP ? 0x80 : 0));
         }
     }
     return moved;

@@ -39,6 +39,10 @@ ROOT = os.path.dirname(HERE)
 
 DGROUP = 0x9A90            # image offset of DS
 FRAME_DONE = 0x018F        # the game's own end-of-frame
+# WHERE A FRAME'S WORK ENDS: the loop's head, image 0x00105, on every pass,
+# and image 0x002CD and image 0x00314 on the two ways out of the level. The
+# timer is held from FRAME_DONE to here - see LemmingsVga.ticks_held.
+WORK_DONE = (0x00105, 0x002CD, 0x00314)
 FRAME_COUNTER = 0x1FD3     # ds: the counter it bumps there
 SCROLL = 0x00              # ds: the view's left edge, in level pixels
 MOUSE_X, MOUSE_Y = 0x10, 0x12   # ds: the pointer, image 0x0427E and 0x04293
@@ -125,6 +129,7 @@ def install(m):
     stock = int(os.environ.get("LEM_REC_SKILLS", "0"))
     st["script_at"] = 0
     st["down"] = None
+    st["keys"] = []
 
     def pick_level(uc, address, size, user):
         """Poke the level index before the briefing reads it."""
@@ -322,7 +327,12 @@ def install(m):
                 # keyboard the same way a player's would, so image 0x016D4
                 # builds ds:0x0F78, ds:0x1FC7 and ds:0x1FD0 from it rather
                 # than the state being poked in behind the handler's back.
-                m.press_key(arg[0], 0, verb == "key")
+                #
+                # AT THE FRAME'S END, not here: image 0x00194 clears
+                # ds:0x1FD0 a few instructions on, and the ticks that read it
+                # come after the frame's work. The port's harness waits for
+                # level_wait_ticks the same way.
+                st["keys"].append((arg[0], verb == "key"))
             else:
                 # A VERB THIS DOES NOT KNOW IS NOT A LINE TO SKIP QUIETLY.
                 # The two sides would then read one file and act on different
@@ -350,6 +360,15 @@ def install(m):
         if st.get("at"):
             m.script_mouse(st["at"], bool(st["down"]), bool(st.get("right")))
             poll_now(uc, st["at"], bool(st["down"]), bool(st.get("right")))
+        # No tick until this frame's work is done: the fast machine's order,
+        # which is the one the port runs - see LemmingsVga.ticks_held.
+        m.ticks_held = True
+
+    def work_done(uc, address, size, user):
+        for sc, down in st["keys"]:
+            m.press_key(sc, 0, down)
+        st["keys"] = []
+        m.ticks_held = False
 
     # THE ORIGINAL SAMPLES THE POINTER IN ITS TIMER INTERRUPT, not in the
     # frame. Image 0x017C7 is the INT 8 handler and image 0x01840 calls image
@@ -384,6 +403,9 @@ def install(m):
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame,
                   None, base + FRAME_DONE, base + FRAME_DONE)
+    m.ticks_after_keys = True
+    for a in WORK_DONE:
+        m.uc.hook_add(UC_HOOK_CODE, work_done, None, base + a, base + a)
     # Image 0x04401 is the menu, by which point the image is unpacked and DS
     # is up - the same place tools/probe_code.py drives from.
     if want_level is not None:

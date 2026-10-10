@@ -358,6 +358,12 @@ static uint16_t       g_page_w, g_page_h, g_page_split;
 static const lem_rgb *g_page_pal, *g_page_low;
 
 static int         g_lv_grabbed, g_mouse_owned;
+/* A RELEASE WAITS FOR THE NEXT FRAME while a level owns the mouse. The
+ * original's driver was asked on every timer tick, five times a frame, so a
+ * click shorter than a frame was still seen by some tick; this port reads
+ * ds:0x14 once a frame, and a press and release drained together would
+ * leave nothing for image 0x03E6F to see. view_level_pump applies them. */
+static uint8_t     g_btn_up_due;
 static port_key    g_port_key;
 
 /* WHAT THE HARDWARE USED TO DO: ONE DRAIN OF THE HOST'S QUEUE, dispatched the
@@ -389,6 +395,10 @@ void view_input_drain(void)
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_EVENT_QUIT) view_quit_now();
+        /* FOLLOWING ANOTHER GAME'S INPUT - tools/lockstep.py. The player's
+         * hand is on the original's window, so this one only shows: a
+         * pointer passing over it must not move the port's. */
+        else if (harness_input_follows()) continue;
         else if (e.type == SDL_EVENT_MOUSE_MOTION) {
             g_moved_edge = 1;
             if (g_lv_grabbed) {
@@ -428,17 +438,19 @@ void view_input_drain(void)
                  * at the walker behind it. */
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     lem_buttons |= 1;
+                    g_btn_up_due &= (uint8_t)~1u;
                     g_pressed_edge = 1;
                 } else if (e.button.button == SDL_BUTTON_RIGHT) {
                     lem_buttons |= 2;
+                    g_btn_up_due &= (uint8_t)~2u;
                 }
             }
         }
         else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-            if (e.button.button == SDL_BUTTON_LEFT)
-                lem_buttons &= (uint8_t)~1u;
-            else if (e.button.button == SDL_BUTTON_RIGHT)
-                lem_buttons &= (uint8_t)~2u;
+            uint8_t bit = e.button.button == SDL_BUTTON_LEFT ? 1
+                        : e.button.button == SDL_BUTTON_RIGHT ? 2 : 0;
+            if (g_mouse_owned) g_btn_up_due |= bit;   /* see g_btn_up_due */
+            else lem_buttons &= (uint8_t)~bit;
         }
         else if (e.type == SDL_EVENT_KEY_DOWN || e.type == SDL_EVENT_KEY_UP) {
             /* Ctrl+Alt gives the pointer back, which is the gesture DOSBox
@@ -478,6 +490,10 @@ void view_input_drain(void)
 level_input view_level_pump(void)
 {
     level_input in;
+    /* Last frame's releases first: the frame they arrived in has had its
+     * ticks with the button down. */
+    lem_buttons &= (uint8_t)~g_btn_up_due;
+    g_btn_up_due = 0;
     view_input_drain();
     in.pressed  = g_pressed_edge; g_pressed_edge = 0;
     in.moved    = g_moved_edge;
@@ -536,6 +552,11 @@ void view_level_grab(int on)
 {
     g_mouse_owned = on ? 1 : 0;
     g_lv_grabbed  = on ? 1 : 0;
+    if (!on) {                    /* a release held for a frame that is gone */
+        lem_buttons &= (uint8_t)~g_btn_up_due;
+        g_btn_up_due = 0;
+    }
+    if (harness_input_follows()) on = 0;     /* see view_input_drain */
     if (g_win) SDL_SetWindowRelativeMouseMode(g_win, on ? true : false);
 }
 

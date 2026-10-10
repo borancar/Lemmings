@@ -1425,9 +1425,10 @@ void level_skill_select(uint8_t button)
  * press and image 0x01705 branches to clear it on the release. Two routines
  * read it, and WHERE THEY ARE CALLED FROM decides everything:
  *
- *   image 0x03E6F  the F-keys - called at image 0x01874, INSIDE THE KEYBOARD
- *                  ISR, a few instructions after image 0x01707 stored the
- *                  byte. It sees the key. They work.
+ *   image 0x03E6F  the F-keys - called at image 0x01874, inside the TIMER
+ *                  ISR (image 0x017C7, on INT 8), on every tick. It sees
+ *                  the key whenever a tick falls between the press and the
+ *                  next frame's clear. They work.
  *   image 0x04085  these - called at image 0x001A0, from the frame loop, and
  *                  image 0x00194 SETS ds:0x1FD0 TO 0 three instructions
  *                  earlier. It can only ever see zero.
@@ -2194,6 +2195,10 @@ uint8_t level_nuking(void) { return g_nuke; }
 int level_nuke_click(void)
 {
     if (g_paused == 0xFF) return 0;              /* image 0x03FEF */
+    /* Image 0x03FF6 takes the key, so F12 held down is ONE press: image
+     * 0x03E6F runs every tick and would otherwise find it there five times
+     * a frame. */
+    g_key_last = 0;                              /* image 0x03FF6 */
     uint8_t was = g_nuke_last;
     g_nuke_last = g_nuke_tick;                   /* image 0x04002 */
     /* Image 0x04005 subtracts in AL and image 0x04007 is a SIGNED `jg`, so
@@ -2292,12 +2297,25 @@ static uint8_t g_rate_shown = 0xFF;   /* image 0x03A25 */
  * 0xFF, and the `inc` at image 0x03B9C wraps it to zero - so a HELD button
  * steps the rate one frame in three. The
  * divider is tested HERE, where image 0x0403D and image 0x0406C test it, and
- * turned by level_rate_tick below from the panel's redraw. sdl_io.c calls
- * this once on the press and once a frame while the button stays down, which
- * is what the original's own poll amounts to. */
-uint8_t level_rate_click(uint8_t up)
+ * turned by level_rate_tick below from the panel's redraw.
+ *
+ * WHO CALLS IT, AND HOW OFTEN, IS THE WHOLE STORY of what one click does.
+ * Image 0x03E6F runs on every TIMER TICK, five to a frame, and while the
+ * button is down every tick comes here - so a click steps the rate once per
+ * tick until the panel's redraw turns the divider. The port used to step
+ * once on the press and once more from a held-button repeat, +2 a click,
+ * where the original in the emulator made +3 and on a fast machine +5. See
+ * level_wait_ticks. */
+/* IMAGE 0x0403D AND IMAGE 0x04068 - the plus and the minus, and they are
+ * ENTRIES as well as arms: image 0x03E7D and image 0x03E76 jump straight to
+ * them for F2 and F1, past image 0x04032's pause test, so the keys move the
+ * rate while the game is paused and the buttons do not.
+ *
+ * Every way out is image 0x03FE9, which sets the press latch - a step, a
+ * bound, or the divider saying no. */
+static uint8_t rate_step(uint8_t up)
 {
-    if (level_paused() == 0xFF) return 0;       /* image 0x04032 */
+    g_press_latch = 0xFF;                       /* image 0x03FE9 */
     /* THE DIVIDER GATES THE PRESS ITSELF, and this used to be outside the
      * routine. Image 0x0403D tests ds:0x69 for the plus and image 0x0406C for
      * the minus, BEFORE either bound is looked at - so a press while the
@@ -2322,6 +2340,15 @@ uint8_t level_rate_click(uint8_t up)
     /* Nothing to set: changing ds:0x67 is what makes them differ, which
      * is image 0x03B86's whole test. */
     return 1;
+}
+
+/* Image 0x04032 itself: the pause test, then image 0x04039's `and al,al`
+ * picks the arm. A refusal here leaves by image 0x03FEE, which does not
+ * touch the latch. */
+uint8_t level_rate_click(uint8_t up)
+{
+    if (level_paused() == 0xFF) return 0;       /* image 0x04032 */
+    return rate_step(up);                       /* image 0x04039 */
 }
 
 /* ds:0x69, image 0x0403D - the divider that paces a HELD rate button.
@@ -12773,111 +12800,174 @@ void level_play_click(struct level_frame *A)
     }
 }
 
-/* IMAGE 0x03EF9 - WHAT A CLICK ON THE PANEL DOES.
+/* A PRESS IN THE PLAY AREA - the port's way into image 0x03150.
  *
- *     0x03EF9  ax = ds:0x12 + 8
- *     0x03EFF  cmp 0xC0 / jge 0x03F07     below that is the PLAY AREA, and
- *     0x03F04  jmp 0x03FE9                this routine does nothing with it
- *     0x03F07  ax = ds:0x10 - 8
- *     0x03F0D  cmp 0xD0 / jl 0x03F15
- *     0x03F12  jmp 0x03F92                at or past it: the MINIMAP
- *     0x03F15  cmp ds:0x84, 0 / jne away  the repeat divider gates the panel
- *     0x03F1F  ax >>= 4                   the button, sixteen pixels each
- *     0x03F27  cmp al, 2 / jge 0x03F2E
- *     0x03F2B  jmp 0x04032                0 and 1 are THE RELEASE RATE, and
- *                                         they reach it without the latch
- *     0x03F2E  cmp ds:0x62, 0xFF / jne    THE LATCH: this press was handled
- *     0x03F38  ds:0x62 = 0xFF             claim it
- *     0x03F3D  al == 0x0A -> 0x04018      pause
- *     0x03F44  al == 0x0B -> 0x03FEF      the nuke
- *     0x03F4B  al == 0x0C -> 0x03FEE      a bare ret
- *     0x03F52  cmp ds:0x2B, 0xFF          paused: no skill is selected
- *     0x03F5C  cmp ds:0x84, 0             the divider again
- *     0x03F66  ds:0x82 = al               the skill
+ * The original reaches image 0x03150 from the frame loop twice a pass, at
+ * image 0x001AD and image 0x001C5, behind the ds:0x61 latch, and acts on the
+ * scan the previous frame stored. The port acts on the press edge with a
+ * fresh scan, which agrees with every recorded run so far but is not that
+ * sequence: OWED, and named here so nothing mistakes it for the original.
  *
- * THE PLAY AREA IS NOT THIS ROUTINE'S. Image 0x03F04 leaves, and the click on
- * a lemming is image 0x03150, which the frame loop calls for itself at image
- * 0x001AD and image 0x001C5. The port had both in one function behind a hit
- * enum of its own, so the two halves looked like arms of a decision the
- * original never makes; they are kept apart here and level_play_click carries
- * the second.
- *
- * TWO GATES ARE THE PORT'S TO SUBSTITUTE, and saying so is the point of
- * naming them. ds:0x84 is the repeat divider and ds:0x62 the press latch, and
- * both exist because the original POLLS ds:0x14 every frame: without them a
- * held button would fire on all of them. This port is handed an edge by the
- * window layer, so the latch is that edge - which is also why the rate
- * buttons, the two that deliberately skip the latch at image 0x03F2E so they
- * CAN repeat, are driven once a frame while held. Substituted, not missing;
- * an edge is what the latch was for.
- */
-void level_panel_click(struct level_frame *A, int32_t *scroll_x)
+ * Everything ELSE a button does is image 0x03E6F's, which runs on the timer
+ * - see level_controls_tick. Image 0x03F04 is where that routine leaves the
+ * play area alone. */
+void level_play_press(struct level_frame *A)
 {
-    /* Image 0x03EF9 decides what was clicked. */
-    level_hit h = level_pointer_hit();
-    if (h.what == LEVEL_HIT_MINIMAP) {
-        *scroll_x = h.scroll;
-        level_pages_redraw_all();                   /* image 0x03FDE -> 0x0410F */
-    }
-    else if (h.what == LEVEL_HIT_PLAY) {
-        /* image 0x03F04 LEAVES here - see level_play_click, which is the
-         * frame loop's own call at image 0x001AD, not this routine's. */
+    if (level_pointer_hit().what == LEVEL_HIT_PLAY)  /* image 0x03EFF */
         level_play_click(A);
-    }
-    else if (h.what == LEVEL_HIT_BUTTON) {
-        /* NOT EVERY BUTTON IS A SKILL, and the port had treated all thirteen
-         * as one - clicking the nuke selected "skill 11", which nothing
-         * dispatches, and quietly left the panel with no skill armed.
-         *
-         * Image 0x03F27 refuses anything below 2 outright, then image
-         * 0x03F3D..0x03F4D sends 10, 11 and 12 away before image 0x03F66
-         * stores the rest in ds:0x82:
-         *
-         *     0, 1   image 0x04032   THE RELEASE RATE - transcribed now
-         *     2..9   image 0x03F66   the eight skills
-         *     10     image 0x04018   pause - NOT TRANSCRIBED
-         *     11     image 0x03FEF   THE NUKE
-         *     12     image 0x03FEE   nothing at all, a bare `ret`
-         *
-         * The two marked not transcribed have their addresses here rather
-         * than a guess in their place; pause in particular is not a button
-         * on its own but a flag the whole frame loop reads (image 0x01F19
-         * returns early on it), so it is a change to the loop and not to
-         * this switch. */
-        /* BUTTONS 0 AND 1 ARE THE RELEASE RATE, and image 0x03F27 sends
-         * them there rather than refusing them: `cmp al,2 / jge 0x3f2e /
-         * jmp 0x4032`. This line read that as "refuses anything below 2
-         * outright", so the panel's minus and plus did nothing at all. A
-         * player found it.
-         *
-         * They also skip the latch at image 0x03F2E that the skill buttons
-         * take, which is what lets a held one repeat in the original. */
-        /* A BUTTON MAKES A NOISE whichever one it is - image 0x03F75 tests
-         * ds:0x25A7 bits 0-1 and image 0x03F77 asks for sound 0x01 with
-         * AH=4, before the dispatch below sorts out which button it was. */
-        if (sound_enabled(3))             /* image 0x03F75 */
-            sound_request(0x61, 4, 0x01);       /* image 0x03F77 */
-        if (h.button < 2) {               /* image 0x03F27 */
-            level_rate_click(h.button);   /* image 0x04032: 0 down, 1 up */
-            return;
-        }
-        if (h.button == 12) return;       /* image 0x03FEE: a bare `ret` */
-        if (h.button == 10) {             /* image 0x04041 */
-            level_pause_click();          /* image 0x04018 */
-            return;
-        }
-        if (h.button == 11) {             /* image 0x03F48 */
-            level_nuke_click();           /* image 0x03FEF */
-            return;
-        }
-        /* Image 0x03F52: no skill is selected while paused either. */
-        if (level_paused() == 0xFF) return;
-        /* The highlight sits one slot on from the number it belongs to -
-         * PANEL_SEL_X0 is 16 where the numbers start at PANEL_ART_X, 32 -
-         * so the box for button k is drawn at k + 1. */
-        level_skill_select(h.button);     /* image 0x03F66: ds:0x82 */
+}
+
+/* IMAGE 0x03F5C - A SKILL ARMED, from a function key at image 0x03EA5 or a
+ * click at image 0x03F57. The divider refuses it while the panel is still
+ * drawing the last change, and the noise is the selection's alone: a click
+ * on the rate, pause or the nuke never reaches here, and the port used to
+ * play it for all of them. */
+static void skill_store(uint8_t button)
+{
+    g_press_latch = 0xFF;                           /* image 0x03FE9 */
+    if (g_skill_div != 0) return;                   /* image 0x03F5C */
+    level_skill_select(button);                     /* image 0x03F66 */
+    if (g_snd_driver == 0xFF) {
+        if (sound_enabled(3))                       /* image 0x03F70 */
+            sound_request(0x61, 4, 0x01);           /* image 0x03F7A */
+    } else if (sound_enabled(1)) {                  /* image 0x03F83 */
+        sound_request(0x60, 3, 0x13);               /* image 0x03F8D */
     }
 }
+
+/* IMAGE 0x03E6F - THE KEYS AND THE PANEL, ONCE A TIMER TICK.
+ *
+ * Image 0x01874 calls it from image 0x017C7, the INT 8 handler, on EVERY
+ * tick - five to a level frame - and that is what this routine's shape is
+ * for. There is no edge anywhere in it. A held button comes here five times
+ * a frame, and each target decides for itself how often it acts:
+ *
+ *     the release rate   no latch at all - image 0x03F27 jumps past it - so
+ *                        it steps on every tick until ds:0x69, which only
+ *                        the panel's redraw turns, says stop
+ *     skills 2..9        the latch: image 0x03F38 claims it, and nothing
+ *                        more happens until image 0x03FE3 clears it on the
+ *                        button's release
+ *     pause, the nuke    the latch too, and pause keeps its own two-frame
+ *                        stamp (image 0x04021)
+ *     the minimap        no latch: the view follows a held pointer
+ *
+ * The keys come off ds:0x1FD0, which image 0x00194 clears once a frame, so a
+ * key reaches every tick between its press and the next frame:
+ *
+ *     0x3B  F1              image 0x04068   the release rate, down
+ *     0x3C  F2              image 0x0403D   the release rate, up
+ *     0x3D..0x44  F3..F10   image 0x03F5C   the eight skills, buttons 2..9
+ *     0x4E  keypad +        image 0x04018   pause
+ *     0x57  F11             image 0x04018   pause
+ *     0x53  Del             image 0x03FEF   the nuke
+ *     0x58  F12             image 0x03FEF   the nuke
+ *
+ * NOTE WHERE THE KEYS ENTER. F1 and F2 land past image 0x04032's pause
+ * test, and F3..F10 at image 0x03F5C, past image 0x03F52's and past the
+ * latch - so the keys arm a skill and move the rate while the game is
+ * paused, where a click on the same button does not.
+ *
+ * `scroll_x` is ds:0x00, which the minimap writes. */
+#define TICK_RATE_KEY_DOWN 0x3B   /* image 0x03E72 */
+#define TICK_RATE_KEY_UP   0x3C   /* image 0x03E79 */
+#define TICK_SKILL_KEY_LO  0x3D   /* image 0x03EA0 */
+#define TICK_SKILL_KEY_HI  0x44   /* image 0x03EE6 */
+
+void level_controls_tick(int32_t *scroll_x)
+{
+    uint8_t al = key_last();                        /* image 0x03E6F */
+    switch (al) {
+    case TICK_RATE_KEY_DOWN: rate_step(0); return;  /* image 0x03E76 -> 0x04068 */
+    case TICK_RATE_KEY_UP:   rate_step(1); return;  /* image 0x03E7D -> 0x0403D */
+    case 0x4E: case 0x57:                           /* image 0x03E80, 0x03E87 */
+        level_pause_click();                        /* image 0x04018 */
+        return;
+    case 0x58: case 0x53:                           /* image 0x03E8E, 0x03E95 */
+        level_nuke_click();                         /* image 0x03FEF */
+        return;
+    default: break;
+    }
+    if (al >= TICK_SKILL_KEY_LO && al <= TICK_SKILL_KEY_HI) {
+        skill_store((uint8_t)(2 + al - TICK_SKILL_KEY_LO));  /* image 0x03E9C */
+        return;
+    }
+
+    if (!(lem_buttons & 1)) {                       /* image 0x03EF1 */
+        g_press_latch = 0;                          /* image 0x03FE3 */
+        return;
+    }
+    level_hit h = level_pointer_hit();              /* image 0x03EF9 */
+    if (h.what == LEVEL_HIT_PLAY) {                 /* image 0x03F04 */
+        g_press_latch = 0xFF;                       /* image 0x03FE9 */
+        return;
+    }
+    if (h.what == LEVEL_HIT_MINIMAP) {
+        /* IMAGE 0x03F92. Two tests sit before the store and neither can
+         * refuse here. Image 0x03F97 leaves while ds:0x1FCF is set - the
+         * ISR's "a tick has happened", which the frame's wait clears - and
+         * every tick in this model falls in that wait. Image 0x03FB9 leaves
+         * when the pointer is inside the viewport's box AND left of 0xD0,
+         * and this branch is only reached at 0xD0 or beyond. */
+        g_press_latch = 0xFF;                       /* image 0x03F92 */
+        *scroll_x = h.scroll;                       /* image 0x03FD2, 0x03FDB */
+        level_pages_redraw_all();                   /* image 0x03FDE -> 0x0410F */
+        return;
+    }
+    if (g_skill_div != 0) {                         /* image 0x03F15 */
+        g_press_latch = 0xFF;
+        return;
+    }
+    if (h.button < 2) {                             /* image 0x03F27 */
+        level_rate_click(h.button);                 /* image 0x04032 */
+        return;
+    }
+    if (g_press_latch == 0xFF) return;              /* image 0x03F2E */
+    g_press_latch = 0xFF;                           /* image 0x03F38 */
+    if (h.button == 10) {                           /* image 0x03F3D */
+        level_pause_click();                        /* image 0x04018 */
+        return;
+    }
+    if (h.button == 11) {                           /* image 0x03F44 */
+        level_nuke_click();                         /* image 0x03FEF */
+        return;
+    }
+    if (h.button == 12) return;                     /* image 0x03FEE */
+    if (level_paused() == 0xFF) return;             /* image 0x03F52 */
+    skill_store(h.button);                          /* image 0x03F5C */
+}
+
+/* IMAGE 0x00164 - THE WAIT, AND THE FIVE TICKS THAT FALL IN IT.
+ *
+ * Image 0x00186 waits for ds:0x1FCD to pass four, and the ISR counts it at
+ * image 0x018A3 right after calling image 0x03E6F. So a frame has five
+ * ticks, and each runs image 0x03E6F once - but WHERE in the frame they fall
+ * is the machine's speed, not the program's. The frame's own work starts at
+ * image 0x0018F as soon as the fifth arrives; on a slow machine the next
+ * ticks land in the middle of that work, on a fast one they all land in the
+ * wait after it.
+ *
+ * It is visible. The panel's redraw at image 0x03B86 is what turns the
+ * release rate's divider, so a one-frame click on the plus steps once for
+ * every tick BEFORE that redraw: measured in the emulator, whose wall-clock
+ * timer puts the redraw anywhere from the second tick to the fifth, the
+ * same click made +2, +3, +4 or +5 depending on how busy the frame was.
+ *
+ * The port is the fast machine: all five ticks after the frame's work, here.
+ * tools/record_level.py and tools/lockstep.py hold the original's timer back
+ * while its frame works, so both games run this same model and stay
+ * comparable frame for frame. THE PORT'S OWN, in that the original has no
+ * routine that runs five ticks - it has a wait, and an interrupt that keeps
+ * arriving; this is the order a fast machine gives them. */
+#define LEVEL_TICKS_A_FRAME 5     /* image 0x00189: `cmp al, 4 / jle` */
+
+void level_wait_ticks(int32_t *scroll_x)
+{
+    harness_script_keys();      /* a recorded key, where the harness put it */
+    for (uint8_t t = 0; t < LEVEL_TICKS_A_FRAME; t++)
+        level_controls_tick(scroll_x);              /* image 0x01874 */
+}
+
 /* IMAGE 0x04660 - A SCREEN THAT WAITS, and the briefing is the one that does.
  *
  *     0x04660  ax = ds:0x14 / test ax,7 / jne 0x04660   wait for RELEASE, so
@@ -12939,54 +13029,6 @@ int menu_fade_tick(void *ctx, uint8_t *pix)
     if (wait) { wait--; return 0; }
     wait = (uint8_t)(palette_fade_retraces() - 1);   /* image 0x055EE */
     return menu_fade_notch();                        /* image 0x05329 */
-}
-
-/* THE FUNCTION KEYS, image 0x03E6F.
- *
- * The same routine that handles a panel CLICK reads the scancode the
- * keyboard handler left in ds:0x1FD0 (image 0x016D4 stores it, and clears it
- * on the key-up), so a key and a click reach the same places:
- *
- *     0x3B  F1              image 0x04068   the release rate, down
- *     0x3C  F2              image 0x0403D   the release rate, up
- *     0x3D..0x44  F3..F10   image 0x03F5C   the eight skills, buttons 2..9
- *     0x4E  keypad +        image 0x04018   pause
- *     0x57  F11             image 0x04018   pause
- *     0x53  Del             image 0x03FEF   the nuke
- *     0x58  F12             image 0x03FEF   the nuke
- *
- * NOTE WHERE THE SKILLS ENTER. Image 0x03E9C..0x03EEB jump to image 0x03F5C,
- * which is PAST image 0x03F52's pause test and past image 0x03F2E's latch -
- * so a function key arms a skill while the game is paused, where a click on
- * the same button does not, and a held key is not stopped from repeating by
- * the thing that stops a held mouse button. Both are the original's, and
- * neither is what a tidier reading would have produced.
- */
-void level_key_button(uint8_t scancode)
-{
-    switch (scancode) {
-    case 0x3B: level_rate_click(0); return;      /* F1,  image 0x04068 */
-    case 0x3C: level_rate_click(1); return;      /* F2,  image 0x0403D */
-    case 0x4E: case 0x57:
-        level_pause_click();        return;      /* +/F11, image 0x04018 */
-    case 0x53: case 0x58:
-        level_nuke_click();         return;      /* Del/F12, image 0x03FEF */
-    default: break;
-    }
-    /* image 0x03EA0 onwards: F3 is button 2 and each key after it is one
-     * more, which is why the original counts with `inc al` rather than a
-     * table. */
-    int32_t button = -1;
-    if (scancode >= 0x3D && scancode <= 0x44)
-        button = 2 + (int32_t)(scancode - 0x3D);
-    if (button < 0) return;
-
-    /* image 0x03F66 stores it, and image 0x03F77 makes the button's noise -
-     * the same one a click makes, because the key path joins the click path
-     * before it. */
-    if (sound_enabled(3))                        /* image 0x03F70 */
-        sound_request(0x61, 4, 0x01);                  /* image 0x03F77 */
-    level_skill_select((uint8_t)button);         /* image 0x03F66 */
 }
 
 /* ======================================================================
@@ -13140,41 +13182,21 @@ int level_input_step(struct level_frame *A, int32_t *scroll_x_p, int32_t max_x)
     int32_t scroll_x = *scroll_x_p;
     static int seen_motion;
 
+    /* Image 0x00194: the frame takes the pending key. The five ticks of the
+     * wait before it were the key's whole chance - level_wait_ticks. */
+    key_last_clear();                               /* image 0x00194 */
+
     /* The recorded run speaks first - nothing in the original. */
     if (harness_script_step(A, &scroll_x)) seen_motion = 1;
 
-    /* A HELD RATE BUTTON REPEATS. The original polls the button from the
-     * panel's own per-frame update (image 0x03B3F) and divides with ds:0x69,
-     * so holding the minus or plus walks the rate one frame in three. A press
-     * is an edge for the skills - image 0x03170's latch gives them one
-     * assignment however long the button is down - but the rate buttons were
-     * left doing a single step per click.
-     *
-     * Only these two repeat, which is the original's own split: buttons from
-     * 2 up go through the latch at image 0x03F2E and 0 and 1 never touch it.
-     *
-     * ds:0x14 is read directly, because that is what image 0x040F0 does. */
-    if (lem_buttons & 1) {
-        level_hit rh = level_pointer_hit();
-        if (rh.what == LEVEL_HIT_BUTTON && rh.button < 2)
-            level_rate_click(rh.button);         /* image 0x04032 */
-    }
+    /* NO PANEL HERE. A held rate button, a skill, pause, the nuke and the
+     * minimap are all image 0x03E6F's, which the timer runs five times a
+     * frame - level_wait_ticks. This used to step the rate on the press and
+     * again from a repeat of its own, two steps on one frame. */
 
     level_input in = view_level_pump();
     if (in.moved) seen_motion = 1;
-    if (in.pressed) level_panel_click(A, &scroll_x);   /* image 0x03168 */
-
-    /* ds:0x1FD0, which image 0x016D4 left behind and image 0x03E6F reads. It
-     * is taken rather than peeked: a scancode sits there until the key comes
-     * up, and a skill assigned once a frame for as long as a key is held is
-     * not what image 0x03F2E's latch does. */
-    {
-        uint8_t sc = key_last();
-        if (sc && sc != 0xFF) {
-            key_last_clear();
-            level_key_button(sc);                 /* image 0x03E6F */
-        }
-    }
+    if (in.pressed) level_play_press(A);            /* image 0x03150 */
 
     /* ESCAPE ENDS THE LEVEL; IT DOES NOT LEAVE IT. Image 0x002AB tests bit
      * 0x20 of the key word ds:0x1FC7 and jumps to image 0x002B3, which sets
@@ -13808,6 +13830,7 @@ void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
         if (seen < 0) break;
         level_frame_compose(A, c, screen, scroll_x, max_x, seen);
         level_frame_show(screen, A);             /* image 0x00105 */
+        level_wait_ticks(scroll_x);              /* image 0x00164 */
         if (budget && --budget == 0) break;
         if (level_end_done()) break;             /* image 0x001C8, 0x002C6 */
     }

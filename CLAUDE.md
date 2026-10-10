@@ -792,6 +792,37 @@ This is the same trap as the edge-scrolling note above: under the dummy
 driver the pointer reads as present, focused and somewhere definite, and
 none of those is true.
 
+## Work in the timer interrupt depends on the machine's speed
+
+A one-frame click on the release rate's plus moved it by **2, 3, 4 or 5** in
+the original, in one run, and the port by 2. Neither was a bug in the
+routine. Image 0x03E6F - the keys, the panel, the rate - is called from the
+INT 8 handler at image 0x01874 on every tick, five to a frame, and each tick
+steps the rate until the panel's redraw (image 0x03B86) turns ds:0x69. So the
+answer is how many ticks land before that redraw, which is how long the
+frame's own work takes: the emulator's timer runs on the HOST's wall clock,
+and on its slow virtual CPU the redraw fell anywhere from the second tick to
+the fifth with the load.
+
+The port has no CPU speed, so it picks one: **the fast machine**, all five
+ticks in the wait after the frame's work (`level_wait_ticks`). And the
+harness pins the original to the same model - `LemmingsVga.ticks_held`, set
+by `record_level.py` and `lockstep.py` from image 0x018F to the frame's end
+at image 0x00105 - or no comparison of a panel click can be repeated.
+
+Two things to take from it:
+
+- **Ask what calls a routine, and how often, before transcribing its body.**
+  The port had 0x03E6F's dispatch right and called it once per press; the
+  original calls it a hundred times a second and each target decides for
+  itself how often to act - a latch for the skills, a divider for the rate,
+  nothing at all for the minimap.
+- **When the original's own answer moves between runs, the instrument is
+  part of the answer.** A reference recorded under one timing is a
+  different game from one recorded under another; every reference with a
+  click in it was re-recorded when the hold went in, and a reference older
+  than a change to the harness's timing is scored against a different run.
+
 ## Wrapping a method the emulator already registered records nothing
 
 `probe_dac.py`'s first version replaced `m._on_out` to watch port writes. It
@@ -1715,6 +1746,8 @@ sweeps are the only thing that would catch a regression there. So:
 | **`tools/transcribed_whole.py`** | **is a cited routine transcribed WHOLE, or only where it starts?** `provenance.py` asks whether a function says where it came from; this asks how much of that routine came across, by weighing the span up to the next call target against the lines of the function claiming it. A partial transcription reads exactly like a complete one - `menu_caret_step` carried image 0x04C7E's 156-byte entry loop in six lines, and typing a level code did nothing until a player said so |
 | **`tools/probe_codein.py`** | the access-code VALIDATOR at image 0x051A2, driven - the verdict, the level index it sets, the rating and the percentage. The codes it is driven over come from the original's own generator in the same run, because the first version built them in Python from the measured bit table and the original refused 108 of 123 |
 | **`tools/verify_code.py`** | the access-code generator at image 0x05042, driven rather than read. Its ten mask-and-shift blocks are the sort of thing this port has twice mis-read by eye, so the bit table in `game.c` was **measured** - one input bit at a time - and this checks that measurement against 400 further many-bit inputs covering every rotation count, because a single-bit sweep determines a permutation only if the contributions never interact. It also prints how many codes pass the validator's checksum **and says that a wrong table passes it too**: all three deliberate faults tried here round-tripped happily |
+| **`tools/lockstep.py`** | **play the ORIGINAL and watch the port play the same game beside it.** One window, opened on the level you name: the original on the left, the port on the right, and a title bar that turns magenta the moment a pixel differs. Your input goes to the original; once a frame the port is handed exactly what the original's frame loop read and waits for it (`LEM_INPUT_FOLLOW`). The original runs headless through its menus. It holds the original's timer while a frame works - see "Work in the timer interrupt" below - and keeps the input as an ordinary script, so anything you find replays through `record_level.py --script` |
+| **`tools/side_by_side.py`** | two recorded runs played back side by side, in step: a `record_level.py` reference beside the port's `LEM_SCREEN_DIR` frames, with a pane for the differing pixels |
 | **`tools/compare_play.py`** | **the port and the original PLAYING the same level**, frame by frame, from one input script both sides read. Every other frame-by-frame number here came from a level nobody touches, which exercises only the part of the game that needs no player - the skills, the panel's behaviour, the cursor's box and the level's ending are all behind a click and none of them was ever scored. It also makes the CURSOR part of the comparison rather than an excused 28 pixels, because with both pointers driven from one script they are in the same place. Refuses to report a happy figure for a run where the digger was never assigned |
 | **`tools/probe_cursor.py`** | the cursor's two shapes, **read out of the original's sprite store** rather than measured off a frame. Image 0x05827 puts them at 144 bytes a shift in segment `ds:0x1FEA`, and image 0x05854 adds 0x480 for the box it wears over a lemming |
 | **`tools/verify_results.py`** | **the results screen, driven rather than played to**: it sets the six bytes image 0x046EB reads and calls it, stopping at the screen's own wait loop. Ninety seconds against the fifteen minutes a playthrough costs. `--step` reports the framebuffer after each set-up call, `--wipe` clears video memory first so a background that was only left over cannot pass for one the game drew |

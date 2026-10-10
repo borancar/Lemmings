@@ -1149,7 +1149,7 @@ void level_play_click(struct level_frame *A);   /* image 0x03150 */
 void level_frame_compose(struct level_frame *A, const canvas *c,
                          uint8_t *screen, int32_t *scroll_x, int32_t max_x,
                          int seen_motion);
-void level_panel_click(struct level_frame *A, int32_t *scroll_x);
+void level_play_press(struct level_frame *A);
 int  level_run(struct level_frame *A, const canvas *c,
                const lem_rgb *palette, const char *title, uint8_t scale);
 
@@ -1204,7 +1204,9 @@ void view_level_pace(void);
 int  level_input_step(struct level_frame *A, int32_t *scroll_x_p,
                       int32_t max_x);
 void level_frame_show(const uint8_t *screen, struct level_frame *A);
-void level_key_button(uint8_t scancode);
+/* image 0x03E6F, once a tick, and image 0x00164's wait that runs five. */
+void level_controls_tick(int32_t *scroll_x);
+void level_wait_ticks(int32_t *scroll_x);
 
 /* THE HARNESS'S, and nothing in the original - see harness.c. */
 void harness_level_begin(void);
@@ -1214,6 +1216,7 @@ long harness_frame_no(void);
 void harness_sink_frame(const uint8_t *screen, const lem_rgb *top,
                         struct level_frame *A);
 int  harness_script_step(struct level_frame *A, int32_t *scroll_x);
+void harness_script_keys(void);
 /* image 0x000FB - the level's loop. */
 void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
                 int32_t *scroll_x, int32_t max_x, long budget);
@@ -1531,6 +1534,9 @@ enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2,
 extern script_act harness_script[SCRIPT_MAX];
 extern uint16_t   harness_script_n;
 void harness_script_load(const char *path);
+/* 1 while LEM_INPUT_FOLLOW has the port following tools/lockstep.py: the
+ * window then shows the game and takes no input of its own. */
+int  harness_input_follows(void);
 
 /* RECORDING one, which is the mirror of replaying it. The flag that turns it
  * on is devmain.c's, because a developer's flag is the harness's command line;
@@ -1577,6 +1583,7 @@ void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
 #define g_nuke_last      DG.nuke_last
 #define g_nuke_tick      DG.nuke_tick
 #define g_pause_at       DG.pause_at
+#define g_press_latch    DG.press_latch
 #define g_paused         DG.paused
 #define g_rate           DG.rate
 #define g_rate_div       DG.rate_div

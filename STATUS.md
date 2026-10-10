@@ -2284,6 +2284,52 @@ frame by frame, and `--rate-probe` clears the divider before each click the way
 the guest side does, so the two halves of that comparison still make the same
 claim.
 
+### The panel runs on the timer, five times a frame
+
+Found by `tools/lockstep.py`: a one-frame click on the release rate's plus,
+and the two games ended on different rates. The section above fixed a click
+that stepped twice; this one is why "once" was never the original's answer
+either.
+
+**Image 0x03E6F is called from the INT 8 handler** (image 0x01874), on every
+tick - five to a frame - and not from the frame loop. It has no edge in it.
+While the button is down every tick reaches image 0x03EF9, and each target
+decides how often it acts: the skills, pause and the nuke through the latch
+at ds:0x62 (image 0x03F38 claims it, image 0x03FE3 clears it on release),
+the release rate through nothing but ds:0x69, the minimap through nothing at
+all. So a click on the plus steps once per tick until the panel's redraw at
+image 0x03B86 turns the divider.
+
+**And that number is the machine's speed.** The emulator's timer runs on the
+host's wall clock; across 340 frames of a played level the redraw landed
+after tick 2 on 13 frames, 3 on 238, 4 on 72 and 5 on 17. The same click
+made +2 to +5. The port made +2: once on the press, once from a held-button
+repeat of its own.
+
+The port is now the fast machine: `level_wait_ticks` runs image 0x03E6F five
+times after the frame's work, `level_controls_tick` is the routine whole -
+keys, latch, minimap, the rate's two key entries that skip the pause test, the
+nuke's clear of ds:0x1FD0 at image 0x03FF6 - and the selection noise is the
+skills' alone (image 0x03F69), where the port played it for every button.
+The harness holds the original to the same model: `LemmingsVga.ticks_held`
+from image 0x018F to image 0x00105, set by `record_level.py` and
+`lockstep.py`, with script keys pressed at the frame's end so ds:0x1FD0 is
+seen by the ticks rather than cleared by image 0x00194.
+
+Measured: the three rate scripts (`out/rate_a/b/c.txt` - one frame with and
+without the right button, two frames) step +5 on both sides and are exact on
+89 of 89 frames, play area and panel. Every reference with a click in it was
+re-recorded under the hold (the old ones are in `out/refs_before_ticks/`), and
+`verify_skills.py` is exact on all twelve cases, records, screen and panel.
+The old bomber reference against the new port differs on exactly one frame -
+152 pixels of panel at frame 23, the skill box moving a frame later because
+the selection now happens in the wait - which is the change predicted and
+nothing else.
+
+Still owed beside it: the play-area click, image 0x03150, which the frame
+loop calls twice a pass behind ds:0x61 on the previous frame's scan. The port
+acts on the press edge (`level_play_press`) and says so.
+
 ### The level bitmap was eighty columns too narrow
 
 Found by a SEVENTH level, level009 section 1 - "Rendezvous at the Mountain",

@@ -273,6 +273,31 @@ class LemmingsVga(VgaDos):
             return
         self._mouse_btn = v
 
+    # THE TIMER CAN BE HELD, so the original runs a fast machine's frame.
+    #
+    # Image 0x03E6F - the keys, the panel, the release rate - runs on every
+    # timer tick, and the emulator delivers ticks by the HOST's wall clock.
+    # So how many of a frame's five ticks land in the middle of its work, and
+    # how many in the wait after it, is decided by how fast the host is going:
+    # a one-frame click on the release rate's plus made +2, +3, +4 or +5 in
+    # one run here depending on how busy the frame was.
+    #
+    # tools/record_level.py and tools/lockstep.py set `ticks_held` from the
+    # frame's start (image 0x018F) to its end (image 0x00105), and the ticks
+    # then all fall in the wait - which is what the port's level_wait_ticks
+    # runs. `ticks_after_keys` holds them too while a key is still queued, so
+    # a key pressed at the frame's end is in ds:0x1FD0 before the first tick.
+    #
+    # Nothing is lost: the emulator never catches up on missed ticks, so a
+    # held tick is simply the next one, delivered as soon as it is let go.
+    ticks_held = False
+    ticks_after_keys = False
+
+    def service_timer(self):
+        if self.ticks_held or (self.ticks_after_keys and self.scan_queue):
+            return False
+        return super().service_timer()
+
     # The game's config file starts every run from the SHIPPED copy.
     #
     # RUSSELL.DAT is a working file the game rewrites, and its state decides
