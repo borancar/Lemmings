@@ -5370,7 +5370,7 @@ has nothing to seed with here.
   four: four facing each way, the same split the climber has at
   `CLIMB_SPR_LEFT`. The port had one base and drew right-facing artwork for
   fallers going both ways. `FALL_SPR_LEFT` is `FALL_SPR_BASE + 4 * 40`
-  (commit `ada79f7` - a hash, not an image offset), and the digger's
+  (commit `43cf05f` - a hash, not an image offset), and the digger's
   recorded run went **exact 659 -> 674 of
   709, worst 40 -> 1**.
 
