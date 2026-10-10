@@ -474,6 +474,67 @@ def capture(path, seconds, delay, rating=0, tries=3, screen="menu"):
             last_snd_bits, last_snd_drv)
 
 
+# HOW MANY TIMES THE CODE SCREEN IS RE-CAPTURED when its caret read does not
+# describe the picture, before the run gives up and FAILS rather than scores.
+CARET_TRIES = 3
+
+
+def caret_cursor(cells):
+    """The cell the caret is on: the '_' if it is up, else the first '.'.
+
+    Image 0x04CB8 blinks the cell the cursor is on, and every cell before it
+    holds a typed letter - so with the caret down the cursor is the first dot.
+    None if neither is there, which is a code screen this tool does not know.
+    """
+    txt = "".join(chr(c) if 32 <= c < 127 else "?" for c in cells)
+    for ch in "_.":
+        k = txt.find(ch)
+        if k >= 0:
+            return k
+    return None
+
+
+def caret_in_picture(theirs, w, h, base_cmd, port_raw, cursor):
+    """Which caret state the CAPTURE shows, asked of the picture itself.
+
+    Two equal reads of ds:0x4DF2 either side of the dump do NOT prove the
+    picture shows that state. The screen is double-buffered - image 0x04C20
+    points the CRTC at the page it has just composed - so for a moment after
+    image 0x04CB8 toggles the cell, the byte says one thing and the page on
+    screen still shows the other. Three runs in a row read the caret DOWN
+    both sides of the dump while the capture plainly had it lit, and scored
+    57 pixels of caret as the port's.
+
+    So: render the port both ways, take the pixels where the two renders
+    differ - the caret's own footprint and nothing else - and see which one
+    the capture agrees with THERE. Returns ("up" | "down" | None, footprint
+    size, pixels agreeing with up, pixels agreeing with down). None means it
+    matches neither cleanly, which is refused as well.
+
+    This uses the port's caret to define the footprint, so a port whose caret
+    were wrong would be refused here rather than scored. That is the right
+    way round: it fails loudly instead of producing a number.
+    """
+    renders = {}
+    for state, extra in (("down", []), ("up", ["--caret", f"1,{cursor}"])):
+        subprocess.run(base_cmd + extra, check=True, stdout=subprocess.DEVNULL)
+        pw, ph, _pp, o = read_raw(port_raw)
+        if (pw, ph) != (w, h):
+            raise SystemExit(f"size mismatch: original {w}x{h}, port {pw}x{ph}")
+        renders[state] = o
+    up, down = renders["up"], renders["down"]
+    foot = [i for i in range(w * h) if up[i] != down[i]]
+    if not foot:
+        raise SystemExit("the port's caret up and down render identically, so "
+                         "there is no footprint to check the capture against - "
+                         "that is a broken instrument, not a pass")
+    agree_up = sum(theirs[i] == ATTR[up[i] & 0x0F] for i in foot)
+    agree_down = sum(theirs[i] == ATTR[down[i] & 0x0F] for i in foot)
+    shown = ("up" if agree_up == len(foot) else
+             "down" if agree_down == len(foot) else None)
+    return shown, len(foot), agree_up, agree_down
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -494,15 +555,54 @@ def main():
                          "screen, the F4 input chooser, or the level briefing")
     a = ap.parse_args()
 
-    if a.capture:
-        cap, shown, scroll, anim, cells = a.capture, a.rating, None, None, None
-        snd_bits = snd_drv = None
+    port_raw = os.path.join(ROOT, "out", "menu_port.raw")
+    subprocess.run(["make", "-C", os.path.join(ROOT, "reconstruct")],
+                   check=True, stdout=subprocess.DEVNULL)
+    for caret_try in range(CARET_TRIES if a.screen == "code" else 1):
+        if a.capture:
+            cap, shown, scroll, anim, cells = (a.capture, a.rating,
+                                               None, None, None)
+            snd_bits = snd_drv = None
+        else:
+            cap, shown, scroll, anim, cells, snd_bits, snd_drv = capture(
+                os.path.join(ROOT, "out",
+                             f"{a.screen}{a.rating or ''}.scrn"),
+                a.seconds, a.delay, a.rating, screen=a.screen)
+        w, h, pal, theirs = read_scrn(cap)
+        if a.screen != "code" or not cells:
+            break
+        # THE CARET READ HAS TO DESCRIBE THE PICTURE, or the capture is not
+        # scored. See caret_in_picture for why two agreeing reads are not
+        # enough on their own.
+        cursor = caret_cursor(cells)
+        if cursor is None:
+            raise SystemExit("ds:0x4DF2 holds neither '_' nor '.', so where "
+                             "the caret is cannot be known - refusing")
+        said = "up" if "_" in "".join(chr(c) for c in cells) else "down"
+        base = [os.path.join(ROOT, "reconstruct", "lemdev"),
+                "--data", os.path.join(ROOT, a.data),
+                "--screen", a.screen, "--rating",
+                ("fun", "tricky", "taxing", "mayhem")[shown],
+                "--raw", port_raw]
+        if snd_bits is not None and snd_drv is not None:
+            base += ["--snd", str(snd_bits & 3),
+                     "1" if snd_drv == 0xFF else "0"]
+        seen, nfoot, nup, ndown = caret_in_picture(theirs, w, h, base,
+                                                   port_raw, cursor)
+        if seen == said:
+            print(f"  the caret check: the reads say {said} and the picture "
+                  f"agrees on all {nfoot} pixels of the caret")
+            break
+        print(f"  the caret check REFUSES this capture: the reads say {said}, "
+              f"but on the caret's {nfoot} pixels the picture agrees with "
+              f"'up' on {nup} and 'down' on {ndown}"
+              f"{'; re-capturing' if caret_try < CARET_TRIES - 1 else ''}.")
     else:
-        cap, shown, scroll, anim, cells, snd_bits, snd_drv = capture(
-            os.path.join(ROOT, "out",
-                         f"{a.screen}{a.rating or ''}.scrn"),
-            a.seconds, a.delay, a.rating, screen=a.screen)
-    w, h, pal, theirs = read_scrn(cap)
+        raise SystemExit(
+            f"the caret read never described the picture in {CARET_TRIES} "
+            f"captures, so this screen is NOT scored. That is a failure of "
+            f"the instrument to catch a consistent moment, not a pass - and "
+            f"not a measurement of the port either.")
 
     # The code screen's caret, from the guest's own cells. Image 0x04CB8
     # swaps the cell the cursor is on between '.' and '_' every twenty
@@ -513,9 +613,6 @@ def main():
         print(f"  the caret: ds:0x4DF2 reads {txt!r}, so it is "
               + (f"UP on cell {cell}" if cell >= 0 else "down"))
 
-    port_raw = os.path.join(ROOT, "out", "menu_port.raw")
-    subprocess.run(["make", "-C", os.path.join(ROOT, "reconstruct")],
-                   check=True, stdout=subprocess.DEVNULL)
     port_cmd = [os.path.join(ROOT, "reconstruct", "lemdev"),
                 "--data", os.path.join(ROOT, a.data),
                 "--screen", a.screen, "--rating",
