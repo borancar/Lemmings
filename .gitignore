@@ -23,3 +23,6 @@ reconstruct/tests/opl
 .claude/*.local.md
 .claude/*.local.json
 reconstruct/libgame.so
+
+# The original game. Not ours to redistribute; the tools read it locally.
+lemming1.pc/
