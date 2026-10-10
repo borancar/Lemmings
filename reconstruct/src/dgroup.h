@@ -174,7 +174,12 @@ typedef struct {
     uint8_t  pause_at;                      /* ds:0x0053 */
     uint8_t  tune;                          /* ds:0x0054 */
     uint8_t  entrance_open;                 /* ds:0x0055 */
-    uint8_t  _pad_0056[0x000D];
+    /* WHICH COLUMN OF THE MINIMAP WAS REBUILT LAST, as a byte offset into
+     * the master - image 0x0797D steps it by 0x10 and wraps it at 0xD0, one
+     * of thirteen columns a call. Nothing else writes it, so it carries from
+     * level to level, and thirteen calls bring it back where it was. */
+    uint16_t minimap_col;                   /* ds:0x0056 */
+    uint8_t  _pad_0058[0x000B];
     /* ds:0x0063 - how many lemmings the last scan found under the pointer. */
     uint8_t  under_count;                   /* ds:0x0063 */
     uint8_t  rate_min;                      /* ds:0x0064 - the level's floor */
@@ -287,6 +292,7 @@ ENSURE_DG_AT(nuke,         0x004B);  ENSURE_DG_AT(nuke_at,      0x004C);
 ENSURE_DG_AT(level_phase,  0x004E);  ENSURE_DG_AT(level_over,   0x004F);
 ENSURE_DG_AT(level_frame,  0x0052);  ENSURE_DG_AT(pause_at,     0x0053);
 ENSURE_DG_AT(tune,         0x0054);  ENSURE_DG_AT(entrance_open,0x0055);
+ENSURE_DG_AT(minimap_col,  0x0056);
 ENSURE_DG_AT(under_count,  0x0063);  ENSURE_DG_AT(rate_min,     0x0064);
 ENSURE_DG_AT(rate,         0x0067);  ENSURE_DG_AT(rate_div,     0x0069);
 ENSURE_DG_AT(skill,        0x0082);  ENSURE_DG_AT(selected,     0x0083);

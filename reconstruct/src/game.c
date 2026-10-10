@@ -7460,11 +7460,20 @@ void panel_minimap_dots(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * THE MINIMAP - images 0x0796F, 0x07A25 and 0x07A39 to build it, 0x07900 to
  * put it on the screen.
  *
- * The game keeps it as a 13-byte by 20-row bitmap stashed off-screen at
+ * The game keeps it as a 13-byte by 19-row bitmap stashed off-screen at
  * 0xA000:0xD320 and rebuilds ONE byte-column of it a frame, cycling ds:0x56
- * by 16 and wrapping at 0xD0 - thirteen frames to refresh the lot. The port
- * has no reason to spread the work out, so it builds all thirteen at once;
- * the result is the same bitmap.
+ * by 16 and wrapping at 0xD0 - thirteen frames to refresh the lot. Image
+ * 0x03779 builds all thirteen when the level is composed; after that a
+ * column is only as fresh as its turn.
+ *
+ * THAT IS VISIBLE, and the port used to say it was not. It built the whole
+ * map every frame on the grounds that "the result is the same bitmap", which
+ * holds for a level nothing digs into. A miner, a basher or a bomb changes
+ * the master, and the original's map shows the change only when that
+ * column's turn comes round - up to thirteen frames late. Measured on the
+ * miner's run: one minimap pixel, (258..260, 187..189), where the original
+ * still showed ink 7 for several frames after the port had cleared it, on 16
+ * of 399 frames. That is the whole of what this store is for.
  *
  * How a pixel is decided is the part that had to be read rather than guessed.
  * Image 0x079C9 puts the graphics controller in READ MODE 1 with Color
@@ -7494,13 +7503,12 @@ void panel_minimap_dots(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * sharp minimum of a search over 7 x 7 origins - 137 differing pixels at that
  * one against 216 and 217 either side of it.
  *
- * ONE LOOSE END, written down rather than papered over. The copy is
- * byte-aligned, so the minimap must start on a byte boundary of the 352-pixel
- * line; x 209 on screen is x 241 in that line, and 241 is not a multiple of
- * eight. Something in the mapping from a page offset to a screen column is
- * still off by a pixel, and the proof of it is that clearing the full
- * 104-pixel span - which the original's copy does - rubs out part of the
- * artwork's frame. Until that is read, only the ink is drawn.
+ * THE LOOSE END THAT WAS HERE is settled: the map sat at a fitted 241 to make
+ * up for sampling the canvas sixteen pixels right of the master, and it is at
+ * the byte-aligned 240 now - see MINIMAP_AT_X. The copy still draws only the
+ * ink: the original's writes all thirteen bytes a row, background included,
+ * and whether that now lands on the artwork's frame correctly is a separate
+ * measurement nobody has taken.
  * ====================================================================== */
 #define VIEWPORT_W   24      /* image 0x07AAC: cx:bx = 0xFFFF:0xFF00 */
 #define VIEWPORT_H   20
@@ -7520,8 +7528,9 @@ void panel_minimap_dots(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
  * at this scale - starting at `scroll >> 4`. The 24 is the mask's own width
  * and there is no arithmetic behind it to get wrong.
  *
- * Checked against recorded frames: with the scroll at 624, 624 >> 4 is 39, so
- * the box starts at minimap pixel 39, which is screen x 248 - and 248..271 is
+ * `scroll` is ds:0x00, the port's view_x plus sixteen. Checked against
+ * recorded frames: with view_x at 624, ds:0x00 is 640 and 640 >> 4 is 40, so
+ * the box starts at minimap pixel 40, which is screen x 248 - and 248..271 is
  * exactly where two separate frames put it, with solid top and bottom rows and
  * a single pixel down each side.
  */
@@ -7545,35 +7554,79 @@ void panel_viewport(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
     }
 }
 
-/* Transcribed from images 0x0796F, 0x07A25 and 0x07A39 - see the note above.
- * Built and drawn in one pass: the original's rolling column, ds:0x56 at
- * image 0x0797D, is a way of spreading the cost over thirteen frames and not
- * part of the picture. */
+/* 0xA000:0xD320 - THE MINIMAP'S STORE, one bit a pixel, thirteen bytes a
+ * row. Image 0x07A0D writes NINETEEN rows of it (cx = 0x13) though image
+ * 0x079F1 builds twenty: the twentieth is computed and dropped. */
+#define MINIMAP_COLS   13       /* image 0x07984: 0xD0 / 0x10 */
+#define MINIMAP_KEPT   19       /* image 0x07A0D: cx = 0x13 */
+static uint8_t g_minimap[MINIMAP_KEPT][MINIMAP_COLS];
+
+/* IMAGE 0x0796F - rebuild one column of the store.
+ *
+ * Image 0x0797D steps ds:0x56 by 0x10 and wraps it to 0 at 0xD0, so the
+ * column is ds:0x56 >> 4 and each call takes the next. The twenty rows are
+ * built into cs:0x83C1 first - image 0x07970 clears it - by image 0x07A25,
+ * which walks the column's eight pixels from bit 0x80 down, and image
+ * 0x07A39, which counts the terrain bits under one of them and sets it on a
+ * majority. Then image 0x07A14 copies nineteen of them into the store. */
+void minimap_column_step(const uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    uint8_t col[MINIMAP_H];                         /* cs:0x83C1 */
+    memset(col, 0, sizeof col);                     /* image 0x07970 */
+    uint16_t si = (uint16_t)(DG.minimap_col + 0x10);    /* image 0x07981 */
+    if ((int16_t)si >= 0xD0) si = 0;                /* image 0x07984 */
+    DG.minimap_col = si;                            /* image 0x0798C */
+    uint16_t c = (uint16_t)(si >> 4);               /* image 0x0799A */
+    for (uint16_t r = 0; r < MINIMAP_H; r++) {      /* image 0x079F1: 0x14 */
+        uint16_t y = (uint16_t)(MINIMAP_YFROM + r * MINIMAP_YSTEP);
+        for (uint8_t k = 0; k < 8; k++) {           /* image 0x07A29 */
+            uint16_t p = (uint16_t)(c * 8u + k);
+            uint8_t n = 0;
+            if (y < chh) {
+                /* Image 0x07996 reads the MASTER from byte 0, which is canvas
+                 * x -16: the canvas is the master less sixteen. */
+                int32_t sx = (int32_t)p * MINIMAP_XSTEP - 16;
+                for (uint8_t b = 0; b < MINIMAP_XSTEP; b++)
+                    if (sx + b >= 0 && sx + b < cw
+                            && lvl[(size_t)y * cw + (size_t)(sx + b)])
+                        n++;                        /* image 0x07A46 */
+            }
+            if (n > MINIMAP_VOTE)                   /* image 0x07A4E */
+                col[r] = (uint8_t)(col[r] | (0x80u >> k));  /* image 0x07A55 */
+        }
+    }
+    for (uint16_t r = 0; r < MINIMAP_KEPT; r++)     /* image 0x07A0D: 0x13 */
+        g_minimap[r][c] = col[r];                   /* image 0x07A1A */
+}
+
+/* IMAGE 0x03779 - the whole store, thirteen calls, when the level is
+ * composed. It leaves ds:0x56 where it found it. */
+void minimap_build(const uint8_t *lvl, uint16_t cw, uint16_t chh)
+{
+    for (uint8_t i = 0; i < MINIMAP_COLS; i++)      /* image 0x03779: 0x0D */
+        minimap_column_step(lvl, cw, chh);          /* image 0x0377D */
+}
+
+/* The store onto the panel - image 0x07900's copy of 0xD320, which image
+ * 0x001AA makes every frame. Row r of the store is the master's row
+ * MINIMAP_YFROM + 8r, as it was when its column was last rebuilt. */
 void panel_minimap(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
-                   const uint8_t *lvl, uint16_t cw, uint16_t chh,
                    uint16_t x0, uint16_t y0)
 {
-    for (uint16_t r = 0; r < MINIMAP_H; r++) {
-        uint16_t y = (uint16_t)(MINIMAP_YFROM + r * MINIMAP_YSTEP);
+    for (uint16_t r = 0; r < MINIMAP_KEPT; r++) {
         uint16_t py = (uint16_t)(y0 + r);
         if (py >= dst_h) break;
         for (uint16_t p = 0; p < MINIMAP_W; p++) {
             uint16_t px = (uint16_t)(x0 + p);
             if (px >= dst_w) break;
-            uint8_t n = 0;
-            if (y < chh) {
-                uint16_t sx = (uint16_t)(p * MINIMAP_XSTEP);
-                for (uint8_t k = 0; k < MINIMAP_XSTEP; k++)
-                    if (sx + k < cw && lvl[(size_t)y * cw + sx + k])
-                        n++;
-            }
+            uint8_t on = (uint8_t)(g_minimap[r][p >> 3] & (0x80u >> (p & 7)));
             /* Ink only. The original's copy writes all thirteen bytes a
              * row, background included, but doing that here rubs out part of
              * the artwork's own frame - which says the 104-pixel span is not
              * quite in the right place yet, and the note above records it. So
              * this leaves what is underneath: measured, that is 137 differing
              * pixels against 232 for clearing. */
-            if (n > MINIMAP_VOTE)
+            if (on)
                 dst[(size_t)py * dst_w + px] = MINIMAP_INK;
         }
     }
@@ -8413,8 +8466,14 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
                  level_status_line(), 0, 0);
     panel_buttons(pp, PANEL_LINE_W, PANEL_ART_H, sec, seclen, lv);
     panel_highlight(pp, PANEL_LINE_W, PANEL_ART_H, sel);
-    panel_minimap(pp, PANEL_LINE_W, PANEL_ART_H, terrain, tw, th,
-                  MINIMAP_AT_X, MINIMAP_AT_Y);
+    /* THE COPY BEFORE THE REBUILD. Image 0x001AA puts the store on the page
+     * (image 0x07900) and only later does image 0x001C2's image 0x03AC8
+     * rebuild a column of it (image 0x0796F), off-screen - so what a frame
+     * shows is the store as the PREVIOUS frame left it. Stepping first put
+     * every change on screen a frame early. */
+    panel_minimap(pp, PANEL_LINE_W, PANEL_ART_H,
+                  MINIMAP_AT_X, MINIMAP_AT_Y);       /* image 0x001AA */
+    minimap_column_step(terrain, tw, th);       /* image 0x03AC8 -> 0x0796F */
     /* THE DOTS FIRST, THE FRAME OVER THEM. A lemming standing where the
      * viewport's edge runs put a dot through it in the port and does not in
      * the original: at frame 186 of "Watch out, there`s traps about" the
@@ -8423,7 +8482,8 @@ void level_panel_build(uint8_t *pp, const uint8_t *sec, uint32_t seclen,
      * was the whole of that level's panel score. */
     panel_minimap_dots(pp, PANEL_LINE_W, PANEL_ART_H, lem, nlem,
                        MINIMAP_DOT_X, MINIMAP_AT_Y);
-    panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, view_x,
+    /* ds:0x00, which is what image 0x07A5A shifts - view_x plus sixteen. */
+    panel_viewport(pp, PANEL_LINE_W, PANEL_ART_H, (uint16_t)(view_x + 16),
                    MINIMAP_AT_X, VIEWPORT_AT_Y);
 }
 
@@ -11977,7 +12037,9 @@ static int level_begin(canvas *terrain, struct level_frame *A,
     /* image 0x0374F, and image 0x0368E's clear is render_terrain's own first
      * act. A VGASPEC level (image 0x03742) is refused before this is reached
      * - see level_graphics_names. */
-    return render_terrain(terrain, &A->lv, g, sec, len, err);
+    if (render_terrain(terrain, &A->lv, g, sec, len, err) != 0) return -1;
+    minimap_build(terrain->pix, terrain->w, terrain->h);   /* image 0x03779 */
+    return 0;
 }
 
 
@@ -12218,6 +12280,15 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
         level_anim_draw(A.st, &A.lv, A.sec, A.len, level_page_drawn(&A),
                         A.from->w, A.from->h, 0);
         level_anim_mark(A.st, &A.lv, A.view_x);
+        /* IMAGE 0x00105 ON THE LOOP'S FIRST PASS. The original's loop swaps
+         * at its HEAD, before a frame is composed; this port's swaps at its
+         * tail, in level_frame_show, after the sink has the frame. So the
+         * head's first swap is made here, and the first frame is composed on
+         * page 0 as the original's is. Without it every frame was drawn on
+         * the other page - invisible in any picture, because the two pages
+         * are symmetric, and plain in tools/verify_dgroup.py, where
+         * ds:0x1F76 and ds:0x26 read swapped on all forty frames. */
+        level_pages_swap();                     /* image 0x00105 */
         /* image 0x04836 reads the level's extended graphics set. */
         music_set_level(&A.lv);
         /* IMAGE 0x0049E - ONE PANEL UPDATE BEFORE THE LOOP EVER RUNS, and the

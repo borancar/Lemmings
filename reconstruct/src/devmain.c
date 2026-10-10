@@ -256,6 +256,9 @@ static int render_level(const char *data, const char *file, uint32_t which,
         dat_free(&gfx);
         return 1;
     }
+    /* image 0x03779, the tail of the same composition: the minimap's store,
+     * all thirteen columns, from the terrain before any object goes on. */
+    minimap_build(c.pix, c.w, c.h);
     /* The lemmings and the minimap both probe the TERRAIN, and the buffer the
      * original probes has no objects in it - they are drawn at display time.
      * So a copy is kept before they go on. */

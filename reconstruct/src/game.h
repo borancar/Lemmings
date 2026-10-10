@@ -608,17 +608,19 @@ void panel_minimap_dots(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
 /* The minimap: 104 x 20, a pixel per 16 x 1 span of the level, set when more
  * than eight of those sixteen are terrain. Transcribed from images 0x0796F,
  * 0x07A25 and 0x07A39; where it sits is measured. */
-#define MINIMAP_AT_X 241
-/* The dots sit ONE pixel left of the map's own origin. Measured: the panel is
- * 12 pixels out with them at MINIMAP_AT_X and exactly 0 out at one less.
- *
- * It is also the loose end recorded against the map itself. The copy that
- * places the map is byte-aligned, so it must start on a multiple of eight -
- * and 241 is not one, while 240 is. So the dots are at the aligned origin and
- * the terrain map's fitted 241 is absorbing a one-pixel shift somewhere in
- * its own decode. Both are exact against the original either way; what is not
- * yet read is why the two differ. */
-#define MINIMAP_DOT_X (MINIMAP_AT_X - 1)
+/* 240, BYTE-ALIGNED, as image 0x07900's copy must be. This was a fitted 241
+ * for a long time, with the dots one pixel left of it at 240, and the note
+ * here said the 241 was "absorbing a one-pixel shift somewhere in its own
+ * decode". It was: the sampler read the canvas at p * 16, and the canvas is
+ * the master less sixteen, so every minimap pixel was built from the terrain
+ * one minimap pixel to its right and then drawn one pixel left to make up
+ * for it. The static picture was identical. What it changed was which of
+ * image 0x0796F's thirteen columns a pixel belongs to - so the rolling
+ * refresh renewed pixel 8c of the screen with column c - 1, a frame early.
+ * The nuke showed it, at one pixel on one frame. */
+#define MINIMAP_AT_X 240
+/* The lemming dots share the map's origin - image 0x06FE2's x >> 4. */
+#define MINIMAP_DOT_X MINIMAP_AT_X
 /* 19 and not 17: the sampler starts sixteen canvas rows down (image 0x07992)
  * so the picture rides two stash rows higher, and the origin comes down to
  * meet it. Swept: 201, 98, 12, 93, 194 differing pixels at 17..21. */
@@ -630,8 +632,11 @@ void panel_viewport(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
                     uint16_t scroll, uint16_t x0, uint16_t y0);
 
 void panel_minimap(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
-                   const uint8_t *canvas, uint16_t cw, uint16_t chh,
                    uint16_t x0, uint16_t y0);
+/* image 0x0796F - rebuild ONE column of the minimap's store from the master,
+ * and image 0x03779 - all thirteen, when a level is composed. */
+void minimap_column_step(const uint8_t *lvl, uint16_t cw, uint16_t chh);
+void minimap_build(const uint8_t *lvl, uint16_t cw, uint16_t chh);
 
 /* The box round the selected button - 16 wide, 24 tall, colour 3, at
  * 16 + 16*button in the panel's 352-wide line. Transcribed from image
