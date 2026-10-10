@@ -593,12 +593,12 @@ int main(int argc, char **argv)
     {
         lemming a;
         memset(&a, 0, sizeof a);
-        ck("a walker takes a digger", lem_dig_start(&a) == 1,
+        ck("a walker takes a digger", lem_dig_start(&a, NULL) == 1,
            "image 0x0320D refused a plain lemming");
         ck("and is digging afterwards", (a.flags & 0x0010) != 0,
            "the dig bit is not set");
         ck("a lemming already digging refuses a second",
-           lem_dig_start(&a) == 0,
+           lem_dig_start(&a, NULL) == 0,
            "image 0x0321D's 0xF57F includes 0x10 - it must refuse");
 
         /* WHICH bits 0xF57F actually holds is worth asserting, because it
@@ -609,12 +609,12 @@ int main(int argc, char **argv)
         lemming b;
         memset(&b, 0, sizeof b);
         b.flags = 0x0100;                    /* blocking - bit 8, in the mask */
-        ck("a blocker refuses a digger", lem_dig_start(&b) == 0,
+        ck("a blocker refuses a digger", lem_dig_start(&b, NULL) == 0,
            "0x100 is bit 8 and 0xF57F has it");
         memset(&b, 0, sizeof b);
         b.flags = 0x0080;                    /* building - bit 7, NOT in it */
         ck("but a builder takes one, because 0x80 is not in 0xF57F",
-           lem_dig_start(&b) == 1,
+           lem_dig_start(&b, NULL) == 1,
            "the mask is bits 0..6, 8, 10 and 12..15 - bit 7 is clear");
     }
 
@@ -1025,7 +1025,7 @@ int main(int argc, char **argv)
         a.x = 40; a.y = 40; a.dir = 1; a.state = 9;
         a.hot_x = -8; a.hot_y = -10;
 
-        ck("a walker takes a digger", lem_dig_start(&a) != 0,
+        ck("a walker takes a digger", lem_dig_start(&a, NULL) != 0,
            "the assignment was refused");
         ck("which sets bit 0x10 and parks the animation at 17",
            a.flags == 0x0010 && a.anim == 17, "image 0x0320D's fields");
@@ -1078,7 +1078,7 @@ int main(int argc, char **argv)
         b.x = 40; b.y = 40; b.dir = 1; b.state = 9; b.hot_x = -8; b.hot_y = -10;
         static uint8_t empty[W * H];
         memset(empty, 0, sizeof empty);
-        lem_dig_start(&b);
+        lem_dig_start(&b, NULL);
         lemmings_step(&b, 1, empty, W, H);
         ck("digging into nothing turns into a fall",
            (b.flags & 0x0010) == 0 && (b.flags & 4) != 0,
@@ -1334,13 +1334,13 @@ int main(int argc, char **argv)
             level_skills_reset(&lv);
         }
         ck("a fresh lemming takes a digger (image 0x0320D)",
-           level_assign(&one, SKILL_DIGGER) == 1, NULL);
+           level_assign(&one, NULL, SKILL_DIGGER) == 1, NULL);
         ck("and the count went down",
            level_skill_left(SKILL_DIGGER) == 1, NULL);
         /* Image 0x0321D refuses a lemming already in one of 0xF57F's
          * states, and 0x10 - the digger - is one of them. */
         ck("the same lemming refuses a second digger (image 0x0321D)",
-           level_assign(&one, SKILL_DIGGER) == 0, NULL);
+           level_assign(&one, NULL, SKILL_DIGGER) == 0, NULL);
         ck("and the count did NOT go down again",
            level_skill_left(SKILL_DIGGER) == 1, NULL);
     }

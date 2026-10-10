@@ -51,6 +51,10 @@
  *     12 move 160 100      put the pointer at this SCREEN position
  *     14 down              press the left button
  *     20 up                release it
+ *     30 rdown             press the RIGHT button - ds:0x14 bit 1, which
+ *     40 rup               image 0x03DB7 reads to pick the plain lemming
+ *                          under the pointer, and image 0x040F0 to double
+ *                          the edge scroll
  *
  * Frames are this loop's own count, which is the index the frame sink uses,
  * so a script and a captured sequence line up by construction. */
@@ -77,6 +81,8 @@ void harness_script_load(const char *path)
         if (!strcmp(verb, "move") && got == 4) a->what = SCRIPT_MOVE;
         else if (!strcmp(verb, "down")) a->what = SCRIPT_DOWN;
         else if (!strcmp(verb, "up")) a->what = SCRIPT_UP;
+        else if (!strcmp(verb, "rdown")) a->what = SCRIPT_RDOWN;
+        else if (!strcmp(verb, "rup")) a->what = SCRIPT_RUP;
         /* A KEY IS A SCANCODE, the byte port 0x60 produced - not a character
          * and not SDL's numbering. Replayed through image 0x016D4's own
          * handler, so ds:0x0F78, ds:0x1FC7 and ds:0x1FD0 all end up holding
@@ -248,7 +254,7 @@ long harness_frame_no(void)    { return g_sink_frame; }
  * ====================================================================== */
 static FILE   *g_rec;
 static int32_t g_rec_x = -1, g_rec_y = -1;
-static uint8_t g_rec_btn, g_rec_key;
+static uint8_t g_rec_btn, g_rec_rbtn, g_rec_key;
 
 void harness_record_open(const char *path)
 {
@@ -273,7 +279,7 @@ void harness_record_open(const char *path)
                    "# clamps against; key is a SCANCODE.\n",
             (unsigned)DG.level_index, (unsigned)DG.level_rating);
     g_rec_x = g_rec_y = -1;
-    g_rec_btn = g_rec_key = 0;
+    g_rec_btn = g_rec_rbtn = g_rec_key = 0;
 }
 
 /* One frame's worth, and only what CHANGED - a script is a list of edges over
@@ -295,6 +301,15 @@ static void harness_record_frame(long frame)
     if (btn != g_rec_btn) {
         fprintf(g_rec, "%ld %s\n", frame, btn ? "down" : "up");
         g_rec_btn = btn;
+    }
+    /* AND THE RIGHT BUTTON, bit 1, which this left out. It is the one that
+     * makes image 0x03DB7 take the PLAIN lemming under the pointer rather
+     * than the busy one, so a recording of someone using it replayed as a
+     * different game on both sides. */
+    btn = (uint8_t)((lem_buttons >> 1) & 1);
+    if (btn != g_rec_rbtn) {
+        fprintf(g_rec, "%ld %s\n", frame, btn ? "rdown" : "rup");
+        g_rec_rbtn = btn;
     }
 
     /* ds:0x1FD0 holds the last scancode and image 0x016D4 clears it on any
@@ -415,6 +430,10 @@ int harness_script_step(struct level_frame *A, int32_t *scroll_x)
             level_panel_click(A, scroll_x);         /* image 0x03168 */
         } else if (act->what == SCRIPT_UP) {
             lem_buttons &= (uint8_t)~1u;
+        } else if (act->what == SCRIPT_RDOWN) {
+            lem_buttons |= 2;                       /* ds:0x14 bit 1 */
+        } else if (act->what == SCRIPT_RUP) {
+            lem_buttons &= (uint8_t)~2u;
         } else if (act->what == SCRIPT_KEY) {
             keyboard_isr((uint8_t)(act->x & 0x7F));      /* image 0x016D4 */
         } else if (act->what == SCRIPT_KEYUP) {

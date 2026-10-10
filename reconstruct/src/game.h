@@ -564,7 +564,7 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x);
 #define SKILL_DIGGER 9
 
 /* Give this one a builder, image 0x032BD. Non-zero if it took. */
-int lem_build_start(lemming *a);
+int lem_build_start(lemming *a, lemming *plain);
 /* The two PERMANENT abilities - image 0x0329B and image 0x03557. Neither
  * changes what the lemming is doing; each sets a byte that changes what
  * happens to it later. */
@@ -578,10 +578,10 @@ int lem_float_start(lemming *a);
  * standing within a cell of it. */
 int lem_block_start(lemming *a);
 /* And a basher, image 0x034CE - which asks the trigger map what is ahead. */
-int lem_bash_start(lemming *a);
-int lem_mine_start(lemming *a);
+int lem_bash_start(lemming *a, lemming *plain);
+int lem_mine_start(lemming *a, lemming *plain);
 
-int lem_dig_start(lemming *a);
+int lem_dig_start(lemming *a, lemming *plain);
 uint8_t lemmings_live(const lemming *lem, uint8_t n);
 
 /* The play area the blitter clips against - ds:0x66F2 while a level is up.
@@ -718,7 +718,7 @@ int level_at_exit(lemming *a, const level *lv, const ground *g);
 void lem_exit_start(lemming *a);
 /* Image 0x03150's dispatch and the tail every handler jumps into: the skill
  * is spent and the click is heard ONLY when one was actually given. */
-int  level_assign(lemming *a, uint8_t skill);
+int  level_assign(lemming *a, lemming *plain, uint8_t skill);
 
 /* Win or lose, and which of the nine things the game says about it -
  * image 0x048F6's ladder. */
@@ -1518,7 +1518,7 @@ void menu_free(menu_screen *m);
 #define SCRIPT_MAX 256
 typedef struct { long frame; uint8_t what; int32_t x, y; } script_act;
 enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2,
-       SCRIPT_KEY = 3, SCRIPT_KEYUP = 4 };
+       SCRIPT_KEY = 3, SCRIPT_KEYUP = 4, SCRIPT_RDOWN = 5, SCRIPT_RUP = 6 };
 extern script_act harness_script[SCRIPT_MAX];
 extern uint16_t   harness_script_n;
 void harness_script_load(const char *path);

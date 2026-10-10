@@ -97,7 +97,17 @@ UNTOUCHED = [("level 2, nobody touching it", "ref_l2", None, 2),
              # button that does something, so what this scores is that
              # NOTHING moved between frames 200 and 300 and that everything
              # picked up where it left off.
-             ("pause, level 1", "ref_pause", "out/pause.txt", 1)]
+             ("pause, level 1", "ref_pause", "out/pause.txt", 1),
+             # CLICKS ON A DIGGER'S STACK - a recording of real play on "Just
+             # dig!", where every lemming after the first walks into the
+             # first one's shaft and the clicks land on several at once. The
+             # pointer's scan chooses the lemming already digging (image
+             # 0x03DCC), and image 0x03271 then gives the digger to the PLAIN
+             # one under the pointer instead. The port refused, so only one
+             # lemming ever dug where the original spends all ten. No other
+             # case here puts a busy and a plain lemming under one click.
+             ("clicks on a digger's stack, level 1", "ref_dig_stack",
+              "out/dig_stack.txt", 1)]
 
 
 def screens(ref, shots):

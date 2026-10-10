@@ -4148,14 +4148,32 @@ static int lem_solid(const uint8_t *lvl, uint16_t cw, uint16_t chh,
  * file over - and no test here could reach it, because every check compares
  * a recorded run in which the click lands on a lemming that takes it.
  * ====================================================================== */
-int level_assign(lemming *a, uint8_t skill)
+/* THE SECOND CHANCE. Image 0x0317C hands every handler ds:0x58, the lemming
+ * the pointer's scan CHOSE - which with the left button is the one already
+ * doing a job, if any is under the pointer (image 0x03DCC). Four handlers
+ * then do not simply refuse it: the digger, builder, basher and miner each
+ * fall back to ds:0x5A, the scan's PLAIN candidate, test it against their
+ * mask, and give it the skill instead (image 0x03271, 0x03322, 0x03543,
+ * 0x0361F). So clicking a digger with walkers in its shaft gives the walker
+ * the digger.
+ *
+ * The port refused, and every click on such a stack went to the lemming that
+ * already had the job. A player found it on "Just dig!", where every
+ * lemming after the first walks into the first one's shaft; the original
+ * spends all ten diggers on the same clicks.
+ *
+ * The bomber, climber, blocker and floater have no such fallback. The
+ * floater's code has one at image 0x0357E, but its own refusal at image
+ * 0x0355C..0x03569 goes to image 0x0357B and nothing in the handler reaches
+ * it. */
+int level_assign(lemming *a, lemming *plain, uint8_t skill)
 {
     int took = 0;
     switch (skill) {                                   /* image 0x03180 */
-    case SKILL_DIGGER:  took = lem_dig_start(a);   break;  /* image 0x0320D */
-    case SKILL_BUILDER: took = lem_build_start(a); break;  /* image 0x032BD */
-    case SKILL_BASHER:  took = lem_bash_start(a);  break;  /* image 0x034CE */
-    case SKILL_MINER:   took = lem_mine_start(a);  break;  /* image 0x03598 */
+    case SKILL_DIGGER:  took = lem_dig_start(a, plain);   break;  /* 0x0320D */
+    case SKILL_BUILDER: took = lem_build_start(a, plain); break;  /* 0x032BD */
+    case SKILL_BASHER:  took = lem_bash_start(a, plain);  break;  /* 0x034CE */
+    case SKILL_MINER:   took = lem_mine_start(a, plain);  break;  /* 0x03598 */
     case SKILL_BLOCKER: took = lem_block_start(a); break;  /* image 0x03336 */
     case SKILL_BOMBER:  took = lem_bomb_start(a);  break;  /* image 0x031C4 */
     case SKILL_CLIMBER: took = lem_climb_start(a); break;  /* image 0x0329B */
@@ -4228,9 +4246,10 @@ static void lem_settle(lemming *a, int16_t bp)
 /* ds:0x14, the mouse buttons as image 0x04269 stores them. Bit 1 is what
  * image 0x03DB7 tests, and it PICKS THE PLAIN LEMMING over the busy one -
  * which is how the original lets you point past a worker at the walker
- * beside it. The port has no second button wired to this yet, so it reads
- * zero and always takes the busy one, exactly as the original does with the
- * button up. */
+ * beside it. sdl_io.c sets it from the right button, and an input script
+ * carries it as `rdown` / `rup`. With it up the busy one is chosen, and four
+ * of the skill handlers then fall back to the plain one themselves - see
+ * level_assign. */
 
 /* ds:0x63 - HOW MANY lemmings are under the pointer, which is the number the
  * panel prints beside the name. Image 0x03DA1 counts them. */
@@ -4404,9 +4423,21 @@ int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
  * has already established that none of those bits is set, so it does
  * nothing. Both readings are of the same bytes; only one of them is the
  * guard. */
-int lem_dig_start(lemming *a)
+/* Transcribed from image 0x0320D, with its second chance at image 0x03271.
+ * `plain` is what the pointer's scan left in ds:0x5A - the last lemming under
+ * the pointer doing no job - or NULL where ds:0x5F was 0xFF. See
+ * level_assign. */
+int lem_dig_start(lemming *a, lemming *plain)
 {
-    if (a->flags & DIG_KEEP) return 0;              /* image 0x0321D */
+    if ((a->tcell & 0x0F) == 9) return 0;           /* image 0x03214: steel */
+    if (a->flags & DIG_KEEP) {                      /* image 0x0321D */
+        /* Image 0x03271: the lemming the click chose cannot dig, so try the
+         * plain one - and test ONLY the mask again. Image 0x03283 jumps to
+         * image 0x03224, past the steel test above, so the second chance is
+         * not asked about the ground it stands on. */
+        if (!plain || (plain->flags & DIG_KEEP)) return 0;  /* 0x0327C */
+        a = plain;                                  /* image 0x03278 */
+    }
     a->flags = (uint16_t)((a->flags & DIG_KEEP) | DIG_BIT);
     a->anim  = DIG_ANIM_START;
     a->hot_x = DIG_HOT_X;
@@ -4653,10 +4684,15 @@ static void lem_build_brick(lemming *a, uint8_t *lvl, uint16_t cw,
 #define BUILD_STATE    0x10      /* image 0x0330A */
 #define BUILD_SHRUG    0x80      /* image 0x027DE, on [si+0x24] */
 
-int lem_build_start(lemming *a)
+int lem_build_start(lemming *a, lemming *plain)
 {
     if ((int32_t)a->y + a->hot_y <= BUILD_TOP) return 0;   /* 0x032C4 */
-    if (a->flags & BUILD_KEEP) return 0;                   /* 0x032CF */
+    if (a->flags & BUILD_KEEP) {                           /* 0x032CF */
+        /* Image 0x03322: the plain candidate, mask only - image 0x03334
+         * rejoins at image 0x032D6, past the height test. */
+        if (!plain || (plain->flags & BUILD_KEEP)) return 0;   /* 0x0332D */
+        a = plain;                                         /* 0x03329 */
+    }
     a->flags  = BUILD_BIT;                                 /* 0x032DF */
     a->hot_x  = BUILD_HOT_X;
     a->hot_y  = BUILD_HOT_Y;
@@ -4862,9 +4898,15 @@ static void lem_hoist(lemming *a)
 #define BASH_ROWS    10         /* image 0x0602C: cx = 0x0A */
 #define BASH_STATE   0x20       /* image 0x0352B */
 
-int lem_bash_start(lemming *a)
+int lem_bash_start(lemming *a, lemming *plain)
 {
-    if (a->flags & BASH_KEEP) return 0;             /* image 0x034D5 */
+    if (a->flags & BASH_KEEP) {                     /* image 0x034D5 */
+        /* Image 0x03543: the plain candidate, mask only, and image 0x03555
+         * rejoins at image 0x034DC - so the wall tests below are asked of
+         * it as they would have been of the first. */
+        if (!plain || (plain->flags & BASH_KEEP)) return 0;   /* 0x0354E */
+        a = plain;                                  /* image 0x0354A */
+    }
     uint8_t ahead = (uint8_t)(a->tahead & 0x0F);    /* image 0x034DC */
     uint8_t wall = (a->dir == 1) ? 7 : 8;           /* image 0x034E3 */
     if (ahead == wall) return 0;                    /* image 0x034ED */
@@ -4978,9 +5020,14 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 #define MINE_CYCLE   0x18       /* image 0x02B3A */
 
 /* Image 0x03598. */
-int lem_mine_start(lemming *a)
+int lem_mine_start(lemming *a, lemming *plain)
 {
-    if (a->flags & MINE_KEEP) return 0;             /* image 0x035A2 */
+    if (a->flags & MINE_KEEP) {                     /* image 0x035A2 */
+        /* Image 0x0361F: the plain candidate, mask only, and image 0x03631
+         * rejoins at image 0x035AC - the steel and wall tests still run. */
+        if (!plain || (plain->flags & MINE_KEEP)) return 0;   /* 0x0362A */
+        a = plain;                                  /* image 0x03626 */
+    }
     /* Image 0x035AC, and NO other skill asks this one: the cell UNDER it. A
      * miner cuts downwards, so steel underfoot refuses the assignment where
      * for a basher it is steel AHEAD that does. */
@@ -12524,9 +12571,12 @@ void level_play_click(struct level_frame *A)
      * sky and a lemming that already had the skill both clicked. A
      * player found it; see level_assign. */
     if (level_skill_left(level_skill())) {
-        int16_t k = level_lemming_at(A->lem, A->released, A->view_x);
-        if (k >= 0)
-            level_assign(&A->lem[k], level_skill());   /* image 0x03150 */
+        level_scan sc;
+        level_pointer_scan(A->lem, A->released, A->view_x, &sc);
+        if (sc.chosen >= 0)                          /* ds:0x58, ds:0x5A */
+            level_assign(&A->lem[sc.chosen],
+                         sc.plain >= 0 ? &A->lem[sc.plain] : NULL,
+                         level_skill());              /* image 0x0317C */
     }
 }
 

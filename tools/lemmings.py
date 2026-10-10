@@ -243,12 +243,13 @@ class LemmingsVga(VgaDos):
     def pin_mouse(self, on=True):
         self._mouse_pinned = on
 
-    def script_mouse(self, pos, down):
-        """Move the pointer AS THE SCRIPT, past the pin."""
+    def script_mouse(self, pos, down, right=False):
+        """Move the pointer AS THE SCRIPT, past the pin. INT 33h numbers the
+        buttons bit 0 left and bit 1 right."""
         self._mouse_from_script = True
         try:
             self.mouse_pos = tuple(pos)
-            self.mouse_btn = 1 if down else 0
+            self.mouse_btn = (1 if down else 0) | (2 if right else 0)
         finally:
             self._mouse_from_script = False
 

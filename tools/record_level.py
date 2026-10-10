@@ -279,7 +279,12 @@ def install(m):
             _, verb, arg = script[st["script_at"]]
             st["script_at"] += 1
             if verb == "move" and len(arg) == 2:
-                st["down"] = None
+                # A MOVE DOES NOT RELEASE THE BUTTON. This used to clear
+                # st["down"], so a pointer moved while held read as a release
+                # in the guest - ds:0x14 came out 0 on frames the recording,
+                # and the port replaying it, held 1. harness.c keeps the
+                # button across a move, and so does a hand on a mouse; only
+                # an `up` line lets go.
                 # THE SCRIPT IS IN SCREEN PIXELS, AND THE GUEST IS NOT.
                 #
                 # Image 0x0426D stores what INT 33h hands back, clamped to
@@ -296,14 +301,21 @@ def install(m):
                 # here aimed eight pixels apart and the original assigned a
                 # digger the port had no way to.
                 at = (arg[0] + 8, arg[1] + 8)
-                m.script_mouse(at, False)
+                m.script_mouse(at, bool(st["down"]), bool(st.get("right")))
                 st["at"] = at
+                if st["down"]:
+                    st["down"] = at
             elif verb == "down" and st.get("at"):
                 st["down"] = st["at"]
-                m.script_mouse(st["at"], True)
+                m.script_mouse(st["at"], True, bool(st.get("right")))
             elif verb == "up" and st.get("at"):
                 st["down"] = None
-                m.script_mouse(st["at"], False)
+                m.script_mouse(st["at"], False, bool(st.get("right")))
+            elif verb in ("rdown", "rup"):
+                # THE RIGHT BUTTON, ds:0x14 bit 1 - see harness.c.
+                st["right"] = verb == "rdown"
+                if st.get("at"):
+                    m.script_mouse(st["at"], bool(st["down"]), st["right"])
             elif verb in ("key", "keyup") and len(arg) >= 1:
                 # A SCANCODE, the byte port 0x60 produced, which is what
                 # lemdev --record-input writes. It goes in through the
@@ -336,7 +348,39 @@ def install(m):
         # through its own handler rather than on an edge - see
         # tools/probe_digger.py - and a tapped one is missed as often as not.
         if st.get("at"):
-            m.script_mouse(st["at"], bool(st["down"]))
+            m.script_mouse(st["at"], bool(st["down"]), bool(st.get("right")))
+            poll_now(uc, st["at"], bool(st["down"]), bool(st.get("right")))
+
+    # THE ORIGINAL SAMPLES THE POINTER IN ITS TIMER INTERRUPT, not in the
+    # frame. Image 0x017C7 is the INT 8 handler and image 0x01840 calls image
+    # 0x0418C's input poll on every tick - several a frame - which for the
+    # mouse is image 0x04252: INT 33h AX=3, then ds:0x14 (unless ds:0x200B
+    # is 0xFF, image 0x04262), and ds:0x10 and ds:0x12 clamped to
+    # 8..0x148 and 8..0xC8. So the pointer a frame acts on is whatever the
+    # LAST TICK BEFORE image 0x04085 read.
+    #
+    # Setting the emulator's mouse at image 0x018F therefore raced the
+    # ticks: sometimes one fell before the scroll code and the frame saw the
+    # new position, sometimes not until the next. On a recording of real
+    # play that gave the original an extra edge-scroll step going right and
+    # none going left, so its view ended eight pixels from the port's and
+    # every later click landed on different lemmings. It read as a port bug
+    # in which lemming a click takes.
+    #
+    # So the replay also does what ONE TICK'S POLL would have done at that
+    # moment. The ticks after it read the same mouse state and store the
+    # same bytes, so all this removes is the race: every frame sees the
+    # script's pointer from its start, which is what the port's
+    # level_input_step does and what the script means.
+    def poll_now(uc, at, down, right=False):
+        ds = base + DGROUP
+        x = min(max(at[0], 8), 0x148)               # image 0x0426D
+        y = min(max(at[1], 8), 0xC8)                # image 0x04282
+        if uc.mem_read(ds + 0x200B, 1)[0] != 0xFF:  # image 0x04262
+            uc.mem_write(ds + 0x14, ((1 if down else 0) | (2 if right else 0))
+                         .to_bytes(2, "little"))
+        uc.mem_write(ds + 0x10, x.to_bytes(2, "little"))   # image 0x0427E
+        uc.mem_write(ds + 0x12, y.to_bytes(2, "little"))   # image 0x04293
 
     m.uc.hook_add(UC_HOOK_CODE, on_frame,
                   None, base + FRAME_DONE, base + FRAME_DONE)
