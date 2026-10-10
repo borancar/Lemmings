@@ -3821,7 +3821,12 @@ int level_won(uint8_t saved, uint8_t needed) { return saved >= needed; }
 uint8_t level_index(void)  { return g_level_index; }
 uint8_t level_rating(void) { return g_level_rating; }
 
-/* image 0x04566: ds:0x1F6B + 1 - rating * 30, one-based. */
+/* image 0x04566: ds:0x1F6B + 1 - rating * 30, one-based. Image 0x0488C,
+ * which the results screen (image 0x04748) and the code screen (image
+ * 0x049A1) call instead, divides ds:0x1F6B + 1 by 30 and turns a remainder
+ * of 0 into 30 with the quotient less one - the same number, and a quotient
+ * equal to ds:0x1F6E, which both callers' paths have just set from the same
+ * index. */
 uint8_t level_number(void)
 {
     return (uint8_t)(g_level_index + 1
@@ -6594,9 +6599,14 @@ static const uint8_t FUSE_DIGIT[5][FUSE_DIGIT_ROWS] = {
 /* Image 0x070F3 loads the fuse into the BLIT ITSELF - it is not a separate
  * call - and image 0x0711A skips the digit when it is zero. Image 0x0714E
  * takes 0x15F off the destination, which for a 44-byte row is eight rows up
- * and one byte along: measured against the original's own frame 430, the
- * digit sits at (+8, -8) from the sprite's origin in colour 3, and all ten
- * of its ink pixels agree on all three lemmings that wear one. */
+ * and one byte along: the digit sits at (+8, -8) from the sprite's origin.
+ *
+ * The colour is image 0x06F7B's, the blit image 0x07152 calls: Set/Reset 3
+ * enabled on planes 1..3 (0x0E01), write mode 0, and the mask byte stored
+ * through itself as the bit mask, so plane 0 takes 1 wherever the mask is
+ * set. A digit pixel is `mask ? 3 : dst`, eight rows of two bytes. That was
+ * first measured off the original's frame 430 - all ten ink pixels on all
+ * three lemmings that wear one - and the reading agrees. */
 #define FUSE_DIGIT_DX     8
 #define FUSE_DIGIT_DY   (-8)
 #define FUSE_DIGIT_INK    3
