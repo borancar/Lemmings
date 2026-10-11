@@ -140,6 +140,20 @@ def lem_fields():
 
 
 LEM_FIELDS = lem_fields()
+_LEM_AT = {n: (o, w) for o, w, n in LEM_FIELDS}
+
+
+# THE CELL AHEAD OF A LEMMING NEAR THE TOP IS THE STACK'S. Image 0x02EF1
+# takes 0x340 - two rows - off the address of the lemming's own cell, and
+# its row is (y - 0x10) >> 2, so below y 0x18 that lands before the trigger
+# map at ss:0x12: on bytes of the original's STACK, which this port has
+# none of (Fun 22's climber read 0xFF and 0xFB there, the port 0). Excused
+# for exactly those records, by the ORIGINAL's y, so a wrong tahead
+# anywhere the map is real still shows.
+def above_map(rec, at):
+    o, w = _LEM_AT["y"]
+    y = int.from_bytes(rec[at + o:at + o + w], "little", signed=True)
+    return y < 0x18
 LEMMING_MAX = 80
 
 
@@ -291,6 +305,8 @@ def compare(o, p, scripted, wanted=None):
                 for k in range(LEMMING_MAX):
                     a_ = off + k * 0x2D
                     for fo, fw, fn in LEM_FIELDS:
+                        if fn == "tahead" and above_map(O, a_):
+                            continue
                         if O[a_+fo:a_+fo+fw] != P[a_+fo:a_+fo+fw]:
                             bad.setdefault("lem", []).append(
                                 (f, O[off:off+size], P[off:off+size]))

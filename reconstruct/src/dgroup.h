@@ -237,7 +237,7 @@ typedef struct {
     uint8_t  _pad_0FCB[0x001D];
     /* The level's EXTENDED graphics set, which image 0x04836 turns into a
      * tune and image 0x03742 into a different terrain build. */
-    uint8_t  tune_pick;                     /* ds:0x0FE8 */
+    uint8_t  ext_set;                       /* ds:0x0FE8 */
     uint8_t  _pad_0FE9[0x0F82];
     uint8_t  level_index;                   /* ds:0x1F6B - the running order */
     uint8_t  tune_rot;                      /* ds:0x1F6C */
@@ -317,7 +317,7 @@ ENSURE_DG_AT(skill,        0x0082);  ENSURE_DG_AT(selected,     0x0083);
 ENSURE_DG_AT(skill_div,    0x0084);  ENSURE_DG_AT(tick,         0x0085);
 ENSURE_DG_AT(tick_load,    0x0086);  ENSURE_DG_AT(key_down,     0x0F78);
 ENSURE_DG_AT(lem,         0x0088);
-ENSURE_DG_AT(tune_pick,    0x0FE8);  ENSURE_DG_AT(level_index,  0x1F6B);
+ENSURE_DG_AT(ext_set,      0x0FE8);  ENSURE_DG_AT(level_index,  0x1F6B);
 ENSURE_DG_AT(tune_rot,     0x1F6C);  ENSURE_DG_AT(tune_advance, 0x1F6D);
 ENSURE_DG_AT(level_rating, 0x1F6E);  ENSURE_DG_AT(rating_drawn, 0x1F6F);
 ENSURE_DG_AT(fx_dirty,     0x1F70);  ENSURE_DG_AT(snd_setting,  0x1F71);

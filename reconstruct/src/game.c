@@ -2493,14 +2493,6 @@ void level_release_step(void)
  * two statics of one name, and it was very nearly done.
  * ==================================================================== */
 
-/* The level music_choose should look at. THE PORT'S OWN: the original reads
- * ds:0x0FE8 out of the level record it has already loaded, and the port hands
- * level_start_reset the same information through here rather than changing
- * its signature, which every caller and test would have to follow. */
-static const level *g_music_level;
-
-/* THE PORT'S OWN - see the note above. */
-void music_set_level(const level *lv) { g_music_level = lv; }
 
 
 /* image 0x04877 - the rotation, seventeen tunes deep. The names are the
@@ -2519,16 +2511,16 @@ static const uint8_t TUNE_BY_NUMBER[4] = { 0x01, 0x09, 0x03, 0x02 };
  * image 0x04866. Neither has a single near CALL in the image - they are
  * jumped to - which is why a static search for callers found nothing and the
  * question had to be put to the running original instead. */
-void music_choose(const level *lv)
+void music_choose(void)
 {
     if (g_snd_driver == 0) return;              /* image 0x04834 */
     /* ds:0x0FE8 is the level's EXTENDED graphics set, its header's +0x1C,
      * and non-zero means one of the four VGASPEC levels. Image 0x01A26 and
      * image 0x03742 read the same byte to load a different file and build
      * the terrain a different way, which is what identifies it - and it is
-     * why the by-number table has exactly four entries. */
-    if (lv) g_tune_pick = (uint8_t)(lv->extended_graphics_set & 0xFF);
-    uint8_t al = g_tune_pick;                   /* image 0x04836 */
+     * why the by-number table has exactly four entries. It is READ here;
+     * the load writes it - see level_begin. */
+    uint8_t al = g_ext_set;                     /* image 0x04836 */
     if (al != 0) {                              /* image 0x0483D */
         g_tune = TUNE_BY_NUMBER[(uint8_t)(al - 1) & 3];   /* image 0x04866 */
         return;
@@ -2792,9 +2784,8 @@ void level_start_reset(void)
     g_skill_div = 0;                 /* image 0x03A1B: ds:0x84 */
     /* image 0x00489 calls image 0x0482F in the same block that clears these
      * three bytes, so the tune is chosen when the level begins and image
-     * 0x03B4 twenty-odd frames later plays whatever it picked. The level is
-     * passed in because image 0x04836 reads its extended graphics set. */
-    music_choose(g_music_level);
+     * 0x03B4 twenty-odd frames later plays whatever it picked. */
+    music_choose();
     /* AND THE NUKE'S FOUR BYTES, which nothing here reset - so they carried
      * across levels and the double click became a SINGLE one. A player found
      * it after several levels in a row.
@@ -3255,6 +3246,10 @@ uint8_t level_trigger_at(lemming *a, const level *lv, const ground *g)
     int32_t row = ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL;
     uint8_t here = level_trigger_cell(col, row);
     a->tcell  = here;                               /* image 0x02EEA */
+    /* Two rows up is BEFORE the map for a lemming in row 0 or 1, and image
+     * 0x02EF9 then reads the original's stack. level_trigger_cell answers
+     * 0 off the map; tools/verify_dgroup.py's above_map says why the two
+     * differ there. */
     a->tahead = level_trigger_cell(col + 2 * a->dir, row - 2); /* 0x02EFC */
     return here;
 }
@@ -4317,7 +4312,13 @@ static int lem_solid(const uint8_t *lvl, uint16_t cw, uint16_t chh,
 {
     int32_t cx = (int32_t)x - LEMMING_DX;
     int32_t cy = (int32_t)y - LEMMING_DY;
-    if (cx < 0 || cx >= (int32_t)cw || cy < 0 || cy >= (int32_t)chh)
+    /* ABOVE THE TOP IS THE TOP ROW. Image 0x05DD1 is `jns` past image
+     * 0x05DD3's `xor di, di`, so a row less than zero reads row 0. The port
+     * answered "nothing there", and a climber at the level's top (Fun 22,
+     * y 0x17) found air at y - 8, hoisted itself out of the level and went
+     * on walking where the original's turned and fell. */
+    if (cy < 0) cy = 0;                             /* image 0x05DD1 */
+    if (cx < 0 || cx >= (int32_t)cw || cy >= (int32_t)chh)
         return 0;
     return (lvl[(size_t)cy * cw + cx] & 8) != 0;
 }
@@ -7586,7 +7587,15 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
     /* A climber hoisting itself over the top - see HOIST_SPR_BASE. */
     if (a->flags & 0x0040) {
         if (a->anim >= HOIST_SPR_FRAMES) return;
-        base = HOIST_SPR_BASE + (uint32_t)a->anim * HOIST_SPR_FRAME;
+        /* FACING LEFT IS THE SECOND EIGHT. Image 0x070AB adds the state,
+         * 8, to the frame when the direction is not 1, and the group runs
+         * sixteen frames to BUILD_SPR_BASE - the climber's split, which
+         * CLIMB_SPR_LEFT already makes. The port drew the right-facing
+         * eight both ways: Fun 22, a climber hoisting itself up facing left,
+         * eight frames of the wrong picture with every record agreeing. */
+        base = HOIST_SPR_BASE
+             + (uint32_t)(a->anim + (a->dir > 0 ? 0 : HOIST_SPR_FRAMES))
+               * HOIST_SPR_FRAME;                   /* image 0x070AB */
         if (base + HOIST_SPR_FRAME > sec_len) return;
         x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
         y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
@@ -12499,6 +12508,13 @@ static int level_begin(canvas *terrain, struct level_frame *A,
                        const uint8_t *spec, uint32_t spec_len,
                        const char **err)
 {
+    /* DS:0x0FE8 IS THE RECORD'S, not the music's. The load writes the level
+     * record at ds:0x0FCB and this is its extended graphics set; image
+     * 0x01A26, image 0x03742 and the music's image 0x04836 all only read
+     * it. The port kept it as `tune_pick` and wrote it from music_choose,
+     * which a run with no sound driver never reaches - so on a VGASPEC level
+     * it read 0 where the original's held 4 (Fun 22). */
+    g_ext_set = (uint8_t)(A->lv.extended_graphics_set & 0xFF);
     level_release_reset(&A->lv);      /* image 0x036BC: ds:0x64 and ds:0x67 */
     level_status_reset(&A->lv);       /* image 0x036C7 .. image 0x0372A */
     A->view_x = A->lv.start_x;        /* image 0x0372D, less the sixteen */
@@ -12767,8 +12783,6 @@ int level_show(const char *dir, const level *lv, uint8_t scale,
          * are symmetric, and plain in tools/verify_dgroup.py, where
          * ds:0x1F76 and ds:0x26 read swapped on all forty frames. */
         level_pages_swap();                     /* image 0x00105 */
-        /* image 0x04836 reads the level's extended graphics set. */
-        music_set_level(&A.lv);
         /* IMAGE 0x0049E - ONE PANEL UPDATE BEFORE THE LOOP EVER RUNS, and the
          * port had none. The set-up's tail is image 0x0048F's panel INIT, the
          * objects at image 0x00495 and image 0x00498, image 0x0049B's window

@@ -393,10 +393,9 @@ uint8_t sound_driver_answered(void);  /* ds:0x2010 */
 /* Which label the FX plate wears, or -1 for the bare plate that image
  * 0x04E84 draws when the sound is off entirely. */
 int menu_label_sprite(void);          /* image 0x04E5A */
-void music_choose(const level *lv);   /* image 0x0482F */
+void music_choose(void);              /* image 0x0482F */
 void music_level_passed(uint8_t passed);  /* image 0x04729 / 0x04778 */
 void music_cold_start(void);              /* image 0x0454C */
-void music_set_level(const level *lv);
 uint8_t sound_enabled(uint8_t bits);   /* ds:0x25A7 */
 
 /* Where the player's data files are. THE PORT'S OWN: the original ran in the
@@ -1621,7 +1620,7 @@ void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
 #define g_to_release     DG.to_release
 #define g_tune           DG.tune
 #define g_tune_advance   DG.tune_advance
-#define g_tune_pick      DG.tune_pick
+#define g_ext_set        DG.ext_set
 #define g_tune_rot       DG.tune_rot
 #define lem_buttons      DG.buttons
 #define lem_cursor_box   DG.cursor_box
