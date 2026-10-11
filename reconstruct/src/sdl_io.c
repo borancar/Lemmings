@@ -358,12 +358,77 @@ static uint16_t       g_page_w, g_page_h, g_page_split;
 static const lem_rgb *g_page_pal, *g_page_low;
 
 static int         g_lv_grabbed, g_mouse_owned;
-/* A RELEASE WAITS FOR THE NEXT FRAME while a level owns the mouse. The
- * original's driver was asked on every timer tick, five times a frame, so a
- * click shorter than a frame was still seen by some tick; this port reads
- * ds:0x14 once a frame, and a press and release drained together would
- * leave nothing for image 0x03E6F to see. view_level_pump applies them. */
-static uint8_t     g_btn_up_due;
+/* THE BUTTONS, AS THE DRIVER WAS ASKED FOR THEM: once a TICK. Image 0x04252
+ * is called from the timer interrupt and stores INT 33h AX=3's answer in
+ * ds:0x14 five times a frame, and image 0x03E6F - the panel, the nuke's
+ * double click - reads it on those same ticks. So while a level owns the
+ * mouse the host's button changes are QUEUED in the order they arrived and
+ * applied on a tick (view_tick_input), so a quick release between two presses
+ * is seen as a release, as the original's driver would have seen it.
+ *
+ * And each change waits until the frame's work has read the one before it
+ * (g_btn_unseen), because image 0x03150 reads ds:0x14 from the frame loop,
+ * not on a tick: without that a click shorter than the gap between two
+ * frames' work reaches the panel and never the play area, and a release the
+ * ticks saw can be undone before the work does. So every press and every
+ * release is seen by both, at most one change a frame. That much is the
+ * port's own - generous where the original's sampling was not, and a double
+ * click still puts its two presses two frames apart, inside image 0x04005's
+ * five.
+ *
+ * This replaced a release held for a frame, and a press that CANCELLED a held
+ * release: a double click with both inside one frame read as one long press,
+ * ds:0x62 never let go, and the nuke wanted several double clicks before one
+ * registered. A player found it. */
+static uint8_t g_pressed_edge;      /* the left button went down since asked */
+typedef struct { uint8_t bit, down; } btn_edge;
+#define BTN_QUEUE 16
+static btn_edge    g_btn_q[BTN_QUEUE];
+static uint8_t     g_btn_qn;
+static uint8_t     g_btn_unseen;      /* a change the frame has not read */
+
+static void btn_queue(uint8_t bit, uint8_t down)
+{
+    if (!bit) return;
+    if (g_btn_qn == BTN_QUEUE) {      /* full: the oldest goes in now */
+        if (g_btn_q[0].down) lem_buttons |= g_btn_q[0].bit;
+        else lem_buttons &= (uint8_t)~g_btn_q[0].bit;
+        memmove(g_btn_q, g_btn_q + 1, sizeof g_btn_q[0] * (BTN_QUEUE - 1));
+        g_btn_qn--;
+    }
+    g_btn_q[g_btn_qn].bit = bit;
+    g_btn_q[g_btn_qn].down = down;
+    g_btn_qn++;
+}
+
+/* One change a call - a tick's worth of the driver. */
+static void btn_apply_one(void)
+{
+    if (!g_btn_qn) return;
+    if (g_btn_unseen) return;         /* the last change is not read yet */
+    btn_edge e = g_btn_q[0];
+    if (e.down) lem_buttons |= e.bit;
+    else lem_buttons &= (uint8_t)~e.bit;
+    g_btn_unseen = 1;
+    memmove(g_btn_q, g_btn_q + 1, sizeof g_btn_q[0] * (BTN_QUEUE - 1));
+    g_btn_qn--;
+}
+
+/* ONE BUTTON CHANGE FROM THE HOST, as the event drain sees it - split out so
+ * tests/menu_input.c can hand it a double click without SDL delivering one. */
+void view_button_event(uint8_t bit, uint8_t down)
+{
+    if (down && bit == 1) g_pressed_edge = 1;
+    if (g_mouse_owned) btn_queue(bit, down);        /* see g_btn_q */
+    else if (down) lem_buttons |= bit;
+    else lem_buttons &= (uint8_t)~bit;
+}
+
+static void btn_flush(void)
+{
+    while (g_btn_qn) { g_btn_unseen = 0; btn_apply_one(); }
+    g_btn_unseen = 0;
+}
 static port_key    g_port_key;
 
 /* WHAT THE HARDWARE USED TO DO: ONE DRAIN OF THE HOST'S QUEUE, dispatched the
@@ -387,7 +452,6 @@ static port_key    g_port_key;
  *
  * The grab is the port's own and has no counterpart: the original owns the
  * machine and the pointer cannot be anywhere else. */
-static uint8_t g_pressed_edge;      /* the left button went down since asked */
 static uint8_t g_moved_edge;        /* the pointer has been somewhere definite */
 
 void view_input_drain(void)
@@ -436,21 +500,15 @@ void view_input_drain(void)
                  * under-pointer scan pick the PLAIN lemming over the busy
                  * one. That is how the original lets you point past a builder
                  * at the walker behind it. */
-                if (e.button.button == SDL_BUTTON_LEFT) {
-                    lem_buttons |= 1;
-                    g_btn_up_due &= (uint8_t)~1u;
-                    g_pressed_edge = 1;
-                } else if (e.button.button == SDL_BUTTON_RIGHT) {
-                    lem_buttons |= 2;
-                    g_btn_up_due &= (uint8_t)~2u;
-                }
+                view_button_event(
+                    e.button.button == SDL_BUTTON_LEFT ? 1
+                    : e.button.button == SDL_BUTTON_RIGHT ? 2 : 0, 1);
             }
         }
         else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-            uint8_t bit = e.button.button == SDL_BUTTON_LEFT ? 1
-                        : e.button.button == SDL_BUTTON_RIGHT ? 2 : 0;
-            if (g_mouse_owned) g_btn_up_due |= bit;   /* see g_btn_up_due */
-            else lem_buttons &= (uint8_t)~bit;
+            view_button_event(
+                e.button.button == SDL_BUTTON_LEFT ? 1
+                : e.button.button == SDL_BUTTON_RIGHT ? 2 : 0, 0);
         }
         else if (e.type == SDL_EVENT_KEY_DOWN || e.type == SDL_EVENT_KEY_UP) {
             /* Ctrl+Alt gives the pointer back, which is the gesture DOSBox
@@ -487,14 +545,23 @@ void view_input_drain(void)
 }
 
 /* The mouse edges the drain saw, taken rather than peeked. */
+/* THE DRIVER ASKED ON A TICK - image 0x04252, from the timer interrupt. */
+void view_tick_input(void)
+{
+    view_input_drain();
+    btn_apply_one();
+}
+
 level_input view_level_pump(void)
 {
     level_input in;
-    /* Last frame's releases first: the frame they arrived in has had its
-     * ticks with the button down. */
-    lem_buttons &= (uint8_t)~g_btn_up_due;
-    g_btn_up_due = 0;
     view_input_drain();
+    /* NOTHING IS APPLIED HERE. The frame's work reads ds:0x14 as the last
+     * tick left it, which is all the original's frame loop ever did - and a
+     * change applied now could be undone by the next tick before image
+     * 0x03E6F had seen it. The work reads it next, so the last change has
+     * been seen by it - see g_btn_q. */
+    g_btn_unseen = 0;
     in.pressed  = g_pressed_edge; g_pressed_edge = 0;
     in.moved    = g_moved_edge;
     in.port_key = g_port_key;     g_port_key = PORT_KEY_NONE;
@@ -552,10 +619,7 @@ void view_level_grab(int on)
 {
     g_mouse_owned = on ? 1 : 0;
     g_lv_grabbed  = on ? 1 : 0;
-    if (!on) {                    /* a release held for a frame that is gone */
-        lem_buttons &= (uint8_t)~g_btn_up_due;
-        g_btn_up_due = 0;
-    }
+    if (!on) btn_flush();         /* changes queued for a level that is gone */
     if (harness_input_follows()) on = 0;     /* see view_input_drain */
     if (g_win) SDL_SetWindowRelativeMouseMode(g_win, on ? true : false);
 }

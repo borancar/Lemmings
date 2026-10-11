@@ -194,6 +194,11 @@ typedef struct {
      * above stay because the port's own composition reads them; this is what
      * blit_path_of is given. */
     uint16_t bp;             /* image 0x039A6 */
+    /* WHICH OF THE LVL'S 32 SLOTS IT CAME FROM. The port keeps only the
+     * slots that hold something, so its index is not the original's: image
+     * 0x037C6 walks the SLOTS, stamps `slot << 4` into the trigger map and
+     * image 0x02FB6 finds a trap's record by it. */
+    uint8_t slot;
 } level_object;
 
 typedef struct {
@@ -1181,6 +1186,8 @@ typedef struct {
     port_key port_key;  /* the port's own, above */
 } level_input;
 level_input view_level_pump(void);
+void view_tick_input(void);    /* image 0x04252, once a tick */
+void view_button_event(uint8_t bit, uint8_t down);   /* the host's, one change */
 void view_input_drain(void);
 
 /* IMAGE 0x016D4 - the keyboard handler, and the three things it keeps. The

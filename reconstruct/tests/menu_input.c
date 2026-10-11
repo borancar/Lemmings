@@ -83,6 +83,43 @@ int main(void)
      * full-screen box covers the screen. sdl_io.c passes MENU_PLAY as the
      * click action and there is no matcher left to get wrong. */
 
+    /* A DOUBLE CLICK INSIDE ONE FRAME, which is how a player double-clicks
+     * the nuke: down, up, down, up, all before the level reads ds:0x14
+     * again. Image 0x03E6F reads the button on the timer's ticks and needs
+     * to see it go UP between the two presses - ds:0x62 only lets go on a
+     * release - or the second press is the first one still held. The port
+     * used to cancel a held-back release when the next press came, and the
+     * nuke needed several double clicks before one registered.
+     *
+     * What is checked is the button as each TICK sees it, which is what the
+     * panel reads, and as each FRAME's work sees it, which is what image
+     * 0x03150 reads. */
+    printf("\nlevel buttons - a double click inside one frame:\n");
+    {
+        view_level_grab(1);                   /* the level owns the mouse */
+        lem_buttons = 0;
+        view_button_event(1, 1); view_button_event(1, 0);
+        view_button_event(1, 1); view_button_event(1, 0);
+        int tick_presses = 0, frame_presses = 0;
+        uint8_t was_tick = 0, was_frame = 0;
+        for (int frame = 0; frame < 4; frame++) {
+            (void)view_level_pump();
+            uint8_t b = (uint8_t)(lem_buttons & 1);
+            if (b && !was_frame) frame_presses++;
+            was_frame = b;
+            for (int t = 0; t < 5; t++) {
+                view_tick_input();
+                b = (uint8_t)(lem_buttons & 1);
+                if (b && !was_tick) tick_presses++;
+                was_tick = b;
+            }
+        }
+        check("presses the panel's ticks see", tick_presses, 2);
+        check("presses the frame's work sees", frame_presses, 2);
+        check("and the button ends up released", lem_buttons & 1, 0);
+        view_level_grab(0);
+    }
+
     printf(failures ? "\n  %d FAILED\n" : "\n  all passed\n", failures);
     return failures ? 1 : 0;
 }

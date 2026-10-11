@@ -426,6 +426,7 @@ int level_parse(const uint8_t *buf, uint32_t len, level *lv, const char **err)
         if (!x && !y && !e[4] && !e[5] && !e[6] && !e[7])
             continue;
         level_object *o = &lv->objects[lv->num_objects++];
+        o->slot = (uint8_t)i;
         o->x = (int16_t)(x - 16);
         o->y = (int16_t)y;
         o->id = e[5];
@@ -3134,6 +3135,16 @@ void level_object_trigger(uint8_t i)
     g_anim[i].flags |= 2;                           /* image 0x02FCE */
 }
 
+/* A TRIGGER CELL NAMES A SLOT; the port's lists are packed. The one object
+ * in that slot, or -1 - which no stamped cell can produce. THE PORT'S OWN:
+ * the original indexes its 32 slot records directly (image 0x02FB6). */
+static int16_t level_object_of_slot(const level *lv, uint8_t slot)
+{
+    for (uint16_t k = 0; k < lv->num_objects; k++)
+        if (lv->objects[k].slot == slot) return (int16_t)k;
+    return -1;
+}
+
 /* Image 0x037CB. */
 void level_triggers_build(const level *lv, const ground *g)
 {
@@ -3180,13 +3191,19 @@ void level_triggers_build(const level *lv, const ground *g)
                    9);                              /* image 0x03886 */
     }
 
-    /* SIXTEEN, not thirty-two. Image 0x037C6 sets `cx = 0x10` and image
-     * 0x0382F steps `di` by eight, so the trigger pass walks the first
-     * sixteen object slots where image 0x07BB8 DRAWS all thirty-two. No level
-     * in this set has more than sixteen objects, so it changes nothing -
-     * transcribed because it is the original's bound and costs one line. */
-    for (uint16_t i = 0; i < lv->num_objects && i < 16; i++) {
+    /* SIXTEEN SLOTS, not thirty-two. Image 0x037C6 sets `cx = 0x10` and
+     * image 0x0382F steps `di` by eight, so the trigger pass walks the first
+     * sixteen object SLOTS where image 0x07BB8 DRAWS all thirty-two.
+     *
+     * SLOTS, not objects - and the stamp is the slot number. The port keeps
+     * only the slots that hold something, and this walked its own list and
+     * stamped its own index: on Fun 15 the four objects sit in slots 9..12,
+     * so the original's exit cell read 0xA1 and the port's 0x11, and a trap
+     * stamped by slot is looked up by slot (image 0x02FB6). A player's
+     * solution found it, in the data segment, with every frame identical. */
+    for (uint16_t i = 0; i < lv->num_objects; i++) {
         const level_object *o = &lv->objects[i];
+        if (o->slot >= 16) continue;                /* image 0x037C6 */
         if (o->id >= GROUND_OBJECTS) continue;
         const ground_object *go = &g->objects[o->id];
         /* AN EFFECT OF ZERO IS STILL STAMPED. This used to skip it and cite
@@ -3214,7 +3231,7 @@ void level_triggers_build(const level *lv, const ground *g)
         int32_t r0 = (int32_t)o->y / TRIG_CELL
                      + (int32_t)go->trigger_top - TRIG_ROW_UP;  /* 0x037F9 */
         trig_stamp(c0, r0, go->trigger_width, go->trigger_height,
-                   (uint8_t)(((i & 0x0F) << 4)          /* image 0x03808 */
+                   (uint8_t)(((o->slot & 0x0F) << 4)    /* image 0x03808 */
                              | (go->trigger_effect & 0x0F)));
     }
 }
@@ -6306,7 +6323,10 @@ void lemmings_step(lemming *lem, uint8_t n,
         if (look && trig_lv && trig_g) {             /* image 0x01FE8 */
             uint8_t cell = level_trigger_at(a, trig_lv, trig_g);
             uint8_t eff = (uint8_t)(cell & 0x0F);
-            uint8_t obj = (uint8_t)(cell >> 4);       /* image 0x02FB8 */
+            /* Image 0x02FB8: the high nibble is the object's SLOT, which
+             * image 0x02FB6 multiplies by 0x1C to reach its record. */
+            int16_t obj = level_object_of_slot(trig_lv,
+                                               (uint8_t)(cell >> 4));
             if (eff == TRIGGER_EXIT) {
                 if (!(a->flags & EXIT_BIT) && !(a->flags & 4))
                     lem_exit_start(a);               /* image 0x02F3B */
@@ -6320,16 +6340,15 @@ void lemmings_step(lemming *lem, uint8_t n,
                  * the lemming's own - and image 0x02FCE sets bit 1 of the
                  * object's record so the TRAP plays its sequence. One at a
                  * time: image 0x02FC5 refuses while that bit is still set. */
-                if (!level_object_busy(obj)) {
-                    level_object_trigger(obj);       /* image 0x02FCE */
+                if (obj >= 0 && !level_object_busy((uint8_t)obj)) {
+                    level_object_trigger((uint8_t)obj);   /* image 0x02FCE */
                     a->alive = 0xFF;                 /* image 0x02FD1 */
                     /* AND THE TRAP'S OWN NOISE. Image 0x02FE9 takes the id
                      * from the OBJECT - byte 0x1B of its record - not from
                      * the effect, and image 0x02FEE makes zero mean silence.
-                     * `obj` is the trigger byte's high nibble, which is the
-                     * index image 0x02FB6 multiplies by 0x1C. */
-                    if (g_snd_driver == 0xFF && sound_enabled(3)     /* 0x02FDF */
-                        && obj < trig_lv->num_objects) {
+                     * `obj` is the object in the trigger byte's slot - the
+                     * record image 0x02FB6 reaches by multiplying by 0x1C. */
+                    if (g_snd_driver == 0xFF && sound_enabled(3)) {  /* 0x02FDF */
                         const ground_object *tgo =
                             &trig_g->objects[trig_lv->objects[obj].id & 0x0F];
                         if (tgo->trigger_sound)      /* image 0x02FEC */
@@ -13118,8 +13137,10 @@ void level_controls_tick(int32_t *scroll_x)
 void level_wait_ticks(int32_t *scroll_x)
 {
     harness_script_keys();      /* a recorded key, where the harness put it */
-    for (uint8_t t = 0; t < LEVEL_TICKS_A_FRAME; t++)
+    for (uint8_t t = 0; t < LEVEL_TICKS_A_FRAME; t++) {
+        view_tick_input();                          /* image 0x04252 */
         level_controls_tick(scroll_x);              /* image 0x01874 */
+    }
 }
 
 /* IMAGE 0x04660 - A SCREEN THAT WAITS, and the briefing is the one that does.
