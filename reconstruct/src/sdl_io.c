@@ -358,34 +358,49 @@ static uint16_t       g_page_w, g_page_h, g_page_split;
 static const lem_rgb *g_page_pal, *g_page_low;
 
 static int         g_lv_grabbed, g_mouse_owned;
-/* THE BUTTONS, AS THE DRIVER WAS ASKED FOR THEM: once a TICK. Image 0x04252
- * is called from the timer interrupt and stores INT 33h AX=3's answer in
- * ds:0x14 five times a frame, and image 0x03E6F - the panel, the nuke's
- * double click - reads it on those same ticks. So while a level owns the
- * mouse the host's button changes are QUEUED in the order they arrived and
- * applied on a tick (view_tick_input), so a quick release between two presses
- * is seen as a release, as the original's driver would have seen it.
+/* THE BUTTONS, AS THE DRIVER WAS ASKED FOR THEM. Image 0x04252 is called
+ * from the timer interrupt and stores INT 33h AX=3's answer in ds:0x14 five
+ * times a frame; image 0x03E6F - the panel, the nuke's double click - reads it
+ * on those ticks, and image 0x03150 from the frame loop. So while a level owns
+ * the mouse the host's button changes are QUEUED in the order they arrived,
+ * so a quick release between two presses is seen as a release, as the
+ * original's driver would have seen it.
  *
- * And each change waits until the frame's work has read the one before it
- * (g_btn_unseen), because image 0x03150 reads ds:0x14 from the frame loop,
- * not on a tick: without that a click shorter than the gap between two
- * frames' work reaches the panel and never the play area, and a release the
- * ticks saw can be undone before the work does. So every press and every
- * release is seen by both, at most one change a frame. That much is the
- * port's own - generous where the original's sampling was not, and a double
- * click still puts its two presses two frames apart, inside image 0x04005's
- * five.
+ * ONE CHANGE A FRAME, AT THE FRAME'S START (view_level_pump). Every press and
+ * every release is then seen by the frame's work and by all five of its
+ * ticks, and a double click puts its two presses two frames apart, inside
+ * image 0x04005's five. That much is the port's own - generous where the
+ * original's sampling was not.
+ *
+ * The start, and not a tick, because that is where a recorded script puts
+ * a change (harness_script_step) and where tools/record_level.py puts it in
+ * the original (its poll_now, at image 0x018F). Applied on a tick, the ticks
+ * of the frame BEFORE saw a press that `--record-input` writes against the
+ * next one, so every panel click replayed a frame late: the release rate
+ * turned a frame later, the lemmings came out a frame apart, and Fun 16 and
+ * 17 - the first solutions recorded that way - replayed as lost games on
+ * both sides while every frame of the replays agreed.
  *
  * This replaced a release held for a frame, and a press that CANCELLED a held
  * release: a double click with both inside one frame read as one long press,
  * ds:0x62 never let go, and the nuke wanted several double clicks before one
  * registered. A player found it. */
 static uint8_t g_pressed_edge;      /* the left button went down since asked */
+static int32_t g_mouse_px, g_mouse_py;   /* a position the frame has not taken */
+/* AND THE KEYS, for the same reason: image 0x03E6F reads ds:0x1FD0 on the
+ * ticks, and a replay presses a recorded key at the top of the wait
+ * (harness_script_keys, and record_level.py at image 0x00105). So while a
+ * level runs a key is held until then too, and recorded as it is pressed -
+ * a key that reached the handler on the third tick would otherwise replay
+ * two ticks early, and F1 and F2 step the rate on every tick. */
+#define KEY_QUEUE 32
+static uint8_t g_key_q[KEY_QUEUE];
+static uint8_t g_key_qn;
+static uint8_t g_mouse_pend;
 typedef struct { uint8_t bit, down; } btn_edge;
 #define BTN_QUEUE 16
 static btn_edge    g_btn_q[BTN_QUEUE];
 static uint8_t     g_btn_qn;
-static uint8_t     g_btn_unseen;      /* a change the frame has not read */
 
 static void btn_queue(uint8_t bit, uint8_t down)
 {
@@ -401,15 +416,13 @@ static void btn_queue(uint8_t bit, uint8_t down)
     g_btn_qn++;
 }
 
-/* One change a call - a tick's worth of the driver. */
+/* One change a call - a frame's worth, see g_btn_q. */
 static void btn_apply_one(void)
 {
     if (!g_btn_qn) return;
-    if (g_btn_unseen) return;         /* the last change is not read yet */
     btn_edge e = g_btn_q[0];
     if (e.down) lem_buttons |= e.bit;
     else lem_buttons &= (uint8_t)~e.bit;
-    g_btn_unseen = 1;
     memmove(g_btn_q, g_btn_q + 1, sizeof g_btn_q[0] * (BTN_QUEUE - 1));
     g_btn_qn--;
 }
@@ -426,8 +439,7 @@ void view_button_event(uint8_t bit, uint8_t down)
 
 static void btn_flush(void)
 {
-    while (g_btn_qn) { g_btn_unseen = 0; btn_apply_one(); }
-    g_btn_unseen = 0;
+    while (g_btn_qn) btn_apply_one();
 }
 static port_key    g_port_key;
 
@@ -465,6 +477,9 @@ void view_input_drain(void)
         else if (harness_input_follows()) continue;
         else if (e.type == SDL_EVENT_MOUSE_MOTION) {
             g_moved_edge = 1;
+            int32_t bx = g_mouse_pend ? g_mouse_px : (int32_t)lem_mouse_x;
+            int32_t by = g_mouse_pend ? g_mouse_py : (int32_t)lem_mouse_y;
+            int32_t nx, ny;
             if (g_lv_grabbed) {
                 /* RELATIVE motion while the window holds the pointer, which
                  * is what the original works in: it asks the driver for
@@ -472,18 +487,25 @@ void view_input_drain(void)
                  * 0x00F20. An absolute position would also stop at the edge
                  * of the desktop rather than at the edge of the game's own
                  * range. */
-                lem_mouse_move((int32_t)lem_mouse_x + (int32_t)e.motion.xrel,
-                               (int32_t)lem_mouse_y + (int32_t)e.motion.yrel);
+                nx = bx + (int32_t)e.motion.xrel;
+                ny = by + (int32_t)e.motion.yrel;
             } else if (g_mouse_owned && g_ren) {
                 /* Scaled by the PAGE that is up rather than by a constant -
                  * the level's is 320x200 and it was written out as such. */
                 int ow = 0, oh = 0;
                 SDL_GetRenderOutputSize(g_ren, &ow, &oh);
-                if (ow > 0 && oh > 0 && g_page_w && g_page_h)
-                    lem_mouse_move(
-                        (int32_t)(e.motion.x * g_page_w / (float)ow) + 8,
-                        (int32_t)(e.motion.y * g_page_h / (float)oh) + 8);
-            }
+                if (!(ow > 0 && oh > 0 && g_page_w && g_page_h)) continue;
+                nx = (int32_t)(e.motion.x * g_page_w / (float)ow) + 8;
+                ny = (int32_t)(e.motion.y * g_page_h / (float)oh) + 8;
+            } else continue;
+            if (g_mouse_owned) {
+                /* HELD FOR THE FRAME'S START, as a button change is - see
+                 * g_btn_q. Clamped as it goes, as the driver's range set at
+                 * image 0x00F2B clamped it, so a push past an edge does not
+                 * bank distance a move back has to undo. */
+                lem_mouse_clamp(&nx, &ny);
+                g_mouse_px = nx; g_mouse_py = ny; g_mouse_pend = 1;
+            } else lem_mouse_move(nx, ny);
         }
         else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             if (!g_lv_grabbed && g_mouse_owned) {
@@ -524,9 +546,11 @@ void view_input_drain(void)
                 continue;
             }
             uint8_t sc = scancode_of(e.key.key);
-            if (sc != 0xFF)
-                keyboard_isr((uint8_t)(e.type == SDL_EVENT_KEY_UP
-                                       ? (sc | 0x80) : sc));   /* image 0x016D4 */
+            if (sc != 0xFF) {
+                uint8_t code = (uint8_t)(e.type == SDL_EVENT_KEY_UP
+                                         ? (sc | 0x80) : sc);
+                view_key_event(code);
+            }
             /* THE PORT'S OWN KEYS, which have no scancode because the
              * original has no such keys - it owns the machine, so there is
              * nothing to abandon a level for and its scroll is the pointer
@@ -544,24 +568,43 @@ void view_input_drain(void)
     }
 }
 
+/* ONE SCANCODE FROM THE HOST - split out, as view_button_event is, so
+ * tests/menu_input.c can hand one over without SDL delivering it. A level's
+ * keys wait for the wait - view_keys_apply. */
+void view_key_event(uint8_t code)
+{
+    if (g_mouse_owned && g_key_qn < KEY_QUEUE) g_key_q[g_key_qn++] = code;
+    else keyboard_isr(code);                        /* image 0x016D4 */
+}
+
+/* The keys a level's drain held back, pressed at the top of the frame's
+ * wait - level_wait_ticks, beside the script's own. */
+void view_keys_apply(void)
+{
+    view_input_drain();
+    for (uint8_t i = 0; i < g_key_qn; i++) {
+        harness_record_key(g_key_q[i]);
+        keyboard_isr(g_key_q[i]);                   /* image 0x016D4 */
+    }
+    g_key_qn = 0;
+}
+
 /* The mouse edges the drain saw, taken rather than peeked. */
 /* THE DRIVER ASKED ON A TICK - image 0x04252, from the timer interrupt. */
 void view_tick_input(void)
 {
-    view_input_drain();
-    btn_apply_one();
+    view_input_drain();     /* queued; the frame's start applies it */
 }
 
 level_input view_level_pump(void)
 {
     level_input in;
     view_input_drain();
-    /* NOTHING IS APPLIED HERE. The frame's work reads ds:0x14 as the last
-     * tick left it, which is all the original's frame loop ever did - and a
-     * change applied now could be undone by the next tick before image
-     * 0x03E6F had seen it. The work reads it next, so the last change has
-     * been seen by it - see g_btn_q. */
-    g_btn_unseen = 0;
+    btn_apply_one();        /* one change a frame - see g_btn_q */
+    if (g_mouse_pend) {     /* and the pointer where it is now */
+        lem_mouse_move(g_mouse_px, g_mouse_py);
+        g_mouse_pend = 0;
+    }
     in.pressed  = g_pressed_edge; g_pressed_edge = 0;
     in.moved    = g_moved_edge;
     in.port_key = g_port_key;     g_port_key = PORT_KEY_NONE;
@@ -620,6 +663,14 @@ void view_level_grab(int on)
     g_mouse_owned = on ? 1 : 0;
     g_lv_grabbed  = on ? 1 : 0;
     if (!on) btn_flush();         /* changes queued for a level that is gone */
+    if (!on) {
+        for (uint8_t i = 0; i < g_key_qn; i++) keyboard_isr(g_key_q[i]);
+        g_key_qn = 0;
+    }
+    if (!on && g_mouse_pend) {
+        lem_mouse_move(g_mouse_px, g_mouse_py);
+        g_mouse_pend = 0;
+    }
     if (harness_input_follows()) on = 0;     /* see view_input_drain */
     if (g_win) SDL_SetWindowRelativeMouseMode(g_win, on ? true : false);
 }

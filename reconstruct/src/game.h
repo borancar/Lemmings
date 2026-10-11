@@ -953,6 +953,7 @@ uint8_t palette_split_count(void);
 /* Is the pointer over a lemming - the original's ds:0x1A, which is what
  * makes the cursor a box (image 0x05854). */
 void lem_mouse_move(int32_t x, int32_t y);
+void lem_mouse_clamp(int32_t *x, int32_t *y);
 void level_cursor_draw(uint8_t *pix, uint16_t w, uint16_t h, uint16_t view_x);
 
 /* Which PC the port is pretending to be. The original asks at start-up -
@@ -1187,6 +1188,8 @@ typedef struct {
 } level_input;
 level_input view_level_pump(void);
 void view_tick_input(void);    /* image 0x04252, once a tick */
+void view_keys_apply(void);    /* a level's keys, at the top of the wait */
+void view_key_event(uint8_t code);   /* the host's, one scancode */
 void view_button_event(uint8_t bit, uint8_t down);   /* the host's, one change */
 void view_input_drain(void);
 
@@ -1553,6 +1556,8 @@ int  harness_input_follows(void);
 void harness_record_open(const char *path);
 void harness_record_close(void);
 void harness_record_result(uint8_t saved_pct, uint8_t needed_pct);
+void harness_record_key(uint8_t code);      /* a scancode for image 0x016D4 */
+void harness_record_port_key(void);         /* a key the original lacks */
 
 /* lemdev putting a composed screen up for a person to look at. */
 void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,

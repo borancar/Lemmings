@@ -639,6 +639,7 @@ def play_port(index, out, scale):
                    cwd=ROOT, env=env, stdout=subprocess.DEVNULL,
                    stderr=subprocess.DEVNULL)
     status = {}
+    port_key = None
     try:
         for line in open(script):
             f = line.split()
@@ -646,8 +647,19 @@ def play_port(index, out, scale):
                 over, saved, needed = int(f[3]), int(f[5]), int(f[7])
                 status = {"saved_pct": saved, "needed_pct": needed,
                           "won": bool(over) and saved >= needed}
+            elif line.startswith("# port key") and port_key is None:
+                port_key = line.split()[4]
     except OSError:
         pass
+    # THE PORT'S SCROLL KEYS ARE NOT IN THE SCRIPT - the original has no such
+    # keys, so neither game could replay a run that used one, and every click
+    # after it would land somewhere else (harness_record_port_key). A win
+    # like that is not a solution; the level is offered again.
+    if port_key is not None and status.get("won"):
+        print(f"  [lockstep] won, but the view was scrolled with an arrow key "
+              f"(first at frame {port_key}) - not replayable, so not kept. "
+              "Scroll by pushing the pointer against the edge.")
+        status["won"] = False
     print(f"  [lockstep] input kept in {os.path.relpath(sess, ROOT)}")
     return None, status, not status
 

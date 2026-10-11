@@ -863,6 +863,32 @@ a rule with no address behind it - "every one of its handlers", "the
 original's behaviour and not an omission". A sentence that generalises over
 the binary is a claim to check against the callers list, not a reading.
 
+## A recording is only as good as where it samples
+
+Fun 16 and 17 were won in the port, 97% saved, and their replays lost
+with nobody saved - on BOTH sides, with every frame of the two replays
+agreeing. Nothing was wrong with either game. The recording was wrong:
+
+- **It never wrote a key.** It compared ds:0x1FD0 with its last value once a
+  frame, at the frame sink, and image 0x00194 clears that byte at the top of
+  every frame while image 0x03E6F reads it on the ticks AFTER the sink. So
+  it held nothing whenever it was looked at, and the skills picked with F3..F10
+  were lost: the replay re-clicked a builder's bricks as climbers.
+- **It sampled the buttons at one moment and the game used them at
+  another.** A press applied on a tick reached the panel a frame before the
+  frame the file names.
+
+So the host's input is now applied where a replay applies it - a button change
+and the pointer at the frame's start, a key at the top of the wait - and
+recorded as it is applied (`harness_record_key`). Two replays agreeing says
+the two GAMES agree; it says nothing about whether the script is what was
+played. **The check that it is: a recording's own `# result` line against
+what its replay ends on** - a won file whose replay loses is the recorder.
+
+The port's arrow-key scroll has no script verb, because the original has no
+such key; a recording that used it says `# port key` and `lockstep.py` will
+not keep it.
+
 ## Wrapping a method the emulator already registered records nothing
 
 `probe_dac.py`'s first version replaced `m._on_out` to watch port writes. It

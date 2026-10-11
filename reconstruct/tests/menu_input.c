@@ -100,8 +100,12 @@ int main(void)
         lem_buttons = 0;
         view_button_event(1, 1); view_button_event(1, 0);
         view_button_event(1, 1); view_button_event(1, 0);
-        int tick_presses = 0, frame_presses = 0;
+        int tick_presses = 0, frame_presses = 0, tick_first = -1;
         uint8_t was_tick = 0, was_frame = 0;
+        /* Nothing is pending before the first frame: a tick must not take
+         * a change, or the press lands a frame before a recording says. */
+        view_tick_input();
+        if (lem_buttons & 1) tick_first = -2;
         for (int frame = 0; frame < 4; frame++) {
             (void)view_level_pump();
             uint8_t b = (uint8_t)(lem_buttons & 1);
@@ -110,14 +114,37 @@ int main(void)
             for (int t = 0; t < 5; t++) {
                 view_tick_input();
                 b = (uint8_t)(lem_buttons & 1);
-                if (b && !was_tick) tick_presses++;
+                if (b && !was_tick) {
+                    tick_presses++;
+                    if (tick_first == -1) tick_first = frame;
+                }
                 was_tick = b;
             }
         }
         check("presses the panel's ticks see", tick_presses, 2);
         check("presses the frame's work sees", frame_presses, 2);
+        /* harness_script_step and record_level.py's poll_now both apply a
+         * recorded press at the frame's start, so the ticks must first see
+         * it in the frame whose work does - frame 0 here. */
+        check("the ticks first see it with the frame's work", tick_first, 0);
         check("and the button ends up released", lem_buttons & 1, 0);
         view_level_grab(0);
+    }
+
+    printf("\nlevel keys - held for the top of the wait:\n");
+    {
+        view_level_grab(1);
+        key_last_clear();
+        view_key_event(0x41);                 /* F7, the builder */
+        view_tick_input();
+        /* A replay presses a recorded key at the top of the wait, so a
+         * player's must not reach image 0x016D4 on a tick before then. */
+        check("a tick does not take it", key_last(), 0);
+        view_keys_apply();
+        check("the wait's top presses it", key_last(), 0x41);
+        view_key_event(0x41 | 0x80);
+        view_level_grab(0);                   /* and leaving lets it go */
+        check("a level's end delivers what it held", key_last(), 0);
     }
 
     printf(failures ? "\n  %d FAILED\n" : "\n  all passed\n", failures);

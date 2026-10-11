@@ -6045,8 +6045,12 @@ static void lem_fall(lemming *a, const uint8_t *lvl, uint16_t cw, uint16_t chh)
             }
             return;
         }
-        if (a->y + k + 1 >= LEMMING_DEAD_Y) {      /* image 0x2210 */
-            a->y = (int16_t)(a->y + k + 1);
+        /* Image 0x02210 and 0x02225 test the bottom after the first two
+         * probes only, and leave through image 0x020E2, which sets +0x26
+         * and does not store y. The third row has no test of its own: it
+         * falls through to image 0x0223A, so the count still rises by
+         * three on the frame a faller drops out of the level (Fun 16). */
+        if (k < 2 && a->y + k + 1 >= LEMMING_DEAD_Y) {
             a->alive = 0xFF;
             return;
         }
@@ -7290,6 +7294,51 @@ static void level_pages_init(struct level_frame *A)
 /* Image 0x070A2 onwards - the blit that draws one lemming, which the port
  * splits by state because it indexes MAIN.DAT rather than the pre-shifted
  * store the original blits from. */
+/* THE EXPLOSION'S DEBRIS, drawn - image 0x06E83. Image 0x03662 asks
+ * [si+0x28] before drawing anything and, from 1 upward, calls image 0x06E83
+ * INSTEAD of image 0x0706F - so the cloud shows for one frame and the next
+ * fifty-one are eighty flying pixels and no lemming at all.
+ *
+ * AND INSTEAD OF IMAGE 0x0708B'S TEST, which is inside image 0x0706F. The
+ * port asked lemming_on_screen first, so a lemming that blew up just left
+ * of the view threw no debris into it: Fun 16, one pixel a frame flying in
+ * from the left edge for 26 frames, in the original and not the port.
+ * Each particle is clipped on its own, at image 0x06EE6 and 0x06EF2.
+ * Returns whether it drew - the cloud's frame 0 is a sprite, not debris. */
+static int lemming_draw_debris(uint8_t *dst, uint16_t dst_w, uint16_t dst_h,
+                               uint16_t view_x, const lemming *a)
+{
+    if (!(a->flags & CLOUD_BIT)) return 0;
+    if (a->anim >= 1 && a->anim <= DEBRIS_ROWS) {
+        const int8_t (*row)[2] = DEBRIS_AT[a->anim - 1];
+        for (uint8_t i = 0; i < DEBRIS_N; i++) {
+            int16_t ox = row[i][0];
+            if (ox == DEBRIS_GONE) continue;   /* image 0x06EDB */
+            int32_t px = (int32_t)a->x - LEMMING_DX + ox;
+            int32_t py = (int32_t)a->y - LEMMING_DY + row[i][1];
+            /* Image 0x06EF2 clips these against the SCREEN, not the
+             * level: bp is the page x and runs 0 .. 0x150, which is
+             * the visible 320 with the page's 16-pixel left margin
+             * in front of it. A particle is a pixel and not a blit,
+             * so it is not byte-trimmed the way a sprite is. */
+            int32_t sx = px - (int32_t)view_x;
+            if (sx < -16 || sx >= LEVEL_VIEW_W) continue;
+            if (py < 0 || py >= (int32_t)dst_h) continue;
+            /* Marked before the canvas test, which is the port's:
+             * a particle in the page's margin left of a level
+             * scrolled hard left is off the canvas and still on the
+             * page, and image 0x06F01 marks it all the same. */
+            lemming_mark_particle(sx + 16, py);  /* image 0x06F01 */
+            if (px < 0 || px >= (int32_t)dst_w) continue;
+            /* image 0x06F5B: the count runs DOWN from eighty. */
+            dst[(size_t)py * dst_w + px] =
+                DEBRIS_INK[(DEBRIS_N - i) & 0x0F];
+        }
+        return 1;
+    }
+    return 0;
+}
+
 /* WHY THIS FUNCTION IS A CHAIN OF FLAGS AND THE ORIGINAL'S IS NOT.
  *
  * The record's +0x14 is not a sprite base. It is a FUNCTION POINTER: image
@@ -7359,6 +7408,9 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
 
     if (a->alive == 0xFF) return;
 
+    if (lemming_draw_debris(dst, dst_w, dst_h, view_x, a))
+        return;                                     /* image 0x03669 */
+
     /* IS THIS LEMMING ON SCREEN AT ALL - see lemming_on_screen.
      *
      * Because it is keyed on the BYTE column, a sprite is refused the moment
@@ -7422,38 +7474,8 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
          * holds one picture and nothing at the indices anim 1 upward would
          * reach. */
         if (a->flags & 0x0002) {                    /* image 0x02350 */
-            /* AND THE FRAMES AFTER IT ARE THE DEBRIS. Image 0x03662 asks
-             * [si+0x28] before drawing anything and, from 1 upward, calls
-             * image 0x06E83 INSTEAD of the sprite - so the cloud shows for
-             * one frame and the next fifty-one are eighty flying pixels and
-             * no lemming at all. */
-            if (a->anim >= 1 && a->anim <= DEBRIS_ROWS) {
-                const int8_t (*row)[2] = DEBRIS_AT[a->anim - 1];
-                for (uint8_t i = 0; i < DEBRIS_N; i++) {
-                    int16_t ox = row[i][0];
-                    if (ox == DEBRIS_GONE) continue;   /* image 0x06EDB */
-                    int32_t px = (int32_t)a->x - LEMMING_DX + ox;
-                    int32_t py = (int32_t)a->y - LEMMING_DY + row[i][1];
-                    /* Image 0x06EF2 clips these against the SCREEN, not the
-                     * level: bp is the page x and runs 0 .. 0x150, which is
-                     * the visible 320 with the page's 16-pixel left margin
-                     * in front of it. A particle is a pixel and not a blit,
-                     * so it is not byte-trimmed the way a sprite is. */
-                    int32_t sx = px - (int32_t)view_x;
-                    if (sx < -16 || sx >= LEVEL_VIEW_W) continue;
-                    if (py < 0 || py >= (int32_t)dst_h) continue;
-                    /* Marked before the canvas test, which is the port's:
-                     * a particle in the page's margin left of a level
-                     * scrolled hard left is off the canvas and still on the
-                     * page, and image 0x06F01 marks it all the same. */
-                    lemming_mark_particle(sx + 16, py);  /* image 0x06F01 */
-                    if (px < 0 || px >= (int32_t)dst_w) continue;
-                    /* image 0x06F5B: the count runs DOWN from eighty. */
-                    dst[(size_t)py * dst_w + px] =
-                        DEBRIS_INK[(DEBRIS_N - i) & 0x0F];
-                }
-                return;
-            }
+            /* The frames after it are the debris - lemming_draw_debris,
+             * which runs before the on-screen test. */
             if (a->anim == 0) {
                 /* THE HOT SPOT, not an offset of it - see the note on
                  * CLOUD_SPR. Image 0x02D3C and image 0x02D37 set (-16, -25)
@@ -8465,12 +8487,19 @@ dgroup DG = {
  * outside its own range. */
 void lem_mouse_move(int32_t x, int32_t y)
 {
-    if (x < 8) x = 8;
-    if (x > 0x148) x = 0x148;
-    if (y < 8) y = 8;
-    if (y > 0xC8) y = 0xC8;
+    lem_mouse_clamp(&x, &y);
     lem_mouse_x = (uint16_t)x;
     lem_mouse_y = (uint16_t)y;
+}
+
+/* Image 0x0426D and image 0x04282 - the clamp alone, so the driver's side
+ * can hold a position until the frame takes it (see sdl_io.c's g_btn_q). */
+void lem_mouse_clamp(int32_t *x, int32_t *y)
+{
+    if (*x < 8) *x = 8;
+    if (*x > 0x148) *x = 0x148;
+    if (*y < 8) *y = 8;
+    if (*y > 0xC8) *y = 0xC8;
 }
 
 /* THE CURSOR - transcribed from image 0x05827, and its POSITION from image
@@ -13137,6 +13166,7 @@ void level_controls_tick(int32_t *scroll_x)
 void level_wait_ticks(int32_t *scroll_x)
 {
     harness_script_keys();      /* a recorded key, where the harness put it */
+    view_keys_apply();          /* and a player's, at the same moment */
     for (uint8_t t = 0; t < LEVEL_TICKS_A_FRAME; t++) {
         view_tick_input();                          /* image 0x04252 */
         level_controls_tick(scroll_x);              /* image 0x01874 */
@@ -13392,6 +13422,8 @@ int level_input_step(struct level_frame *A, int32_t *scroll_x_p, int32_t max_x)
     /* THE PORT'S OWN, all of it. The original has no way to abandon a level
      * without a result and no keyboard scroll - it has an edge to push the
      * pointer against, which level_scroll_step transcribes. */
+    if (in.port_key != PORT_KEY_NONE && in.port_key != PORT_KEY_ABANDON)
+        harness_record_port_key();      /* a recording cannot carry it */
     switch (in.port_key) {
     case PORT_KEY_ABANDON: *scroll_x_p = scroll_x; return -1;
     case PORT_KEY_LEFT:  scroll_x -= LEVEL_SCROLL * 2; break;

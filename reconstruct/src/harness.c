@@ -345,8 +345,10 @@ long harness_frame_no(void)    { return g_sink_frame; }
  * ====================================================================== */
 static FILE   *g_rec;
 static int32_t g_rec_x = -1, g_rec_y = -1;
-static uint8_t g_rec_btn, g_rec_rbtn, g_rec_key;
+static uint8_t g_rec_btn, g_rec_rbtn;
 static long    g_rec_over;      /* the frame ds:0x4F was first set, or -1 */
+static uint8_t g_rec_in_wait;   /* between harness_script_keys and the next
+                                 * frame's harness_script_step */
 
 void harness_record_open(const char *path)
 {
@@ -371,7 +373,7 @@ void harness_record_open(const char *path)
                    "# clamps against; key is a SCANCODE.\n",
             (unsigned)DG.level_index, (unsigned)DG.level_rating);
     g_rec_x = g_rec_y = -1;
-    g_rec_btn = g_rec_rbtn = g_rec_key = 0;
+    g_rec_btn = g_rec_rbtn = 0;
     g_rec_over = -1;
 }
 
@@ -380,7 +382,7 @@ void harness_record_open(const char *path)
 static void harness_record_frame(long frame)
 {
     int32_t x, y;
-    uint8_t btn, k;
+    uint8_t btn;
     if (!g_rec) return;
     if (g_rec_over < 0 && DG.level_over == 0xFF) g_rec_over = frame;
 
@@ -406,15 +408,44 @@ static void harness_record_frame(long frame)
         g_rec_rbtn = btn;
     }
 
-    /* ds:0x1FD0 holds the last scancode and image 0x016D4 clears it on any
-     * release, so a change to non-zero is a press and a change to zero is the
-     * release of whatever was held. */
-    k = key_last();
-    if (k != g_rec_key) {
-        if (k) fprintf(g_rec, "%ld key %u\n", frame, (unsigned)k);
-        else   fprintf(g_rec, "%ld keyup %u\n", frame, (unsigned)g_rec_key);
-        g_rec_key = k;
-    }
+    /* KEYS ARE NOT HERE - see harness_record_key. */
+    fflush(g_rec);
+}
+
+/* EVERY SCANCODE AS IT REACHES IMAGE 0x016D4, numbered for the frame whose
+ * wait a replay presses it in (harness_script_keys).
+ *
+ * This used to compare ds:0x1FD0 with its last value once a frame, at the
+ * frame sink - and image 0x00194 clears that byte at the top of every frame
+ * while image 0x03E6F reads it on the ticks in the wait AFTER the sink. So it
+ * held nothing whenever the recorder looked, and no key was ever recorded:
+ * Fun 16 and 17, played in the port alone with the skills chosen from the
+ * keyboard, replayed as the climber clicked onto every lemming and lost on
+ * both sides, while every frame of the two replays agreed.
+ *
+ * Both callers press their keys at the top of the wait - a script's in
+ * harness_script_keys, a player's in view_keys_apply, which holds a level's
+ * keys until then - and g_sink_frame has already moved on by the wait, so
+ * the frame they belong to is the one before it. */
+void harness_record_key(uint8_t code)
+{
+    if (!g_rec) return;
+    long f = g_rec_in_wait ? g_sink_frame - 1 : g_sink_frame;
+    fprintf(g_rec, "%ld %s %u\n", f, (code & 0x80) ? "keyup" : "key",
+            (unsigned)(code & 0x7F));
+    fflush(g_rec);
+}
+
+/* A KEY THE ORIGINAL DOES NOT HAVE - the port's scroll and Q. The script has
+ * no verb for them because neither game could replay one: the original has
+ * no such key, and a scroll it never made puts every later click somewhere
+ * else. So the recording says so, and tools/lockstep.py refuses to keep it
+ * as a solution. */
+void harness_record_port_key(void)
+{
+    if (!g_rec) return;
+    fprintf(g_rec, "# port key at frame %ld - not replayable\n",
+            g_rec_in_wait ? g_sink_frame - 1 : g_sink_frame);
     fflush(g_rec);
 }
 
@@ -533,14 +564,18 @@ void harness_sink_frame(const uint8_t *screen, const lem_rgb *top,
  * moment, image 0x00105, once the frame's work is done. */
 void harness_script_keys(void)
 {
-    for (uint32_t i = 0; i < g_keys_n; i++)
+    g_rec_in_wait = 1;          /* the frame's work is done - see above */
+    for (uint32_t i = 0; i < g_keys_n; i++) {
+        harness_record_key(g_keys_due[i]);
         keyboard_isr(g_keys_due[i]);                /* image 0x016D4 */
+    }
     g_keys_n = 0;
 }
 
 int harness_script_step(struct level_frame *A, int32_t *scroll_x)
 {
     int moved = 0;
+    g_rec_in_wait = 0;          /* a new frame - see harness_record_key */
     (void)scroll_x;
     (void)A;        /* a press is polled by image 0x03150, not handed over */
     if (g_follow) {
