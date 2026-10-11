@@ -823,6 +823,46 @@ Two things to take from it:
   click in it was re-recorded when the hold went in, and a reference older
   than a change to the harness's timing is scored against a different run.
 
+## A played level reaches what no recorded case does
+
+One solution played through `tools/lockstep.py --port-only` - Fun 11, a
+blocker on steel given a bomb - found four faults that twelve exact skill
+comparisons had never touched, because each needs two things to happen to
+one lemming:
+
+- **The handlers have two exits, not one.** Image 0x01FE8 is `call 0x2EC0`,
+  the trigger lookup, and image 0x01FEB is one instruction past it; 31 jumps
+  land on the first and 30 on the second. The port's comment said every
+  handler went to the lookup, so a blocker read its own 0x0A back every frame.
+- **The explosion's countdown FALLS** (image 0x02D83 into image 0x020D6), and
+  the port's only animated.
+- **The cloud reads the MAP, not `[si+0x2C]`** (image 0x023A6), after image
+  0x0283B gives a blocker's nine cells back - so the port cut a crater
+  through steel. And the blocker gives them back when it loses its floor too
+  (image 0x02835), which the port's comment explicitly denied.
+- **The harness cut every script at 256 actions**, silently. Five of eleven
+  solutions were longer, and their replays played on with nobody at the
+  mouse - which reads as the port diverging, not the harness.
+
+And the sweep of all eleven solutions found two more on Fun 10:
+
+- **A click is polled twice a frame, against what the last scan stored.**
+  Image 0x03150 runs at image 0x001AD and again at 0x001C5, after the
+  lemmings have moved and image 0x03CDE has scanned; a press over nothing is
+  not spent (ds:0x61), so the second call takes it. The port acted once, on
+  the press edge, with the previous frame's scan - and missed a faller that
+  dropped into the pointer's box that frame. It was already written down as
+  owed, and "agrees with every recorded run so far" was true.
+- **A floater facing left draws its second set of frames** (image 0x070AB
+  adds its state, 8). The only floater reference faced right.
+
+So: **the strongest check here is a level played to its end by a person**,
+replayed through both sides and compared in memory as well as on screen
+(`tools/verify_solutions.py`). And two of the four were comments asserting
+a rule with no address behind it - "every one of its handlers", "the
+original's behaviour and not an omission". A sentence that generalises over
+the binary is a claim to check against the callers list, not a reading.
+
 ## Wrapping a method the emulator already registered records nothing
 
 `probe_dac.py`'s first version replaced `m._on_out` to watch port writes. It
@@ -1747,6 +1787,7 @@ sweeps are the only thing that would catch a regression there. So:
 | **`tools/probe_codein.py`** | the access-code VALIDATOR at image 0x051A2, driven - the verdict, the level index it sets, the rating and the percentage. The codes it is driven over come from the original's own generator in the same run, because the first version built them in Python from the measured bit table and the original refused 108 of 123 |
 | **`tools/verify_code.py`** | the access-code generator at image 0x05042, driven rather than read. Its ten mask-and-shift blocks are the sort of thing this port has twice mis-read by eye, so the bit table in `game.c` was **measured** - one input bit at a time - and this checks that measurement against 400 further many-bit inputs covering every rotation count, because a single-bit sweep determines a permutation only if the contributions never interact. It also prints how many codes pass the validator's checksum **and says that a wrong table passes it too**: all three deliberate faults tried here round-tripped happily |
 | **`tools/lockstep.py`** | **play the ORIGINAL and watch the port play the same game beside it.** One window, opened on the level you name: the original on the left, the port on the right, and a title bar that turns magenta the moment a pixel differs. Your input goes to the original; once a frame the port is handed exactly what the original's frame loop read and waits for it (`LEM_INPUT_FOLLOW`). The original runs headless through its menus. It holds the original's timer while a frame works - see "Work in the timer interrupt" below - and keeps the input as an ordinary script, so anything you find replays through `record_level.py --script` |
+| **`tools/verify_solutions.py`** | **every level played to a win, replayed through the port and scored against the original's own run** - the screens and the data segment field by field, the lemming array record by record. The solutions are what `lockstep.py --in-order` keeps in `solutions/` - with `--port-only` the port is played alone at full speed and only the input is kept (`lemdev --record-input`, which ends the file with `# frame N` and the verdict), the references what it keeps in `out/solutions/`; a solution without a reference has the original's run recorded from the script first (`--record` forces it) |
 | **`tools/side_by_side.py`** | two recorded runs played back side by side, in step: a `record_level.py` reference beside the port's `LEM_SCREEN_DIR` frames, with a pane for the differing pixels |
 | **`tools/compare_play.py`** | **the port and the original PLAYING the same level**, frame by frame, from one input script both sides read. Every other frame-by-frame number here came from a level nobody touches, which exercises only the part of the game that needs no player - the skills, the panel's behaviour, the cursor's box and the level's ending are all behind a click and none of them was ever scored. It also makes the CURSOR part of the comparison rather than an excused 28 pixels, because with both pointers driven from one script they are in the same place. Refuses to report a happy figure for a run where the digger was never assigned |
 | **`tools/probe_cursor.py`** | the cursor's two shapes, **read out of the original's sprite store** rather than measured off a frame. Image 0x05827 puts them at 144 bytes a shift in segment `ds:0x1FEA`, and image 0x05854 adds 0x480 for the box it wears over a lemming |

@@ -94,7 +94,10 @@ def install(m):
         out.write(bytes(uc.mem_read(ds * 16, DG_END)))
         st["n"] += 1
 
-    m.uc.hook_add(UC_HOOK_CODE, on_frame)
+    # On the one address: a code hook with no range runs Python on every
+    # instruction the guest executes, which a played level cannot afford.
+    m.uc.hook_add(UC_HOOK_CODE, on_frame, None,
+                  base + FRAME_END, base + FRAME_END)
 
     def report():
         out.close()

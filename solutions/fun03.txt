@@ -1,0 +1,216 @@
+# recorded by lemdev --record-input
+# level 2  rating 0   (ds:0x1F6B, ds:0x1F6E)
+# frames are the harness's own count; move is in SCREEN
+# pixels, which is ds:0x10 less the eight image 0x0426D
+# clamps against; key is a SCANCODE.
+0 move 142 92
+8 move 134 101
+9 move 132 126
+10 move 126 146
+11 move 122 151
+12 move 118 155
+13 move 101 158
+14 move 95 159
+15 move 91 162
+16 move 87 166
+17 move 83 173
+18 move 83 175
+19 move 81 180
+20 move 80 182
+22 move 82 184
+23 down
+24 up
+27 move 90 184
+28 move 96 183
+29 move 95 182
+30 move 71 177
+31 move 58 176
+32 move 50 176
+33 move 48 176
+34 move 46 176
+35 move 39 181
+36 move 36 182
+37 move 25 185
+40 down
+53 up
+58 move 60 129
+59 move 100 80
+60 move 115 70
+61 move 123 65
+62 move 130 62
+63 move 136 57
+64 move 148 47
+65 move 157 41
+66 move 162 37
+67 move 165 36
+72 move 162 36
+73 move 158 35
+74 move 154 33
+76 down
+77 move 154 32
+77 up
+79 move 146 41
+80 move 135 53
+81 move 129 56
+82 move 124 56
+83 move 116 51
+84 move 106 45
+85 move 100 44
+86 move 98 44
+87 move 95 44
+88 move 94 44
+89 move 90 44
+90 move 80 46
+91 move 66 46
+92 move 67 52
+98 move 68 50
+99 move 67 51
+100 move 63 51
+101 move 58 52
+102 move 51 55
+103 move 46 58
+104 move 43 59
+105 move 52 55
+106 move 61 52
+107 move 73 47
+114 move 68 48
+115 move 62 51
+116 move 59 52
+125 move 62 53
+135 move 60 57
+136 move 58 62
+137 move 57 65
+138 move 55 67
+139 move 54 70
+140 move 51 76
+141 move 49 83
+142 move 46 92
+143 move 46 96
+144 move 46 104
+145 move 43 115
+146 move 39 125
+147 move 37 130
+148 move 33 138
+149 move 30 146
+150 move 29 153
+151 move 28 160
+152 move 28 165
+153 move 30 171
+154 move 30 179
+155 move 30 184
+156 move 30 185
+160 down
+164 up
+168 move 30 166
+169 move 32 136
+170 move 36 118
+171 move 38 107
+172 move 40 99
+173 move 43 86
+174 move 44 79
+175 move 44 73
+176 move 43 66
+177 move 41 62
+178 move 41 61
+179 move 40 61
+180 move 37 61
+181 move 32 65
+182 move 31 69
+183 move 29 72
+184 move 29 73
+191 move 29 77
+192 move 31 83
+193 move 32 85
+194 move 32 86
+195 move 32 85
+196 move 32 83
+197 move 32 82
+198 move 32 81
+199 move 32 78
+200 move 33 74
+201 move 34 72
+204 move 34 71
+205 down
+206 up
+207 move 34 79
+208 move 33 119
+209 move 33 141
+210 move 33 149
+211 move 34 158
+212 move 35 167
+213 move 36 173
+214 move 36 176
+215 move 37 177
+216 move 37 178
+217 move 34 183
+218 move 33 184
+219 move 32 185
+222 down
+229 move 30 185
+229 up
+230 move 28 185
+231 move 25 184
+232 move 24 183
+233 down
+234 move 24 182
+238 move 23 182
+243 up
+245 move 40 178
+246 move 67 178
+247 move 81 178
+248 move 102 178
+249 move 109 178
+252 move 102 182
+253 move 91 186
+254 move 89 186
+257 move 92 186
+260 down
+261 up
+262 move 92 187
+263 move 100 183
+264 move 120 167
+265 move 139 143
+266 move 143 140
+267 move 152 137
+268 move 154 137
+270 move 158 137
+271 move 162 137
+272 move 168 137
+273 move 176 137
+274 move 178 136
+305 move 179 136
+306 move 184 137
+307 move 185 138
+308 move 185 139
+310 move 185 140
+311 move 185 141
+312 move 186 141
+333 move 188 142
+336 move 189 144
+337 move 193 148
+338 move 193 149
+345 move 196 150
+347 move 197 150
+364 move 194 150
+372 move 193 150
+373 move 192 148
+383 down
+384 up
+385 move 194 148
+386 move 215 130
+387 move 219 126
+389 move 204 134
+390 move 195 135
+725 move 189 146
+726 move 182 163
+727 move 178 167
+728 move 178 168
+729 move 174 174
+730 move 172 177
+733 move 179 180
+735 move 182 184
+745 move 182 181
+746 move 185 106
+747 move 185 105
+# frame 889
+# result over 1 saved 94 needed 10

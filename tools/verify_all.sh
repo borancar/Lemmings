@@ -190,7 +190,21 @@ fi
 # rather than only the one that was clicked.
 say ""
 say "  the skills (tools/verify_skills.py):"
-uv run python tools/verify_skills.py 2>/dev/null | sed -n 's/^    /    /p' || fail=1
+# check_pipe, not `|| fail=1`: after a pipe that tests SED, and a failing
+# skill could not fail this sweep.
+uv run python tools/verify_skills.py 2>/dev/null | sed -n 's/^    /    /p'
+check_pipe "tools/verify_skills.py"
+
+# EVERY LEVEL PLAYED TO A WIN, replayed through the port against the
+# original's own run of the same input - screens and the data segment. The
+# references are recorded once (out/solutions/); a solution without one is
+# recorded first, which costs emulator minutes.
+say ""
+say "  the played solutions (tools/verify_solutions.py):"
+uv run python tools/verify_solutions.py 2>/dev/null \
+    | grep -E "^== |play area|panel  |DIFFER AND|nothing differs" \
+    | sed 's/^/    /'
+check_pipe "tools/verify_solutions.py"
 
 say ""
 say "  the results screen (tools/verify_results.py, driven):"

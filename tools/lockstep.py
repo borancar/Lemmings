@@ -2,6 +2,20 @@
 
     uv run python tools/lockstep.py                          # Fun 1
     uv run python tools/lockstep.py --rating tricky --number 4 --scale 3
+    uv run python tools/lockstep.py --in-order               # the campaign
+
+--port-only plays the PORT alone, in its own window at the level's own
+seventeen frames a second, and keeps only the input; nothing of the
+original runs until tools/verify_solutions.py records its run of each
+solution. Combine it with --in-order for the campaign at full speed.
+
+--in-order plays the levels one after another in the same window: the next
+level after a win, the same one again after a loss, starting from the first
+level that has no solution yet. A WON level keeps its input script as
+solutions/<rating><NN>.txt and its two recordings - screens and data
+segment, both sides - in out/solutions/<rating><NN>/, and is scored at once;
+tools/verify_solutions.py replays every solution through the port later.
+Won or lost is image 0x04720's own test, ds:0x40 against ds:0x41.
 
 ONE window, opened when the level starts: the original on the left, the port
 on the right, frame for frame. You play in that window - the pointer over
@@ -71,9 +85,13 @@ FRAME_DONE = 0x018F        # the game's own end-of-frame, inside a level only
 AFTER_INT33 = 0x04261      # image 0x04252's poll, the instruction after INT 33h
 MENU = 0x04401             # the menu: DS is up, the briefing not yet read
 WORK_DONE = (0x00105, 0x002CD, 0x00314)   # the frame's work over - see below
+PASS_END = 0x001C8         # where tools/dg_hook.py takes the data segment
+DG_END = 0x4DFD            # reconstruct/src/dgroup.h
+SAVED_PCT, NEEDED_PCT = 0x40, 0x41   # ds: image 0x04720 compares the two
 LEVEL_INDEX = 0x1F6B       # ds: the index into the running order
 NO_BUTTONS = 0x200B        # ds: 0xFF stops image 0x04262 storing ds:0x14
 RATINGS = ("fun", "tricky", "taxing", "mayhem")   # lemdev --rating's names
+SOLUTIONS = os.path.join(ROOT, "solutions")      # one input script a level
 W, H = 320, 200
 
 
@@ -112,12 +130,14 @@ def install(m):
         "sticky": 0,          # every button down since the last frame
         "keys": [],           # (scancode, down) held for the frame end
         "i": 0, "f": None, "port": None, "last": None, "over": False,
+        "dg": None, "result": {},
     }
 
     def status(what):
         tmp = os.path.join(sess, "status.json.tmp")
         with open(tmp, "w") as f:
-            json.dump({"state": what, "frames": st["i"]}, f)
+            json.dump(dict(st["result"], state=what, frames=st["i"],
+                           level=want), f)
         os.replace(tmp, os.path.join(sess, "status.json"))
 
     status("starting")
@@ -130,6 +150,18 @@ def install(m):
         if st["over"]:
             return
         st["over"] = True
+        # WON OR LOST, as image 0x04720 decides it: the rescued percentage
+        # against the requirement. ds:0x40 is rewritten by every panel frame
+        # (image 0x03AF4) and ds:0x41 by the briefing (image 0x0459E), so read
+        # now, with the level over, they are what the results screen will
+        # show. A window closed mid-level is no verdict at all.
+        if why == "over":
+            pct = m.uc.mem_read(ds + SAVED_PCT, 2)
+            st["result"] = {"saved_pct": pct[0], "needed_pct": pct[1],
+                            "won": pct[0] >= pct[1]}
+        if st["dg"]:
+            st["dg"].close()
+            st["dg"] = None
         # The port first: `# end` releases it to run on without waiting, and
         # it would, writing frames the original never made.
         if st["port"] and st["port"].poll() is None:
@@ -204,8 +236,10 @@ def install(m):
             "# pixels, which is ds:0x10 less the eight image 0x0426D\n"
             "# clamps against; key is a SCANCODE.\n")
         st["f"].flush()
+        st["dg"] = open(os.path.join(sess, "orig", "dg.bin"), "wb")
         env = dict(os.environ, LEM_INPUT_SCRIPT=script, LEM_INPUT_FOLLOW="1",
                    LEM_SCREEN_DIR=os.path.join(sess, "port"),
+                   LEM_DG_FILE=os.path.join(sess, "port", "dg.bin"),
                    SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
         env.pop("LEM_HOOK", None)
         st["port"] = subprocess.Popen(
@@ -285,6 +319,13 @@ def install(m):
         # runs. See LemmingsVga.ticks_held.
         m.ticks_held = True
 
+    # THE DATA SEGMENT, a frame at a time, at the moment tools/dg_hook.py
+    # takes it and for the reasons it gives - the port's LEM_DG_FILE is the
+    # other half, and tools/verify_dgroup.py's compare() scores the two.
+    def pass_end(uc, address, size, user):
+        if st["dg"] and not st["over"] and in_level():
+            st["dg"].write(bytes(uc.mem_read(ds, DG_END)))
+
     def work_done(uc, address, size, user):
         for sc, down in st.get("due", []):
             m.press_key(sc, 0, down)
@@ -299,21 +340,62 @@ def install(m):
                   base + AFTER_INT33, base + AFTER_INT33)
     m.uc.hook_add(UC_HOOK_CODE, on_frame, None,
                   base + FRAME_DONE, base + FRAME_DONE)
+    m.uc.hook_add(UC_HOOK_CODE, pass_end, None,
+                  base + PASS_END, base + PASS_END)
 
 
 # ---------------------------------------------------------------------------
 # THE WINDOW - this process.
 # ---------------------------------------------------------------------------
-def view(sess, sock_path, scale, emu, hand=None):
-    """Show the two games and send the player's input to the original.
+GAP, TOP = 4, 22
+
+
+class Window:
+    """One window for the whole sitting: levels come and go inside it.
 
     `hand`, if given, is a function called once a loop pass that returns a
     list of pygame-like events to inject - the headless self-test's player.
     """
+
+    def __init__(self, scale, hand=None):
+        if hand is None:
+            os.environ.pop("SDL_VIDEODRIVER", None)  # this one is for looking at
+        import pygame
+        self.pg = pygame
+        self.scale, self.hand = scale, hand
+        pygame.init()
+        self.screen = pygame.display.set_mode((2 * W * scale + GAP,
+                                               H * scale + TOP))
+        pygame.display.set_caption("original  |  port")
+        self.font = pygame.font.Font(None, 20)
+        self.big = pygame.font.Font(None, 16 * scale)
+        self.clock = pygame.time.Clock()
+
+    def events(self):
+        return self.pg.event.get() + (self.hand() if self.hand else [])
+
+    def message(self, *lines):
+        self.screen.fill((24, 24, 24))
+        y = self.screen.get_height() // 3
+        for line in lines:
+            t = self.big.render(line, True, (230, 230, 230))
+            self.screen.blit(t, ((self.screen.get_width() - t.get_width()) // 2, y))
+            y += t.get_height() + 8
+        self.pg.display.flip()
+
+
+def level_name(index):
+    return f"{RATINGS[index // 30]}{index % 30 + 1:02d}"
+
+
+def view(sess, sock_path, emu, win, title):
+    """Show the two games and send the player's input to the original.
+
+    Returns (worst frame's differing pixels, True if the player closed the
+    window) - closing it ends the sitting, not just the level."""
     from compare_screen import MAP, read_raw, read_scrn
-    if hand is None:
-        os.environ.pop("SDL_VIDEODRIVER", None)  # this one is for looking at
-    import pygame
+    pygame = win.pg
+    scale = win.scale
     from dos_emulator.emulator import KEYMAP
 
     out = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
@@ -336,20 +418,16 @@ def view(sess, sock_path, scale, emu, hand=None):
 
     # Nothing to show until the level is up: the original is still going
     # through its menus, out of sight.
-    print("  [lockstep] the original is starting up, out of sight - the "
-          "window opens on the level", flush=True)
+    win.message(title, "the original is on its way to the level...")
     while not os.path.exists(os.path.join(orig_dir, "f00001.scrn")):
+        for ev in win.events():
+            if ev.type == pygame.QUIT:
+                emu.terminate()
+                return None, True
         if emu.poll() is not None or state() not in ("starting", "playing"):
             print("  [lockstep] the original stopped before the level")
-            return None
-        time.sleep(0.2)
-
-    pygame.init()
-    gap, top = 4, 22
-    screen = pygame.display.set_mode((2 * W * scale + gap, H * scale + top))
-    pygame.display.set_caption("original  |  port")
-    font = pygame.font.Font(None, 20)
-    clock = pygame.time.Clock()
+            return None, False
+        win.clock.tick(10)
 
     def surf(pix, pal):
         s = pygame.image.frombuffer(pix, (W, H), "P")
@@ -359,11 +437,10 @@ def view(sess, sock_path, scale, emu, hand=None):
     shown, picture, btn = 0, None, 0
     worst = 0
     while True:
-        events = pygame.event.get() + (hand() if hand else [])
-        for ev in events:
+        for ev in win.events():
             if ev.type == pygame.QUIT:
                 send("q")
-                return worst
+                return worst, True
             if ev.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN,
                            pygame.MOUSEBUTTONUP):
                 if ev.type == pygame.MOUSEBUTTONDOWN:
@@ -371,10 +448,10 @@ def view(sess, sock_path, scale, emu, hand=None):
                 elif ev.type == pygame.MOUSEBUTTONUP:
                     btn &= ~{1: 1, 3: 2}.get(ev.button, 0)
                 mx, my = ev.pos
-                my -= top
+                my -= TOP
                 # Either half: the same game position under the pointer.
-                if mx >= W * scale + gap:
-                    mx -= W * scale + gap
+                if mx >= W * scale + GAP:
+                    mx -= W * scale + GAP
                 x = min(max(mx // scale, 0), W - 1)
                 y = min(max(my // scale, 0), H - 1)
                 send(f"m {x} {y} {btn}")
@@ -407,22 +484,27 @@ def view(sess, sock_path, scale, emu, hand=None):
             except (OSError, ValueError):
                 pass        # a file mid-write; the next pass gets it
 
-        screen.fill((24, 24, 24))
+        win.screen.fill((24, 24, 24))
         what = state()
         if picture:
             o, p, diff, k = picture
-            screen.blit(o, (0, top))
-            screen.blit(p, (W * scale + gap, top))
+            win.screen.blit(o, (0, TOP))
+            win.screen.blit(p, (W * scale + GAP, TOP))
             tag = "identical" if diff == 0 else f"{diff} PIXELS DIFFER"
-            text = (f"original frame {k}  |  port frame {k - 1}  |  {tag}"
+            text = (f"{title}  |  original frame {k}  |  port frame {k - 1}"
+                    f"  |  {tag}"
                     + ("" if what == "playing" else f"  |  {what.upper()}"))
-            screen.blit(font.render(text, True,
-                        (230, 230, 230) if diff == 0 else (255, 80, 255)),
-                        (6, 4))
+            win.screen.blit(win.font.render(text, True,
+                            (230, 230, 230) if diff == 0 else (255, 80, 255)),
+                            (6, 4))
         pygame.display.flip()
-        if hand and what not in ("starting", "playing"):
-            return worst
-        clock.tick(60)
+        if what not in ("starting", "playing"):
+            return worst, False
+        win.clock.tick(60)
+
+
+def solved(index):
+    return os.path.exists(os.path.join(SOLUTIONS, level_name(index) + ".txt"))
 
 
 def main():
@@ -430,33 +512,155 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--rating", default="fun", choices=RATINGS)
-    ap.add_argument("--number", type=int, default=1,
+    ap.add_argument("--rating", default=None, choices=RATINGS,
+                    help="default fun, or with --in-order the first level "
+                         "without a solution")
+    ap.add_argument("--number", type=int, default=None,
                     help="the game's level number within the rating, 1-30")
-    ap.add_argument("--scale", type=int, default=2,
-                    help="the window's magnification (default 2)")
+    ap.add_argument("--in-order", action="store_true",
+                    help="keep going: the next level after a win, the same "
+                         "one again after a loss, until the window is closed")
+    ap.add_argument("--port-only", action="store_true",
+                    help="play the PORT alone, in its own window at full "
+                         "speed, and keep only the input; "
+                         "tools/verify_solutions.py records the original's "
+                         "run of it later")
+    ap.add_argument("--scale", type=int, default=None,
+                    help="the window's magnification (default 2, or 3 "
+                         "with --port-only)")
     ap.add_argument("--out", default=os.path.join(ROOT, "out", "lockstep"),
                     help="where each level's script and frames are kept")
     a = ap.parse_args()
-    if not 1 <= a.number <= 30:
+    if a.number is not None and not 1 <= a.number <= 30:
         ap.error("--number is 1..30")
-    return run(a.rating, a.number, a.scale, a.out)
+    if a.rating is None and a.number is None and a.in_order:
+        index = next((i for i in range(120) if not solved(i)), 0)
+    else:
+        index = (RATINGS.index(a.rating or "fun") * 30
+                 + (a.number or 1) - 1)
+    scale = a.scale or (3 if a.port_only else 2)
+    return run(RATINGS[index // 30], index % 30 + 1, scale, a.out,
+               in_order=a.in_order, port_only=a.port_only)
 
 
-def run(rating, number, scale, out, hand=None):
+def keep_solution(sess, index):
+    """A won level: its script goes to solutions/, which is kept, and its two
+    recordings to out/solutions/, so a later attempt cannot overwrite the
+    reference tools/verify_solutions.py scores the port against."""
+    import shutil
+    name = level_name(index)
+    os.makedirs(SOLUTIONS, exist_ok=True)
+    shutil.copy(os.path.join(sess, "input.txt"),
+                os.path.join(SOLUTIONS, name + ".txt"))
+    ref = os.path.join(ROOT, "out", "solutions", name)
+    shutil.rmtree(ref, ignore_errors=True)
+    os.makedirs(os.path.dirname(ref), exist_ok=True)
+    shutil.move(sess, ref)
+    return ref
+
+
+def run(rating, number, scale, out, hand=None, in_order=False,
+        port_only=False):
     r = subprocess.run(["make", "-C", os.path.join(ROOT, "reconstruct")],
                        capture_output=True, text=True)
     if r.returncode != 0:
         sys.stderr.write(r.stdout + r.stderr)
         return r.returncode
 
+    win = None if port_only else Window(scale, hand)
     index = RATINGS.index(rating) * 30 + number - 1
-    sess = os.path.join(os.path.abspath(out), f"{rating}{number:02d}")
-    os.makedirs(sess, exist_ok=True)
+    worst_all = 0
+    while True:
+        if port_only:
+            worst, status, quit_ = play_port(index, out, scale)
+        else:
+            worst, status, quit_ = play_level(index, out, win)
+        if worst is not None:
+            worst_all = max(worst_all, worst)
+        name = f"{RATINGS[index // 30]} {index % 30 + 1}"
+        if status.get("won"):
+            ref = keep_solution(os.path.join(os.path.abspath(out),
+                                             level_name(index)), index)
+            print(f"  [lockstep] {name}: WON, {status['saved_pct']}% of "
+                  f"{status['needed_pct']}% - solution kept in "
+                  f"solutions/{level_name(index)}.txt, recordings in "
+                  f"{os.path.relpath(ref, ROOT)}")
+            if port_only:
+                print("  [lockstep] the original has not played it yet: "
+                      "`uv run python tools/verify_solutions.py "
+                      f"{level_name(index)}` records its run and compares")
+            else:
+                score(ref)
+        elif "won" in status:
+            print(f"  [lockstep] {name}: lost, {status['saved_pct']}% of "
+                  f"{status['needed_pct']}%")
+        if quit_ or not in_order or hand is not None:
+            break
+        if status.get("won"):
+            if index == 119:
+                break
+            index += 1
+        elif "won" not in status:
+            break           # never reached the level, or no verdict
+    if hand is not None:
+        print(f"  [lockstep] worst frame: {worst_all} pixels differing")
+        return 0 if worst_all == 0 else 1
+    return 0
+
+
+def score(ref):
+    """The two recordings a won level left behind, scored the way
+    tools/verify_solutions.py scores them."""
+    subprocess.run([sys.executable, os.path.join(HERE, "verify_solutions.py"),
+                    "--live", ref], cwd=ROOT)
+
+
+def play_port(index, out, scale):
+    """The port alone, in its own window at the level's own pace, recording
+    what the game read (lemdev --record-input). The recording ends with the
+    verdict harness_record_result writes; one without it is a window closed
+    mid-level, which ends the sitting as closing lockstep's window does."""
+    import shutil
+    rating, number = index // 30, index % 30 + 1
+    sess = os.path.join(os.path.abspath(out), level_name(index))
+    shutil.rmtree(sess, ignore_errors=True)
+    os.makedirs(sess)
+    script = os.path.join(sess, "input.txt")
+    env = dict(os.environ)
+    for k in ("SDL_VIDEODRIVER", "LEM_INPUT_SCRIPT", "LEM_SCREEN_DIR",
+              "LEM_DG_FILE", "LEM_STATE_FILE", "LEM_FRAMES"):
+        env.pop(k, None)
+    print(f"  [lockstep] {RATINGS[rating]} {number}: the port, on its own",
+          flush=True)
+    subprocess.run([os.path.join(ROOT, "reconstruct", "lemdev"),
+                    "--data", "lemming1.pc", "--rating", RATINGS[rating],
+                    "--number", str(number), "--scale", str(scale), "--show",
+                    "--record-input", script],
+                   cwd=ROOT, env=env, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL)
+    status = {}
     try:
-        os.unlink(os.path.join(sess, "status.json"))
+        for line in open(script):
+            f = line.split()
+            if f[:2] == ["#", "result"] and len(f) == 8:
+                over, saved, needed = int(f[3]), int(f[5]), int(f[7])
+                status = {"saved_pct": saved, "needed_pct": needed,
+                          "won": bool(over) and saved >= needed}
     except OSError:
         pass
+    print(f"  [lockstep] input kept in {os.path.relpath(sess, ROOT)}")
+    return None, status, not status
+
+
+def play_level(index, out, win):
+    rating, number = index // 30, index % 30 + 1
+    sess = os.path.join(os.path.abspath(out), level_name(index))
+    # EMPTIED HERE, before the emulator starts, and not only by the hook: the
+    # window takes f00001.scrn as "the level is up", and a lost attempt's
+    # frames would say so before the new run had cleared them.
+    import shutil
+    shutil.rmtree(sess, ignore_errors=True)
+    os.makedirs(sess)
     sock_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"),
                              f"lemmings-lockstep-{os.getpid()}.sock")
     env = dict(os.environ, LEM_HOOK=os.path.abspath(__file__),
@@ -468,9 +672,10 @@ def run(rating, number, scale, out, hand=None):
         [sys.executable, os.path.join(HERE, "play.py"), "--auto", "--start",
          "--start-delay", "5", "--start-tries", "3", "--click-tries", "4"],
         cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    worst = None
+    worst, quit_ = None, False
+    title = f"{RATINGS[rating].capitalize()} {number}"
     try:
-        worst = view(sess, sock_path, scale, emu, hand)
+        worst, quit_ = view(sess, sock_path, emu, win, title)
     finally:
         if emu.poll() is None:
             try:
@@ -485,11 +690,13 @@ def run(rating, number, scale, out, hand=None):
             os.unlink(sock_path)
         except OSError:
             pass
+    try:
+        with open(os.path.join(sess, "status.json")) as f:
+            status = json.load(f)
+    except (OSError, ValueError):
+        status = {}
     print(f"  [lockstep] input and frames kept in {os.path.relpath(sess, ROOT)}")
-    if hand is not None:
-        print(f"  [lockstep] worst frame: {worst} pixels differing")
-        return 0 if worst == 0 else 1
-    return 0
+    return worst, status, quit_
 
 
 if __name__ == "__main__":

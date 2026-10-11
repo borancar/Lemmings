@@ -59,9 +59,16 @@
  *                          the edge scroll
  *
  * Frames are this loop's own count, which is the index the frame sink uses,
- * so a script and a captured sequence line up by construction. */
-script_act harness_script[SCRIPT_MAX];
-uint16_t   harness_script_n;
+ * so a script and a captured sequence line up by construction.
+ *
+ * THE ARRAY GROWS. It was 256 actions and a longer script was cut off
+ * without a word: a level played to its end through tools/lockstep.py
+ * --port-only had 349, so the replay lost its pointer at frame 885 and
+ * played the rest with nobody at the mouse while the original followed the
+ * script - and the comparison read that as the port diverging. */
+script_act *harness_script;
+uint32_t    harness_script_n;
+static uint32_t g_script_cap;
 
 /* One line of a script into the next free slot. 1 if it was an action. */
 static int script_parse_line(const char *line)
@@ -69,10 +76,20 @@ static int script_parse_line(const char *line)
     char verb[16];
     long fr;
     int32_t x = 0, y = 0;
-    if (harness_script_n >= SCRIPT_MAX) return 0;
     if (line[0] == '#' || line[0] == '\n') return 0;
     int got = sscanf(line, "%ld %15s %d %d", &fr, verb, &x, &y);
     if (got < 2) return 0;
+    if (harness_script_n == g_script_cap) {
+        uint32_t cap = g_script_cap ? g_script_cap * 2 : 256;
+        script_act *more = realloc(harness_script, cap * sizeof *more);
+        if (!more) {
+            fprintf(stderr, "input script: out of memory at %u actions\n",
+                    harness_script_n);
+            return 0;
+        }
+        harness_script = more;
+        g_script_cap = cap;
+    }
     {
         script_act *a = &harness_script[harness_script_n];
         a->frame = fr; a->x = x; a->y = y;
@@ -87,7 +104,14 @@ static int script_parse_line(const char *line)
          * what they would have held. */
         else if (!strcmp(verb, "key")) a->what = SCRIPT_KEY;
         else if (!strcmp(verb, "keyup")) a->what = SCRIPT_KEYUP;
-        else return 0;
+        else {
+            /* SAID, not skipped: tools/record_level.py refuses a verb it
+             * cannot replay, and a line one side acts on and the other
+             * drops is two different games scored against each other. */
+            fprintf(stderr, "input script: verb '%s' is not one this "
+                    "replays - line skipped: %s", verb, line);
+            return 0;
+        }
         harness_script_n++;
     }
     return 1;
@@ -101,7 +125,7 @@ void harness_script_load(const char *path)
         return;
     }
     char line[128];
-    while (harness_script_n < SCRIPT_MAX && fgets(line, sizeof line, f))
+    while (fgets(line, sizeof line, f))
         script_parse_line(line);
     fclose(f);
     fprintf(stderr, "  [script] %u actions from %s\n", harness_script_n, path);
@@ -322,6 +346,7 @@ long harness_frame_no(void)    { return g_sink_frame; }
 static FILE   *g_rec;
 static int32_t g_rec_x = -1, g_rec_y = -1;
 static uint8_t g_rec_btn, g_rec_rbtn, g_rec_key;
+static long    g_rec_over;      /* the frame ds:0x4F was first set, or -1 */
 
 void harness_record_open(const char *path)
 {
@@ -347,6 +372,7 @@ void harness_record_open(const char *path)
             (unsigned)DG.level_index, (unsigned)DG.level_rating);
     g_rec_x = g_rec_y = -1;
     g_rec_btn = g_rec_rbtn = g_rec_key = 0;
+    g_rec_over = -1;
 }
 
 /* One frame's worth, and only what CHANGED - a script is a list of edges over
@@ -356,6 +382,7 @@ static void harness_record_frame(long frame)
     int32_t x, y;
     uint8_t btn, k;
     if (!g_rec) return;
+    if (g_rec_over < 0 && DG.level_over == 0xFF) g_rec_over = frame;
 
     x = (int32_t)lem_mouse_x - 8;        /* the script is in screen pixels */
     y = (int32_t)lem_mouse_y - 8;
@@ -388,6 +415,23 @@ static void harness_record_frame(long frame)
         else   fprintf(g_rec, "%ld keyup %u\n", frame, (unsigned)g_rec_key);
         g_rec_key = k;
     }
+    fflush(g_rec);
+}
+
+/* HOW IT ENDED, so a driver can tell a solution from an attempt without
+ * replaying it: whether the level reached image 0x002B3 at all, and image
+ * 0x04720's two percentages. `# frame N` is the length a replay of the
+ * ORIGINAL needs - the frame after the one ds:0x4F was set on, which is as
+ * far as tools/verify_solutions.py scores (the fade after it differs by
+ * harness), and the same line tools/lockstep.py writes after every frame. A
+ * window closed mid-level never gets here: view_quit_now ends the process,
+ * and a recording with no result line is an attempt. */
+void harness_record_result(uint8_t saved_pct, uint8_t needed_pct)
+{
+    if (!g_rec) return;
+    if (g_rec_over >= 0) fprintf(g_rec, "# frame %ld\n", g_rec_over + 1);
+    fprintf(g_rec, "# result over %d saved %u needed %u\n",
+            g_rec_over >= 0, (unsigned)saved_pct, (unsigned)needed_pct);
     fflush(g_rec);
 }
 
@@ -498,9 +542,10 @@ int harness_script_step(struct level_frame *A, int32_t *scroll_x)
 {
     int moved = 0;
     (void)scroll_x;
+    (void)A;        /* a press is polled by image 0x03150, not handed over */
     if (g_follow) {
-        /* Everything already acted on can go, so a live run is not bounded
-         * by SCRIPT_MAX the way a loaded file is. */
+        /* Everything already acted on can go, so a live run does not keep
+         * every action it has ever been handed. */
         if (g_script_at == harness_script_n) g_script_at = harness_script_n = 0;
         script_follow_to(g_sink_frame);
     }
@@ -513,8 +558,9 @@ int harness_script_step(struct level_frame *A, int32_t *scroll_x)
             lem_mouse_move(act->x + 8, act->y + 8);
             moved = 1;
         } else if (act->what == SCRIPT_DOWN) {
+            /* Nothing more: image 0x03150 polls ds:0x14 from the frame
+             * loop, twice a pass, as it does for a player's press. */
             lem_buttons |= 1;                       /* ds:0x14 bit 0 */
-            level_play_press(A);                    /* image 0x03150 */
         } else if (act->what == SCRIPT_UP) {
             lem_buttons &= (uint8_t)~1u;
         } else if (act->what == SCRIPT_RDOWN) {

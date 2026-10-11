@@ -149,6 +149,15 @@ LEMMING_MAX = 80
 # field's meaning and eleven is its storage.
 COMPARE = {"code_cells": 10}
 
+# WRITTEN AFTER THE GUEST'S CAPTURE IN THE SAME PASS. tools/dg_hook.py takes
+# the segment at image 0x001C8, and image 0x002B3 sets ds:0x4F further down
+# the same pass; the port sets it inside the frame, before its own dump. So
+# the original's frame N+1 is the port's frame N for this byte, and only for
+# this one - it is compared that way rather than excused, so a level that
+# ends on the wrong frame still shows. Found on the first level played to its
+# exit (tools/verify_solutions.py): 1 frame of 674, at the end.
+LATER = {"level_over"}
+
 
 def run(cmd, env=None, why=""):
     e = dict(os.environ)
@@ -235,16 +244,42 @@ def main():
     if n == 0:
         sys.exit("no frame was captured on both sides - 0 of 0 is not a result")
 
+    return compare(o, p, scripted=bool(a.script), wanted=a.frames)
+
+
+def compare(o, p, scripted, wanted=None):
+    """Score two captures of the data segment - the original's and the port's
+    - field by field, and print what differs. Returns 1 if anything differs
+    that EXPECTED does not account for. tools/verify_solutions.py calls it too,
+    so a played level is scored by the same rules as this tool's run."""
+    n = min(len(o) // DG_END, len(p) // DG_END)
+    if n == 0:
+        print("   no frame was captured on both sides - 0 of 0 is not a result")
+        return 1
     print("== comparing %d frames, field by field ==" % n)
-    if n < a.frames:
+    if wanted and n < wanted:
         print("   NOTE: %d frames, not the %d asked for - the ORIGINAL "
               "captured %d. A short run is not a failed one, but say so."
-              % (n, a.frames, len(o) // DG_END))
+              % (n, wanted, len(o) // DG_END))
     bad = {}
+    FL = fields()       # parsed once: a played level is thousands of frames
+    no = len(o) // DG_END
+    for off, size, name in FL:
+        if name not in LATER:
+            continue
+        for f in range(min(n, no - 1)):
+            O = o[(f + 1) * DG_END + off:(f + 1) * DG_END + off + size]
+            P = p[f * DG_END + off:f * DG_END + off + size]
+            if O != P:
+                bad.setdefault(name, []).append((f, O, P))
     for f in range(n):
         O = o[f * DG_END:(f + 1) * DG_END]
         P = p[f * DG_END:(f + 1) * DG_END]
-        for off, size, name in fields():
+        if O == P:
+            continue
+        for off, size, name in FL:
+            if name in LATER:
+                continue
             if name == "lem":
                 # THE ARRAY IS COMPARED FIELD BY FIELD, not byte by byte, for
                 # the same reason the segment is: five runs of the record are
@@ -269,11 +304,11 @@ def main():
                 bad.setdefault(name, []).append(
                     (f, O[off:off + size], P[off:off + size]))
 
-    tot = len(fields())
-    at = {n_: o_ for o_, s_, n_ in fields()}
+    tot = len(FL)
+    at = {n_: o_ for o_, s_, n_ in FL}
     pointer = {"mouse_x", "mouse_y", "buttons"}
     exp = dict(EXPECTED)
-    if a.script:
+    if scripted:
         # Both sides read the same recording, so a pointer that still differs
         # is not the set-up any more.
         for k in pointer:
@@ -323,6 +358,7 @@ def main():
     else:
         print("\n   nothing differs that is not accounted for.")
     return 1 if real else 0
+
 
 
 if __name__ == "__main__":

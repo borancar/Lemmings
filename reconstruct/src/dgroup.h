@@ -169,7 +169,13 @@ typedef struct {
     uint8_t  _pad_004D[1];
     uint8_t  level_phase;                   /* ds:0x004E */
     uint8_t  level_over;                    /* ds:0x004F */
-    uint8_t  _pad_0050[2];
+    /* ds:0x0050 - THE ARRAY IS BEING WALKED. Image 0x01F26 sets it as the
+     * walk starts and image 0x01FFF clears it as it ends - but a nuke in
+     * progress skips that clear and holds it until image 0x02041, when the
+     * cascade has lit every fuse. Image 0x03157 refuses a click while it is
+     * set, which is what stops skills being given out during a nuke. */
+    uint8_t  walking;                       /* ds:0x0050 */
+    uint8_t  _pad_0051[1];
     uint8_t  level_frame;                   /* ds:0x0052 */
     uint8_t  pause_at;                      /* ds:0x0053 */
     uint8_t  tune;                          /* ds:0x0054 */
@@ -179,7 +185,13 @@ typedef struct {
      * of thirteen columns a call. Nothing else writes it, so it carries from
      * level to level, and thirteen calls bring it back where it was. */
     uint16_t minimap_col;                   /* ds:0x0056 */
-    uint8_t  _pad_0058[0x000A];
+    uint8_t  _pad_0058[9];
+    /* ds:0x0061 - THE PLAY AREA'S PRESS LATCH. Image 0x03177 claims it when
+     * a press finds a lemming under the pointer, image 0x03170 refuses while
+     * it is claimed, and image 0x031BE lets it go when the button is up. So
+     * a held button assigns once - and a press over nothing is not spent,
+     * which is why the frame's SECOND call can still take it. */
+    uint8_t  play_latch;                    /* ds:0x0061 */
     /* ds:0x0062 - THE PANEL'S PRESS LATCH. Image 0x03F38 claims it for a
      * skill, pause or nuke button so a held button acts once; image 0x03FE9
      * sets it on every other way out of image 0x03E6F while the button is
@@ -295,6 +307,7 @@ ENSURE_DG_AT(saved,        0x0046);  ENSURE_DG_AT(to_release,   0x0047);
 ENSURE_DG_AT(release_wait, 0x0048);  ENSURE_DG_AT(release_step, 0x0049);
 ENSURE_DG_AT(nuke,         0x004B);  ENSURE_DG_AT(nuke_at,      0x004C);
 ENSURE_DG_AT(level_phase,  0x004E);  ENSURE_DG_AT(level_over,   0x004F);
+ENSURE_DG_AT(walking,      0x0050);  ENSURE_DG_AT(play_latch,   0x0061);
 ENSURE_DG_AT(level_frame,  0x0052);  ENSURE_DG_AT(pause_at,     0x0053);
 ENSURE_DG_AT(tune,         0x0054);  ENSURE_DG_AT(entrance_open,0x0055);
 ENSURE_DG_AT(minimap_col,  0x0056);

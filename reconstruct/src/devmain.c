@@ -505,6 +505,11 @@ static int render_level(const char *data, const char *file, uint32_t which,
                 || level_show(data, &lv2, scale, &e3) != 0)
             fprintf(stderr, "level_show: %s\n", e3);
         if (rec_input) {
+            /* image 0x04720's two numbers: ds:0x40 as the panel left it, and
+             * the requirement image 0x04591 works out - the briefing that
+             * would have stored ds:0x41 is not shown here. */
+            harness_record_result(level_saved_pct(),
+                                  level_needed_percent(&lv2));
             harness_record_close();
             fprintf(stderr, "  [record] wrote %s\n", rec_input);
         }

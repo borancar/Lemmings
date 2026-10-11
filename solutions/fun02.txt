@@ -1,0 +1,135 @@
+# recorded by lemdev --record-input
+# level 1  rating 0   (ds:0x1F6B, ds:0x1F6E)
+# frames are the harness's own count; move is in SCREEN
+# pixels, which is ds:0x10 less the eight image 0x0426D
+# clamps against; key is a SCANCODE.
+0 move 142 92
+28 move 138 111
+29 move 137 114
+30 move 132 127
+31 move 125 138
+32 move 113 153
+33 move 96 170
+34 move 89 174
+35 move 80 178
+36 move 77 180
+37 move 75 180
+38 move 70 181
+39 move 68 181
+40 move 65 182
+41 move 64 183
+42 move 61 184
+44 down
+45 up
+46 move 42 188
+47 move 33 188
+48 move 29 188
+49 move 24 188
+50 move 23 187
+51 move 22 187
+53 move 23 187
+54 down
+73 up
+75 move 30 166
+76 move 47 114
+77 move 57 81
+78 move 59 75
+79 move 60 75
+81 move 64 67
+82 move 69 54
+83 move 71 50
+84 move 74 45
+85 move 76 43
+95 move 80 55
+96 move 80 59
+105 move 81 59
+106 move 85 59
+107 move 90 56
+108 move 91 56
+109 move 92 55
+111 down
+112 up
+118 move 91 55
+119 move 90 54
+135 down
+136 up
+149 down
+150 up
+157 down
+159 up
+162 down
+163 up
+168 down
+169 up
+171 down
+172 up
+175 down
+176 up
+177 down
+179 up
+180 down
+181 up
+183 down
+184 up
+185 down
+186 up
+187 down
+189 up
+190 down
+191 up
+192 down
+194 up
+195 down
+196 up
+197 down
+199 up
+200 down
+201 up
+202 down
+204 up
+205 down
+207 up
+208 down
+209 up
+211 down
+212 up
+213 down
+214 up
+216 down
+217 up
+218 down
+220 up
+221 down
+222 up
+223 down
+224 up
+225 down
+227 up
+233 move 87 73
+234 move 87 88
+235 move 90 103
+236 move 96 119
+237 move 105 133
+238 move 112 149
+239 move 116 153
+252 move 114 161
+253 move 113 166
+254 move 116 174
+255 move 123 183
+256 move 125 185
+258 move 102 181
+259 move 94 178
+260 move 87 176
+261 move 73 174
+262 move 64 173
+263 move 54 175
+264 move 47 178
+265 move 39 180
+266 move 36 182
+267 move 31 185
+270 move 55 161
+271 move 95 99
+272 move 103 81
+273 move 103 80
+# frame 465
+# result over 1 saved 100 needed 10

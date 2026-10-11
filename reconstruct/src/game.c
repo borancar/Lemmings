@@ -1932,6 +1932,7 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x)
 
     level_scan sc;
     level_pointer_scan(lem, n, view_x, &sc);
+    level_scan_keep(&sc);
     if (sc.chosen < 0) return;                       /* image 0x03DE5 */
 
     /* Image 0x03DED: the count first, then the name over the top of the
@@ -1987,6 +1988,15 @@ void level_status_pointer(const lemming *lem, uint8_t n, uint16_t view_x)
  */
 void level_timer_step(void)
 {
+    /* THE CLOCK STOPS WHEN THE LEVEL ENDS. Image 0x00213 comes after the end
+     * tests: image 0x001C8 jumps to image 0x002C3 once ds:0x4F is set, and
+     * image 0x001E7 / 0x001FA jump to image 0x002B3 - which sets it - in the
+     * pass that ends the level, so neither reaches the decrement. This runs
+     * at the top of the NEXT pass (level_frame_step), by which time
+     * level_end_begin has set ds:0x4F in both cases. Without it the panel's
+     * clock ran on through the fade; a played level to its exit showed it,
+     * ds:0x85 8 against 7 on the frame after the last lemming went home. */
+    if (g_level_over == 0xFF) return;      /* image 0x001C8, 0x001E7 */
     if (level_paused() == 0xFF) return;    /* image 0x0020C */
     if (--g_tick) return;
     g_tick = g_tick_load;
@@ -2225,13 +2235,17 @@ int level_nuke_click(void)
  * 0x02005 to try the next, in the same pass. */
 static void level_nuke_step(lemming *lem)
 {
-    if (!g_nuke) return;                         /* image 0x01FF8 */
+    if (!g_nuke) {                               /* image 0x01FF8 */
+        g_walking = 0;                           /* image 0x01FFF */
+        return;
+    }
     for (;;) {
         if (g_nuke_at == g_released) {           /* image 0x02008 */
             g_nuke = 0;                          /* image 0x0203C */
+            g_walking = 0;                       /* image 0x02041 */
             return;
         }
-        if (g_nuke_at >= LEMMING_MAX) { g_nuke = 0; return; }
+        if (g_nuke_at >= LEMMING_MAX) { g_nuke = 0; g_walking = 0; return; }
         lemming *a = &lem[g_nuke_at];            /* image 0x02015 */
         if (a->fuse) { g_nuke_at++; return; }    /* image 0x0201A */
         if (a->alive == 0xFF) {                  /* image 0x02020 */
@@ -4501,6 +4515,46 @@ void level_pointer_scan(const lemming *lem, uint8_t n, uint16_t view_x,
     lem_cursor_box = (out->chosen >= 0) ? 0xFF : 0;
 }
 
+/* WHAT THE SCAN LEAVES BEHIND for image 0x03150 to act on.
+ *
+ * The three indices - ds:0x5E, ds:0x5F, ds:0x60 - start at 0xFF every scan
+ * (image 0x03CFB..0x03D05), but the three RECORD POINTERS beside them do not:
+ * image 0x03D8E stores ds:0x5C only when a busy lemming is found and image
+ * 0x03D9C ds:0x5A only when a plain one is, so each keeps its last value.
+ * Image 0x03DB4 then copies one of them into ds:0x58 - and with the right
+ * button down and no plain lemming under the pointer that is ds:0x5A's OLD
+ * value, a lemming found on some earlier frame. The click then goes to it.
+ * The fallback to the plain one is guarded: image 0x03271 tests ds:0x5F, this
+ * scan's index, before it trusts ds:0x5A.
+ *
+ * Indices here where the original keeps pointers; -1 is a pointer the
+ * original has never set, which a cold start leaves at whatever image
+ * 0x0454C's wipe put there. */
+static int16_t g_scan_busy_rec  = -1;            /* ds:0x5C */
+static int16_t g_scan_plain_rec = -1;            /* ds:0x5A */
+static int16_t g_scan_plain_now = -1;            /* ds:0x5F */
+static int16_t g_scan_chosen    = -1;            /* ds:0x58 */
+
+void level_scan_keep(const level_scan *sc)
+{
+    if (sc->busy >= 0)  g_scan_busy_rec  = sc->busy;     /* image 0x03D8E */
+    if (sc->plain >= 0) g_scan_plain_rec = sc->plain;    /* image 0x03D9C */
+    g_scan_plain_now = sc->plain;                        /* image 0x03D99 */
+    if ((lem_buttons & 2) || sc->busy < 0)               /* image 0x03DB7, 0x03DCF */
+        g_scan_chosen = g_scan_plain_rec;                /* image 0x03DC6 */
+    else
+        g_scan_chosen = g_scan_busy_rec;                 /* image 0x03DDA */
+}
+
+/* ds:0x58, as image 0x0317C loads it. */
+int16_t level_scan_chosen(void) { return g_scan_chosen; }
+
+/* ds:0x5A, when image 0x03271's test of ds:0x5F lets it be used. */
+int16_t level_scan_plain(void)
+{
+    return g_scan_plain_now >= 0 ? g_scan_plain_rec : -1;
+}
+
 /* Image 0x03DDE reading ds:0x5E: the chosen one, through the scan above. */
 int16_t level_lemming_at(const lemming *lem, uint8_t n, uint16_t view_x)
 {
@@ -4685,7 +4739,7 @@ static int dig_hit_steel(lemming *a)
 /* Transcribed from image 0x023F3, with its first frame at image 0x0250C.
  * Sixteen animation frames, digging on the two where the counter comes round
  * to 0 and to 8 - image 0x02406 and image 0x02408. */
-static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+static uint8_t lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     if (a->anim == DIG_ANIM_START) {
         /* THE FIRST FRAME CUTS THREE ROWS, not one. Image 0x0250C drops y
@@ -4705,7 +4759,7 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     } else {
         a->anim = (uint8_t)((a->anim + 1) & 0x0F);   /* image 0x023FF */
         if (a->anim != 0 && a->anim != 8)
-            return;                           /* image 0x0240C: just animate */
+            return 0;                         /* image 0x0240C: just animate */
     }
 
     /* THE ROW IT CLEARS IS THE ONE IT IS STANDING ON, not the one it moves
@@ -4719,7 +4773,7 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     a->y = (int16_t)(a->y + 1);               /* image 0x0241D */
     if (a->y >= DIG_FLOOR) {                  /* image 0x02424 */
         a->alive = 0xFF;
-        return;
+        return 0;                             /* image 0x0242A -> 0x020E2 */
     }
 
     /* Clear the span - and the test is on what WAS THERE, not on what is
@@ -4732,7 +4786,7 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
      * ledge, where the row dug is the last solid one and the row below is
      * already open. */
     int had = dig_row(a, lvl, cw, chh, dy_back);
-    if (had && dig_hit_steel(a)) return;      /* image 0x02448 / 0x0244C */
+    if (had && dig_hit_steel(a)) return 1;    /* image 0x02509 */
     if (!had) {
         /* Image 0x0244E: it dug nothing, so there is nothing to stand on.
          *
@@ -4768,6 +4822,7 @@ static void lem_dig(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         a->hot_y = FALL_HOT_Y;                 /* image 0x02477 */
         a->state = 4;                          /* image 0x0247C */
     }
+    return 1;                                 /* image 0x0248E, 0x024BA */
 }
 
 /* THE BRICK - transcribed from image 0x05F0F.
@@ -4885,14 +4940,16 @@ static void lem_build_stop(lemming *a, uint8_t state, int shrug)
 
 /* Image 0x02693, the handler the dispatch at image 0x01F5E reaches for
  * flags & 0x0080. */
-static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+static uint8_t lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     /* Image 0x02693: sixteen frames, and only the wrap does anything. */
     a->anim = (uint8_t)((a->anim + 1) & 0x0F);
     if (a->anim) {
         /* Image 0x026DE lays the brick on frame 9. */
-        if (a->anim == 9)
+        if (a->anim == 9) {
             lem_build_brick(a, lvl, cw, chh);      /* image 0x05F0F */
+            return 0;                              /* image 0x026E1 */
+        }
         /* AND FRAME 10 IS THE WARNING, image 0x026A2, when three or fewer
          * bricks are left - image 0x026A6 reads [si+0x21] and image 0x026AB
          * lets anything above three past without a sound. It is the noise a
@@ -4902,7 +4959,7 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
             if (g_snd_driver == 0xFF && sound_enabled(3))  /* image 0x026C2 */
                 sound_request(0x61, 4, 0x12);                    /* image 0x026D0 */
         }
-        return;                                    /* image 0x026DB */
+        return 1;                                  /* image 0x026DB */
     }
 
     /* Image 0x026E4: a step up and along, then three probes. */
@@ -4913,20 +4970,20 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     if (a->x <= BUILD_X_MIN || a->x >= BUILD_X_MAX) {   /* 0x026EF, 0x026F7 */
         a->dir = (int8_t)-a->dir;                  /* image 0x02763 */
         lem_build_stop(a, 9, 0);
-        return;
+        return 1;
     }
     /* Image 0x02700 and image 0x02710 probe the row ABOVE - image 0x02703
      * takes ds:4, one row's stride, off the address image 0x05DC6 built. */
     if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y - 1))) {
         a->dir = (int8_t)-a->dir;
         lem_build_stop(a, 9, 0);
-        return;
+        return 1;
     }
     a->x = (int16_t)(a->x + step);                 /* image 0x0270E */
     if (lem_solid(lvl, cw, chh, a->x, (int16_t)(a->y - 1))) {
         a->dir = (int8_t)-a->dir;
         lem_build_stop(a, 9, 0);
-        return;
+        return 1;
     }
 
     if (--a->bricks == 0) {                        /* image 0x0271E */
@@ -4934,7 +4991,7 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
          * 8, and sets the bit image 0x03DFD reads to go on calling it a
          * BUILDER on the panel. */
         lem_build_stop(a, 8, 1);
-        return;
+        return 1;
     }
 
     /* Image 0x02726: nine rows up, two along - the headroom for the next
@@ -4944,15 +5001,16 @@ static void lem_build(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
                   (int16_t)(a->y - 9))) {          /* image 0x02740 */
         a->dir = (int8_t)-a->dir;
         lem_build_stop(a, 9, 0);
-        return;
+        return 1;
     }
     if (a->x <= BUILD_X_MIN || a->x >= BUILD_X_MAX) {   /* 0x02747, 0x0274C */
         a->dir = (int8_t)-a->dir;
         lem_build_stop(a, 9, 0);
-        return;
+        return 1;
     }
     if ((int32_t)a->y + a->hot_y <= BUILD_TOP)     /* image 0x02752 */
         lem_build_stop(a, 9, 0);                   /* image 0x02760: no turn */
+    return 1;
 }
 
 /* CLIMBING - transcribed from image 0x02179 (starting), image 0x0254F (doing
@@ -5043,7 +5101,7 @@ static void lem_climb(lemming *a, const uint8_t *lvl, uint16_t cw,
 }
 
 /* Image 0x02637: over the top and onto the ledge. */
-static void lem_hoist(lemming *a)
+static uint8_t lem_hoist(lemming *a)
 {
     a->anim = (uint8_t)((a->anim + 1) & 7);         /* image 0x0263A */
     if (a->anim == 0) {                             /* image 0x02641 */
@@ -5052,10 +5110,11 @@ static void lem_hoist(lemming *a)
         a->hot_y = -10;                             /* image 0x02676 */
         a->state = 9;                               /* image 0x0267B */
         a->extra &= 1;                              /* image 0x02689 */
-        return;
+        return 1;
     }
-    if (a->anim >= 5) return;                       /* image 0x02643 */
+    if (a->anim >= 5) return 0;                     /* image 0x02647 */
     a->y = (int16_t)(a->y - 2);                     /* image 0x0264A */
+    return 1;
 }
 
 
@@ -5108,7 +5167,7 @@ static void lem_bash_slice(lemming *a, uint8_t slice, uint8_t *lvl,
 }
 
 /* Image 0x0287D. */
-static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+static uint8_t lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     a->anim = (uint8_t)((a->anim + 1) & 0x1F);      /* image 0x02880 */
     uint8_t al = (uint8_t)(a->anim & 0x0F);         /* image 0x02887 */
@@ -5118,7 +5177,7 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         a->x = (int16_t)(a->x + a->dir);
         if (a->x <= 0x10 || a->x >= 0x680) {        /* 0x02940, 0x02945 */
             a->dir = (int8_t)-a->dir;
-            return;
+            return 1;
         }
         /* THREE ROWS, EACH PROBED WHERE THE LEMMING NOW IS. The original
          * probes, then `inc [si+2]` and moves di down ONE row - image
@@ -5127,7 +5186,7 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
          * looked at y, y+2 and y+4 and stepped over a row each time. */
         for (uint8_t k = 0; k < 3; k++) {
             if (lem_solid(lvl, cw, chh, a->x, a->y))
-                return;                             /* image 0x02953 */
+                return 1;                             /* image 0x02953 */
             a->y = (int16_t)(a->y + 1);             /* image 0x02958 */
         }
         /* AND WITH NOTHING UNDER ANY OF THE THREE IT FALLS - image 0x0297D,
@@ -5144,12 +5203,12 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
         a->state  = 4;                              /* image 0x029A7 */
         a->extra &= 1;                              /* image 0x029B5 */
         a->flags &= 0xFDFF;                         /* image 0x029B9 */
-        return;
+        return 1;
     }
-    if (al < 2 || al > 5) return;                   /* 0x02890, 0x02897 */
+    if (al < 2 || al > 5) return 0;                 /* 0x02894, 0x0289B */
     lem_bash_slice(a, (uint8_t)(al - 2), lvl, cw, chh);   /* image 0x028A1 */
 
-    if (a->anim != 5) return;                       /* image 0x028A7 */
+    if (a->anim != 5) return 0;                     /* image 0x028AB */
 
     /* IS THERE ANYTHING LEFT TO BASH - image 0x028AE, and without it a
      * basher never stops. The original bashed for FOUR frames on this level
@@ -5164,7 +5223,7 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     for (uint8_t k = 0; k < 4; k++) {
         int32_t px = (int32_t)a->x + a->dir * (8 + k);
         if (lem_solid(lvl, cw, chh, (int16_t)px, (int16_t)probe_y))
-            return;                                 /* image 0x028CC */
+            return 0;                               /* image 0x028CE.. */
     }
     a->flags = 0;                                   /* image 0x028FE */
     a->hot_x = -8;
@@ -5172,6 +5231,7 @@ static void lem_bash(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     a->anim  = 0;
     a->state = 9;
     a->extra &= 1;
+    return 0;
 }
 
 /* ------------------------------------------------------------------ miner */
@@ -5346,7 +5406,7 @@ static void lem_mine_move(lemming *a, uint8_t drop, uint8_t *lvl,
  *     0x0F   image 0x02B66  along two
  *
  * Four columns and two rows a cycle: the 2:1 diagonal a miner cuts. */
-static void lem_mine(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
+static uint8_t lem_mine(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
 {
     uint8_t al = (uint8_t)(a->anim + 1);            /* image 0x02B35 */
     if (al == MINE_CYCLE) al = 0;                   /* image 0x02B3A */
@@ -5355,18 +5415,19 @@ static void lem_mine(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
     if (al == 0) {                                  /* image 0x02B43 */
         a->y = (int16_t)(a->y + 1);                 /* image 0x02BE1 */
         if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;
-        return;
+        return 1;
     }
     if (al == 0x0F) {                               /* image 0x02B4A */
         lem_mine_move(a, 0, lvl, cw, chh);
-        return;
+        return 1;
     }
     if (al == 3) {                                  /* image 0x02B51 */
         lem_mine_move(a, 1, lvl, cw, chh);
-        return;
+        return 1;
     }
-    if (al > 3) return;                             /* image 0x02B58 */
+    if (al > 3) return 0;                           /* image 0x02B5A */
     lem_mine_slice(a, (uint8_t)(al - 1), lvl, cw, chh);   /* image 0x02B5D */
+    return 0;
 }
 
 /* THE CRATER - transcribed from image 0x05DF8, its shape MEASURED out of the
@@ -5560,11 +5621,35 @@ static int lem_fuse_step(lemming *a)
     return 0;                                       /* image 0x02E5E */
 }
 
-/* Image 0x02D0F: sixteen frames of looking up, then the cloud. */
-static void lem_boom(lemming *a)
+/* Image 0x02D0F: sixteen frames of looking up, then the cloud.
+ *
+ * AND IT FALLS WHILE IT LOOKS UP. Frames 1..15 do not just animate: image
+ * 0x02D83 probes under the lemming and moves it down up to three rows,
+ * stopping on the first solid one, then jumps to image 0x020D6 - the
+ * walker's own tail, which stores y, kills it at the bottom of the level and
+ * otherwise goes through the trigger lookup at image 0x01FE8. The port had
+ * the animation alone, so a bomber standing over nothing hung in the air for
+ * fifteen frames and never looked at what it stood on. Found on Fun 11, a
+ * blocker given a bomb: the original read its own 0x0A back on the first
+ * frame of the countdown and the port never did.
+ *
+ * Image 0x02D78 compares the frame with 5 and ds:0x4B with 0xFF, and both
+ * arms of both tests go to image 0x02D83 - it does nothing.
+ *
+ * Returns whether it left through image 0x01FE8 - see lemmings_step. */
+static uint8_t lem_boom(lemming *a, const uint8_t *lvl, uint16_t cw,
+                        uint16_t chh)
 {
     a->anim = (uint8_t)((a->anim + 1) & 0x0F);      /* image 0x02D12 */
-    if (a->anim) return;                            /* image 0x02D19 */
+    if (a->anim) {                                  /* image 0x02D19 */
+        uint8_t k = 0;
+        while (k < 3 && !lem_solid(lvl, cw, chh, a->x,
+                                   (int16_t)(a->y + k)))   /* image 0x02D89.. */
+            k++;                                    /* image 0x02D93, 0x02DA2 */
+        a->y = (int16_t)(a->y + k);                 /* image 0x020D6 */
+        if (a->y >= LEMMING_DEAD_Y) a->alive = 0xFF;   /* image 0x020DD */
+        return 1;                                   /* image 0x020DF */
+    }
     a->flags |= CLOUD_BIT;                          /* image 0x02D1B */
     a->hot_x = -16;                                 /* image 0x02D3C: fff0 */
     a->hot_y = -25;                                 /* image 0x02D37: ffe7 */
@@ -5575,8 +5660,12 @@ static void lem_boom(lemming *a)
      * is a different one on the OTHER interrupt; this is the bang. */
     if (g_snd_driver == 0xFF && sound_enabled(3))   /* image 0x02D57 */
         sound_request(0x61, 4, 0x0C);                     /* image 0x02D65 */
+    return 0;                                       /* image 0x02D75 */
 }
 
+
+/* Image 0x0283B - transcribed below, with the blocker it belongs to. */
+static void block_restore(const lemming *a);
 
 /* THE CLOUD - transcribed from image 0x02350, the last of the bomber.
  *
@@ -5624,8 +5713,16 @@ static void lem_cloud(lemming *a, uint8_t *lvl, uint16_t cw, uint16_t chh)
      * turned out to be. */
     if (g_snd_driver != 0xFF && sound_enabled(1))   /* image 0x02366, 0x02372 */
         sound_request(0x60, 3, 0x0C);               /* image 0x02374 */
-    /* Image 0x023A6 reads the cell under it and refuses on 9 and 5 - steel. */
-    if ((a->tcell & 0x0F) == 9 || (a->tcell & 0x0F) == 5) return;
+    /* A BLOCKER'S CELLS GO BACK FIRST, image 0x02379 / 0x02383, and then
+     * image 0x02386..0x023A6 reads the MAP under it afresh - at x >> 2 and
+     * (y - 0x10) >> 2 - and refuses on 9 and 5. This read [si+0x2C]
+     * instead, the cell the last lookup saw: for a bombed blocker that is
+     * its own 0x0A, so it cut a crater through the steel the original's
+     * map gives back. A player found it on Fun 11. */
+    if (a->flags & 0x0100) block_restore(a);        /* 0x02379, 0x02383 */
+    uint8_t under = (uint8_t)(level_trigger_cell((int32_t)a->x / TRIG_CELL,
+                        ((int32_t)a->y - TRIG_Y_BIAS) / TRIG_CELL) & 0x0F);
+    if (under == 9 || under == 5) return;           /* 0x023AB, 0x023B2 */
     lem_crater(a, lvl, cw, chh);                    /* image 0x023B9 */
 }
 
@@ -5727,15 +5824,32 @@ int lem_block_start(lemming *a)
     return 1;
 }
 
+/* IMAGE 0x0283B - THE NINE CELLS GIVEN BACK. The same column and row image
+ * 0x03336 stamped at - (x - 4) >> 2 and (y - 6 - 0x10) >> 2 - and three
+ * `movsw / movsb` rows from [si+0x16], 0x1A0 apart, which put back exactly
+ * what lem_block_start saved in `under`. Two callers: the blocker losing its
+ * floor (image 0x02835) and the cloud of one that was given a bomb (image
+ * 0x02383). */
+static void block_restore(const lemming *a)
+{
+    int32_t col = ((int32_t)a->x - BLOCK_BACK_X) / TRIG_CELL;       /* 0x02840 */
+    int32_t row = ((int32_t)a->y - BLOCK_BACK_Y - TRIG_Y_BIAS) / TRIG_CELL;
+    for (int32_t r = 0; r < 3; r++)
+        for (int32_t c = 0; c < 3; c++)
+            level_trigger_put(col + c, row + r, a->under[r * 3 + c]);  /* 0x0286B */
+}
+
 /* What a blocker DOES, image 0x027E8: sixteen animation frames, and it goes
  * on blocking for as long as there is ground under it. Image 0x027EF probes
  * with the same routine everything else probes with, and when the answer is
  * "nothing there" - dug away beneath it - image 0x027FC puts it back to
  * walking.
  *
- * It does NOT put its nine trigger cells back here. Those stay stamped,
- * which is the original's behaviour and not an omission: a blocker whose
- * floor is removed leaves its block behind.
+ * AND IT GIVES ITS NINE CELLS BACK - image 0x02835 calls image 0x0283B on
+ * the way out. This comment used to say the opposite, that the cells stayed
+ * stamped "which is the original's behaviour and not an omission", and no
+ * routine was cited for it: a blocker whose floor was dug away left an
+ * invisible wall behind it in the port and none in the original.
  */
 static void lem_block(lemming *a, const uint8_t *lvl, uint16_t cw,
                       uint16_t chh)
@@ -5748,6 +5862,8 @@ static void lem_block(lemming *a, const uint8_t *lvl, uint16_t cw,
     a->hot_y = -10;                                 /* image 0x0281E */
     a->anim  = 0;                                   /* image 0x02815 */
     a->state = 9;                                   /* image 0x02823 */
+    a->extra &= 1;                                  /* image 0x02831 */
+    block_restore(a);                               /* image 0x02835 */
 }
 
 /* THE SHRUG - transcribed from image 0x02DB5, and it is dispatched from the
@@ -5768,16 +5884,17 @@ static void lem_block(lemming *a, const uint8_t *lvl, uint16_t cw,
  * read by image 0x03DFD, which goes on calling it a BUILDER on the panel
  * while it shrugs.
  */
-static void lem_shrug(lemming *a)
+static uint8_t lem_shrug(lemming *a)
 {
     a->anim = (uint8_t)((a->anim + 1) & 7);        /* image 0x02DB8 */
-    if (a->anim) return;                           /* image 0x02DBF */
+    if (a->anim) return 0;                         /* image 0x02DC1 */
     a->flags = 0;                                  /* image 0x02DC4 */
     a->hot_x = -8;                                 /* image 0x02DE1 */
     a->hot_y = -10;                                /* image 0x02DE6: 0xfff6 */
     a->state = 9;                                  /* image 0x02DEB */
     a->extra &= 1;                                 /* image 0x02DF9 */
     a->extra &= 0x7F;                              /* image 0x02DFD */
+    return 1;
 }
 
 /* Image 0x2047. */
@@ -6039,7 +6156,15 @@ void lemmings_step(lemming *lem, uint8_t n,
     /* Image 0x01F19, and it jumps to image 0x01FFF - PAST the nuke's cascade
      * at image 0x01FF8, which is this loop's tail. A paused nuke stops
      * mid-cascade with its fuses still counting nothing down. */
-    if (level_paused() == 0xFF) return;
+    if (level_paused() == 0xFF) {
+        g_walking = 0;                             /* image 0x01FFF */
+        return;
+    }
+    g_walking = 0xFF;                              /* image 0x01F26 */
+    if (n == 0) {                                  /* image 0x01F34 */
+        g_walking = 0;                             /* image 0x01FFF */
+        return;
+    }
     for (uint8_t k = 0; k < n && k < LEMMING_MAX; k++) {
         lemming *a = &lem[k];
         if (a->alive == 0xFF) continue;            /* image 0x1F3C */
@@ -6089,12 +6214,18 @@ void lemmings_step(lemming *lem, uint8_t n,
 
         /* Image 0x01F54, and it comes BEFORE the flag word is even read:
          * bit 7 of [si+0x24] sends it to the shrug and nowhere else. */
+        /* WHETHER IT LEAVES THROUGH THE LOOKUP. Every handler ends in a jump
+         * back to the loop, and there are TWO places to land: image 0x01FE8,
+         * which is `call 0x2EC0` - the trigger lookup - and image 0x01FEB,
+         * one instruction past it. Thirty-one jumps go to the first and
+         * thirty to the second, so `look` is which one this handler's exit
+         * took. The ones that never call it say 0 here; the six that do on
+         * some paths and not others return it. */
+        uint8_t look = 1;
         if (a->extra & 0x80) {                       /* image 0x01F57 */
-            lem_shrug(a);
-            continue;
+            look = lem_shrug(a);                     /* image 0x2DB5 */
         }
-
-        if (f == 0) {
+        else if (f == 0) {
             /* Image 0x01F61: `and ax,ax / jne / jmp 0x2047`. The flag word
              * alone decides; the state byte at +0x29 takes no part in it.
              * The port used to require state 9 as well, which is true of a
@@ -6105,44 +6236,56 @@ void lemmings_step(lemming *lem, uint8_t n,
             lem_walk(a, lvl, cw, chh);               /* image 0x2047 */
         }
         else if (f & 0x0002)
-            lem_cloud(a, lvl, cw, chh);              /* image 0x2350 */
+            { lem_cloud(a, lvl, cw, chh); look = 0; }   /* image 0x2350 */
         else if (f & 0x0004)
             lem_fall(a, lvl, cw, chh);               /* image 0x21B0 */
         else if (f & 0x2000)
-            lem_exiting(a);                          /* image 0x2326 */
+            { lem_exiting(a); look = 0; }            /* image 0x2326 */
         else if (f & 0x8000)
-            lem_boom(a);                             /* image 0x2D0F */
+            look = lem_boom(a, lvl, cw, chh);        /* image 0x2D0F */
         else if (f & 0x0020)
             lem_climb(a, lvl, cw, chh);              /* image 0x254F */
         else if (f & 0x0040)
-            lem_hoist(a);                            /* image 0x2637 */
+            look = lem_hoist(a);                     /* image 0x2637 */
         else if (f & 0x0200)
-            lem_bash(a, lvl, cw, chh);               /* image 0x287D */
+            look = lem_bash(a, lvl, cw, chh);        /* image 0x287D */
         else if (f & 0x0100)
-            lem_block(a, lvl, cw, chh);              /* image 0x27E8 */
+            { lem_block(a, lvl, cw, chh); look = 0; }   /* image 0x27E8 */
         else if (f & 0x0080)
-            lem_build(a, lvl, cw, chh);              /* image 0x2693 */
+            look = lem_build(a, lvl, cw, chh);       /* image 0x2693 */
         else if (f & 0x0010)
-            lem_dig(a, lvl, cw, chh);                /* image 0x23F3 */
+            look = lem_dig(a, lvl, cw, chh);         /* image 0x23F3 */
         else if (f & 0x0400)
             lem_floatdown(a, lvl, cw, chh);          /* image 0x2A6D */
         else if (f & 0x0001)
-            lem_splat(a);                            /* image 0x22DF */
+            { lem_splat(a); look = 0; }              /* image 0x22DF */
         else if (f & 0x0008)
             lem_step_up(a, lvl, cw, chh);            /* image 0x23BF */
         else if (f & 0x0800)
-            lem_mine(a, lvl, cw, chh);               /* image 0x2B35 */
+            look = lem_mine(a, lvl, cw, chh);        /* image 0x2B35 */
         else if (f & 0x1000)
-            lem_drown(a, lvl, cw, chh);              /* image 0x22F5 */
+            { lem_drown(a, lvl, cw, chh); look = 0; }   /* image 0x22F5 */
         else if (f & 0x4000)
-            lem_burn(a);                             /* image 0x2340 */
+            { lem_burn(a); look = 0; }               /* image 0x2340 */
+
+        /* AND A LEMMING THAT DIED IN ITS HANDLER NEVER LOOKS. Every write of
+         * 0xFF to [si+0x26] in a handler - image 0x020E2, which the faller,
+         * the floater, the digger, the miner, the cloud, the drowning and the
+         * burning all jump to, image 0x022EE's splat and image 0x02339's
+         * exit - is followed by `jmp 0x1FEB`. */
+        if (a->alive == 0xFF) look = 0;
 
         /* THE TRIGGER IS TESTED AFTER THE MOVE, NOT BEFORE IT.
          *
          * The dispatch at image 0x01F5E does not fall through to the trigger
-         * lookup - every one of its handlers JUMPS BACK to image 0x01FE8
-         * when it is done, and that is where `call 0x2EC0` sits. Thirty-one
-         * jumps land there. So the question the original asks is "having
+         * lookup - its handlers JUMP BACK to image 0x01FE8 when they are
+         * done, and that is where `call 0x2EC0` sits. Thirty-one jumps land
+         * there - and thirty land on image 0x01FEB, past it, which is what
+         * `look` above is. This comment used to say EVERY handler went to
+         * 0x01FE8: a blocker then looked up its own cell every frame, read
+         * its own 0x0A back into [si+0x2C], and a bomb given to it later
+         * tested that instead of the steel underneath (image 0x023A6) and
+         * cut a crater through steel. A player found it on Fun 11. So the question the original asks is "having
          * moved, what is this lemming standing on now", and the port asked
          * it of where the lemming had been.
          *
@@ -6160,7 +6303,7 @@ void lemmings_step(lemming *lem, uint8_t n,
          *
          * 0x0A is the blocker's own middle, which nothing dispatches - it is
          * there for image 0x0336E to refuse a second blocker by. */
-        if (trig_lv && trig_g) {
+        if (look && trig_lv && trig_g) {             /* image 0x01FE8 */
             uint8_t cell = level_trigger_at(a, trig_lv, trig_g);
             uint8_t eff = (uint8_t)(cell & 0x0F);
             uint8_t obj = (uint8_t)(cell >> 4);       /* image 0x02FB8 */
@@ -7340,7 +7483,18 @@ void lemming_draw(uint8_t *dst, uint16_t dst_w, uint16_t dst_h, uint16_t view_x,
             if (a->anim >= sf) return;
             uint32_t plane = 2u * sh;
             uint32_t fsz = plane * sp;
-            base = sb + (uint32_t)a->anim * fsz;
+            uint16_t fr = a->anim;
+            /* THE FLOATER FACES BOTH WAYS. Image 0x070AB adds the state when
+             * the lemming does not face right, and a floater's is 8 - so its
+             * left-facing eight follow the right-facing ones, which is the
+             * two-way shape tools/tile_sprites.py already measures for this
+             * region. The port drew the right-facing set whichever way it
+             * faced; ref_l2f's floater faces right, so nothing caught it until
+             * Fun 10 had one going left. */
+            if ((a->flags & 0x0400) && !(a->flags & (0x4000 | 0x1000))
+                    && a->dir != 1)
+                fr = (uint16_t)(fr + a->state);     /* image 0x070AB */
+            base = sb + (uint32_t)fr * fsz;
             if (base + fsz > sec_len) return;
             x0 = (int32_t)a->x + a->hot_x - LEMMING_DX;
             y0 = (int32_t)a->y + a->hot_y - LEMMING_DY;
@@ -8497,17 +8651,17 @@ void level_panel_palette(lem_rgb *out)
  * objects then lemmings. Both halves already carried a MEASURED justification
  * for that order; this is the routine those measurements were measuring.
  *
- * TWO THINGS HERE ARE NOT IN THE PORT, and neither is in this function:
+ * TWO THINGS HERE WERE NOT IN THE PORT, and neither is in this function:
  *
  *   - image 0x04085's KEYS. Scan 0x2C and 0x2D - Z and X - step ds:0x82
  *     through the skills, image 0x040BC down with a wrap from 1 to 9 and
  *     image 0x040D4 up with a wrap from 10 to 2, both gated on ds:0x84, the
- *     same repeat divider the rate buttons use. The port sets ds:0x82 from
- *     the panel click alone, so the keyboard selects nothing.
- *   - image 0x03150 is called TWICE a frame, at 0x001AD and 0x001C5. Both
- *     are the same routine; the port calls its equivalent once.
+ *     same repeat divider the rate buttons use. Transcribed since, beside
+ *     the keyboard's other skill keys - see image 0x040BC above.
+ *   - image 0x03150 is called TWICE a frame, at 0x001AD and 0x001C5. The
+ *     port does too now, from level_frame_compose - see level_play_click.
  *
- * Neither is invented here. They are named so the next reader finds them
+ * Both are in now. They were named so the next reader would find them
  * already located rather than reading this loop again to find them.
  * ====================================================================== */
 void level_play_step(level_anim *st, const level *lv, lemming *lem,
@@ -8564,6 +8718,15 @@ void level_play_draw(level_anim *st, const level *lv,
         if (lem[k].alive == 0xFF) continue;     /* image 0x03647 */
         out++;                                  /* image 0x0364D */
         lemming_mark(&lem[k], view_x);          /* image 0x03654 */
+        /* DS:0x50 AGAIN. Image 0x03670 sets it and image 0x03678 clears it
+         * around every lemming but a cloud under way - image 0x0365A's
+         * `[di+0x14] == ds:0x3C`, the pointer only the cloud's entry stores
+         * (image 0x02D45, 0x02E8D), with image 0x03662's frame 1 or more. So
+         * it reads 0 after the draw whenever anything else is on screen,
+         * a nuke or not, and image 0x001C5's click is not refused by it.
+         * Found by comparing the data segment through two nukes. */
+        if (!((lem[k].flags & CLOUD_BIT) && lem[k].anim >= 1))
+            g_walking = 0;                      /* image 0x03678 */
         lemming_draw(pix, w, h, view_x, lem_sec, lem_len, &lem[k]);
     }
     level_status_out(out);                      /* image 0x03684 */
@@ -12766,55 +12929,46 @@ int ground_load(const char *path, ground *g, const char **err)
 }
 /* IMAGE 0x03150 - A CLICK IN THE PLAY AREA, and it is a routine of its own.
  *
- * The frame loop calls it directly, twice a pass - image 0x001AD and image
- * 0x001C5 - and image 0x03EF9 never reaches it: that routine leaves at image
- * 0x03F04 for anything above the panel. The port had the two behind one hit
- * enum, which made them read as arms of a decision the original does not make.
+ * The frame loop calls it directly, TWICE a pass - image 0x001AD, before the
+ * lemmings step, and image 0x001C5, after image 0x001BF's pointer scan - and
+ * image 0x03EF9 never reaches it: that routine leaves at image 0x03F04 for
+ * anything above the panel. It polls; it is not handed a press.
+ *
+ *     0x03150  paused                        -> leave
+ *     0x03157  ds:0x50, the walk in progress -> leave (a nuke holds it)
+ *     0x03161  ds:0x63, nothing under it     -> leave, the press NOT spent
+ *     0x03168  button up                     -> ds:0x61 = 0, leave
+ *     0x03170  ds:0x61 already claimed       -> leave
+ *     0x03177  ds:0x61 = 0xFF, si = ds:0x58, dispatch on ds:0x82
+ *
+ * What it acts on is what the LAST scan stored, not a scan of its own. So a
+ * press over a lemming that is not yet there passes through the first call
+ * and the second takes it, against the scan made after the lemmings moved -
+ * which is how the original gave the umbrella to a faller on Fun 10 that the
+ * port, acting once at the top of the frame against the previous frame's
+ * scan, missed: the lemming fell into the pointer's box that frame.
+ *
+ * The port used to act on the press EDGE with a fresh scan of its own, once.
  */
 void level_play_click(struct level_frame *A)
 {
-
-    /* Image 0x03150 opens on the pause flag: a click on a lemming
-     * assigns nothing while the game is stopped. */
-    if (level_paused() == 0xFF) return;
-    /* Image 0x03170: a skill is selected, so find what is under the
-     * pointer and give it one. */
-    /* Image 0x0320D opens by testing the count and image 0x03224
-     * spends it. The count lives in game.c now, because the PANEL has
-     * to draw the same number the assignment reads - it was drawing the
-     * level header's instead, which never moves. */
-    /* Image 0x03180 dispatches the selected button to its handler, and
-     * each opens by testing its own count - see level_skill_left. */
-    /* THE DISPATCH AND THE SOUND ARE game.c's - image 0x03150's, and
-     * every handler's own two exits. This used to play sound 0x04 here,
-     * on any click where the count was non-zero, so an empty patch of
-     * sky and a lemming that already had the skill both clicked. A
-     * player found it; see level_assign. */
-    if (level_skill_left(level_skill())) {
-        level_scan sc;
-        level_pointer_scan(A->lem, A->released, A->view_x, &sc);
-        if (sc.chosen >= 0)                          /* ds:0x58, ds:0x5A */
-            level_assign(&A->lem[sc.chosen],
-                         sc.plain >= 0 ? &A->lem[sc.plain] : NULL,
-                         level_skill());              /* image 0x0317C */
+    if (level_paused() == 0xFF) return;          /* image 0x03150 */
+    if (g_walking == 0xFF) return;               /* image 0x03157 */
+    if (lem_under_count == 0) return;            /* image 0x03161 */
+    if (!(lem_buttons & 1)) {                    /* image 0x0316B */
+        g_play_latch = 0;                        /* image 0x031BE */
+        return;
     }
-}
-
-/* A PRESS IN THE PLAY AREA - the port's way into image 0x03150.
- *
- * The original reaches image 0x03150 from the frame loop twice a pass, at
- * image 0x001AD and image 0x001C5, behind the ds:0x61 latch, and acts on the
- * scan the previous frame stored. The port acts on the press edge with a
- * fresh scan, which agrees with every recorded run so far but is not that
- * sequence: OWED, and named here so nothing mistakes it for the original.
- *
- * Everything ELSE a button does is image 0x03E6F's, which runs on the timer
- * - see level_controls_tick. Image 0x03F04 is where that routine leaves the
- * play area alone. */
-void level_play_press(struct level_frame *A)
-{
-    if (level_pointer_hit().what == LEVEL_HIT_PLAY)  /* image 0x03EFF */
-        level_play_click(A);
+    if (g_play_latch == 0xFF) return;            /* image 0x03170 */
+    g_play_latch = 0xFF;                         /* image 0x03177 */
+    /* Image 0x03180..0x031B8 dispatches ds:0x82 to its handler, and each
+     * opens by testing its own count - see level_skill_left. Below 2 is no
+     * skill at all and image 0x03185 leaves, the press claimed. */
+    if (level_skill() < 2 || !level_skill_left(level_skill())) return;
+    int16_t si = level_scan_chosen();            /* image 0x0317C: ds:0x58 */
+    if (si < 0 || si >= LEMMING_MAX) return;     /* the port's: nothing yet */
+    int16_t pl = level_scan_plain();             /* ds:0x5A, when ds:0x5F */
+    level_assign(&A->lem[si], pl >= 0 ? &A->lem[pl] : NULL, level_skill());
 }
 
 /* IMAGE 0x03F5C - A SKILL ARMED, from a function key at image 0x03EA5 or a
@@ -13196,7 +13350,6 @@ int level_input_step(struct level_frame *A, int32_t *scroll_x_p, int32_t max_x)
 
     level_input in = view_level_pump();
     if (in.moved) seen_motion = 1;
-    if (in.pressed) level_play_press(A);            /* image 0x03150 */
 
     /* ESCAPE ENDS THE LEVEL; IT DOES NOT LEAVE IT. Image 0x002AB tests bit
      * 0x20 of the key word ds:0x1FC7 and jumps to image 0x002B3, which sets
@@ -13928,6 +14081,7 @@ void level_frame_compose(struct level_frame *A, const canvas *c,
      * - was the window path reaching back for the composer it had just been
      * handed. It is a direct call now, and there is one frame order. */
     uint8_t *page = level_page_drawn(A);         /* ds:0x1F76 */
+    level_play_click(A);                         /* image 0x001AD */
     level_frame_tick(A, page);
     if (A->panel && A->pan_sec) {
         memset(A->panel, 0, (size_t)PANEL_LINE_W * PANEL_ART_H);
@@ -13941,6 +14095,7 @@ void level_frame_compose(struct level_frame *A, const canvas *c,
                            * where the numbers start at PANEL_ART_X, 32. */
                           (uint8_t)(level_skill() + 1));
     }
+    level_play_click(A);                         /* image 0x001C5 */
 
     for (uint16_t y = 0; y < LEVEL_PLAY_H; y++)
         memcpy(screen + (size_t)y * LEVEL_SCREEN_W,

@@ -1145,11 +1145,13 @@ int  level_frame_tick(void *ctx, uint8_t *pix);
 /* image 0x03EF9 - a click on the PANEL. The play area is image 0x03150 and
  * not this routine; see game.c. */
 void level_play_click(struct level_frame *A);   /* image 0x03150 */
+void    level_scan_keep(const level_scan *sc);  /* image 0x03D8E..0x03DDA */
+int16_t level_scan_chosen(void);                /* ds:0x58 */
+int16_t level_scan_plain(void);                 /* ds:0x5A behind ds:0x5F */
 /* image 0x0018F - one frame of a level, composed into the 320x200 page. */
 void level_frame_compose(struct level_frame *A, const canvas *c,
                          uint8_t *screen, int32_t *scroll_x, int32_t max_x,
                          int seen_motion);
-void level_play_press(struct level_frame *A);
 int  level_run(struct level_frame *A, const canvas *c,
                const lem_rgb *palette, const char *title, uint8_t scale);
 
@@ -1527,12 +1529,11 @@ void menu_free(menu_screen *m);
  * THE HARNESS - src/harness.c. Nothing in the original, and no part of the
  * game: these exist so the port can be driven and measured.
  * ====================================================================== */
-#define SCRIPT_MAX 256
 typedef struct { long frame; uint8_t what; int32_t x, y; } script_act;
 enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2,
        SCRIPT_KEY = 3, SCRIPT_KEYUP = 4, SCRIPT_RDOWN = 5, SCRIPT_RUP = 6 };
-extern script_act harness_script[SCRIPT_MAX];
-extern uint16_t   harness_script_n;
+extern script_act *harness_script;      /* grows: a played level is thousands */
+extern uint32_t    harness_script_n;
 void harness_script_load(const char *path);
 /* 1 while LEM_INPUT_FOLLOW has the port following tools/lockstep.py: the
  * window then shows the game and takes no input of its own. */
@@ -1544,6 +1545,7 @@ int  harness_input_follows(void);
  * devmain.o is not, so nothing in the frame loop could call into it. */
 void harness_record_open(const char *path);
 void harness_record_close(void);
+void harness_record_result(uint8_t saved_pct, uint8_t needed_pct);
 
 /* lemdev putting a composed screen up for a person to look at. */
 void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
@@ -1584,6 +1586,8 @@ void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,
 #define g_nuke_tick      DG.nuke_tick
 #define g_pause_at       DG.pause_at
 #define g_press_latch    DG.press_latch
+#define g_walking        DG.walking
+#define g_play_latch     DG.play_latch
 #define g_paused         DG.paused
 #define g_rate           DG.rate
 #define g_rate_div       DG.rate_div
