@@ -316,7 +316,20 @@ int main(int argc, char **argv)
            !strncmp(level_status_line() + 40, "5:00", 4),
            level_status_line() + 40);
 
-        for (int k = 0; k < 40; k++) level_timer_step();
+        /* Image 0x00418 starts ds:0x85 at 0x11, the same as image
+         * 0x0041D's reload - so the first second is seventeen steps, not
+         * eighteen. It was eighteen while the port ran the step at the top
+         * of the next pass instead of in this pass's tail. */
+        for (int k = 0; k < 16; k++) level_timer_step();
+        ck("sixteen steps are still inside the first second",
+           !strncmp(level_status_line() + 40, "5:00", 4),
+           level_status_line() + 40);
+        level_timer_step();
+        ck("and the seventeenth is the first tick, image 0x00418's 0x11",
+           !strncmp(level_status_line() + 40, "4:59", 4),
+           level_status_line() + 40);
+
+        for (int k = 17; k < 40; k++) level_timer_step();
         ck("frame 40 reads 4:58, as the original's own line does",
            !strncmp(level_status_line() + 40, "4:58", 4),
            level_status_line() + 40);

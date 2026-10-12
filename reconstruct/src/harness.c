@@ -70,6 +70,23 @@ script_act *harness_script;
 uint32_t    harness_script_n;
 static uint32_t g_script_cap;
 
+/* The port's own keys by name, for a script - the enum is port_key. */
+static const char *const PORT_KEY_NAME[] = {
+    "none", "abandon", "left", "right", "home", "end"
+};
+
+static int port_key_of(const char *line, int32_t *k)
+{
+    char name[16];
+    long fr;
+    if (sscanf(line, "%ld portkey %15s", &fr, name) != 2) return 0;
+    for (int32_t i = PORT_KEY_LEFT; i <= PORT_KEY_END; i++)
+        if (!strcmp(name, PORT_KEY_NAME[i])) { *k = i; return 1; }
+    return 0;
+}
+
+static uint8_t g_script_port_key;   /* a replayed port key, not yet taken */
+
 /* One line of a script into the next free slot. 1 if it was an action. */
 static int script_parse_line(const char *line)
 {
@@ -104,6 +121,11 @@ static int script_parse_line(const char *line)
          * what they would have held. */
         else if (!strcmp(verb, "key")) a->what = SCRIPT_KEY;
         else if (!strcmp(verb, "keyup")) a->what = SCRIPT_KEYUP;
+        /* THE PORT'S OWN SCROLL, which only this replays - see
+         * harness_record_port_key. tools/record_level.py refuses the verb,
+         * which is the point: the original has no such key. */
+        else if (!strcmp(verb, "portkey") && port_key_of(line, &a->x))
+            a->what = SCRIPT_PORTKEY;
         else {
             /* SAID, not skipped: tools/record_level.py refuses a verb it
              * cannot replay, and a line one side acts on and the other
@@ -436,17 +458,28 @@ void harness_record_key(uint8_t code)
     fflush(g_rec);
 }
 
-/* A KEY THE ORIGINAL DOES NOT HAVE - the port's scroll and Q. The script has
- * no verb for them because neither game could replay one: the original has
- * no such key, and a scroll it never made puts every later click somewhere
- * else. So the recording says so, and tools/lockstep.py refuses to keep it
- * as a solution. */
-void harness_record_port_key(void)
+/* A KEY THE ORIGINAL DOES NOT HAVE - the port's scroll. The original has
+ * no such key and a scroll it never made puts every later click somewhere
+ * else, so neither tools/record_level.py nor a comparison can use the run:
+ * the comment says so, and tools/lockstep.py refuses to keep it as a
+ * solution. But the PORT can replay it - `N portkey right` - so a fault
+ * found in such a run can still be reproduced in the port. */
+void harness_record_port_key(uint8_t key)
 {
     if (!g_rec) return;
-    fprintf(g_rec, "# port key at frame %ld - not replayable\n",
-            g_rec_in_wait ? g_sink_frame - 1 : g_sink_frame);
+    long f = g_rec_in_wait ? g_sink_frame - 1 : g_sink_frame;
+    fprintf(g_rec, "# port key at frame %ld - not replayable\n", f);
+    if (key >= PORT_KEY_LEFT && key <= PORT_KEY_END)
+        fprintf(g_rec, "%ld portkey %s\n", f, PORT_KEY_NAME[key]);
     fflush(g_rec);
+}
+
+/* The port key a script pressed this frame, taken once. */
+uint8_t harness_script_port_key(void)
+{
+    uint8_t k = g_script_port_key;
+    g_script_port_key = PORT_KEY_NONE;
+    return k;
 }
 
 /* HOW IT ENDED, so a driver can tell a solution from an attempt without
@@ -602,6 +635,8 @@ int harness_script_step(struct level_frame *A, int32_t *scroll_x)
             lem_buttons |= 2;                       /* ds:0x14 bit 1 */
         } else if (act->what == SCRIPT_RUP) {
             lem_buttons &= (uint8_t)~2u;
+        } else if (act->what == SCRIPT_PORTKEY) {
+            g_script_port_key = (uint8_t)act->x;
         } else if ((act->what == SCRIPT_KEY || act->what == SCRIPT_KEYUP)
                    && g_keys_n < SCRIPT_KEYS_MAX) {
             g_keys_due[g_keys_n++] = (uint8_t)((act->x & 0x7F)

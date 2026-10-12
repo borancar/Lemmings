@@ -370,8 +370,13 @@ static int render_level(const char *data, const char *file, uint32_t which,
                  * The lemmings probe the TERRAIN, which is what the canvas
                  * held before the objects went on it - so a copy is kept. */
                 uint8_t was = level_released();
-                for (uint16_t k = 0; k < g_obj_frame; k++)
+                for (uint16_t k = 0; k < g_obj_frame; k++) {
+                    /* the PREVIOUS pass's tail, image 0x00213 - level_loop
+                     * runs it after a frame is shown, so a render after k
+                     * steps has seen k - 1 of them */
+                    if (k) level_timer_step();
                     level_play_step(st, &lv, g_lem, &was, terrain, c.w, c.h);
+                }
 
                 /* main.dat for the lemming sprites, so the draw can be the
                  * game's single call rather than a second arrangement. */

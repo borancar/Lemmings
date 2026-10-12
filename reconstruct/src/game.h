@@ -1540,7 +1540,8 @@ void menu_free(menu_screen *m);
  * ====================================================================== */
 typedef struct { long frame; uint8_t what; int32_t x, y; } script_act;
 enum { SCRIPT_MOVE = 0, SCRIPT_DOWN = 1, SCRIPT_UP = 2,
-       SCRIPT_KEY = 3, SCRIPT_KEYUP = 4, SCRIPT_RDOWN = 5, SCRIPT_RUP = 6 };
+       SCRIPT_KEY = 3, SCRIPT_KEYUP = 4, SCRIPT_RDOWN = 5, SCRIPT_RUP = 6,
+       SCRIPT_PORTKEY = 7 };
 extern script_act *harness_script;      /* grows: a played level is thousands */
 extern uint32_t    harness_script_n;
 void harness_script_load(const char *path);
@@ -1556,7 +1557,8 @@ void harness_record_open(const char *path);
 void harness_record_close(void);
 void harness_record_result(uint8_t saved_pct, uint8_t needed_pct);
 void harness_record_key(uint8_t code);      /* a scancode for image 0x016D4 */
-void harness_record_port_key(void);         /* a key the original lacks */
+void harness_record_port_key(uint8_t key); /* a key the original lacks */
+uint8_t harness_script_port_key(void);      /* a replayed one, or NONE */
 
 /* lemdev putting a composed screen up for a person to look at. */
 void dev_show(const uint8_t *pix, uint16_t w, uint16_t h,

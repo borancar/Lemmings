@@ -1,0 +1,508 @@
+# recorded by lemdev --record-input
+# level 31  rating 1   (ds:0x1F6B, ds:0x1F6E)
+# frames are the harness's own count; move is in SCREEN
+# pixels, which is ds:0x10 less the eight image 0x0426D
+# clamps against; key is a SCANCODE.
+0 move 142 92
+4 move 117 49
+5 move 123 45
+6 move 162 72
+7 move 217 95
+8 move 204 112
+9 move 158 146
+10 move 127 157
+11 move 98 158
+12 move 59 157
+13 move 44 161
+14 move 38 167
+15 move 34 174
+16 move 31 179
+17 move 26 187
+18 move 20 192
+19 move 19 192
+19 down
+26 move 21 192
+27 move 24 192
+28 move 27 192
+68 up
+73 move 24 192
+74 move 16 192
+75 move 14 192
+76 move 13 192
+77 down
+78 up
+83 move 39 192
+84 move 81 187
+85 move 113 186
+86 move 124 186
+87 move 131 186
+88 move 139 186
+89 move 148 186
+90 move 158 186
+91 move 178 180
+92 move 208 186
+93 move 254 192
+94 move 257 192
+101 down
+113 move 249 192
+114 move 248 192
+121 move 250 192
+122 move 252 192
+123 move 255 192
+143 move 257 192
+144 move 258 192
+150 move 260 192
+151 move 263 191
+155 move 260 191
+156 move 259 191
+157 move 258 191
+166 move 255 192
+189 move 257 192
+191 up
+192 move 269 159
+193 move 277 118
+194 move 295 104
+195 move 320 86
+196 move 320 83
+198 move 316 85
+199 move 310 90
+201 move 275 98
+202 move 259 104
+203 move 253 107
+204 move 229 122
+205 move 194 138
+206 move 164 144
+207 move 126 145
+208 move 43 122
+209 move 0 117
+210 move 23 120
+211 move 85 124
+212 move 127 132
+213 move 140 132
+214 move 148 142
+215 move 156 155
+221 move 156 154
+222 move 155 140
+223 move 155 138
+224 move 154 138
+225 move 151 147
+226 move 151 152
+227 move 143 161
+228 move 133 165
+229 move 132 166
+232 move 135 173
+233 move 137 176
+234 move 140 179
+235 move 144 183
+236 move 148 184
+237 move 151 185
+238 down
+240 up
+243 move 153 181
+244 move 169 146
+245 move 186 129
+246 move 188 128
+278 move 194 124
+279 move 237 115
+284 move 235 105
+285 move 232 104
+286 move 236 102
+287 move 238 101
+288 move 240 101
+328 move 274 93
+329 move 311 88
+330 move 320 88
+331 move 270 99
+332 move 258 98
+333 move 259 97
+334 move 259 96
+336 move 260 96
+337 move 262 95
+338 move 248 108
+347 move 226 92
+348 move 240 96
+349 move 225 85
+350 move 215 77
+351 move 208 73
+353 move 207 73
+375 move 208 71
+376 move 201 63
+377 move 195 58
+381 move 214 59
+382 move 221 55
+383 move 232 52
+384 move 235 51
+385 move 237 51
+386 move 239 51
+387 move 246 51
+388 move 256 49
+389 move 266 47
+390 move 272 43
+391 move 276 42
+392 move 280 41
+404 move 290 46
+405 move 293 49
+406 move 296 53
+407 move 297 53
+408 move 304 53
+410 move 301 50
+411 move 297 46
+412 move 292 42
+420 move 295 42
+421 move 296 42
+422 move 298 42
+423 move 300 42
+425 move 303 42
+426 move 305 41
+432 move 306 43
+434 move 306 45
+435 move 305 46
+440 move 305 47
+441 move 308 50
+442 move 308 51
+455 move 309 52
+456 move 310 52
+463 move 310 48
+481 move 306 52
+519 move 308 52
+563 move 309 49
+564 move 309 48
+580 move 310 48
+608 down
+609 move 309 50
+609 up
+611 move 306 50
+612 move 304 50
+613 move 301 51
+614 move 300 51
+621 down
+622 up
+623 move 297 48
+624 move 295 48
+626 move 295 47
+626 down
+628 move 293 48
+628 up
+629 move 292 48
+630 move 288 49
+632 move 287 49
+632 down
+633 move 284 50
+633 up
+634 down
+635 move 280 50
+635 up
+636 move 277 50
+637 down
+638 up
+639 down
+640 move 273 50
+640 up
+641 move 272 50
+642 move 271 50
+642 down
+644 up
+645 move 270 50
+646 move 264 50
+647 move 262 49
+647 down
+648 up
+649 down
+650 up
+651 move 260 49
+652 move 258 49
+653 move 257 49
+653 down
+655 move 256 49
+655 up
+656 move 255 49
+656 down
+657 move 248 49
+658 move 245 49
+662 move 237 51
+662 up
+663 move 241 52
+663 down
+664 move 242 52
+664 up
+665 move 250 54
+666 move 251 54
+666 down
+667 up
+668 down
+669 move 246 55
+669 up
+670 move 245 55
+670 down
+671 move 236 54
+672 move 231 53
+672 up
+673 move 231 52
+673 down
+674 up
+675 down
+676 move 228 51
+676 up
+677 move 225 50
+678 move 224 49
+678 down
+679 up
+680 down
+682 move 223 49
+682 up
+683 down
+684 move 220 48
+684 up
+685 down
+686 up
+687 move 217 47
+687 down
+688 move 216 47
+689 move 212 47
+689 up
+690 down
+691 up
+692 down
+693 up
+694 move 208 47
+695 down
+696 move 204 47
+696 up
+697 down
+698 up
+699 down
+701 move 201 47
+701 up
+702 down
+703 move 197 47
+703 up
+704 move 196 47
+704 down
+706 up
+707 down
+708 move 192 47
+708 up
+709 down
+711 move 188 47
+711 up
+712 down
+713 move 180 47
+713 up
+714 move 179 47
+714 down
+715 move 180 47
+716 up
+717 down
+718 move 175 47
+718 up
+719 down
+721 move 169 47
+721 up
+722 move 168 47
+722 down
+723 move 165 47
+723 up
+724 move 162 46
+724 down
+725 move 163 46
+726 move 160 46
+726 up
+727 down
+728 up
+729 down
+731 move 159 46
+731 up
+732 move 156 46
+732 down
+733 move 152 45
+733 up
+734 down
+736 up
+737 down
+738 move 145 45
+738 up
+739 move 144 45
+739 down
+740 up
+742 down
+743 move 140 45
+743 up
+744 down
+746 move 138 45
+746 up
+747 move 137 45
+747 down
+748 move 131 45
+748 up
+749 down
+750 up
+751 move 130 45
+752 down
+753 move 125 45
+753 up
+754 move 120 42
+754 down
+756 up
+757 down
+758 move 119 42
+758 up
+759 move 116 43
+759 down
+760 move 112 45
+761 move 111 45
+761 up
+762 move 110 45
+762 down
+763 move 107 45
+763 up
+764 down
+765 move 106 45
+765 up
+766 move 105 45
+766 down
+767 up
+768 down
+769 move 105 46
+770 move 95 48
+770 up
+771 down
+772 move 94 48
+772 up
+773 move 92 49
+773 down
+775 move 90 49
+775 up
+776 down
+777 move 88 49
+777 up
+778 move 86 49
+778 down
+779 move 87 49
+780 move 84 49
+780 up
+781 down
+782 move 81 49
+782 up
+783 down
+785 move 77 49
+785 up
+786 down
+787 up
+788 move 76 49
+788 down
+790 move 70 49
+790 up
+791 move 69 49
+791 down
+792 move 66 49
+792 up
+793 move 59 49
+794 down
+795 move 58 49
+795 up
+796 move 57 49
+796 down
+798 move 54 49
+798 up
+799 move 54 48
+799 down
+800 move 46 48
+800 up
+801 move 45 48
+801 down
+803 move 42 48
+803 up
+804 move 41 48
+804 down
+805 move 38 48
+805 up
+806 down
+807 up
+808 move 34 49
+809 move 35 49
+809 down
+810 move 29 50
+810 up
+811 down
+812 up
+813 move 26 50
+814 move 26 49
+814 down
+815 move 22 49
+815 up
+816 down
+817 up
+819 move 23 49
+819 down
+820 move 22 49
+820 up
+821 down
+822 up
+823 move 21 49
+824 move 23 49
+824 down
+825 move 14 49
+825 up
+826 move 15 48
+826 down
+827 move 16 48
+827 up
+828 move 15 48
+828 down
+829 move 16 48
+830 up
+831 move 18 48
+831 down
+832 move 17 49
+832 up
+833 move 16 49
+839 move 28 49
+840 move 29 49
+841 move 32 49
+842 move 35 49
+843 move 36 49
+848 move 36 50
+849 move 2 56
+850 move 0 58
+852 move 0 56
+853 move 13 56
+854 move 50 59
+855 move 67 59
+856 move 95 62
+857 move 112 62
+858 move 113 62
+859 move 115 62
+860 move 120 62
+863 move 122 62
+864 move 123 62
+867 move 124 62
+868 move 125 62
+884 move 145 70
+885 move 211 87
+886 move 269 95
+887 move 297 96
+888 move 320 97
+892 move 314 97
+893 move 291 97
+894 move 283 97
+895 move 282 97
+898 move 242 97
+899 move 125 93
+900 move 35 86
+901 move 2 85
+902 move 0 85
+907 move 0 84
+909 move 8 84
+910 move 79 83
+911 move 226 97
+912 move 304 98
+913 move 320 97
+914 move 320 98
+917 move 320 99
+919 move 320 100
+928 move 274 93
+929 move 243 88
+930 move 243 87
+934 move 243 88
+# frame 1259
+# result over 1 saved 100 needed 100

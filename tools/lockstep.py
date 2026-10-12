@@ -89,6 +89,7 @@ PASS_END = 0x001C8         # where tools/dg_hook.py takes the data segment
 DG_END = 0x4DFD            # reconstruct/src/dgroup.h
 SAVED_PCT, NEEDED_PCT = 0x40, 0x41   # ds: image 0x04720 compares the two
 LEVEL_INDEX = 0x1F6B       # ds: the index into the running order
+LEVEL_RATING = 0x1F6E      # ds: the menu's rating plate - see record_level.py
 NO_BUTTONS = 0x200B        # ds: 0xFF stops image 0x04262 storing ds:0x14
 RATINGS = ("fun", "tricky", "taxing", "mayhem")   # lemdev --rating's names
 SOLUTIONS = os.path.join(ROOT, "solutions")      # one input script a level
@@ -202,6 +203,7 @@ def install(m):
         if not st["picked"]:
             st["picked"] = True
             uc.mem_write(ds + LEVEL_INDEX, bytes([want]))
+            uc.mem_write(ds + LEVEL_RATING, bytes([want // 30]))
 
     # The start-up driver clicks at (160, 100) to get through the briefing,
     # and one of its clicks can land after the level is up - on a lemming,
@@ -648,7 +650,7 @@ def play_port(index, out, scale):
                 status = {"saved_pct": saved, "needed_pct": needed,
                           "won": bool(over) and saved >= needed}
             elif line.startswith("# port key") and port_key is None:
-                port_key = line.split()[4]
+                port_key = line.split()[5]
     except OSError:
         pass
     # THE PORT'S SCROLL KEYS ARE NOT IN THE SCRIPT - the original has no such

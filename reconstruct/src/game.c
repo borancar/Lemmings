@@ -1822,14 +1822,18 @@ void level_status_reset(const level *lv)
     g_status[ST_COLON]     = ':';
     g_status[ST_SEC_TENS]  = '0';
     g_status[ST_SEC_UNITS] = '0';
-    g_tick_load = LEVEL_FRAMES_PER_SECOND;
-    /* One MORE than the reload, for the first second only. The original's
-     * timer is image 0x0213, which sits later in the play loop than image
-     * 0x018F, where a frame is finished and captured - so a frame shows the
-     * time from before its own pass's tick. Measured: with both at 17 the
-     * port and the original disagree on exactly one frame in every
-     * seventeen - 850, 867, 884 - and agree on every frame either side. */
-    g_tick      = LEVEL_FRAMES_PER_SECOND + 1;
+    g_tick_load = LEVEL_FRAMES_PER_SECOND;          /* image 0x0041D */
+    /* Image 0x00418 starts the count at 0x11 too, the same as the reload.
+     *
+     * This used to be ONE MORE, to make up for level_timer_step running at
+     * the top of the NEXT pass rather than at image 0x00213 in the tail of
+     * this one. The two are only the same thing while nothing changes in
+     * between - and the panel's ticks run in between. A pause clicked during
+     * them stopped the port's decrement that the original had already made:
+     * Tricky 8, ds:0x85 5 against 6 for the six paused frames 63..68. The
+     * call now sits where the original's does - see level_loop - and the
+     * count starts where the original's starts. */
+    g_tick      = LEVEL_FRAMES_PER_SECOND;          /* image 0x00418 */
     /* AND THE 'IN' PERCENTAGE IS WRITTEN BEFORE THE LOOP RUNS. Image 0x03AC8
      * has two callers: image 0x001C2, inside the play loop, and image
      * 0x0049E, in the level's set-up - after image 0x00495 draws and image
@@ -1992,9 +1996,10 @@ void level_timer_step(void)
     /* THE CLOCK STOPS WHEN THE LEVEL ENDS. Image 0x00213 comes after the end
      * tests: image 0x001C8 jumps to image 0x002C3 once ds:0x4F is set, and
      * image 0x001E7 / 0x001FA jump to image 0x002B3 - which sets it - in the
-     * pass that ends the level, so neither reaches the decrement. This runs
-     * at the top of the NEXT pass (level_frame_step), by which time
-     * level_end_begin has set ds:0x4F in both cases. Without it the panel's
+     * pass that ends the level, so neither reaches the decrement. The port's
+     * level_end_begin sets ds:0x4F inside the frame's work, so by the time
+     * level_loop gets here - after the frame, image 0x00213's place - the
+     * flag is set in both cases. Without it the panel's
      * clock ran on through the fade; a played level to its exit showed it,
      * ds:0x85 8 against 7 on the frame after the last lemming went home. */
     if (g_level_over == 0xFF) return;      /* image 0x001C8, 0x001E7 */
@@ -5554,9 +5559,17 @@ static void lem_float_land(lemming *a)
     a->state = 9;                                   /* image 0x02B13 */
 }
 
-/* Image 0x02A6D, the chain's 0x0400. */
-static void lem_floatdown(lemming *a, const uint8_t *lvl, uint16_t cw,
-                          uint16_t chh)
+/* Image 0x02A6D, the chain's 0x0400. Returns whether it left through image
+ * 0x01FE8 - see lemmings_step.
+ *
+ * EVERY WAY OUT BUT LANDING GOES THROUGH IMAGE 0x02B28, which sends a
+ * floater at y 0xB4 or below to image 0x020E2 - gone, like a faller. The
+ * port had no such test, so a floater over a bottomless drop floated on
+ * below the level for ever and the panel's OUT went on counting it: Tricky
+ * 4, "1 out" with nobody on screen to the end of the level. A player found
+ * it. */
+static uint8_t lem_floatdown(lemming *a, const uint8_t *lvl, uint16_t cw,
+                             uint16_t chh)
 {
     size_t n = sizeof FLOAT_SCRIPT / 2;
     size_t i = (size_t)a->fscript / 2;
@@ -5580,13 +5593,18 @@ static void lem_floatdown(lemming *a, const uint8_t *lvl, uint16_t cw,
         for (uint8_t k = 0; k < act; k++) {
             if (lem_solid(lvl, cw, chh, a->x, a->y)) {  /* 0x02A95 etc */
                 lem_float_land(a);
-                return;
+                return 1;                           /* image 0x02B25 */
             }
             a->y = (int16_t)(a->y + 1);             /* image 0x02A9C */
         }
-        return;
+    } else {
+        a->y = (int16_t)(a->y + (int8_t)act);       /* image 0x02A8C */
     }
-    a->y = (int16_t)(a->y + (int8_t)act);           /* image 0x02A8C */
+    if (a->y >= LEMMING_DEAD_Y) {                   /* image 0x02B28 */
+        a->alive = 0xFF;                            /* image 0x020E2 */
+        return 0;                                   /* -> image 0x01FEB */
+    }
+    return 1;                                       /* image 0x02B2F */
 }
 
 /* THE BOMBER - transcribed from image 0x031C4, and it is the second thing
@@ -6278,7 +6296,7 @@ void lemmings_step(lemming *lem, uint8_t n,
         else if (f & 0x0010)
             look = lem_dig(a, lvl, cw, chh);         /* image 0x23F3 */
         else if (f & 0x0400)
-            lem_floatdown(a, lvl, cw, chh);          /* image 0x2A6D */
+            look = lem_floatdown(a, lvl, cw, chh);   /* image 0x2A6D */
         else if (f & 0x0001)
             { lem_splat(a); look = 0; }              /* image 0x22DF */
         else if (f & 0x0008)
@@ -8131,7 +8149,9 @@ void level_anim_step(level_anim *st, const level *lv)
  *     image 0x01B6  call 0x3944   which tail-jumps to 0x07C0A, the objects
  *     image 0x01BC  call 0x3634   walk the lemmings - NOT READ, so the OUT
  *                                 count is fed the released count instead
- *     image 0x0213                the clock, later in the same pass
+ *
+ * The clock, image 0x00213, is NOT here: it is in the pass's tail after the
+ * end tests, which is level_loop's, after the frame has been shown.
  *
  * The calls this does not make are the ones nobody has read: 0x4085, 0x80FD,
  * 0x7900, 0x3150, 0x1F19, 0x3634, 0x3AC8 (the minimap) and 0x3CDE (what the
@@ -8141,7 +8161,6 @@ void level_frame_step(level_anim *st, const level *lv)
     level_phase_step();
     level_release_step();
     (void)st; (void)lv;
-    level_timer_step();
     /* THE TWO COUNTS ARE NOT SET HERE, and they used to be.
      *
      * OUT is image 0x3684's, the tail of the walk image 0x01BC calls, and IN
@@ -13436,8 +13455,10 @@ int level_input_step(struct level_frame *A, int32_t *scroll_x_p, int32_t max_x)
     /* THE PORT'S OWN, all of it. The original has no way to abandon a level
      * without a result and no keyboard scroll - it has an edge to push the
      * pointer against, which level_scroll_step transcribes. */
+    if (in.port_key == PORT_KEY_NONE)               /* a replayed one */
+        in.port_key = (port_key)harness_script_port_key();
     if (in.port_key != PORT_KEY_NONE && in.port_key != PORT_KEY_ABANDON)
-        harness_record_port_key();      /* a recording cannot carry it */
+        harness_record_port_key((uint8_t)in.port_key);
     switch (in.port_key) {
     case PORT_KEY_ABANDON: *scroll_x_p = scroll_x; return -1;
     case PORT_KEY_LEFT:  scroll_x -= LEVEL_SCROLL * 2; break;
@@ -13446,6 +13467,13 @@ int level_input_step(struct level_frame *A, int32_t *scroll_x_p, int32_t max_x)
     case PORT_KEY_END:   scroll_x = max_x;             break;
     default: break;
     }
+    /* AND THE PAGES REDRAWN WHOLE, as every scroll of the original's does -
+     * image 0x0410F after the edge's and the minimap's. The pages refresh
+     * only the tiles something drew over, so a view moved without this kept
+     * showing the old view's tiles: a basher's tunnel stood as a black box
+     * over a rock a screen away from it until something drew there. A
+     * player found it. */
+    if (scroll_x != *scroll_x_p) level_pages_redraw_all();
 
     *scroll_x_p = scroll_x;
     return seen_motion;
@@ -14050,6 +14078,13 @@ void level_loop(struct level_frame *A, const canvas *c, uint8_t *screen,
         if (seen < 0) break;
         level_frame_compose(A, c, screen, scroll_x, max_x, seen);
         level_frame_show(screen, A);             /* image 0x00105 */
+        /* IMAGE 0x00213, THE CLOCK, IN THE PASS'S TAIL - after image
+         * 0x001C8's end tests and BEFORE the next wait, whose ticks are where
+         * the panel acts. It used to be at the top of the next pass's work,
+         * on the other side of those ticks, so a pause clicked in them
+         * (image 0x04028, tested at image 0x0020C) stopped a decrement the
+         * original had already made. */
+        level_timer_step();                      /* image 0x00213 */
         level_wait_ticks(scroll_x);              /* image 0x00164 */
         if (budget && --budget == 0) break;
         if (level_end_done()) break;             /* image 0x001C8, 0x002C6 */

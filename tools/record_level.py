@@ -69,6 +69,12 @@ SKILLS = [0x6A, 0x6D, 0x70, 0x73, 0x76, 0x79, 0x7C, 0x7F]
 # even ask whether a lemming is a floater, so the floater's behaviour and the
 # splat cannot be reached on the first level at all.
 LEVEL_INDEX = 0x1F6B
+# AND THE RATING PLATE, ds:0x1F6E, which choosing a rating on the menu sets
+# before the index is ever asked for. Poking the index alone played Tricky 1
+# with the menu still on Fun, and the data segment said so on every frame
+# (the port, handed --rating tricky, held 1). Every level is rating * 30 +
+# number - 1, so the rating is the index over thirty.
+LEVEL_RATING = 0x1F6E
 # WHERE THE LEVEL RECORD IS LOADED. Image 0x036B9 sets di to this fixed
 # address and reads the release rate, the counts and all eight skills from it,
 # so it is the record the game believes it is playing. Carried in the manifest
@@ -137,6 +143,8 @@ def install(m):
             return
         st["picked"] = True
         uc.mem_write(base + DGROUP + LEVEL_INDEX, bytes([int(want_level)]))
+        uc.mem_write(base + DGROUP + LEVEL_RATING,
+                     bytes([int(want_level) // 30]))
         print(f"  [rec] level index poked to {want_level}")
 
     def on_frame(uc, address, size, user):
@@ -401,6 +409,42 @@ def install(m):
         uc.mem_write(ds + 0x10, x.to_bytes(2, "little"))   # image 0x0427E
         uc.mem_write(ds + 0x12, y.to_bytes(2, "little"))   # image 0x04293
 
+    # THE START-UP CLICK MUST BE LET GO BEFORE THE LEVEL'S FIRST TICK, not at
+    # its first frame.
+    #
+    # run() presses the button at (160, 100) to dismiss the briefing and lets
+    # it go eight chunks later, by the host's clock. The level's timer ISR
+    # (image 0x017C7) starts ticking BEFORE the first image 0x018F, and every
+    # tick polls the mouse (image 0x01840 -> 0x0418C -> 0x04252, INT 33h AX=3
+    # into ds:0x14) and then runs the panel (image 0x01874 -> 0x03E6F). With
+    # the briefing's click still down, image 0x03EF1 sees bit 0, image 0x03F04
+    # finds (160, 100) in the play area and leaves through image 0x03FE9 -
+    # ds:0x62 = 0xFF - and the pin below came too late to stop it: it is taken
+    # at the first image 0x018F, after those ticks. Tricky 5's reference came
+    # back with ds:0x62 0xFF against the port's 0 on frame 0 and nothing else;
+    # a second recording of the same script, where the release happened to
+    # land before the level, read 0. A race in the harness, not the game.
+    #
+    # The script says no button is down on frame 0, and the port runs no tick
+    # before its first frame. So at the level's first tick - the second mode
+    # 0x0D, as everywhere here - the button is released and the pointer pinned,
+    # and only the script moves it from then on.
+    def first_tick(uc, address, size, user):
+        if st.get("pinned"):
+            return
+        modes = getattr(m, "video_modes", [])
+        if sum(1 for v in modes if v == 0x0D) < 2:
+            return
+        if m.mouse_btn:
+            print(f"  [rec] the start-up click was still down at the level's "
+                  f"first tick (buttons {m.mouse_btn}) - released", flush=True)
+            m.script_mouse(m.mouse_pos, False)   # no press/release counts
+        st["pinned"] = True
+        m.pin_mouse(True)
+
+    if script:
+        m.uc.hook_add(UC_HOOK_CODE, first_tick, None,
+                      base + 0x017C7, base + 0x017C7)
     m.uc.hook_add(UC_HOOK_CODE, on_frame,
                   None, base + FRAME_DONE, base + FRAME_DONE)
     m.ticks_after_keys = True
